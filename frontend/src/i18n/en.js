@@ -1,0 +1,282 @@
+export default {
+  // App
+  appTitle: "Music Clip Playlists",
+  appDescription: "Create and manage music clip playlists",
+  appName: "MusicClip",
+
+  // Navbar
+  welcome: "Welcome,",
+  navPlaylists: "Playlists",
+  navAdmin: "Admin",
+  navSettings: "Settings",
+  navLogout: "Logout",
+
+  // Login
+  loginTitle: "Welcome back",
+  loginSubtitle: "Sign in to your MusicClip account",
+  username: "Username",
+  password: "Password",
+  signingIn: "Signing in...",
+  signIn: "Sign in",
+  noAccount: "No account?",
+  createOne: "Create one",
+  usernamePasswordRequired: "Username and password are required",
+  accountNotApproved: "Your account has not been approved yet. Please reach out to the admin for approval.",
+  loginFailed: "Login failed",
+
+  // Register
+  registerTitle: "Create account",
+  registerSubtitle: "Join MusicClip to start building playlists",
+  confirmPassword: "Confirm Password",
+  usernameRequired: "Username is required",
+  usernameMin: "Username must be at least 2 characters",
+  usernameMax: "Username must be at most 30 characters",
+  usernameChars: "Username can only contain Chinese characters, letters, numbers, and underscores",
+  passwordRequired: "Password is required",
+  passwordMin: "Password must be at least 8 characters",
+  confirmRequired: "Please confirm your password",
+  passwordsMismatch: "Passwords do not match",
+  usernamePlaceholder: "2-30 characters",
+  passwordPlaceholder: "At least 8 characters",
+  confirmPlaceholder: "Re-enter your password",
+  usernameExists: "Username already exists",
+  registrationFailed: "Registration failed",
+  accountCreated: "Account created!",
+  awaitingApproval: "Your account is awaiting admin approval. You will be able to log in once an admin activates your account.",
+  alreadyApproved: "Already approved?",
+  creatingAccount: "Creating account...",
+  createAccount: "Create account",
+  alreadyHaveAccount: "Already have an account?",
+
+  // Playlists page
+  playlists: "Playlists",
+  playlist: "playlist",
+  playlistsPlural: "playlists",
+  myPlaylists: "My Playlists",
+  otherPlaylists: "Shared & Public",
+  newPlaylist: "+ New Playlist",
+  searchPlaylists: "Search playlists...",
+  noPlaylistsMatch: "No playlists match your search",
+  noPlaylistsYet: "No playlists yet",
+  noOtherPlaylists: "No shared or public playlists",
+  createToStart: "Create one to get started.",
+
+  // New Playlist
+  newPlaylistTitle: "New Playlist",
+  create: "Create",
+  import: "Import",
+  name: "Name",
+  namePlaceholder: "My playlist name...",
+  descriptionOptional: "Description (optional)",
+  descriptionPlaceholder: "Describe your playlist...",
+  makePublic: "Make this playlist public",
+  playlistNameRequired: "Playlist name is required",
+  creating: "Creating...",
+  createPlaylist: "Create Playlist",
+  selectJsonFile: "Select a JSON file exported from this app to import a playlist.",
+  importing: "Importing...",
+  chooseFile: "Choose JSON File",
+  invalidJson: "Invalid JSON file",
+  importFailed: "Import failed",
+  createPlaylistFailed: "Failed to create playlist",
+
+  // Visibility
+  publicLabel: "Public",
+  privateLabel: "Private",
+
+  // Playlist detail
+  filterClips: "Filter clips by title, artist, or comment...",
+  deletePlaylistConfirm: "This action cannot be undone. All clips, shares, and likes in this playlist will be permanently removed.",
+  deletePlaylistTitle: "Delete Playlist",
+  cancel: "Cancel",
+  confirm: "Confirm",
+  makePublicTitle: "Make Playlist Public",
+  makePublicMessage: "Anyone will be able to view and play this playlist. You can change it back to private anytime.",
+  makePrivateTitle: "Make Playlist Private",
+  makePrivateMessage: "Only you and users you've shared with will be able to view this playlist.",
+
+  // Playlist header
+  columnsLabel: "{n} columns",
+  columnsPerRow: "Columns per row",
+  unlikeAll: "Unlike All",
+  compactView: "List",
+  fullView: "Cards",
+  batch: "Batch",
+  selectAll: "Select All",
+  unselectAll: "Unselect All",
+  applyToSelected: "Apply",
+  selectedCount: "{count} selected",
+  return: "Return",
+  edit: "Edit",
+  done: "Done",
+  addClip: "Add Clip",
+  share: "Share",
+  delete: "Delete",
+  copyPlaylist: "Copy Playlist",
+
+  // Playlist card
+  shared: "Shared",
+  public: "Public",
+  clip: "clip",
+  clips: "clips",
+
+  // Clip sidebar
+  clipsSidebar: "Clips",
+  filterClipsSidebar: "Filter clips...",
+  noClipsFound: "No clips found.",
+
+  // Add clip modal
+  addClipToPlaylist: "Add Clip to Playlist",
+  searchTab: "Search",
+  importTab: "Import",
+  searchSongs: "Search songs...",
+  searching: "Searching...",
+  noSongsFound: "No songs found.",
+  createClip: "Create Clip",
+  newClipButton: "+ New clip",
+  importClips: "Import Clips",
+  importByQQ: "Import from QQ Music",
+  importByQQDesc: "Paste a QQ Music playlist ID to match and import songs",
+  qqPlaylistIdPlaceholder: "QQ Music playlist ID...",
+  importByNetease: "Import from NetEase",
+  importByNeteaseDesc: "Paste a NetEase Cloud Music playlist ID to match and import songs",
+  neteasePlaylistIdPlaceholder: "NetEase playlist ID...",
+  importByPlaylistId: "Import from Playlist",
+  importByFile: "Import from File",
+  playlistIdPlaceholder: "Paste playlist ID...",
+  importButton: "Import",
+  importingClips: "Importing...",
+  uploadXlsx: "Choose XLSX File",
+  importSuccess: "Added {added} clips, skipped {skipped}",
+  importNotFound: "Not found:",
+
+  // Compare playlist
+  comparePlaylist: "Compare",
+  compareDesc: "Compare the songs in this playlist with an external playlist to find differences.",
+  compareQQ: "QQ Music Playlist",
+  compareQQDesc: "Enter a QQ Music playlist ID to compare",
+  compareNetease: "NetEase Playlist",
+  compareNeteaseDesc: "Enter a NetEase Cloud Music playlist ID to compare",
+  compareButton: "Compare",
+  comparing: "Comparing...",
+  compareFailed: "Comparison failed",
+  compareReport: "Comparison Report",
+  compareExternal: "External",
+  compareLocal: "Local",
+  compareSongs: "songs",
+  compareMatched: "Matched",
+  compareArtistMismatch: "Artist mismatch",
+  compareMissing: "Missing",
+  compareMissingTitle: "In external but not in this playlist",
+  compareArtistMismatchTitle: "Title matches but artist differs",
+  compareLocalOnly: "Local only",
+  compareLocalOnlyTitle: "In this playlist but not in external",
+  compareAgain: "Compare again",
+
+  // Clip switcher
+  switchClip: "Switch clip",
+  noOtherClips: "No other clips for this song",
+  setPrivate: "Set private",
+  setGlobal: "Set visible to all",
+
+  // Share modal
+  sharePlaylist: "Share Playlist",
+  viewAccess: "View Access",
+  searchUserShare: "Search user to share with...",
+  noUsersInList: "No users in this list.",
+  remove: "Remove",
+  copyPermission: "Copy Permission",
+  searchUserCopy: "Search user to grant copy...",
+
+  // Import modal
+  importPlaylist: "Import Playlist",
+  chooseFileButton: "Choose File",
+
+  // Search bar
+  search: "Search...",
+
+  // Song table
+  title: "Title",
+  artist: "Artist",
+  duration: "Duration",
+  actions: "Actions",
+  newClip: "New Clip",
+  loading: "Loading...",
+
+  // Clip creator
+  noLyrics: "No lyrics available",
+  returnButton: "← Return",
+  setStartHere: "Set start here",
+  clipRange: "Clip:",
+  adding: "Adding...",
+  addToList: "Add to List",
+  createClipFailed: "Failed to create clip",
+
+  // Player box
+  pause: "Pause",
+  play: "Play",
+  replay: "Replay",
+
+  // Sections
+  addSection: "Add section",
+  sectionLabelPrompt: "Enter section name",
+
+  // Color tag
+  clear: "Clear",
+
+  // Clip comment
+  addComment: "Add comment...",
+  save: "Save",
+
+  // Admin
+  userManagement: "User Management",
+  totalUsers: "total users",
+  pendingApproval: "Pending Approval",
+  members: "Members",
+  admins: "Admins",
+  noUsersInGroup: "No users in this group.",
+  role: "Role",
+  joined: "Joined",
+  approve: "Approve",
+  revoke: "Revoke",
+  deleteUserTitle: "Delete User",
+  deleteUserConfirm: "This action cannot be undone. Are you sure you want to delete user",
+  actionFailed: "Action failed",
+
+  // Change username
+  changeUsername: "Change Username",
+  newUsername: "New Username",
+  passwordConfirm: "Password (to confirm)",
+  changingUsername: "Saving...",
+  changeUsernameSuccess: "Username changed successfully. Please log in again.",
+  changeUsernameNote: "You will be signed out after changing your username.",
+  changeUsernameFailed: "Failed to change username",
+  usernameExistsError: "Username already exists",
+
+  // Change password
+  changePassword: "Change Password",
+  currentPassword: "Current Password",
+  newPassword: "New Password",
+  confirmNewPassword: "Confirm New Password",
+  newPasswordMin: "New password must be at least 8 characters",
+  newPasswordsMismatch: "New passwords do not match",
+  changingPassword: "Saving...",
+  changePasswordSuccess: "Password changed successfully",
+  changePasswordFailed: "Failed to change password",
+  currentPasswordIncorrect: "Current password is incorrect",
+
+  // Settings
+  settings: "Settings",
+  customizeExperience: "Customize your experience",
+  appearance: "Appearance",
+  language: "Language",
+  themeDark: "Dark",
+  themeDarkDesc: "Easy on the eyes, deep navy tones",
+  themeLight: "Light",
+  themeLightDesc: "Clean and bright for daytime use",
+  themeHighContrast: "High Contrast",
+  themeHighContrastDesc: "Maximum readability and clarity",
+  active: "Active",
+  langEn: "English",
+  langZh: "简体中文",
+};

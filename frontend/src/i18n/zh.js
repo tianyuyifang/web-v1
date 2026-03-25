@@ -1,0 +1,282 @@
+export default {
+  // App
+  appTitle: "音乐片段播放列表",
+  appDescription: "创建和管理音乐片段播放列表",
+  appName: "MusicClip",
+
+  // Navbar
+  welcome: "欢迎，",
+  navPlaylists: "播放列表",
+  navAdmin: "管理",
+  navSettings: "设置",
+  navLogout: "退出登录",
+
+  // Login
+  loginTitle: "欢迎回来",
+  loginSubtitle: "登录你的 MusicClip 账号",
+  username: "用户名",
+  password: "密码",
+  signingIn: "登录中...",
+  signIn: "登录",
+  noAccount: "没有账号？",
+  createOne: "注册一个",
+  usernamePasswordRequired: "请输入用户名和密码",
+  accountNotApproved: "你的账号尚未审核通过，请联系管理员。",
+  loginFailed: "登录失败",
+
+  // Register
+  registerTitle: "创建账号",
+  registerSubtitle: "加入 MusicClip，开始创建播放列表",
+  confirmPassword: "确认密码",
+  usernameRequired: "请输入用户名",
+  usernameMin: "用户名至少2个字符",
+  usernameMax: "用户名最多30个字符",
+  usernameChars: "用户名只能包含中文、字母、数字和下划线",
+  passwordRequired: "请输入密码",
+  passwordMin: "密码至少8个字符",
+  confirmRequired: "请确认密码",
+  passwordsMismatch: "两次密码不一致",
+  usernamePlaceholder: "2-30个字符",
+  passwordPlaceholder: "至少8个字符",
+  confirmPlaceholder: "再次输入密码",
+  usernameExists: "用户名已存在",
+  registrationFailed: "注册失败",
+  accountCreated: "账号创建成功！",
+  awaitingApproval: "你的账号正在等待管理员审核，审核通过后即可登录。",
+  alreadyApproved: "已通过审核？",
+  creatingAccount: "创建中...",
+  createAccount: "创建账号",
+  alreadyHaveAccount: "已有账号？",
+
+  // Playlists page
+  playlists: "播放列表",
+  playlist: "个列表",
+  playlistsPlural: "个列表",
+  myPlaylists: "我的列表",
+  otherPlaylists: "共享与公开",
+  newPlaylist: "+ 新建列表",
+  searchPlaylists: "搜索播放列表...",
+  noPlaylistsMatch: "没有匹配的播放列表",
+  noPlaylistsYet: "还没有播放列表",
+  noOtherPlaylists: "暂无共享或公开列表",
+  createToStart: "创建一个开始使用吧。",
+
+  // New Playlist
+  newPlaylistTitle: "新建播放列表",
+  create: "创建",
+  import: "导入",
+  name: "名称",
+  namePlaceholder: "播放列表名称...",
+  descriptionOptional: "描述（可选）",
+  descriptionPlaceholder: "描述你的播放列表...",
+  makePublic: "设为公开",
+  playlistNameRequired: "请输入播放列表名称",
+  creating: "创建中...",
+  createPlaylist: "创建播放列表",
+  selectJsonFile: "选择从本应用导出的 JSON 文件来导入播放列表。",
+  importing: "导入中...",
+  chooseFile: "选择 JSON 文件",
+  invalidJson: "无效的 JSON 文件",
+  importFailed: "导入失败",
+  createPlaylistFailed: "创建播放列表失败",
+
+  // Visibility
+  publicLabel: "公开",
+  privateLabel: "私密",
+
+  // Playlist detail
+  filterClips: "按标题、歌手或备注筛选...",
+  deletePlaylistConfirm: "此操作不可撤销。播放列表中的所有片段、分享和喜欢将被永久删除。",
+  deletePlaylistTitle: "删除播放列表",
+  cancel: "取消",
+  confirm: "确认",
+  makePublicTitle: "设为公开",
+  makePublicMessage: "所有人都将能查看和播放此播放列表。你可以随时改回私密。",
+  makePrivateTitle: "设为私密",
+  makePrivateMessage: "仅你和你分享的用户可以查看此播放列表。",
+
+  // Playlist header
+  columnsLabel: "{n} 列",
+  columnsPerRow: "每行显示",
+  unlikeAll: "取消全部喜欢",
+  compactView: "列表",
+  fullView: "卡片",
+  batch: "批量",
+  selectAll: "全选",
+  unselectAll: "取消全选",
+  applyToSelected: "应用",
+  selectedCount: "已选 {count} 项",
+  return: "返回",
+  edit: "编辑",
+  done: "完成",
+  addClip: "添加片段",
+  share: "分享",
+  delete: "删除",
+  copyPlaylist: "复制列表",
+
+  // Playlist card
+  shared: "已分享",
+  public: "公开",
+  clip: "个片段",
+  clips: "个片段",
+
+  // Clip sidebar
+  clipsSidebar: "片段",
+  filterClipsSidebar: "筛选片段...",
+  noClipsFound: "没有找到片段。",
+
+  // Add clip modal
+  addClipToPlaylist: "添加片段到列表",
+  searchTab: "搜索",
+  importTab: "导入",
+  searchSongs: "搜索歌曲...",
+  searching: "搜索中...",
+  noSongsFound: "没有找到歌曲。",
+  importClips: "导入片段",
+  importByQQ: "从QQ音乐导入",
+  importByQQDesc: "粘贴QQ音乐歌单ID，自动匹配并导入歌曲",
+  qqPlaylistIdPlaceholder: "QQ音乐歌单 ID...",
+  importByNetease: "从网易云导入",
+  importByNeteaseDesc: "粘贴网易云音乐歌单ID，自动匹配并导入歌曲",
+  neteasePlaylistIdPlaceholder: "网易云音乐歌单 ID...",
+  importByPlaylistId: "从播放列表导入",
+  importByFile: "从文件导入",
+  playlistIdPlaceholder: "粘贴播放列表 ID...",
+  importButton: "导入",
+  importingClips: "导入中...",
+  uploadXlsx: "选择 XLSX 文件",
+  importSuccess: "已添加 {added} 个片段，跳过 {skipped} 个",
+  importNotFound: "未找到：",
+  createClip: "创建片段",
+  newClipButton: "+ 新片段",
+
+  // Compare playlist
+  comparePlaylist: "对比",
+  compareDesc: "将此播放列表中的歌曲与外部歌单进行对比，查找差异。",
+  compareQQ: "QQ音乐歌单",
+  compareQQDesc: "输入QQ音乐歌单ID进行对比",
+  compareNetease: "网易云歌单",
+  compareNeteaseDesc: "输入网易云音乐歌单ID进行对比",
+  compareButton: "对比",
+  comparing: "对比中...",
+  compareFailed: "对比失败",
+  compareReport: "对比报告",
+  compareExternal: "外部歌单",
+  compareLocal: "本地列表",
+  compareSongs: "首歌",
+  compareMatched: "完全匹配",
+  compareArtistMismatch: "歌手不同",
+  compareMissing: "缺少",
+  compareMissingTitle: "外部歌单有但本列表没有",
+  compareArtistMismatchTitle: "歌名匹配但歌手不同",
+  compareLocalOnly: "仅本地",
+  compareLocalOnlyTitle: "本列表有但外部歌单没有",
+  compareAgain: "重新对比",
+
+  // Clip switcher
+  switchClip: "切换片段",
+  noOtherClips: "该歌曲没有其他片段",
+  setPrivate: "设为私有",
+  setGlobal: "设为所有人可见",
+
+  // Share modal
+  sharePlaylist: "分享播放列表",
+  viewAccess: "查看权限",
+  searchUserShare: "搜索用户以分享...",
+  noUsersInList: "列表为空。",
+  remove: "移除",
+  copyPermission: "复制权限",
+  searchUserCopy: "搜索用户以授予复制权限...",
+
+  // Import modal
+  importPlaylist: "导入播放列表",
+  chooseFileButton: "选择文件",
+
+  // Search bar
+  search: "搜索...",
+
+  // Song table
+  title: "标题",
+  artist: "歌手",
+  duration: "时长",
+  actions: "操作",
+  newClip: "新片段",
+  loading: "加载中...",
+
+  // Clip creator
+  noLyrics: "暂无歌词",
+  returnButton: "← 返回",
+  setStartHere: "设为起始点",
+  clipRange: "片段：",
+  adding: "添加中...",
+  addToList: "添加到列表",
+  createClipFailed: "创建片段失败",
+
+  // Player box
+  pause: "暂停",
+  play: "播放",
+  replay: "重播",
+
+  // Sections
+  addSection: "添加分区",
+  sectionLabelPrompt: "输入分区名称",
+
+  // Color tag
+  clear: "清除",
+
+  // Clip comment
+  addComment: "添加备注...",
+  save: "保存",
+
+  // Admin
+  userManagement: "用户管理",
+  totalUsers: "位用户",
+  pendingApproval: "待审核",
+  members: "成员",
+  admins: "管理员",
+  noUsersInGroup: "此分组暂无用户。",
+  role: "角色",
+  joined: "注册时间",
+  approve: "通过",
+  revoke: "撤销",
+  deleteUserTitle: "删除用户",
+  deleteUserConfirm: "此操作不可撤销。确定要删除用户",
+  actionFailed: "操作失败",
+
+  // Change username
+  changeUsername: "修改用户名",
+  newUsername: "新用户名",
+  passwordConfirm: "密码（用于验证身份）",
+  changingUsername: "保存中...",
+  changeUsernameSuccess: "用户名修改成功，请重新登录。",
+  changeUsernameNote: "修改用户名后将自动退出登录。",
+  changeUsernameFailed: "修改用户名失败",
+  usernameExistsError: "用户名已存在",
+
+  // Change password
+  changePassword: "修改密码",
+  currentPassword: "当前密码",
+  newPassword: "新密码",
+  confirmNewPassword: "确认新密码",
+  newPasswordMin: "新密码至少8个字符",
+  newPasswordsMismatch: "两次新密码不一致",
+  changingPassword: "保存中...",
+  changePasswordSuccess: "密码修改成功",
+  changePasswordFailed: "密码修改失败",
+  currentPasswordIncorrect: "当前密码不正确",
+
+  // Settings
+  settings: "设置",
+  customizeExperience: "自定义你的使用体验",
+  appearance: "外观",
+  language: "语言",
+  themeDark: "深色",
+  themeDarkDesc: "护眼深色调，适合夜间使用",
+  themeLight: "浅色",
+  themeLightDesc: "明亮清爽，适合日间使用",
+  themeHighContrast: "高对比度",
+  themeHighContrastDesc: "最大可读性和清晰度",
+  active: "当前",
+  langEn: "English",
+  langZh: "简体中文",
+};

@@ -1,0 +1,207 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ───────────────────────────────────────────────
+   Semantic color tokens — function-based naming
+   ─────────────────────────────────────────────── */
+
+/* Dark theme (default) — deep navy-gray, no pure black */
+:root {
+  --background:      #1a1a2e;
+  --surface:         #252540;
+  --surface-hover:   #2f2f4a;
+  --border:          #3a3a55;
+  --primary:         #6366f1;
+  --primary-hover:   #818cf8;
+  --accent:          #f59e0b;
+  --muted:           #8080a0;
+  --text:            #e4e4ef;
+  --text-secondary:  #b0b0c8;
+  --text-on-primary: #ffffff;
+  --danger:          #ef4444;
+  --danger-bg:       rgba(239, 68, 68, 0.1);
+  --danger-border:   rgba(239, 68, 68, 0.2);
+  --success:         #22c55e;
+  --success-bg:      rgba(34, 197, 94, 0.1);
+  --success-border:  rgba(34, 197, 94, 0.2);
+  --warning:         #eab308;
+  --warning-bg:      rgba(234, 179, 8, 0.1);
+  --warning-border:  rgba(234, 179, 8, 0.2);
+  --input-bg:        #1e1e34;
+  --shadow:          rgba(0, 0, 0, 0.25);
+  --slider-track:    #3a3a55;
+}
+
+/* Light theme — clean white, strong contrast (4.5:1+ on all text) */
+html:not(.dark):not(.high-contrast) {
+  --background:      #f0f0f5;
+  --surface:         #ffffff;
+  --surface-hover:   #e8e8f0;
+  --border:          #c8c8d8;
+  --primary:         #4f46e5;
+  --primary-hover:   #4338ca;
+  --accent:          #d97706;
+  --muted:           #5a5a72;
+  --text:            #1a1a2e;
+  --text-secondary:  #3a3a52;
+  --text-on-primary: #ffffff;
+  --danger:          #dc2626;
+  --danger-bg:       rgba(220, 38, 38, 0.08);
+  --danger-border:   rgba(220, 38, 38, 0.2);
+  --success:         #16a34a;
+  --success-bg:      rgba(22, 163, 74, 0.08);
+  --success-border:  rgba(22, 163, 74, 0.2);
+  --warning:         #ca8a04;
+  --warning-bg:      rgba(202, 138, 4, 0.08);
+  --warning-border:  rgba(202, 138, 4, 0.2);
+  --input-bg:        #f5f5fa;
+  --shadow:          rgba(0, 0, 0, 0.06);
+  --slider-track:    #c8c8d8;
+}
+
+/* High-contrast theme — maximum readability */
+html.high-contrast {
+  --background:      #0a0a14;
+  --surface:         #141428;
+  --surface-hover:   #1e1e38;
+  --border:          #4a4a6a;
+  --primary:         #818cf8;
+  --primary-hover:   #a5b4fc;
+  --accent:          #fbbf24;
+  --muted:           #a0a0c0;
+  --text:            #f5f5ff;
+  --text-secondary:  #d0d0e8;
+  --text-on-primary: #000000;
+  --danger:          #f87171;
+  --danger-bg:       rgba(248, 113, 113, 0.15);
+  --danger-border:   rgba(248, 113, 113, 0.3);
+  --success:         #4ade80;
+  --success-bg:      rgba(74, 222, 128, 0.15);
+  --success-border:  rgba(74, 222, 128, 0.3);
+  --warning:         #facc15;
+  --warning-bg:      rgba(250, 204, 21, 0.15);
+  --warning-border:  rgba(250, 204, 21, 0.3);
+  --input-bg:        #0e0e1e;
+  --shadow:          rgba(0, 0, 0, 0.5);
+  --slider-track:    #4a4a6a;
+}
+
+/* ───────────────────────────────────────────────
+   Base styles
+   ─────────────────────────────────────────────── */
+
+body {
+  background: var(--background);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Disable transitions on initial load to avoid paint thrashing.
+   The .theme-ready class is added by ThemeProvider after first paint. */
+html.theme-ready body, html.theme-ready nav, html.theme-ready main,
+html.theme-ready div, html.theme-ready section, html.theme-ready aside,
+html.theme-ready button, html.theme-ready input, html.theme-ready textarea,
+html.theme-ready a, html.theme-ready span, html.theme-ready p,
+html.theme-ready h1, html.theme-ready h2, html.theme-ready h3, html.theme-ready h4,
+html.theme-ready table, html.theme-ready th, html.theme-ready td,
+html.theme-ready tr, html.theme-ready label {
+  transition: background-color 0.2s ease-in-out,
+              border-color 0.2s ease-in-out,
+              color 0.2s ease-in-out,
+              box-shadow 0.2s ease-in-out;
+}
+
+/* Focus ring — accessible keyboard navigation */
+*:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Input focus glow */
+input[type="text"],
+input[type="password"],
+input[type="search"],
+textarea {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+textarea:focus {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+/* Button press feedback */
+button {
+  transition: all 0.15s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Range input */
+input[type="range"] {
+  transition: opacity 0.15s ease;
+}
+
+input[type="range"]:hover {
+  opacity: 0.9;
+}
+
+/* Bookmark tag drop animation */
+@keyframes bookmarkDrop {
+  0% { transform: translateY(-10px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.animate-bookmark-drop {
+  animation: bookmarkDrop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* Selection */
+::selection {
+  background: rgba(99, 102, 241, 0.3);
+  color: var(--text);
+}
+
+/* ───────────────────────────────────────────────
+   Theme-aware utility overrides for Tailwind
+   ─────────────────────────────────────────────── */
+@layer utilities {
+  .text-theme {
+    color: var(--text);
+  }
+  .text-theme-secondary {
+    color: var(--text-secondary);
+  }
+  .bg-input {
+    background-color: var(--input-bg);
+  }
+  .bg-slider-track {
+    background-color: var(--slider-track);
+  }
+}

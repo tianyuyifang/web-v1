@@ -1,0 +1,24 @@
+# Music files (too large for GitHub)
+music/
+
+# Dependencies
+node_modules/
+
+# Next.js build
+frontend/.next/
+
+# Environment files
+.env
+backend/.env
+
+# Database dumps
+*.dump
+*.sql
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+backend/venv/
+*.tar.gz

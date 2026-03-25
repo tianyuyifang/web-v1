@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PENDING
+  MEMBER
+  ADMIN
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  username     String     @unique
+  passwordHash String     @map("password_hash")
+  role         Role       @default(PENDING)
+  preferences  Json?      @default("{}") @db.JsonB
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  playlists        Playlist[]
+  clips            Clip[]
+  likes            Like[]
+  sharedPlaylists  PlaylistShare[]
+  copyPermissions  PlaylistCopyPermission[]
+
+  @@map("users")
+}
+
+model Song {
+  id                   String   @id @default(uuid()) @db.Uuid
+  title                String
+  artist               String
+  duration             Int?
+  filePath             String   @map("file_path")
+  lyrics               String?
+  starts               String?
+
+  titlePinyin          String?  @map("title_pinyin")
+  titlePinyinInitials  String?  @map("title_pinyin_initials")
+  titlePinyinConcat    String?  @map("title_pinyin_concat")
+  artistPinyin         String?  @map("artist_pinyin")
+  artistPinyinInitials String?  @map("artist_pinyin_initials")
+  artistPinyinConcat   String?  @map("artist_pinyin_concat")
+
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  songArtists          SongArtist[]
+  clips                Clip[]
+
+  @@map("songs")
+}
+
+model SongArtist {
+  id                   String @id @default(uuid()) @db.Uuid
+  songId               String @map("song_id") @db.Uuid
+  artistName           String @map("artist_name")
+  artistPinyin         String? @map("artist_pinyin")
+  artistPinyinInitials String? @map("artist_pinyin_initials")
+  artistPinyinConcat   String? @map("artist_pinyin_concat")
+  position             Int    @default(0)
+
+  song                 Song   @relation(fields: [songId], references: [id], onDelete: Cascade)
+
+  @@index([songId])
+  @@map("song_artists")
+}
+
+model Clip {
+  id        String   @id @default(uuid()) @db.Uuid
+  songId    String   @map("song_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  start     Int
+  length    Int      @default(20)
+  filePath  String?  @map("file_path")
+  lyrics    String?
+  isGlobal  Boolean  @default(true) @map("is_global")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  song          Song           @relation(fields: [songId], references: [id], onDelete: Cascade)
+  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  playlistClips PlaylistClip[]
+  likes         Like[]
+
+  @@index([songId, userId])
+  @@index([songId, start])
+  @@map("clips")
+}
+
+model Playlist {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  name                String
+  description         String?
+  isPublic            Boolean  @default(false) @map("is_public")
+
+  namePinyin          String?  @map("name_pinyin")
+  namePinyinInitials  String?  @map("name_pinyin_initials")
+
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playlistClips       PlaylistClip[]
+  likes               Like[]
+  shares              PlaylistShare[]
+  copyPermissions     PlaylistCopyPermission[]
+
+  @@map("playlists")
+}
+
+model PlaylistShare {
+  id         String   @id @default(uuid()) @db.Uuid
+  playlistId String   @map("playlist_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([playlistId, userId])
+  @@map("playlist_shares")
+}
+
+model PlaylistCopyPermission {
+  id         String   @id @default(uuid()) @db.Uuid
+  playlistId String   @map("playlist_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([playlistId, userId])
+  @@map("playlist_copy_permissions")
+}
+
+model PlaylistClip {
+  id         String   @id @default(uuid()) @db.Uuid
+  playlistId String   @map("playlist_id") @db.Uuid
+  clipId     String   @map("clip_id") @db.Uuid
+  position   Int
+
+  speed        Float    @default(1.0)
+  pitch        Int      @default(0)
+  colorTag     String?  @map("color_tag")
+  comment      String?
+  sectionLabel String?  @map("section_label")
+
+  addedAt    DateTime @default(now()) @map("added_at") @db.Timestamptz
+
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  clip       Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+
+  @@unique([playlistId, clipId])
+  @@index([clipId])
+  @@map("playlist_clips")
+}
+
+model Like {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  playlistId String   @map("playlist_id") @db.Uuid
+  clipId     String   @map("clip_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  clip       Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, playlistId, clipId])
+  @@index([playlistId, clipId])
+  @@index([userId, playlistId])
+  @@map("likes")
+}

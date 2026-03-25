@@ -93,10 +93,10 @@ export default memo(function PlayerBox({
 
         {/* Title row: title + artist on same line */}
         <div className="mb-2.5 flex items-baseline gap-2 pr-8">
-          <h3 className="min-w-0 shrink truncate text-lg font-semibold leading-tight" style={{ color: "var(--text)" }}>
+          <h3 className="shrink-0 text-lg font-semibold leading-tight" style={{ color: "var(--text)" }}>
             {song.title}
           </h3>
-          <span className="shrink-0 text-xs text-muted">{song.artist}</span>
+          <span className="min-w-0 shrink truncate text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
         </div>
 
         {/* Clip switcher in edit mode */}
@@ -196,11 +196,11 @@ export default memo(function PlayerBox({
           </div>
         )}
 
-        {/* Comment — editable in normal mode */}
+        {/* Comment — editable in both modes */}
         <ClipComment
           comment={comment}
           onChange={(c) => onUpdate?.(clipId, { comment: c })}
-          editable={!editMode}
+          editable
         />
       </div>
 

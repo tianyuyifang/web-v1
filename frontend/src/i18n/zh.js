@@ -99,6 +99,8 @@ export default {
   columnsLabel: "{n} 列",
   columnsPerRow: "每行显示",
   unlikeAll: "取消全部喜欢",
+  unlikeAllTitle: "取消全部喜欢",
+  unlikeAllConfirm: "确定要取消该列表中所有片段的喜欢吗？",
   compactView: "列表",
   fullView: "卡片",
   batch: "批量",
@@ -210,6 +212,7 @@ export default {
   clipRange: "片段：",
   adding: "添加中...",
   addToList: "添加到列表",
+  forceRegenerate: "强制重新生成",
   createClipFailed: "创建片段失败",
 
   // Player box
@@ -220,6 +223,7 @@ export default {
   // Sections
   addSection: "添加分区",
   sectionLabelPrompt: "输入分区名称",
+  sectionLabelPlaceholder: "例如：副歌、前奏...",
 
   // Color tag
   clear: "清除",

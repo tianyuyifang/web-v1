@@ -7,8 +7,22 @@ import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import VolumeControl from "@/components/player/VolumeControl";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
+import { getToken } from "@/lib/auth";
+
+function checkIsAdmin() {
+  try {
+    const token = getToken();
+    if (!token) return false;
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.role === "ADMIN";
+  } catch {
+    return false;
+  }
+}
+
 export default function ClipCreator({ song, onClose, onClipCreated }) {
   const { t } = useLanguage();
+  const isAdmin = checkIsAdmin();
   const length = 20;
   const [start, setStart] = useState(0);
   const [currentTime, setCurrentTime] = useState(0); // absolute position in song
@@ -120,11 +134,11 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
     setStart(Math.floor(currentTime));
   }, [currentTime]);
 
-  const handleCreate = async () => {
+  const handleCreate = async (force = false) => {
     setCreating(true);
     setError("");
     try {
-      const res = await clipsAPI.create({ songId: song.id, start, length });
+      const res = await clipsAPI.create({ songId: song.id, start, length, ...(force && { force: true }) });
       onClipCreated(res.data);
     } catch (err) {
       setError(err.response?.data?.message || t("createClipFailed"));
@@ -139,7 +153,7 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-theme">
           {song.title}
-          <span className="ml-2 font-normal text-muted">{song.artist}</span>
+          <span className="ml-2 font-normal text-muted">{song.artist.replace(/_/g, "/")}</span>
         </h3>
         {onClose && (
           <button onClick={onClose} className="text-xs text-muted hover:text-theme">
@@ -228,12 +242,21 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
       {/* Action buttons */}
       <div className="flex gap-2 border-t border-border pt-3">
         <button
-          onClick={handleCreate}
+          onClick={() => handleCreate(false)}
           disabled={creating}
           className="rounded-lg bg-primary px-3 py-1.5 text-sm text-white hover:bg-primary-hover disabled:opacity-50"
         >
           {creating ? t("adding") : t("addToList")}
         </button>
+        {isAdmin && (
+          <button
+            onClick={() => handleCreate(true)}
+            disabled={creating}
+            className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-sm text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
+          >
+            {creating ? t("adding") : t("forceRegenerate")}
+          </button>
+        )}
       </div>
     </div>
   );

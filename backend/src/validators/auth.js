@@ -24,7 +24,7 @@ const updatePreferencesSchema = z.object({
   preferences: z.object({
     language: z.enum(['zh', 'en']).optional(),
     theme: z.enum(['dark', 'light', 'high-contrast']).optional(),
-  }).passthrough(),
+  }),
 });
 
 module.exports = { registerSchema, loginSchema, changePasswordSchema, changeUsernameSchema, updatePreferencesSchema };

@@ -14,7 +14,10 @@ async function getSongFilePath(songId) {
   });
   if (!song) throw new NotFoundError('Song');
 
-  const fullPath = path.join(config.mp3BasePath, song.filePath);
+  const fullPath = path.resolve(config.mp3BasePath, song.filePath);
+  if (!fullPath.startsWith(path.resolve(config.mp3BasePath))) {
+    throw new NotFoundError('Audio file');
+  }
   if (!fs.existsSync(fullPath)) {
     throw new NotFoundError('Audio file');
   }
@@ -33,7 +36,10 @@ async function getClipFilePath(clipId) {
   if (!clip) throw new NotFoundError('Clip');
   if (!clip.filePath) throw new NotFoundError('Clip audio file');
 
-  const fullPath = path.join(config.clipsBasePath, clip.filePath);
+  const fullPath = path.resolve(config.clipsBasePath, clip.filePath);
+  if (!fullPath.startsWith(path.resolve(config.clipsBasePath))) {
+    throw new NotFoundError('Clip audio file');
+  }
   if (!fs.existsSync(fullPath)) {
     throw new NotFoundError('Clip audio file');
   }

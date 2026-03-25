@@ -36,6 +36,7 @@ export default function PlaylistPage() {
   const [showShare, setShowShare] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPublicConfirm, setShowPublicConfirm] = useState(false);
+  const [showUnlikeAllConfirm, setShowUnlikeAllConfirm] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
   const [highlightedClipId, setHighlightedClipId] = useState(null);
 
@@ -212,7 +213,7 @@ export default function PlaylistPage() {
             onColumnChange={handleColumnChange}
             onCopy={handleCopy}
             onUpdatePlaylist={handleUpdatePlaylist}
-            onUnlikeAll={handleUnlikeAll}
+            onUnlikeAll={() => setShowUnlikeAllConfirm(true)}
             onToggleCompact={() => setCompactView((v) => !v)}
             onToggleBatch={() => {
               setBatchMode((v) => !v);
@@ -295,6 +296,18 @@ export default function PlaylistPage() {
           danger
           onConfirm={handleDeleteConfirm}
           onCancel={() => setShowDeleteConfirm(false)}
+        />
+      )}
+
+      {showUnlikeAllConfirm && (
+        <ConfirmDialog
+          title={t("unlikeAllTitle")}
+          message={t("unlikeAllConfirm")}
+          confirmLabel={t("confirm")}
+          cancelLabel={t("cancel")}
+          danger
+          onConfirm={() => { handleUnlikeAll(); setShowUnlikeAllConfirm(false); }}
+          onCancel={() => setShowUnlikeAllConfirm(false)}
         />
       )}
 

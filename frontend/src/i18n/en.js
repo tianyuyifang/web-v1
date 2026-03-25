@@ -99,6 +99,8 @@ export default {
   columnsLabel: "{n} columns",
   columnsPerRow: "Columns per row",
   unlikeAll: "Unlike All",
+  unlikeAllTitle: "Unlike All",
+  unlikeAllConfirm: "Are you sure you want to unlike all clips in this playlist?",
   compactView: "List",
   fullView: "Cards",
   batch: "Batch",
@@ -210,6 +212,7 @@ export default {
   clipRange: "Clip:",
   adding: "Adding...",
   addToList: "Add to List",
+  forceRegenerate: "Force Regenerate",
   createClipFailed: "Failed to create clip",
 
   // Player box
@@ -220,6 +223,7 @@ export default {
   // Sections
   addSection: "Add section",
   sectionLabelPrompt: "Enter section name",
+  sectionLabelPlaceholder: "e.g. Chorus, Intro...",
 
   // Color tag
   clear: "Clear",

@@ -30,7 +30,9 @@ async function streamFile(filePath, req, res, { isClip = false } = {}) {
       'Cache-Control': cacheControl,
     });
 
-    fs.createReadStream(filePath, { start, end }).pipe(res);
+    const stream = fs.createReadStream(filePath, { start, end });
+    stream.on('error', () => { if (!res.headersSent) res.sendStatus(500); });
+    stream.pipe(res);
   } else {
     res.writeHead(200, {
       'Content-Length': fileSize,
@@ -39,7 +41,9 @@ async function streamFile(filePath, req, res, { isClip = false } = {}) {
       'Cache-Control': cacheControl,
     });
 
-    fs.createReadStream(filePath).pipe(res);
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', () => { if (!res.headersSent) res.sendStatus(500); });
+    stream.pipe(res);
   }
 }
 

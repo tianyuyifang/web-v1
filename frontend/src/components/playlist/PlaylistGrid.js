@@ -21,6 +21,7 @@ import PlayerBox from "@/components/player/PlayerBox";
 import SpeedControl from "@/components/player/SpeedControl";
 import PitchControl from "@/components/player/PitchControl";
 import ColorTag from "@/components/player/ColorTag";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 function SortableCompactRow({ playlistClip, onRemove }) {
@@ -41,7 +42,7 @@ function SortableCompactRow({ playlistClip, onRemove }) {
       <span className="w-6 shrink-0 text-right text-xs text-muted">{playlistClip.position + 1}.</span>
       <div className="min-w-0 flex-1">
         <span className="text-sm font-medium text-theme">{clip.song.title}</span>
-        <span className="ml-2 text-xs text-muted">{clip.song.artist}</span>
+        <span className="ml-2 text-xs text-muted">{clip.song.artist.replace(/_/g, "/")}</span>
       </div>
       {onRemove && (
         <button
@@ -72,6 +73,7 @@ export default function PlaylistGrid({
   onReorder,
 }) {
   const { t } = useLanguage();
+  const [sectionPromptClipId, setSectionPromptClipId] = useState(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -258,7 +260,7 @@ export default function PlaylistGrid({
               <span className="w-6 shrink-0 text-right text-xs text-muted">{pc.position + 1}.</span>
               <div className="min-w-0 flex-1">
                 <span className="text-sm font-medium text-theme">{pc.clip.song.title}</span>
-                <span className="ml-2 text-xs text-muted">{pc.clip.song.artist}</span>
+                <span className="ml-2 text-xs text-muted">{pc.clip.song.artist.replace(/_/g, "/")}</span>
               </div>
               {pc.colorTag && (
                 <div className="flex gap-1">
@@ -351,15 +353,14 @@ export default function PlaylistGrid({
     return rows.map((row, ri) => (
       <Fragment key={row[0].clipId}>
         {ri > 0 && (
-          <button
-            onClick={() => {
-              const label = prompt(t("sectionLabelPrompt"));
-              if (label?.trim()) onClipUpdated(row[0].clipId, { sectionLabel: label.trim() });
-            }}
-            className="w-full py-1 text-center text-xs text-muted opacity-0 transition-opacity hover:opacity-100"
-          >
-            + {t("addSection")}
-          </button>
+          <div className="flex justify-center py-1 opacity-0 transition-opacity hover:opacity-100">
+            <button
+              onClick={() => setSectionPromptClipId(row[0].clipId)}
+              className="rounded border border-border bg-surface px-2 py-0.5 text-xs text-muted transition-colors hover:border-primary hover:text-theme"
+            >
+              + {t("addSection")}
+            </button>
+          </div>
         )}
         <div className={gridClass} style={gridStyle}>
           {row.map((pc) => (
@@ -389,6 +390,22 @@ export default function PlaylistGrid({
           {renderSectionClips(section.clips)}
         </Fragment>
       ))}
+
+      {sectionPromptClipId && (
+        <ConfirmDialog
+          title={t("addSection")}
+          message={t("sectionLabelPrompt")}
+          confirmLabel={t("confirm")}
+          cancelLabel={t("cancel")}
+          input
+          inputPlaceholder={t("sectionLabelPlaceholder")}
+          onConfirm={(label) => {
+            if (label) onClipUpdated(sectionPromptClipId, { sectionLabel: label });
+            setSectionPromptClipId(null);
+          }}
+          onCancel={() => setSectionPromptClipId(null)}
+        />
+      )}
     </div>
   );
 }

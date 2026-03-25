@@ -57,7 +57,7 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium text-theme">{pc.clip.song.title}</p>
                 <p className="truncate text-xs text-muted">
-                  {pc.clip.song.artist} · {formatDuration(pc.clip.start)}
+                  {pc.clip.song.artist.replace(/_/g, "/")} · {formatDuration(pc.clip.start)}
                 </p>
               </div>
               <LikeButton playlistId={playlistId} clipId={pc.clipId} />

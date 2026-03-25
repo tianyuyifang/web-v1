@@ -112,6 +112,7 @@ model Playlist {
   shares              PlaylistShare[]
   copyPermissions     PlaylistCopyPermission[]
 
+  @@index([userId])
   @@map("playlists")
 }
 

@@ -87,7 +87,7 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onClipS
                           {song.title}
                         </p>
                         <p className="text-xs text-muted">
-                          {song.artist} · {formatDuration(song.duration)}
+                          {song.artist.replace(/_/g, "/")} · {formatDuration(song.duration)}
                         </p>
                       </div>
                       {(!song.clips || song.clips.length === 0) && (

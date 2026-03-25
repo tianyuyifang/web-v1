@@ -68,7 +68,7 @@ export default function SongTable({
               className="grid grid-cols-[1fr_1fr_80px_80px_140px] items-center gap-2 border-b border-border px-4 text-sm hover:bg-surface-hover"
             >
               <span className="truncate text-theme">{song.title}</span>
-              <span className="truncate text-muted">{song.artist}</span>
+              <span className="truncate text-muted">{song.artist.replace(/_/g, "/")}</span>
               <span className="text-muted">
                 {formatDuration(song.duration)}
               </span>

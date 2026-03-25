@@ -30,10 +30,15 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
 
   // Admin force-regenerate: re-clip audio and update lyrics from current song file
   if (clip && force && userRole === 'ADMIN') {
+    const fs = require('fs');
     const clipLyrics = sliceLRC(song.lyrics, start, start + length);
     const clipFilename = buildClipFilename(song, start);
     const sourcePath = path.join(config.mp3BasePath, song.filePath);
     const outputPath = path.join(config.clipsBasePath, clipFilename);
+
+    // Delete old clip file so clipAudio doesn't skip it
+    try { fs.unlinkSync(outputPath); } catch {}
+    try { fs.unlinkSync(outputPath.replace(/\.mp3$/i, '.lrc')); } catch {}
 
     clipAudio({ sourcePath, outputPath, start, length, lyrics: clipLyrics });
 

@@ -78,8 +78,8 @@ export default function PlaylistHeader({
                 </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs ${
                   playlist.isPublic
-                    ? "bg-green-500/15 text-green-400"
-                    : "bg-red-500/15 text-red-400"
+                    ? "bg-green-600 text-white"
+                    : "bg-red-600 text-white"
                 }`}>
                   {playlist.isPublic ? t("publicLabel") : t("privateLabel")}
                 </span>

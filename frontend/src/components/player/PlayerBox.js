@@ -25,8 +25,8 @@ export default memo(function PlayerBox({
   onRemove,
   onSwap,
   position,
-  dragListeners,
-  dragAttributes,
+  totalClips,
+  onMove,
 }) {
   const { t } = useLanguage();
   const [showNewClip, setShowNewClip] = useState(false);
@@ -88,19 +88,35 @@ export default memo(function PlayerBox({
       />
 
       <div className="px-4 pb-3 pt-4">
-        {/* Number + drag handle */}
+        {/* Position number / move-to input */}
         {position != null && (
-          <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted">
-            {dragListeners && (
-              <span
-                {...dragAttributes}
-                {...dragListeners}
-                className="cursor-grab touch-none text-base text-muted hover:text-theme"
-              >
-                ⠿
-              </span>
+          <div className="mb-1.5 flex items-center gap-1 text-xs text-muted">
+            {editMode && onMove ? (
+              <input
+                type="number"
+                defaultValue={position}
+                min={1}
+                max={totalClips || 999}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const target = parseInt(e.target.value, 10);
+                    if (target >= 1 && target !== position) {
+                      onMove(playlistClip.clipId, position - 1, target - 1);
+                    }
+                    e.target.blur();
+                  }
+                }}
+                onBlur={(e) => {
+                  const target = parseInt(e.target.value, 10);
+                  if (target >= 1 && target !== position) {
+                    onMove(playlistClip.clipId, position - 1, target - 1);
+                  }
+                }}
+                className="w-10 rounded border border-border bg-background px-1 py-0.5 text-center text-xs text-theme focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+            ) : (
+              <span>{position}.</span>
             )}
-            {position}.
           </div>
         )}
 

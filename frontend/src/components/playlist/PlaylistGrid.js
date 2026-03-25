@@ -12,7 +12,6 @@ import {
 import {
   SortableContext,
   verticalListSortingStrategy,
-  rectSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -53,36 +52,6 @@ function SortableCompactRow({ playlistClip, onRemove }) {
           ✕
         </button>
       )}
-    </div>
-  );
-}
-
-function SortablePlayerBox({ playlistClip, playlistId, highlightedClipId, onClipUpdated, handleRemove, onClipSwapped }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: playlistClip.clipId });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    position: "relative",
-    zIndex: isDragging ? 50 : undefined,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style}>
-      <PlayerBox
-        playlistClip={playlistClip}
-        playlistId={playlistId}
-        editMode
-        highlighted={highlightedClipId === playlistClip.clipId}
-        onUpdate={onClipUpdated}
-        onRemove={handleRemove}
-        onSwap={onClipSwapped}
-        position={playlistClip.position + 1}
-        dragListeners={listeners}
-        dragAttributes={attributes}
-      />
     </div>
   );
 }
@@ -143,6 +112,24 @@ export default function PlaylistGrid({
     const newIndex = clips.findIndex((c) => c.clipId === over.id);
     const [moved] = clips.splice(oldIndex, 1);
     clips.splice(newIndex, 0, moved);
+
+    const reordered = clips.map((c, i) => ({ ...c, position: i }));
+    onReorder(reordered);
+
+    try {
+      await playlistsAPI.reorderClips(playlist.id, { clipIds: reordered.map((c) => c.clipId) });
+    } catch {
+      // silent
+    }
+  }, [playlist, onReorder]);
+
+  const handleMove = useCallback(async (clipId, fromIndex, toIndex) => {
+    const clips = [...playlist.clips];
+    const clampedTo = Math.max(0, Math.min(clips.length - 1, toIndex));
+    if (fromIndex === clampedTo) return;
+
+    const [moved] = clips.splice(fromIndex, 1);
+    clips.splice(clampedTo, 0, moved);
 
     const reordered = clips.map((c, i) => ({ ...c, position: i }));
     onReorder(reordered);
@@ -393,14 +380,18 @@ export default function PlaylistGrid({
         </div>
         <div className={gridClass} style={gridStyle}>
           {row.map((pc) => (
-            <SortablePlayerBox
+            <PlayerBox
               key={pc.clipId}
               playlistClip={pc}
               playlistId={playlist.id}
-              highlightedClipId={highlightedClipId}
-              onClipUpdated={onClipUpdated}
-              handleRemove={handleRemove}
-              onClipSwapped={onClipSwapped}
+              editMode
+              highlighted={highlightedClipId === pc.clipId}
+              onUpdate={onClipUpdated}
+              onRemove={handleRemove}
+              onSwap={onClipSwapped}
+              position={pc.position + 1}
+              totalClips={playlist.clips.length}
+              onMove={handleMove}
             />
           ))}
         </div>
@@ -435,16 +426,6 @@ export default function PlaylistGrid({
       )}
     </div>
   );
-
-  if (editMode) {
-    return (
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={filteredClips.map((c) => c.clipId)} strategy={rectSortingStrategy}>
-          {gridContent}
-        </SortableContext>
-      </DndContext>
-    );
-  }
 
   return gridContent;
 }

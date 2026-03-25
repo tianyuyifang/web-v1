@@ -11,9 +11,10 @@ frontend/.next/
 .env
 backend/.env
 
-# Database dumps
+# Database dumps (but not Prisma migration .sql files)
 *.dump
-*.sql
+/*.sql
+/backend/*.sql
 
 # OS files
 .DS_Store

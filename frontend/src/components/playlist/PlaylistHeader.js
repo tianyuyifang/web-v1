@@ -46,7 +46,7 @@ export default function PlaylistHeader({
   };
 
   return (
-    <div className="mb-4 space-y-3">
+    <div className="mb-4 space-y-1.5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0 shrink-0">
           {editMode ? (
@@ -114,50 +114,62 @@ export default function PlaylistHeader({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <button
-            onClick={onReturn}
-            className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
-            style={{ color: "var(--text)" }}
-          >
-            {t("return")}
-          </button>
-
-          {playlist.isOwner && (
+        <div className="flex min-w-0 flex-col items-end gap-1.5">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button
-              onClick={onUnlikeAll}
-              className="rounded-lg border border-red-500/30 px-3.5 py-1.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
-            >
-              {t("unlikeAll")}
-            </button>
-          )}
-
-          {!editMode && (
-            <button
-              onClick={onCompare}
+              onClick={onReturn}
               className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
               style={{ color: "var(--text)" }}
             >
-              {t("comparePlaylist")}
+              {t("return")}
             </button>
-          )}
 
-          {playlist.isOwner && (
-            <button
-              onClick={onToggleEditMode}
-              className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                editMode
-                  ? "bg-accent text-black shadow-sm"
-                  : "border border-border bg-surface hover:bg-surface-hover"
-              }`}
-              style={editMode ? {} : { color: "var(--text)" }}
-            >
-              {editMode ? t("done") : t("edit")}
-            </button>
-          )}
+            {playlist.isOwner && (
+              <button
+                onClick={onUnlikeAll}
+                className="rounded-lg border border-red-500/30 px-3.5 py-1.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
+              >
+                {t("unlikeAll")}
+              </button>
+            )}
+
+            {!editMode && (
+              <button
+                onClick={onCompare}
+                className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
+                style={{ color: "var(--text)" }}
+              >
+                {t("comparePlaylist")}
+              </button>
+            )}
+
+            {playlist.isOwner && (
+              <button
+                onClick={onToggleEditMode}
+                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  editMode
+                    ? "bg-accent text-black shadow-sm"
+                    : "border border-border bg-surface hover:bg-surface-hover"
+                }`}
+                style={editMode ? {} : { color: "var(--text)" }}
+              >
+                {editMode ? t("done") : t("edit")}
+              </button>
+            )}
+
+            {!playlist.isOwner && playlist.canCopy && (
+              <button
+                onClick={onCopy}
+                className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium hover:bg-surface-hover"
+                style={{ color: "var(--text)" }}
+              >
+                {t("copyPlaylist")}
+              </button>
+            )}
+          </div>
 
           {editMode && playlist.isOwner && (
-            <>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <button
                 onClick={onToggleCompact}
                 className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
@@ -210,17 +222,7 @@ export default function PlaylistHeader({
               >
                 {t("delete")}
               </button>
-            </>
-          )}
-
-          {!playlist.isOwner && playlist.canCopy && (
-            <button
-              onClick={onCopy}
-              className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium hover:bg-surface-hover"
-              style={{ color: "var(--text)" }}
-            >
-              {t("copyPlaylist")}
-            </button>
+            </div>
           )}
         </div>
       </div>

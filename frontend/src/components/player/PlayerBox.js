@@ -25,6 +25,8 @@ export default memo(function PlayerBox({
   onRemove,
   onSwap,
   position,
+  dragListeners,
+  dragAttributes,
 }) {
   const { t } = useLanguage();
   const [showNewClip, setShowNewClip] = useState(false);
@@ -86,9 +88,20 @@ export default memo(function PlayerBox({
       />
 
       <div className="px-4 pb-3 pt-4">
-        {/* Number */}
+        {/* Number + drag handle */}
         {position != null && (
-          <div className="mb-1.5 text-xs text-muted">{position}.</div>
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted">
+            {dragListeners && (
+              <span
+                {...dragAttributes}
+                {...dragListeners}
+                className="cursor-grab touch-none text-base text-muted hover:text-theme"
+              >
+                ⠿
+              </span>
+            )}
+            {position}.
+          </div>
         )}
 
         {/* Title row: title + artist on same line */}

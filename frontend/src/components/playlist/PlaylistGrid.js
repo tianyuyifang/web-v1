@@ -12,6 +12,7 @@ import {
 import {
   SortableContext,
   verticalListSortingStrategy,
+  rectSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -52,6 +53,36 @@ function SortableCompactRow({ playlistClip, onRemove }) {
           ✕
         </button>
       )}
+    </div>
+  );
+}
+
+function SortablePlayerBox({ playlistClip, playlistId, highlightedClipId, onClipUpdated, handleRemove, onClipSwapped }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: playlistClip.clipId });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: "relative",
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <PlayerBox
+        playlistClip={playlistClip}
+        playlistId={playlistId}
+        editMode
+        highlighted={highlightedClipId === playlistClip.clipId}
+        onUpdate={onClipUpdated}
+        onRemove={handleRemove}
+        onSwap={onClipSwapped}
+        position={playlistClip.position + 1}
+        dragListeners={listeners}
+        dragAttributes={attributes}
+      />
     </div>
   );
 }
@@ -362,16 +393,14 @@ export default function PlaylistGrid({
         </div>
         <div className={gridClass} style={gridStyle}>
           {row.map((pc) => (
-            <PlayerBox
+            <SortablePlayerBox
               key={pc.clipId}
               playlistClip={pc}
               playlistId={playlist.id}
-              editMode
-              highlighted={highlightedClipId === pc.clipId}
-              onUpdate={onClipUpdated}
-              onRemove={handleRemove}
-              onSwap={onClipSwapped}
-              position={pc.position + 1}
+              highlightedClipId={highlightedClipId}
+              onClipUpdated={onClipUpdated}
+              handleRemove={handleRemove}
+              onClipSwapped={onClipSwapped}
             />
           ))}
         </div>
@@ -380,7 +409,7 @@ export default function PlaylistGrid({
   };
 
   // Full card grid view with sections
-  return (
+  const gridContent = (
     <div>
       {sectionGroups.map((section, si) => (
         <Fragment key={section.clipId || `section-${si}`}>
@@ -406,4 +435,16 @@ export default function PlaylistGrid({
       )}
     </div>
   );
+
+  if (editMode) {
+    return (
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={filteredClips.map((c) => c.clipId)} strategy={rectSortingStrategy}>
+          {gridContent}
+        </SortableContext>
+      </DndContext>
+    );
+  }
+
+  return gridContent;
 }

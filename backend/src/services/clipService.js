@@ -23,32 +23,51 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
     throw new ValidationError({ start: ['Start time exceeds song duration'] });
   }
 
-  // Check if a global clip already exists at this start time
-  let clip = await prisma.clip.findFirst({
-    where: { songId, start, isGlobal: true },
-  });
-
-  // Admin force-regenerate: re-clip audio and update lyrics from current song file
-  if (clip && force && userRole === 'ADMIN') {
+  // Admin force-regenerate: find any existing clip at this start time and re-clip
+  if (force && userRole === 'ADMIN') {
     const fs = require('fs');
+    let clip = await prisma.clip.findFirst({ where: { songId, start } });
+
     const clipLyrics = sliceLRC(song.lyrics, start, start + length);
     const clipFilename = buildClipFilename(song, start);
     const sourcePath = path.join(config.mp3BasePath, song.filePath);
     const outputPath = path.join(config.clipsBasePath, clipFilename);
 
-    // Delete old clip file so clipAudio doesn't skip it
+    // Delete old clip file so clipAudio regenerates it
     try { fs.unlinkSync(outputPath); } catch {}
     try { fs.unlinkSync(outputPath.replace(/\.mp3$/i, '.lrc')); } catch {}
 
     clipAudio({ sourcePath, outputPath, start, length, lyrics: clipLyrics });
 
-    clip = await prisma.clip.update({
-      where: { id: clip.id },
-      data: { lyrics: clipLyrics, filePath: clipFilename, length },
-    });
+    if (clip) {
+      // Also delete old file if filename changed
+      if (clip.filePath && clip.filePath !== clipFilename) {
+        const oldPath = path.join(config.clipsBasePath, clip.filePath);
+        try { fs.unlinkSync(oldPath); } catch {}
+        try { fs.unlinkSync(oldPath.replace(/\.mp3$/i, '.lrc')); } catch {}
+      }
+      clip = await prisma.clip.update({
+        where: { id: clip.id },
+        data: { lyrics: clipLyrics, filePath: clipFilename, length },
+      });
+    } else {
+      clip = await prisma.clip.create({
+        data: {
+          songId, start, length,
+          filePath: clipFilename,
+          lyrics: clipLyrics,
+          userId: userId || null,
+          isGlobal: true,
+        },
+      });
+    }
     return clip;
   }
 
+  // Check if a global clip already exists at this start time — reuse it
+  let clip = await prisma.clip.findFirst({
+    where: { songId, start, isGlobal: true },
+  });
   if (clip) return clip;
 
   // Check if this user already has a clip at this start time
@@ -56,7 +75,7 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
     clip = await prisma.clip.findFirst({
       where: { songId, start, userId },
     });
-    if (clip && !force) return clip;
+    if (clip) return clip;
   }
 
   // Slice and adjust lyrics for this clip

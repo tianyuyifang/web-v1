@@ -69,9 +69,21 @@ export default function PlaylistHeader({
             </>
           ) : (
             <>
-              <h1 className="text-xl font-bold sm:text-2xl" style={{ color: "var(--text)" }}>
-                <RichText text={playlist.name} />
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold sm:text-2xl" style={{ color: "var(--text)" }}>
+                  <RichText text={playlist.name} />
+                </h1>
+                <span className="rounded-full bg-surface px-2 py-0.5 text-xs text-muted">
+                  {playlist.clips?.length || 0} {t("clips")}
+                </span>
+                <span className={`rounded-full px-2 py-0.5 text-xs ${
+                  playlist.isPublic
+                    ? "bg-green-500/15 text-green-400"
+                    : "bg-red-500/15 text-red-400"
+                }`}>
+                  {playlist.isPublic ? t("publicLabel") : t("privateLabel")}
+                </span>
+              </div>
               {playlist.description && (
                 <p className="mt-1 text-sm text-muted">
                   <RichText text={playlist.description} />

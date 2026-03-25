@@ -352,16 +352,14 @@ export default function PlaylistGrid({
 
     return rows.map((row, ri) => (
       <Fragment key={row[0].clipId}>
-        {ri > 0 && (
-          <div className="flex justify-center py-1 opacity-0 transition-opacity hover:opacity-100">
-            <button
-              onClick={() => setSectionPromptClipId(row[0].clipId)}
-              className="rounded border border-border bg-surface px-2 py-0.5 text-xs text-muted transition-colors hover:border-primary hover:text-theme"
-            >
-              + {t("addSection")}
-            </button>
-          </div>
-        )}
+        <div className="flex justify-center py-1 opacity-0 transition-opacity hover:opacity-100">
+          <button
+            onClick={() => setSectionPromptClipId(row[0].clipId)}
+            className="rounded border border-border bg-surface px-2 py-0.5 text-xs text-muted transition-colors hover:border-primary hover:text-theme"
+          >
+            + {t("addSection")}
+          </button>
+        </div>
         <div className={gridClass} style={gridStyle}>
           {row.map((pc) => (
             <PlayerBox

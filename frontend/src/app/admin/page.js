@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { adminAPI } from "@/lib/api";
+import { adminAPI, feedbackAPI } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
 import UserTable from "@/components/admin/UserTable";
 import { useLanguage } from "@/components/layout/LanguageProvider";
@@ -12,6 +12,7 @@ export default function AdminPage() {
   const router = useRouter();
   const { user, loading: authLoading, isAdmin } = useAuth();
   const [users, setUsers] = useState([]);
+  const [feedback, setFeedback] = useState([]);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
 
@@ -19,12 +20,25 @@ export default function AdminPage() {
     setFetching(true);
     setError("");
     try {
-      const res = await adminAPI.listUsers();
-      setUsers(res.data.users);
+      const [usersRes, feedbackRes] = await Promise.all([
+        adminAPI.listUsers(),
+        feedbackAPI.list(),
+      ]);
+      setUsers(usersRes.data.users);
+      setFeedback(feedbackRes.data.feedback);
     } catch (err) {
-      setError(err.response?.data?.error?.message || "Failed to load users");
+      setError(err.response?.data?.error?.message || "Failed to load data");
     } finally {
       setFetching(false);
+    }
+  }, []);
+
+  const handleDeleteFeedback = useCallback(async (id) => {
+    try {
+      await feedbackAPI.remove(id);
+      setFeedback((prev) => prev.filter((f) => f.id !== id));
+    } catch {
+      // silent
     }
   }, []);
 
@@ -88,6 +102,52 @@ export default function AdminPage() {
             <span className="ml-1 text-sm font-normal text-muted">({admins.length})</span>
           </h2>
           <UserTable users={admins} onRefresh={fetchUsers} />
+        </section>
+
+        {/* Feedback section */}
+        <section className="rounded-xl border border-border bg-surface p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
+            <span className="inline-block h-2 w-2 rounded-full bg-blue-400" />
+            {t("feedbackAdmin")}
+            <span className="ml-1 text-sm font-normal text-muted">({feedback.length})</span>
+          </h2>
+          {feedback.length === 0 ? (
+            <p className="text-sm text-muted">{t("feedbackEmpty")}</p>
+          ) : (
+            <div className="space-y-2">
+              {feedback.map((f) => {
+                const typeLabel = f.type === "BAD_SONG" ? t("feedbackBadSong")
+                  : f.type === "REQUEST_SONG" ? t("feedbackRequestSong")
+                  : t("feedbackGeneral");
+                const typeColor = f.type === "BAD_SONG" ? "bg-red-500/15 text-red-400"
+                  : f.type === "REQUEST_SONG" ? "bg-blue-500/15 text-blue-400"
+                  : "bg-yellow-500/15 text-yellow-400";
+                return (
+                  <div key={f.id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${typeColor}`}>{typeLabel}</span>
+                        <span className="text-xs text-muted">{f.user.username}</span>
+                        <span className="text-xs text-muted">{new Date(f.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      {f.title && (
+                        <div className="text-sm text-theme">
+                          {f.title}{f.artist ? ` — ${f.artist}` : ""}
+                        </div>
+                      )}
+                      {f.message && <p className="mt-1 text-sm text-muted">{f.message}</p>}
+                    </div>
+                    <button
+                      onClick={() => handleDeleteFeedback(f.id)}
+                      className="shrink-0 text-xs font-medium text-red-400 hover:text-red-300"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
       </div>
     </div>

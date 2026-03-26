@@ -40,6 +40,9 @@ app.use('/api/likes',     authMiddleware, requireApproved, require('./routes/lik
 app.use('/api/stream',    authMiddleware, requireApproved, require('./routes/stream'));
 app.use('/api/users',     authMiddleware, requireApproved, require('./routes/users'));
 
+// Feedback routes (submit = approved users, list/delete = admin)
+app.use('/api/feedback', authMiddleware, requireApproved, require('./routes/feedback'));
+
 // Admin routes (auth + ADMIN role only)
 app.use('/api/admin', authMiddleware, requireRole('ADMIN'), require('./routes/admin'));
 

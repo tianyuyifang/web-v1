@@ -71,6 +71,7 @@ export default function Navbar() {
             {/* Desktop nav */}
             <div className="hidden items-center gap-1 md:flex">
               {navLink("/playlists", t("navPlaylists"))}
+              {navLink("/feedback", t("navFeedback"))}
               {isAdmin && navLink("/admin", t("navAdmin"))}
               {navLink("/settings", t("navSettings"))}
               <button
@@ -101,6 +102,7 @@ export default function Navbar() {
           </div>
           <div className="flex flex-col gap-1">
             {navLink("/playlists", t("navPlaylists"))}
+            {navLink("/feedback", t("navFeedback"))}
             {isAdmin && navLink("/admin", t("navAdmin"))}
             {navLink("/settings", t("navSettings"))}
             <button

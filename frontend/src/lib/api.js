@@ -125,6 +125,13 @@ export const adminAPI = {
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
 };
 
+// --- Feedback ---
+export const feedbackAPI = {
+  submit: (data) => api.post("/feedback", data),
+  list: () => api.get("/feedback"),
+  remove: (id) => api.delete(`/feedback/${id}`),
+};
+
 // --- Streaming ---
 const streamBase = () => {
   const base = "/api";

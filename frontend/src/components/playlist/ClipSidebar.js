@@ -28,13 +28,26 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
     <aside className="sticky top-[5.75rem] hidden max-h-[calc(100vh-5.75rem)] w-64 shrink-0 flex-col self-start rounded-lg border border-border bg-surface lg:flex">
       <div className="shrink-0 border-b border-border px-3 py-2">
         <h2 className="mb-2 text-sm font-semibold text-theme">{t("clipsSidebar")}</h2>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t("filterClipsSidebar")}
-          className="w-full rounded border border-border bg-background px-2 py-1 text-xs text-theme placeholder-muted focus:border-primary focus:outline-none"
-        />
+        <div className="relative">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("filterClipsSidebar")}
+            className="w-full rounded border border-border bg-background px-2 py-1 pr-6 text-xs text-theme placeholder-muted focus:border-primary focus:outline-none"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted hover:text-theme"
+              aria-label="Clear search"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">

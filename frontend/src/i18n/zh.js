@@ -119,6 +119,7 @@ export default {
   // Playlist card
   shared: "已分享",
   public: "公开",
+  private: "私密",
   clip: "个片段",
   clips: "个片段",
 

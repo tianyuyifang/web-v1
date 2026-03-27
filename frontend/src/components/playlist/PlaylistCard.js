@@ -9,7 +9,7 @@ export default function PlaylistCard({ playlist }) {
   const clipCount = playlist.clipCount ?? playlist.clips?.length ?? 0;
 
   const badge = playlist.isOwner
-    ? null
+    ? (playlist.isPublic ? t("public") : t("private"))
     : playlist.isShared
       ? t("shared")
       : t("public");

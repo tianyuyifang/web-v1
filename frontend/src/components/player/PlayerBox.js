@@ -80,10 +80,10 @@ export default memo(function PlayerBox({
       id={`playerbox-${clipId}`}
       className={`relative overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all ${highlightClass}`}
     >
-      {/* Color tag flags — top right, editable in normal mode */}
+      {/* Color tag flags — top right, always editable */}
       <ColorTag
         color={colorTag}
-        editable={!editMode}
+        editable={true}
         onChange={(c) => onUpdate?.(clipId, { colorTag: c })}
       />
 
@@ -121,11 +121,11 @@ export default memo(function PlayerBox({
         )}
 
         {/* Title row: title + artist on same line */}
-        <div className="mb-2.5 flex items-baseline gap-2 pr-8">
+        <div className="mb-2.5 flex min-w-0 items-baseline gap-2 overflow-hidden pr-8">
           <h3 className="shrink-0 text-lg font-semibold leading-tight" style={{ color: "var(--text)" }}>
             {song.title}
           </h3>
-          <span className="min-w-0 shrink truncate text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
+          <span className="min-w-0 truncate text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
         </div>
 
         {/* Clip switcher in edit mode */}

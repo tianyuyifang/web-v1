@@ -237,6 +237,8 @@ export default function PlaylistPage() {
             className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-theme placeholder-muted focus:border-primary focus:outline-none"
           />
 
+          <div id="batch-controls-portal" />
+
           {sections.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {sections.map((s) => (

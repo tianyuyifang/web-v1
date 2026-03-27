@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, Fragment } from "react";
+import { createPortal } from "react-dom";
 
 import {
   DndContext,
@@ -198,11 +199,10 @@ export default function PlaylistGrid({
     return <p className="py-12 text-center text-sm text-muted">{t("noClipsFound")}</p>;
   }
 
-  // Batch mode
-  if (editMode && batchMode) {
-    return (
-      <div>
-        <div className="mb-4 rounded-xl border border-border bg-surface p-4">
+  // Batch controls portal — rendered into sticky header
+  const batchControlsPortal = editMode && batchMode && typeof document !== "undefined" && document.getElementById("batch-controls-portal")
+    ? createPortal(
+        <div className="mt-3 rounded-xl border border-border bg-surface p-4">
           <div className="mb-3 flex flex-wrap items-center gap-3">
             <button
               onClick={() => onSelectedChange(new Set(filteredClips.map((c) => c.clipId)))}
@@ -220,7 +220,6 @@ export default function PlaylistGrid({
               {t("selectedCount").replace("{count}", selectedClips?.size || 0)}
             </span>
           </div>
-
           <div className="flex flex-wrap items-end gap-4">
             <div>
               <label className="mb-1 block text-xs text-muted">{t("speed") || "Speed"}</label>
@@ -258,8 +257,16 @@ export default function PlaylistGrid({
               {t("remove")}
             </button>
           </div>
-        </div>
+        </div>,
+        document.getElementById("batch-controls-portal")
+      )
+    : null;
 
+  // Batch mode
+  if (editMode && batchMode) {
+    return (
+      <div>
+        {batchControlsPortal}
         <div className="rounded-xl border border-border bg-surface">
           {filteredClips.map((pc) => (
             <div

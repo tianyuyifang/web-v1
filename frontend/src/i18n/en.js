@@ -119,6 +119,7 @@ export default {
   // Playlist card
   shared: "Shared",
   public: "Public",
+  private: "Private",
   clip: "clip",
   clips: "clips",
 

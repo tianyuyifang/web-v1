@@ -38,7 +38,7 @@ export default function VolumeControl({ volume, onChange }) {
           </svg>
         )}
       </button>
-      <div className="relative h-1 w-14 cursor-pointer rounded-full bg-border"
+      <div className="relative h-1 w-10 cursor-pointer rounded-full bg-border"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           handleChange({ target: { value: (e.clientX - rect.left) / rect.width } });

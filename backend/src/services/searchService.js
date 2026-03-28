@@ -131,12 +131,23 @@ async function searchPlaylists(query, userId) {
       OR: [
         { namePinyinInitials: { startsWith: query } },
         { namePinyin: { contains: query, mode: 'insensitive' } },
+        { user: { username: { contains: query, mode: 'insensitive' } } },
       ],
     };
   } else if (type === 'full_pinyin') {
-    nameFilter = { namePinyin: { contains: query, mode: 'insensitive' } };
+    nameFilter = {
+      OR: [
+        { namePinyin: { contains: query, mode: 'insensitive' } },
+        { user: { username: { contains: query, mode: 'insensitive' } } },
+      ],
+    };
   } else if (type === 'chinese') {
-    nameFilter = { name: { contains: query, mode: 'insensitive' } };
+    nameFilter = {
+      OR: [
+        { name: { contains: query, mode: 'insensitive' } },
+        { user: { username: { contains: query, mode: 'insensitive' } } },
+      ],
+    };
   }
 
   return prisma.playlist.findMany({

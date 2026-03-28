@@ -54,6 +54,8 @@ export default {
   playlistsPlural: "个列表",
   myPlaylists: "我的列表",
   otherPlaylists: "共享与公开",
+  sharedPlaylists: "共享给我",
+  publicPlaylists: "公开",
   newPlaylist: "+ 新建列表",
   searchPlaylists: "搜索播放列表...",
   noPlaylistsMatch: "没有匹配的播放列表",

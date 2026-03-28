@@ -34,8 +34,12 @@ export default function PlaylistsPage() {
     () => playlists.filter((p) => p.isOwner),
     [playlists]
   );
-  const otherPlaylists = useMemo(
-    () => playlists.filter((p) => !p.isOwner),
+  const sharedPlaylists = useMemo(
+    () => playlists.filter((p) => !p.isOwner && p.isShared),
+    [playlists]
+  );
+  const publicPlaylists = useMemo(
+    () => playlists.filter((p) => !p.isOwner && !p.isShared),
     [playlists]
   );
 
@@ -95,14 +99,28 @@ export default function PlaylistsPage() {
             </section>
           )}
 
-          {/* Shared & Public */}
-          {otherPlaylists.length > 0 && (
+          {/* Shared */}
+          {sharedPlaylists.length > 0 && (
             <section>
               <h2 className="mb-4 text-lg font-semibold" style={{ color: "var(--text)" }}>
-                {t("otherPlaylists")}
+                {t("sharedPlaylists")}
               </h2>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {otherPlaylists.map((playlist) => (
+                {sharedPlaylists.map((playlist) => (
+                  <PlaylistCard key={playlist.id} playlist={playlist} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Public */}
+          {publicPlaylists.length > 0 && (
+            <section>
+              <h2 className="mb-4 text-lg font-semibold" style={{ color: "var(--text)" }}>
+                {t("publicPlaylists")}
+              </h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {publicPlaylists.map((playlist) => (
                   <PlaylistCard key={playlist.id} playlist={playlist} />
                 ))}
               </div>

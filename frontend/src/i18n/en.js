@@ -54,6 +54,8 @@ export default {
   playlistsPlural: "playlists",
   myPlaylists: "My Playlists",
   otherPlaylists: "Shared & Public",
+  sharedPlaylists: "Shared with Me",
+  publicPlaylists: "Public",
   newPlaylist: "+ New Playlist",
   searchPlaylists: "Search playlists...",
   noPlaylistsMatch: "No playlists match your search",

@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { playlistsAPI, likesAPI } from "@/lib/api";
 import usePlayerStore from "@/store/playerStore";
+import usePlaylistLikes from "@/hooks/usePlaylistLikes";
 import { getColumnCount, setColumnCount as saveColumnCount } from "@/lib/utils";
 import PlaylistHeader from "@/components/playlist/PlaylistHeader";
 import PlaylistGrid from "@/components/playlist/PlaylistGrid";
@@ -43,6 +44,9 @@ export default function PlaylistPage() {
   const setLikedClips = usePlayerStore((s) => s.setLikedClips);
   const triggerPlayFromStart = usePlayerStore((s) => s.triggerPlayFromStart);
 
+  // SSE: real-time like updates from other users
+  usePlaylistLikes(id);
+
   useEffect(() => { setColumns(getColumnCount()); }, []);
 
   useEffect(() => {
@@ -52,7 +56,7 @@ export default function PlaylistPage() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([playlistsAPI.getById(id), likesAPI.getAll()])
+    Promise.all([playlistsAPI.getById(id), likesAPI.getAll(id)])
       .then(([playlistRes, likesRes]) => {
         setPlaylist(playlistRes.data);
         setLikedClips(likesRes.data.likes);

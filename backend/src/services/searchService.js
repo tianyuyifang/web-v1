@@ -155,6 +155,7 @@ async function searchPlaylists(query, userId) {
     },
     include: {
       _count: { select: { playlistClips: true } },
+      user: { select: { username: true } },
       shares: { where: { userId }, select: { id: true } },
       copyPermissions: { where: { userId }, select: { id: true } },
     },

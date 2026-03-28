@@ -38,6 +38,7 @@ app.use('/api/clips',     authMiddleware, requireApproved, require('./routes/cli
 app.use('/api/playlists', authMiddleware, requireApproved, require('./routes/playlists'));
 app.use('/api/likes',     authMiddleware, requireApproved, require('./routes/likes'));
 app.use('/api/stream',    authMiddleware, requireApproved, require('./routes/stream'));
+app.use('/api/sse',       authMiddleware, requireApproved, require('./routes/sse'));
 app.use('/api/users',     authMiddleware, requireApproved, require('./routes/users'));
 
 // Feedback routes (submit = approved users, list/delete = admin)

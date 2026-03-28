@@ -18,6 +18,7 @@ async function getUserPlaylists(userId, query) {
     isOwner: p.userId === userId,
     isShared: p.shares.length > 0,
     canCopy: p.copyPermissions.length > 0,
+    ownerName: p.userId !== userId ? p.user.username : undefined,
     clipCount: p._count.playlistClips,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
@@ -182,9 +183,9 @@ async function addClipToPlaylist(playlistId, clipId) {
 }
 
 async function removeClipFromPlaylist(playlistId, clipId, userId) {
-  // Delete likes for this clip in this playlist first (manual cascade)
+  // Delete shared like for this clip in this playlist (manual cascade)
   await prisma.like.deleteMany({
-    where: { playlistId, clipId, userId },
+    where: { playlistId, clipId },
   });
 
   await prisma.playlistClip.delete({

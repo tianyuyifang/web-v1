@@ -12,10 +12,14 @@ router.post('/toggle', async (req, res, next) => {
   }
 });
 
-// GET /api/likes — get user's liked clips
+// GET /api/likes?playlistId=X — get liked clips for a playlist (shared pool)
+// If no playlistId, returns likes across all accessible playlists
 router.get('/', async (req, res, next) => {
   try {
-    const likes = await likeService.getUserLikes(req.user.id);
+    const { playlistId } = req.query;
+    const likes = playlistId
+      ? await likeService.getPlaylistLikes(playlistId)
+      : await likeService.getUserLikes(req.user.id);
     res.json({ likes });
   } catch (err) {
     next(err);

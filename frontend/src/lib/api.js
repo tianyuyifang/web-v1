@@ -112,7 +112,7 @@ export const playlistsAPI = {
 // --- Likes ---
 export const likesAPI = {
   toggle: (data) => api.post("/likes/toggle", data),
-  getAll: () => api.get("/likes"),
+  getAll: (playlistId) => api.get("/likes", { params: playlistId ? { playlistId } : {} }),
   unlikeAll: (playlistId) => api.delete(`/likes/playlist/${playlistId}`),
 };
 
@@ -147,6 +147,11 @@ export const getStreamUrl = (songId) => {
 export const getClipStreamUrl = (clipId) => {
   const { base, token } = streamBase();
   return `${base}/stream/clip/${clipId}${token ? `?token=${token}` : ""}`;
+};
+
+export const getLikesSSEUrl = (playlistId) => {
+  const { base, token } = streamBase();
+  return `${base}/sse/playlists/${playlistId}/likes${token ? `?token=${token}` : ""}`;
 };
 
 export default api;

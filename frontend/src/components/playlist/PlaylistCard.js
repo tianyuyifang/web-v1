@@ -17,8 +17,13 @@ export default function PlaylistCard({ playlist }) {
   return (
     <Link
       href={`/playlists/${playlist.id}`}
-      className="group block rounded-xl border border-border bg-surface p-5 shadow-sm transition-all hover:border-primary/30 hover:bg-surface-hover hover:shadow-md hover:shadow-primary/5"
+      className="group relative block rounded-xl border border-border bg-surface p-5 shadow-sm transition-all hover:border-primary/30 hover:bg-surface-hover hover:shadow-md hover:shadow-primary/5"
     >
+      {playlist.ownerName && (
+        <span className="absolute right-3 top-3 text-sm font-semibold text-primary">
+          {playlist.ownerName}
+        </span>
+      )}
       <h3 className="truncate text-sm font-semibold transition-colors group-hover:text-primary" style={{ color: "var(--text)" }}>
         <RichText text={playlist.name} />
       </h3>

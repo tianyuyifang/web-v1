@@ -276,6 +276,7 @@ export default {
   settings: "设置",
   customizeExperience: "自定义你的使用体验",
   appearance: "外观",
+  colorPalette: "配色",
   language: "语言",
   themeDark: "深色",
   themeDarkDesc: "护眼深色调，适合夜间使用",

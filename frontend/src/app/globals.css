@@ -88,6 +88,37 @@ html.high-contrast {
 }
 
 /* ───────────────────────────────────────────────
+   Color palettes — override primary/accent only
+   ─────────────────────────────────────────────── */
+
+/* Indigo (default) — no class needed, uses :root values */
+
+/* Rose */
+html.palette-rose                          { --primary: #e11d48; --primary-hover: #f43f5e; --accent: #fb923c; }
+html.palette-rose:not(.dark):not(.high-contrast) { --primary: #be123c; --primary-hover: #9f1239; --accent: #ea580c; }
+html.palette-rose.high-contrast            { --primary: #fb7185; --primary-hover: #fda4af; --accent: #fdba74; }
+
+/* Emerald */
+html.palette-emerald                          { --primary: #059669; --primary-hover: #34d399; --accent: #f59e0b; }
+html.palette-emerald:not(.dark):not(.high-contrast) { --primary: #047857; --primary-hover: #065f46; --accent: #d97706; }
+html.palette-emerald.high-contrast            { --primary: #34d399; --primary-hover: #6ee7b7; --accent: #fbbf24; }
+
+/* Amber */
+html.palette-amber                          { --primary: #d97706; --primary-hover: #f59e0b; --accent: #6366f1; }
+html.palette-amber:not(.dark):not(.high-contrast) { --primary: #b45309; --primary-hover: #92400e; --accent: #4f46e5; }
+html.palette-amber.high-contrast            { --primary: #fbbf24; --primary-hover: #fcd34d; --accent: #818cf8; }
+
+/* Cyan */
+html.palette-cyan                          { --primary: #0891b2; --primary-hover: #22d3ee; --accent: #f59e0b; }
+html.palette-cyan:not(.dark):not(.high-contrast) { --primary: #0e7490; --primary-hover: #155e75; --accent: #d97706; }
+html.palette-cyan.high-contrast            { --primary: #22d3ee; --primary-hover: #67e8f9; --accent: #fbbf24; }
+
+/* Violet */
+html.palette-violet                          { --primary: #7c3aed; --primary-hover: #a78bfa; --accent: #f59e0b; }
+html.palette-violet:not(.dark):not(.high-contrast) { --primary: #6d28d9; --primary-hover: #5b21b6; --accent: #d97706; }
+html.palette-violet.high-contrast            { --primary: #a78bfa; --primary-hover: #c4b5fd; --accent: #fbbf24; }
+
+/* ───────────────────────────────────────────────
    Base styles
    ─────────────────────────────────────────────── */
 
@@ -132,7 +163,7 @@ input[type="text"]:focus,
 input[type="password"]:focus,
 input[type="search"]:focus,
 textarea:focus {
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
 }
 
 /* Button press feedback */
@@ -184,7 +215,7 @@ input[type="range"]:hover {
 
 /* Selection */
 ::selection {
-  background: rgba(99, 102, 241, 0.3);
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
   color: var(--text);
 }
 

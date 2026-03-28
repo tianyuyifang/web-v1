@@ -18,7 +18,7 @@ const LANG_OPTIONS = [
 ];
 
 export default function SettingsPage() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, palette, setPalette, palettes, paletteColors } = useTheme();
   const { lang, setLang, t } = useLanguage();
 
   const [unForm, setUnForm] = useState({ newUsername: "", currentPassword: "" });
@@ -139,6 +139,25 @@ export default function SettingsPage() {
                 )}
               </button>
             ))}
+          </div>
+
+          <div className="mt-5 border-t border-border pt-5">
+            <p className="mb-3 text-sm font-semibold text-theme">{t("colorPalette")}</p>
+            <div className="flex gap-3">
+              {palettes.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPalette(p)}
+                  className="h-8 w-8 rounded-full transition-transform hover:scale-110"
+                  style={{
+                    background: paletteColors[p],
+                    outline: palette === p ? "3px solid var(--text)" : "none",
+                    outlineOffset: "3px",
+                  }}
+                  title={p}
+                />
+              ))}
+            </div>
           </div>
         </div>
         {/* Change Username */}

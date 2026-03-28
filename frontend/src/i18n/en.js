@@ -276,6 +276,7 @@ export default {
   settings: "Settings",
   customizeExperience: "Customize your experience",
   appearance: "Appearance",
+  colorPalette: "Color",
   language: "Language",
   themeDark: "Dark",
   themeDarkDesc: "Easy on the eyes, deep navy tones",

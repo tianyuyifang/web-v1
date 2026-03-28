@@ -24,7 +24,7 @@ export default function PlaylistCard({ playlist }) {
           {playlist.ownerName}
         </span>
       )}
-      <h3 className="truncate text-sm font-semibold transition-colors group-hover:text-primary" style={{ color: "var(--text)" }}>
+      <h3 className="truncate text-base font-semibold transition-colors group-hover:text-primary" style={{ color: "var(--text)" }}>
         <RichText text={playlist.name} />
       </h3>
       {playlist.description && (

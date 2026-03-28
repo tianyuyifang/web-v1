@@ -106,6 +106,9 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
         const t = Math.min(audio.duration || 0, Math.floor(audio.currentTime) + 1);
         audio.currentTime = t;
         setCurrentTime(t);
+      } else if (e.code === "KeyF") {
+        e.preventDefault();
+        setStart(Math.floor(audio.currentTime));
       }
     };
     window.addEventListener("keydown", handleKeyDown);

@@ -150,7 +150,7 @@ async function searchPlaylists(query, userId) {
     };
   }
 
-  return prisma.playlist.findMany({
+  const results = await prisma.playlist.findMany({
     where: {
       AND: [
         {
@@ -170,9 +170,22 @@ async function searchPlaylists(query, userId) {
       shares: { where: { userId }, select: { id: true } },
       copyPermissions: { where: { userId }, select: { id: true } },
     },
-    orderBy: { updatedAt: 'desc' },
     take: 50,
   });
+
+  // Sort: emojis first, then alphabetical by pinyin (stripped of leading emojis/symbols)
+  const emojiRegex = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u;
+  const stripPrefix = (s) => s.replace(/^[^\p{L}\p{N}]+/u, '').toLowerCase();
+  results.sort((a, b) => {
+    const aEmoji = emojiRegex.test(a.name);
+    const bEmoji = emojiRegex.test(b.name);
+    if (aEmoji !== bEmoji) return aEmoji ? -1 : 1;
+    const aKey = stripPrefix(a.namePinyin || a.name);
+    const bKey = stripPrefix(b.namePinyin || b.name);
+    return aKey.localeCompare(bKey);
+  });
+
+  return results;
 }
 
 /**

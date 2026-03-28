@@ -315,6 +315,7 @@ async function swapClip(playlistId, oldClipId, newClipId) {
         pitch: existing.pitch,
         colorTag: existing.colorTag,
         comment: existing.comment,
+        sectionLabel: existing.sectionLabel,
       },
       include: {
         clip: {

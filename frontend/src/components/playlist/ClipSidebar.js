@@ -67,7 +67,14 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
               className="flex items-center gap-2 border-b border-border px-3 py-2.5"
             >
               <span className="w-5 shrink-0 text-right text-xs text-muted -ml-1">{pc.position + 1}</span>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1" style={pc.colorTag ? {
+                borderLeft: "3px solid",
+                borderImage: pc.colorTag.includes("|")
+                  ? `linear-gradient(to bottom, ${pc.colorTag.split("|").filter(Boolean).join(", ")}) 1`
+                  : undefined,
+                borderColor: !pc.colorTag.includes("|") ? pc.colorTag : undefined,
+                paddingLeft: "6px",
+              } : undefined}>
                 <p className="truncate text-xs font-medium text-theme">{pc.clip.song.title}</p>
                 <p className="truncate text-xs text-muted">
                   {pc.clip.song.artist.replace(/_/g, "/")} · {formatDuration(pc.clip.start)}

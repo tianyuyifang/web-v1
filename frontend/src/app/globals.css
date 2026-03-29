@@ -89,10 +89,10 @@ html.high-contrast {
 
 /* Warm theme — warm off-white, coral accents, high readability */
 html.warm {
-  --background:      #F0EBE1;
+  --background:      #F5F0E8;
   --surface:         #FDFCFA;
   --surface-hover:   #EDE7DA;
-  --border:          #D4CCC0;
+  --border:          #DDD6CC;
   --primary:         #C8503A;
   --primary-hover:   #E8705A;
   --accent:          #4A9B8A;
@@ -109,14 +109,9 @@ html.warm {
   --warning:         #B8860B;
   --warning-bg:      rgba(184, 134, 11, 0.1);
   --warning-border:  rgba(184, 134, 11, 0.2);
-  --input-bg:        #F0EBE1;
-  --shadow:          rgba(44, 40, 32, 0.08);
-  --slider-track:    #D4CCC0;
-}
-
-/* Warm theme — subtle lifted card shadow */
-html.warm .bg-surface {
-  box-shadow: 0 2px 8px rgba(44, 40, 32, 0.08);
+  --input-bg:        #F5F0E8;
+  --shadow:          rgba(44, 40, 32, 0.06);
+  --slider-track:    #DDD6CC;
 }
 
 /* ───────────────────────────────────────────────

@@ -48,7 +48,7 @@ export default memo(function LyricsBox({ lyrics, currentTime, clipStart }) {
             className={`cursor-pointer truncate transition-colors ${
               i === activeIndex
                 ? "text-[0.82rem] font-semibold leading-[1.65] text-primary"
-                : "text-[0.72rem] leading-[1.8] text-theme-secondary opacity-70 hover:opacity-90"
+                : "text-[0.72rem] leading-[1.8] text-muted opacity-60 hover:opacity-80"
             }`}
           >
             {line.text}

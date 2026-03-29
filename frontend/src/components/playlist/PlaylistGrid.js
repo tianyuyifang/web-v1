@@ -142,7 +142,7 @@ export default function PlaylistGrid({
     }
   }, [playlist, onReorder]);
 
-  const gridClass = "grid gap-[18px] grid-cols-1 sm:grid-cols-[repeat(var(--cols),minmax(0,1fr))]";
+  const gridClass = "grid gap-4 grid-cols-1 sm:grid-cols-[repeat(var(--cols),minmax(0,1fr))]";
   const gridStyle = { "--cols": columns };
 
   // Batch mode state

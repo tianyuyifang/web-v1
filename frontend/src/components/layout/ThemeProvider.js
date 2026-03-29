@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import useAuthStore from "@/store/authStore";
 
-const THEMES = ["dark", "light", "high-contrast"];
+const THEMES = ["dark", "light", "high-contrast", "warm"];
 const PALETTES = ["indigo", "rose", "emerald", "amber", "cyan", "violet", "neon", "pastel", "cosmic", "coral", "teal"];
 const PALETTE_COLORS = {
   indigo:  "#6366f1",
@@ -28,9 +28,10 @@ export function useTheme() {
 
 function applyTheme(theme) {
   const html = document.documentElement;
-  html.classList.remove("dark", "high-contrast");
+  html.classList.remove("dark", "high-contrast", "warm");
   if (theme === "dark") html.classList.add("dark");
   if (theme === "high-contrast") html.classList.add("dark", "high-contrast");
+  if (theme === "warm") html.classList.add("warm");
 }
 
 function applyPalette(palette) {

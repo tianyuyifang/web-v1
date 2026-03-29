@@ -289,6 +289,8 @@ export default {
   themeLightDesc: "Clean and bright for daytime use",
   themeHighContrast: "High Contrast",
   themeHighContrastDesc: "Maximum readability and clarity",
+  themeWarm: "Warm",
+  themeWarmDesc: "Warm off-white with coral accents",
   active: "Active",
   langEn: "English",
   langZh: "简体中文",

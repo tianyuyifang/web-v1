@@ -289,6 +289,8 @@ export default {
   themeLightDesc: "明亮清爽，适合日间使用",
   themeHighContrast: "高对比度",
   themeHighContrastDesc: "最大可读性和清晰度",
+  themeWarm: "暖色",
+  themeWarmDesc: "暖白底色，珊瑚色点缀",
   active: "当前",
   langEn: "English",
   langZh: "简体中文",

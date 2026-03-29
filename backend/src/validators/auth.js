@@ -23,7 +23,9 @@ const changeUsernameSchema = z.object({
 const updatePreferencesSchema = z.object({
   preferences: z.object({
     language: z.enum(['zh', 'en']).optional(),
-    theme: z.enum(['dark', 'light', 'high-contrast']).optional(),
+    theme: z.enum(['dark', 'light', 'high-contrast', 'warm']).optional(),
+    palette: z.string().max(20).optional(),
+    style: z.string().max(20).optional(),
   }),
 });
 

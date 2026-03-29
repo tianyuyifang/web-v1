@@ -235,6 +235,40 @@ html.palette-cosmic.high-contrast {
   --primary: #f06ab8; --primary-hover: #f8a0d0; --accent: #44e0ff;
 }
 
+/* Coral (Muted) */
+html.palette-coral {
+  --background: #2e1e1a; --surface: #3d2a25; --surface-hover: #4a342f;
+  --border: #5a4440; --input-bg: #2a1c18; --slider-track: #5a4440; --muted: #a08878;
+  --primary: #c27060; --primary-hover: #d48a7a; --accent: #5ba8a0;
+}
+html.palette-coral:not(.dark):not(.high-contrast) {
+  --background: #fdf4f2; --surface: #fff8f6; --surface-hover: #f8ece8;
+  --border: #e0c0b8; --input-bg: #fef9f8; --slider-track: #e0c0b8; --muted: #8a6058;
+  --primary: #a85848; --primary-hover: #8e4438; --accent: #4a9088;
+}
+html.palette-coral.high-contrast {
+  --background: #1a0e0a; --surface: #281814; --surface-hover: #34201c;
+  --border: #6a4840; --input-bg: #1e1210; --slider-track: #6a4840; --muted: #c09888;
+  --primary: #d48a7a; --primary-hover: #e0a898; --accent: #6ec0b8;
+}
+
+/* Teal */
+html.palette-teal {
+  --background: #1a2826; --surface: #253836; --surface-hover: #2f4644;
+  --border: #3a5855; --input-bg: #182624; --slider-track: #3a5855; --muted: #78a8a0;
+  --primary: #5ba8a0; --primary-hover: #78c0b8; --accent: #c27060;
+}
+html.palette-teal:not(.dark):not(.high-contrast) {
+  --background: #f0f8f6; --surface: #f5fdfb; --surface-hover: #e0f2ee;
+  --border: #a8d0c8; --input-bg: #f6fcfa; --slider-track: #a8d0c8; --muted: #4a7870;
+  --primary: #4a9088; --primary-hover: #3a7870; --accent: #a85848;
+}
+html.palette-teal.high-contrast {
+  --background: #0a1816; --surface: #142420; --surface-hover: #1c302c;
+  --border: #3a605a; --input-bg: #0c1e1a; --slider-track: #3a605a; --muted: #88c0b8;
+  --primary: #78c0b8; --primary-hover: #98d8d0; --accent: #d48a7a;
+}
+
 /* ───────────────────────────────────────────────
    Surface styles — override surface appearance
    ─────────────────────────────────────────────── */

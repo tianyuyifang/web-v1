@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import useAuthStore from "@/store/authStore";
 
 const THEMES = ["dark", "light", "high-contrast"];
-const PALETTES = ["indigo", "rose", "emerald", "amber", "cyan", "violet", "neon", "pastel", "cosmic"];
+const PALETTES = ["indigo", "rose", "emerald", "amber", "cyan", "violet", "neon", "pastel", "cosmic", "coral", "teal"];
 const PALETTE_COLORS = {
   indigo:  "#6366f1",
   rose:    "#e11d48",
@@ -15,6 +15,8 @@ const PALETTE_COLORS = {
   neon:    "#ff6b2b",
   pastel:  "#a78bfa",
   cosmic:  "#e040a0",
+  coral:   "#c27060",
+  teal:    "#5ba8a0",
 };
 const STYLES = ["default", "glass", "mono", "gradient"];
 

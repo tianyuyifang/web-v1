@@ -198,26 +198,27 @@ html.style-glass [data-sticky-header] {
   backdrop-filter: blur(12px) saturate(1.2);
 }
 
-/* Modals and dropdowns must be opaque in glass mode */
+/* Modals, dialogs, and dropdowns must be opaque in glass mode.
+   !important overrides inline style={{ backgroundColor: "var(--surface)" }} */
+html.dark.style-glass .fixed > div,
 html.dark.style-glass [role="dialog"] > div,
-html.dark.style-glass .fixed > .bg-surface,
 html.dark.style-glass .absolute.bg-surface {
-  background-color: #252540;
+  background-color: #252540 !important;
 }
+html.style-glass:not(.dark):not(.high-contrast):not(.warm) .fixed > div,
 html.style-glass:not(.dark):not(.high-contrast):not(.warm) [role="dialog"] > div,
-html.style-glass:not(.dark):not(.high-contrast):not(.warm) .fixed > .bg-surface,
 html.style-glass:not(.dark):not(.high-contrast):not(.warm) .absolute.bg-surface {
-  background-color: #ffffff;
+  background-color: #ffffff !important;
 }
+html.style-glass.high-contrast .fixed > div,
 html.style-glass.high-contrast [role="dialog"] > div,
-html.style-glass.high-contrast .fixed > .bg-surface,
 html.style-glass.high-contrast .absolute.bg-surface {
-  background-color: #141428;
+  background-color: #141428 !important;
 }
+html.style-glass.warm .fixed > div,
 html.style-glass.warm [role="dialog"] > div,
-html.style-glass.warm .fixed > .bg-surface,
 html.style-glass.warm .absolute.bg-surface {
-  background-color: #FDFCFA;
+  background-color: #FDFCFA !important;
 }
 
 /* Mono — grayscale primary, pure typography focus */

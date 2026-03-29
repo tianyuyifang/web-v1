@@ -344,11 +344,12 @@ html.style-glass.warm {
   --shadow:          rgba(44, 40, 32, 0.08);
 }
 
-html.style-glass .bg-surface,
-html.style-glass [class*="bg-surface"] {
-  -webkit-backdrop-filter: blur(10px) saturate(1.1);
-  backdrop-filter: blur(10px) saturate(1.1);
-  will-change: backdrop-filter;
+/* Glass blur only on fixed/sticky containers — not on scrolling cards */
+html.style-glass nav,
+html.style-glass aside,
+html.style-glass [data-sticky-header] {
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  backdrop-filter: blur(12px) saturate(1.2);
 }
 
 /* Mono — grayscale primary, pure typography focus */

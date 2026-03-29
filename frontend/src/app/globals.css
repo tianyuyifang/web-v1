@@ -346,8 +346,9 @@ html.style-glass.warm {
 
 html.style-glass .bg-surface,
 html.style-glass [class*="bg-surface"] {
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  backdrop-filter: blur(10px) saturate(1.1);
+  will-change: backdrop-filter;
 }
 
 /* Mono — grayscale primary, pure typography focus */
@@ -387,6 +388,8 @@ html.style-gradient body {
   background: linear-gradient(-45deg, var(--background), color-mix(in srgb, var(--primary) 20%, var(--background)), var(--background), color-mix(in srgb, var(--accent) 15%, var(--background)));
   background-size: 400% 400%;
   animation: gradientShift 20s ease infinite;
+  will-change: background-position;
+  transform: translateZ(0);
 }
 
 /* ───────────────────────────────────────────────
@@ -400,19 +403,16 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Disable transitions on initial load to avoid paint thrashing.
-   The .theme-ready class is added by ThemeProvider after first paint. */
-html.theme-ready body, html.theme-ready nav, html.theme-ready main,
-html.theme-ready div, html.theme-ready section, html.theme-ready aside,
-html.theme-ready button, html.theme-ready input, html.theme-ready textarea,
-html.theme-ready a, html.theme-ready span, html.theme-ready p,
-html.theme-ready h1, html.theme-ready h2, html.theme-ready h3, html.theme-ready h4,
-html.theme-ready table, html.theme-ready th, html.theme-ready td,
-html.theme-ready tr, html.theme-ready label {
-  transition: background-color 0.2s ease-in-out,
-              border-color 0.2s ease-in-out,
-              color 0.2s ease-in-out,
-              box-shadow 0.2s ease-in-out;
+/* Theme transitions — only on top-level containers to avoid animating
+   thousands of elements on pages with many clips. Child elements inherit
+   color changes instantly which looks fine. */
+html.theme-ready body,
+html.theme-ready nav,
+html.theme-ready main,
+html.theme-ready aside {
+  transition: background-color 0.25s ease-in-out,
+              border-color 0.25s ease-in-out,
+              color 0.25s ease-in-out;
 }
 
 /* Focus ring — accessible keyboard navigation */

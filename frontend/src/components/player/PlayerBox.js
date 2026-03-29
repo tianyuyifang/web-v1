@@ -170,12 +170,12 @@ export default memo(function PlayerBox({
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm transition-all hover:bg-primary-hover hover:scale-105 active:scale-95"
           >
             {isPlaying ? (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-[14px] w-[14px]">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-[16px] w-[16px]">
                 <rect x="5" y="3" width="4.5" height="18" rx="1" />
                 <rect x="14.5" y="3" width="4.5" height="18" rx="1" />
               </svg>
             ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-[14px] w-[14px] translate-x-0.5">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-[16px] w-[16px] translate-x-0.5">
                 <polygon points="5,2 21,12 5,22" />
               </svg>
             )}

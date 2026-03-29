@@ -167,7 +167,7 @@ export default memo(function PlayerBox({
           <button
             onClick={isPlaying ? pause : play}
             aria-label={isPlaying ? t("pause") : t("play")}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm transition-all hover:bg-primary-hover hover:scale-105 active:scale-95"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm transition-all hover:bg-primary-hover hover:scale-105 active:scale-95"
           >
             {isPlaying ? (
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-[18px] w-[18px]">

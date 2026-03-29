@@ -38,8 +38,8 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
           />
           {search && (
             <button
-              onClick={() => setSearch("")}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted hover:text-theme"
+              onMouseDown={(e) => { e.preventDefault(); setSearch(""); }}
+              className="absolute right-0 top-0 flex h-full w-7 items-center justify-center text-muted hover:text-theme"
               aria-label="Clear search"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">

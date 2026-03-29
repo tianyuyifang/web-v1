@@ -389,8 +389,6 @@ html.style-gradient body {
   background: linear-gradient(-45deg, var(--background), color-mix(in srgb, var(--primary) 20%, var(--background)), var(--background), color-mix(in srgb, var(--accent) 15%, var(--background)));
   background-size: 400% 400%;
   animation: gradientShift 20s ease infinite;
-  will-change: background-position;
-  transform: translateZ(0);
 }
 
 /* ───────────────────────────────────────────────

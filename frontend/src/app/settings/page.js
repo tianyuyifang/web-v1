@@ -18,7 +18,7 @@ const LANG_OPTIONS = [
 ];
 
 export default function SettingsPage() {
-  const { theme, setTheme, palette, setPalette, palettes, paletteColors } = useTheme();
+  const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const { lang, setLang, t } = useLanguage();
 
   const [unForm, setUnForm] = useState({ newUsername: "", currentPassword: "" });
@@ -156,6 +156,25 @@ export default function SettingsPage() {
                   }}
                   title={p}
                 />
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 border-t border-border pt-5">
+            <p className="mb-3 text-sm font-semibold text-theme">{t("surfaceStyle")}</p>
+            <div className="flex gap-2">
+              {styles.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStyle(s)}
+                  className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                    style === s
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border hover:bg-surface-hover text-theme"
+                  }`}
+                >
+                  {t(`style_${s}`)}
+                </button>
               ))}
             </div>
           </div>

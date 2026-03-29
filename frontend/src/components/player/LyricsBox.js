@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, memo } from "react";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
-export default function LyricsBox({ lyrics, currentTime, clipStart }) {
+export default memo(function LyricsBox({ lyrics, currentTime, clipStart }) {
   const { t } = useLanguage();
   const containerRef = useRef(null);
   const innerRef = useRef(null);
@@ -57,4 +57,4 @@ export default function LyricsBox({ lyrics, currentTime, clipStart }) {
       </div>
     </div>
   );
-}
+})

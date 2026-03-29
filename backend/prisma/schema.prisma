@@ -54,6 +54,8 @@ model Song {
   songArtists          SongArtist[]
   clips                Clip[]
 
+  @@index([titlePinyinInitials])
+  @@index([titlePinyinConcat])
   @@map("songs")
 }
 

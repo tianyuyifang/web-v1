@@ -4,17 +4,21 @@ import { createContext, useContext, useEffect, useState } from "react";
 import useAuthStore from "@/store/authStore";
 
 const THEMES = ["dark", "light", "high-contrast"];
-const PALETTES = ["indigo", "rose", "emerald", "amber", "cyan", "violet"];
+const PALETTES = ["indigo", "rose", "emerald", "amber", "cyan", "violet", "neon", "pastel", "cosmic"];
 const PALETTE_COLORS = {
-  indigo: "#6366f1",
-  rose: "#e11d48",
+  indigo:  "#6366f1",
+  rose:    "#e11d48",
   emerald: "#059669",
-  amber: "#d97706",
-  cyan: "#0891b2",
-  violet: "#7c3aed",
+  amber:   "#d97706",
+  cyan:    "#0891b2",
+  violet:  "#7c3aed",
+  neon:    "#ff6b2b",
+  pastel:  "#a78bfa",
+  cosmic:  "#e040a0",
 };
+const STYLES = ["default", "glass", "mono", "gradient"];
 
-const ThemeContext = createContext({ theme: "dark", palette: "indigo", setTheme: () => {}, setPalette: () => {} });
+const ThemeContext = createContext({});
 
 export function useTheme() {
   return useContext(ThemeContext);
@@ -35,23 +39,35 @@ function applyPalette(palette) {
   }
 }
 
+function applyStyle(style) {
+  const html = document.documentElement;
+  STYLES.forEach((s) => html.classList.remove(`style-${s}`));
+  if (style && style !== "default") {
+    html.classList.add(`style-${style}`);
+  }
+}
+
 export default function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState("dark");
   const [palette, setPaletteState] = useState("indigo");
+  const [style, setStyleState] = useState("default");
   const user = useAuthStore((s) => s.user);
   const updatePreferences = useAuthStore((s) => s.updatePreferences);
 
-  // Initialize from user preferences (if logged in) or localStorage
   useEffect(() => {
     const prefs = user?.preferences || {};
     const savedTheme = prefs.theme || localStorage.getItem("theme") || "dark";
     const savedPalette = prefs.palette || localStorage.getItem("palette") || "indigo";
+    const savedStyle = prefs.style || localStorage.getItem("style") || "default";
     const validTheme = THEMES.includes(savedTheme) ? savedTheme : "dark";
     const validPalette = PALETTES.includes(savedPalette) ? savedPalette : "indigo";
+    const validStyle = STYLES.includes(savedStyle) ? savedStyle : "default";
     setThemeState(validTheme);
     setPaletteState(validPalette);
+    setStyleState(validStyle);
     applyTheme(validTheme);
     applyPalette(validPalette);
+    applyStyle(validStyle);
     requestAnimationFrame(() => {
       document.documentElement.classList.add("theme-ready");
     });
@@ -62,9 +78,7 @@ export default function ThemeProvider({ children }) {
     setThemeState(valid);
     localStorage.setItem("theme", valid);
     applyTheme(valid);
-    if (user) {
-      updatePreferences({ ...user.preferences, theme: valid });
-    }
+    if (user) updatePreferences({ ...user.preferences, theme: valid });
   };
 
   const setPalette = (p) => {
@@ -72,9 +86,15 @@ export default function ThemeProvider({ children }) {
     setPaletteState(valid);
     localStorage.setItem("palette", valid);
     applyPalette(valid);
-    if (user) {
-      updatePreferences({ ...user.preferences, palette: valid });
-    }
+    if (user) updatePreferences({ ...user.preferences, palette: valid });
+  };
+
+  const setStyle = (s) => {
+    const valid = STYLES.includes(s) ? s : "default";
+    setStyleState(valid);
+    localStorage.setItem("style", valid);
+    applyStyle(valid);
+    if (user) updatePreferences({ ...user.preferences, style: valid });
   };
 
   const toggle = () => {
@@ -83,7 +103,11 @@ export default function ThemeProvider({ children }) {
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, toggle, themes: THEMES, palette, setPalette, palettes: PALETTES, paletteColors: PALETTE_COLORS }}>
+    <ThemeContext.Provider value={{
+      theme, setTheme, toggle, themes: THEMES,
+      palette, setPalette, palettes: PALETTES, paletteColors: PALETTE_COLORS,
+      style, setStyle, styles: STYLES,
+    }}>
       {children}
     </ThemeContext.Provider>
   );

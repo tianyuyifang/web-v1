@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, memo } from "react";
+import { useState, useMemo, useEffect, useCallback, memo } from "react";
 import { createPortal } from "react-dom";
 import useAudioPlayer from "@/hooks/useAudioPlayer";
 import usePlayerStore from "@/store/playerStore";
@@ -67,6 +67,13 @@ export default memo(function PlayerBox({
     ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-background shadow-amber-400/30 shadow-lg"
     : "";
 
+  // Stable callbacks for memoized children
+  const handleColorTagChange = useCallback((c) => onUpdate?.(clipId, { colorTag: c }), [clipId, onUpdate]);
+  const handleSpeedChange = useCallback((s) => onUpdate?.(clipId, { speed: s }), [clipId, onUpdate]);
+  const handlePitchChange = useCallback((p) => onUpdate?.(clipId, { pitch: p }), [clipId, onUpdate]);
+  const handleCommentChange = useCallback((c) => onUpdate?.(clipId, { comment: c }), [clipId, onUpdate]);
+  const handleSwap = useCallback((newClipId) => onSwap(clipId, newClipId), [clipId, onSwap]);
+
   // Build speed/pitch meta string like v5
   const metaText = (() => {
     const parts = [];
@@ -84,7 +91,7 @@ export default memo(function PlayerBox({
       <ColorTag
         color={colorTag}
         editable={true}
-        onChange={(c) => onUpdate?.(clipId, { colorTag: c })}
+        onChange={handleColorTagChange}
       />
 
       <div className="px-4 pb-3 pt-4">
@@ -134,7 +141,7 @@ export default memo(function PlayerBox({
             <ClipSwitcher
               songId={song.id}
               currentClipId={clipId}
-              onSwap={(newClipId) => onSwap(clipId, newClipId)}
+              onSwap={handleSwap}
               onNewClip={() => setShowNewClip(true)}
             />
           </div>
@@ -208,11 +215,11 @@ export default memo(function PlayerBox({
           <div className="mt-1.5 flex items-center gap-2">
             <SpeedControl
               speed={speed}
-              onChange={(s) => onUpdate?.(clipId, { speed: s })}
+              onChange={handleSpeedChange}
             />
             <PitchControl
               pitch={pitch}
-              onChange={(p) => onUpdate?.(clipId, { pitch: p })}
+              onChange={handlePitchChange}
             />
             {onRemove && (
               <button
@@ -228,7 +235,7 @@ export default memo(function PlayerBox({
         {/* Comment — editable in both modes */}
         <ClipComment
           comment={comment}
-          onChange={(c) => onUpdate?.(clipId, { comment: c })}
+          onChange={handleCommentChange}
           editable
         />
       </div>

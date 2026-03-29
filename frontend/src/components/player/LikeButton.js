@@ -1,8 +1,9 @@
 "use client";
 
+import { memo } from "react";
 import useLikes from "@/hooks/useLikes";
 
-export default function LikeButton({ playlistId, clipId }) {
+export default memo(function LikeButton({ playlistId, clipId }) {
   const { isLiked, toggleLike } = useLikes({ playlistId, clipId });
 
   return (
@@ -16,4 +17,4 @@ export default function LikeButton({ playlistId, clipId }) {
       {isLiked ? "♥" : "♡"}
     </button>
   );
-}
+})

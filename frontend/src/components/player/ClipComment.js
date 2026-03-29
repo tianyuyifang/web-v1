@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
-export default function ClipComment({ comment, editable, onChange }) {
+export default memo(function ClipComment({ comment, editable, onChange }) {
   const { t } = useLanguage();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment || "");
@@ -69,4 +69,4 @@ export default function ClipComment({ comment, editable, onChange }) {
       )}
     </button>
   );
-}
+})

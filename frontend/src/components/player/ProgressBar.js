@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, memo } from "react";
 import { formatDuration } from "@/lib/utils";
 
-export default function ProgressBar({ currentTime, duration, onSeek }) {
+export default memo(function ProgressBar({ currentTime, duration, onSeek }) {
   const barRef = useRef(null);
   const pct = duration ? Math.min((currentTime / duration) * 100, 100) : 0;
 
@@ -52,4 +52,4 @@ export default function ProgressBar({ currentTime, duration, onSeek }) {
       </div>
     </div>
   );
-}
+})

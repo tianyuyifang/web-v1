@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 
 const PRESET_COLORS = [
   "#E8655A", // red
@@ -28,7 +28,7 @@ function BookmarkSVG({ color, size = 18 }) {
   );
 }
 
-export default function ColorTag({ color, editable, onChange }) {
+export default memo(function ColorTag({ color, editable, onChange }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const cornerRef = useRef(null);
   const selected = parseColors(color);
@@ -111,4 +111,4 @@ export default function ColorTag({ color, editable, onChange }) {
       ))}
     </div>
   );
-}
+})

@@ -95,6 +95,8 @@ export default function PlaylistGrid({
     );
   }, [playlist.clips, searchQuery]);
 
+  const [removeConfirmClipId, setRemoveConfirmClipId] = useState(null);
+
   const handleRemove = useCallback(async (clipId) => {
     try {
       await playlistsAPI.removeClip(playlist.id, { clipId });
@@ -102,6 +104,7 @@ export default function PlaylistGrid({
     } catch {
       // silent
     }
+    setRemoveConfirmClipId(null);
   }, [playlist.id, onClipRemoved]);
 
   const handleDragEnd = useCallback(async (event) => {
@@ -168,6 +171,17 @@ export default function PlaylistGrid({
     onSelectedChange(next);
   }, [selectedClips, onSelectedChange]);
 
+  const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+
+  const batchSummary = useMemo(() => {
+    const parts = [];
+    if (batchDirty.has("speed")) parts.push(`${t("speed") || "Speed"}: ${batchSpeed}x`);
+    if (batchDirty.has("pitch")) parts.push(`${t("pitch") || "Pitch"}: ${batchPitch > 0 ? "+" : ""}${batchPitch}`);
+    if (batchDirty.has("colorTag")) parts.push(`${t("clear") || "Color"}: ${batchColorTag || "—"}`);
+    if (batchDirty.has("comment")) parts.push(`${t("addComment") || "Comment"}: ${batchComment || "—"}`);
+    return parts.join("\n");
+  }, [batchDirty, batchSpeed, batchPitch, batchColorTag, batchComment, t]);
+
   const applyBatch = useCallback(() => {
     if (!selectedClips?.size || !batchDirty.size) return;
     for (const clipId of selectedClips) {
@@ -178,12 +192,16 @@ export default function PlaylistGrid({
       if (batchDirty.has("comment")) updates.comment = batchComment;
       if (Object.keys(updates).length > 0) onClipUpdated(clipId, updates);
     }
+    setShowBatchConfirm(false);
     onBatchDone?.();
   }, [selectedClips, batchDirty, batchSpeed, batchPitch, batchColorTag, batchComment, onClipUpdated, onBatchDone]);
+
+  const [showBatchRemoveConfirm, setShowBatchRemoveConfirm] = useState(false);
 
   const batchRemove = useCallback(() => {
     if (!selectedClips?.size) return;
     for (const clipId of selectedClips) handleRemove(clipId);
+    setShowBatchRemoveConfirm(false);
     onBatchDone?.();
   }, [selectedClips, handleRemove, onBatchDone]);
 
@@ -253,11 +271,11 @@ export default function PlaylistGrid({
               <ColorTag color={batchColorTag} editable onChange={(v) => { setBatchColorTag(v); setBatchDirty(d => new Set(d).add("colorTag")); }} />
             </div>
             <button
-              onClick={applyBatch}
+              onClick={() => setShowBatchConfirm(true)}
               disabled={!selectedClips?.size || !batchDirty.size}
               className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-primary-hover disabled:opacity-50"
             >
-              {t("applyToSelected")}{batchDirty.size > 0 && ` (${batchDirty.size})`}
+              {t("applyAndSave")}{batchDirty.size > 0 && ` (${batchDirty.size})`}
             </button>
             {batchDirty.size > 0 && (
               <button
@@ -268,11 +286,11 @@ export default function PlaylistGrid({
               </button>
             )}
             <button
-              onClick={batchRemove}
+              onClick={() => setShowBatchRemoveConfirm(true)}
               disabled={!selectedClips?.size}
               className="rounded-lg border border-red-500/30 px-4 py-1.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
             >
-              {t("remove")}
+              {t("remove")} ({selectedClips?.size || 0})
             </button>
           </div>
         </div>,
@@ -315,6 +333,27 @@ export default function PlaylistGrid({
             </div>
           ))}
         </div>
+        {showBatchConfirm && (
+          <ConfirmDialog
+            title={t("applyAndSave")}
+            message={`${t("selectedCount").replace("{count}", selectedClips?.size || 0)}\n\n${batchSummary}`}
+            confirmLabel={t("confirm")}
+            cancelLabel={t("cancel")}
+            onConfirm={applyBatch}
+            onCancel={() => setShowBatchConfirm(false)}
+          />
+        )}
+        {showBatchRemoveConfirm && (
+          <ConfirmDialog
+            title={t("remove")}
+            message={t("batchRemoveConfirm")?.replace("{count}", selectedClips?.size || 0) || `Remove ${selectedClips?.size || 0} clips?`}
+            confirmLabel={t("remove")}
+            cancelLabel={t("cancel")}
+            danger
+            onConfirm={batchRemove}
+            onCancel={() => setShowBatchRemoveConfirm(false)}
+          />
+        )}
       </div>
     );
   }
@@ -326,7 +365,7 @@ export default function PlaylistGrid({
         <SortableContext items={filteredClips.map((c) => c.clipId)} strategy={verticalListSortingStrategy}>
           <div className="rounded-xl border border-border bg-surface">
             {filteredClips.map((pc) => (
-              <SortableCompactRow key={pc.clipId} playlistClip={pc} onRemove={handleRemove} />
+              <SortableCompactRow key={pc.clipId} playlistClip={pc} onRemove={setRemoveConfirmClipId} />
             ))}
           </div>
         </SortableContext>
@@ -412,7 +451,7 @@ export default function PlaylistGrid({
               editMode
               highlighted={highlightedClipId === pc.clipId}
               onUpdate={onClipUpdated}
-              onRemove={handleRemove}
+              onRemove={setRemoveConfirmClipId}
               onSwap={onClipSwapped}
               position={pc.position + 1}
               totalClips={playlist.clips.length}
@@ -447,6 +486,17 @@ export default function PlaylistGrid({
             setSectionPromptClipId(null);
           }}
           onCancel={() => setSectionPromptClipId(null)}
+        />
+      )}
+      {removeConfirmClipId && (
+        <ConfirmDialog
+          title={t("remove")}
+          message={t("removeClipConfirm") || "Remove this clip?"}
+          confirmLabel={t("remove")}
+          cancelLabel={t("cancel")}
+          danger
+          onConfirm={() => handleRemove(removeConfirmClipId)}
+          onCancel={() => setRemoveConfirmClipId(null)}
         />
       )}
     </div>

@@ -274,19 +274,21 @@ async function copyPlaylist(playlistId, userId) {
 
 async function batchUpdateClips(playlistId, updates) {
   // updates: [{ clipId, speed?, pitch?, colorTag?, comment? }, ...]
-const ops = updates.flatMap(({ clipId, ...data }) => {
-    const updateData = {};
-    if (data.speed !== undefined) updateData.speed = data.speed;
-    if (data.pitch !== undefined) updateData.pitch = data.pitch;
-    if (data.colorTag !== undefined) updateData.colorTag = data.colorTag;
-    if (data.comment !== undefined) updateData.comment = data.comment;
-    if (data.sectionLabel !== undefined) updateData.sectionLabel = data.sectionLabel;
-    if (Object.keys(updateData).length === 0) return [];
-    return prisma.playlistClip.update({
-      where: { playlistId_clipId: { playlistId, clipId } },
-      data: updateData,
-    });
-  });
+const ops = updates
+    .map(({ clipId, ...data }) => {
+      const updateData = {};
+      if (data.speed !== undefined) updateData.speed = data.speed;
+      if (data.pitch !== undefined) updateData.pitch = data.pitch;
+      if (data.colorTag !== undefined) updateData.colorTag = data.colorTag;
+      if (data.comment !== undefined) updateData.comment = data.comment;
+      if (data.sectionLabel !== undefined) updateData.sectionLabel = data.sectionLabel;
+      if (Object.keys(updateData).length === 0) return null;
+      return prisma.playlistClip.update({
+        where: { playlistId_clipId: { playlistId, clipId } },
+        data: updateData,
+      });
+    })
+    .filter(Boolean);
   if (ops.length > 0) await prisma.$transaction(ops);
 }
 

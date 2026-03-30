@@ -17,6 +17,13 @@ export default function ConfirmDialog({ title, message, confirmLabel, cancelLabe
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onCancel]);
 
+  // Lock body scroll while dialog is open
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   // Focus trap — auto-focus first interactive element
   useEffect(() => {
     const el = dialogRef.current;

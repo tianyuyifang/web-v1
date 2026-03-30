@@ -5,6 +5,7 @@ import { songsAPI, clipsAPI } from "@/lib/api";
 import { formatDuration } from "@/lib/utils";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import useAuth from "@/hooks/useAuth";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 export default function ClipSwitcher({ songId, currentClipId, onSwap, onNewClip }) {
   const { t } = useLanguage();
@@ -12,17 +13,18 @@ export default function ClipSwitcher({ songId, currentClipId, onSwap, onNewClip 
   const [clips, setClips] = useState(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deleteConfirmClipId, setDeleteConfirmClipId] = useState(null);
   const ref = useRef(null);
 
   // Close dropdown on outside click
   useEffect(() => {
-    if (!open) return;
+    if (!open || deleteConfirmClipId) return;
     const handleClick = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
+  }, [open, deleteConfirmClipId]);
 
   const handleOpen = async () => {
     if (open) { setOpen(false); return; }
@@ -58,18 +60,17 @@ export default function ClipSwitcher({ songId, currentClipId, onSwap, onNewClip 
     }
   };
 
-  const handleDeleteClip = async (e, clipId) => {
-    e.stopPropagation();
+  const handleDeleteClip = async (clipId) => {
     try {
       const res = await clipsAPI.delete(clipId);
       setClips((prev) => prev.filter((c) => c.id !== clipId));
-      // If the deleted clip was the current one, swap to the replacement
       if (clipId === currentClipId && res.data.replacedBy) {
         onSwap(res.data.replacedBy);
       }
     } catch {
       // silent
     }
+    setDeleteConfirmClipId(null);
   };
 
   return (
@@ -124,7 +125,7 @@ export default function ClipSwitcher({ songId, currentClipId, onSwap, onNewClip 
                         {clip.isGlobal ? "🌐" : "🔒"}
                       </button>
                       <button
-                        onClick={(e) => handleDeleteClip(e, clip.id)}
+                        onClick={(e) => { e.stopPropagation(); setDeleteConfirmClipId(clip.id); }}
                         className="text-xs text-red-400 transition-colors hover:text-red-300"
                         title={t("remove")}
                       >
@@ -145,6 +146,17 @@ export default function ClipSwitcher({ songId, currentClipId, onSwap, onNewClip 
             </button>
           )}
         </div>
+      )}
+      {deleteConfirmClipId && (
+        <ConfirmDialog
+          title={t("deleteClipTitle") || "Delete Clip"}
+          message={t("deleteClipConfirm") || "Permanently delete this clip from the database?"}
+          confirmLabel={t("delete") || "Delete"}
+          cancelLabel={t("cancel")}
+          danger
+          onConfirm={() => handleDeleteClip(deleteConfirmClipId)}
+          onCancel={() => setDeleteConfirmClipId(null)}
+        />
       )}
     </div>
   );

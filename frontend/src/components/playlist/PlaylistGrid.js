@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, Fragment } from "react";
+import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -145,11 +145,21 @@ export default function PlaylistGrid({
   const gridClass = "grid gap-4 grid-cols-1 sm:grid-cols-[repeat(var(--cols),minmax(0,1fr))]";
   const gridStyle = { "--cols": columns };
 
-  // Batch mode state
+  // Batch mode state — only fields in batchDirty are applied
   const [batchSpeed, setBatchSpeed] = useState(1.0);
   const [batchPitch, setBatchPitch] = useState(0);
-  const [batchColorTag, setBatchColorTag] = useState(null);
+  const [batchColorTag, setBatchColorTag] = useState(undefined);
   const [batchComment, setBatchComment] = useState("");
+  const [batchDirty, setBatchDirty] = useState(new Set());
+
+  // Reset batch state when entering/leaving batch mode
+  useEffect(() => {
+    setBatchSpeed(1.0);
+    setBatchPitch(0);
+    setBatchColorTag(undefined);
+    setBatchComment("");
+    setBatchDirty(new Set());
+  }, [batchMode]);
 
   const toggleSelect = useCallback((clipId) => {
     const next = new Set(selectedClips);
@@ -159,17 +169,17 @@ export default function PlaylistGrid({
   }, [selectedClips, onSelectedChange]);
 
   const applyBatch = useCallback(() => {
-    if (!selectedClips?.size) return;
+    if (!selectedClips?.size || !batchDirty.size) return;
     for (const clipId of selectedClips) {
       const updates = {};
-      if (batchSpeed !== null) updates.speed = batchSpeed;
-      if (batchPitch !== null) updates.pitch = batchPitch;
-      if (batchColorTag !== undefined) updates.colorTag = batchColorTag;
-      if (batchComment) updates.comment = batchComment;
+      if (batchDirty.has("speed")) updates.speed = batchSpeed;
+      if (batchDirty.has("pitch")) updates.pitch = batchPitch;
+      if (batchDirty.has("colorTag")) updates.colorTag = batchColorTag;
+      if (batchDirty.has("comment")) updates.comment = batchComment;
       if (Object.keys(updates).length > 0) onClipUpdated(clipId, updates);
     }
     onBatchDone?.();
-  }, [selectedClips, batchSpeed, batchPitch, batchColorTag, batchComment, onClipUpdated, onBatchDone]);
+  }, [selectedClips, batchDirty, batchSpeed, batchPitch, batchColorTag, batchComment, onClipUpdated, onBatchDone]);
 
   const batchRemove = useCallback(() => {
     if (!selectedClips?.size) return;
@@ -223,32 +233,40 @@ export default function PlaylistGrid({
           <div className="flex flex-wrap items-end gap-4">
             <div>
               <label className="mb-1 block text-xs text-muted">{t("speed") || "Speed"}</label>
-              <SpeedControl speed={batchSpeed} onChange={setBatchSpeed} />
+              <SpeedControl speed={batchSpeed} onChange={(v) => { setBatchSpeed(v); setBatchDirty(d => new Set(d).add("speed")); }} />
             </div>
             <div>
               <label className="mb-1 block text-xs text-muted">{t("pitch") || "Pitch"}</label>
-              <PitchControl pitch={batchPitch} onChange={setBatchPitch} />
+              <PitchControl pitch={batchPitch} onChange={(v) => { setBatchPitch(v); setBatchDirty(d => new Set(d).add("pitch")); }} />
             </div>
             <div>
               <label className="mb-1 block text-xs text-muted">{t("addComment")}</label>
               <input
                 type="text"
                 value={batchComment}
-                onChange={(e) => setBatchComment(e.target.value)}
+                onChange={(e) => { setBatchComment(e.target.value); setBatchDirty(d => new Set(d).add("comment")); }}
                 className="w-40 rounded-lg border border-border bg-background px-2 py-1 text-xs text-theme focus:border-primary focus:outline-none"
               />
             </div>
             <div>
               <label className="mb-1 block text-xs text-muted">{t("clear") || "Color"}</label>
-              <ColorTag color={batchColorTag} editable onChange={setBatchColorTag} />
+              <ColorTag color={batchColorTag} editable onChange={(v) => { setBatchColorTag(v); setBatchDirty(d => new Set(d).add("colorTag")); }} />
             </div>
             <button
               onClick={applyBatch}
-              disabled={!selectedClips?.size}
+              disabled={!selectedClips?.size || !batchDirty.size}
               className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-primary-hover disabled:opacity-50"
             >
-              {t("applyToSelected")}
+              {t("applyToSelected")}{batchDirty.size > 0 && ` (${batchDirty.size})`}
             </button>
+            {batchDirty.size > 0 && (
+              <button
+                onClick={() => { setBatchSpeed(1.0); setBatchPitch(0); setBatchColorTag(undefined); setBatchComment(""); setBatchDirty(new Set()); }}
+                className="rounded-lg border border-border px-4 py-1.5 text-sm font-medium text-muted hover:bg-surface-hover"
+              >
+                {t("reset") || "Reset"}
+              </button>
+            )}
             <button
               onClick={batchRemove}
               disabled={!selectedClips?.size}

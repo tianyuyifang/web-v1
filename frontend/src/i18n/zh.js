@@ -109,6 +109,7 @@ export default {
   selectAll: "全选",
   unselectAll: "取消全选",
   applyToSelected: "应用",
+  reset: "重置",
   selectedCount: "已选 {count} 项",
   return: "返回",
   edit: "编辑",

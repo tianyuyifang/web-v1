@@ -109,6 +109,7 @@ export default {
   selectAll: "Select All",
   unselectAll: "Unselect All",
   applyToSelected: "Apply",
+  reset: "Reset",
   selectedCount: "{count} selected",
   return: "Return",
   edit: "Edit",

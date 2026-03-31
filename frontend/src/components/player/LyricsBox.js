@@ -10,24 +10,38 @@ export default memo(function LyricsBox({ lyrics, currentTime, clipStart }) {
   const innerRef = useRef(null);
   const parsed = useMemo(() => parseLRC(lyrics), [lyrics]);
 
+  const isStatic = parsed.length > 0 && parsed[0].time === -1;
   const absoluteTime = clipStart + currentTime;
-  const activeIndex = getActiveLyricIndex(parsed, absoluteTime);
+  const activeIndex = isStatic ? -1 : getActiveLyricIndex(parsed, absoluteTime);
 
-  // CSS transform-based scrolling like v5
+  // CSS transform-based scrolling for timestamped lyrics
   useEffect(() => {
-    if (activeIndex < 0 || !innerRef.current || !containerRef.current) return;
+    if (isStatic || activeIndex < 0 || !innerRef.current || !containerRef.current) return;
     const activeLine = innerRef.current.children[activeIndex];
     if (!activeLine) return;
     const lineHeight = activeLine.offsetHeight;
     const containerHeight = containerRef.current.offsetHeight;
     const offset = Math.max(0, activeIndex * lineHeight - containerHeight / 2 + lineHeight / 2);
     innerRef.current.style.transform = `translateY(-${offset}px)`;
-  }, [activeIndex]);
+  }, [activeIndex, isStatic]);
 
   if (!parsed.length) {
     return (
       <div className="flex h-[92px] items-center justify-center text-xs text-muted">
         {t("noLyrics")}
+      </div>
+    );
+  }
+
+  // Static lyrics: scrollable, no highlight
+  if (isStatic) {
+    return (
+      <div className="h-[92px] overflow-y-auto mb-3">
+        {parsed.map((line, i) => (
+          <p key={i} className="text-[0.72rem] leading-[1.8] text-muted">
+            {line.text}
+          </p>
+        ))}
       </div>
     );
   }

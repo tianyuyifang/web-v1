@@ -41,14 +41,17 @@ function formatSong(song) {
   };
 }
 
-async function getSongClips(songId, userId) {
+async function getSongClips(songId, userId, userRole) {
   const clips = await prisma.clip.findMany({
     where: {
       songId,
-      OR: [
-        { isGlobal: true },
-        ...(userId ? [{ userId }] : []),
-      ],
+      // Admins see all clips; others see global + their own
+      ...(userRole === 'ADMIN' ? {} : {
+        OR: [
+          { isGlobal: true },
+          ...(userId ? [{ userId }] : []),
+        ],
+      }),
     },
     orderBy: { start: 'asc' },
     select: { id: true, start: true, length: true, lyrics: true, isGlobal: true, userId: true },

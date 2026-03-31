@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -164,12 +164,29 @@ export default function PlaylistGrid({
     setBatchDirty(new Set());
   }, [batchMode]);
 
-  const toggleSelect = useCallback((clipId) => {
+  const lastClickedRef = useRef(null);
+
+  const toggleSelect = useCallback((clipId, e) => {
     const next = new Set(selectedClips);
+
+    // Shift+click: select range between last clicked and current
+    if (e?.shiftKey && lastClickedRef.current && lastClickedRef.current !== clipId) {
+      const ids = filteredClips.map((c) => c.clipId);
+      const lastIdx = ids.indexOf(lastClickedRef.current);
+      const curIdx = ids.indexOf(clipId);
+      if (lastIdx !== -1 && curIdx !== -1) {
+        const [from, to] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
+        for (let i = from; i <= to; i++) next.add(ids[i]);
+        onSelectedChange(next);
+        return;
+      }
+    }
+
     if (next.has(clipId)) next.delete(clipId);
     else next.add(clipId);
+    lastClickedRef.current = clipId;
     onSelectedChange(next);
-  }, [selectedClips, onSelectedChange]);
+  }, [selectedClips, onSelectedChange, filteredClips]);
 
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
 
@@ -307,7 +324,7 @@ export default function PlaylistGrid({
           {filteredClips.map((pc) => (
             <div
               key={pc.clipId}
-              onClick={() => toggleSelect(pc.clipId)}
+              onClick={(e) => toggleSelect(pc.clipId, e)}
               className={`flex cursor-pointer items-center gap-3 border-b border-border/50 px-3 py-2.5 last:border-0 transition-colors ${
                 selectedClips?.has(pc.clipId) ? "bg-primary/10" : "hover:bg-surface-hover"
               }`}
@@ -315,7 +332,7 @@ export default function PlaylistGrid({
               <input
                 type="checkbox"
                 checked={selectedClips?.has(pc.clipId) || false}
-                onChange={() => toggleSelect(pc.clipId)}
+                onChange={(e) => toggleSelect(pc.clipId, e)}
                 className="h-4 w-4 rounded border-border accent-primary"
               />
               <span className="w-6 shrink-0 text-right text-xs text-muted">{pc.position + 1}.</span>

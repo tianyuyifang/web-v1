@@ -29,7 +29,11 @@ function sliceLRC(lrcString, startSec, endSec) {
     parsed.push({ timeSec, text, raw: line });
   }
 
-  if (parsed.length === 0) return null;
+  if (parsed.length === 0) {
+    // Fallback: return raw non-empty lines (no timestamps) so frontend can show static lyrics
+    const rawLines = lines.map(l => l.trim()).filter(l => l && !l.startsWith('['));
+    return rawLines.length > 0 ? rawLines.join('\n') : null;
+  }
 
   // Sort by time
   parsed.sort((a, b) => a.timeSec - b.timeSec);

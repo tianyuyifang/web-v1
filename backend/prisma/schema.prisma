@@ -28,6 +28,7 @@ model User {
   sharedPlaylists  PlaylistShare[]
   copyPermissions  PlaylistCopyPermission[]
   feedback         Feedback[]
+  bandwidthLogs    BandwidthLog[]
 
   @@map("users")
 }
@@ -183,6 +184,18 @@ model Like {
   @@unique([playlistId, clipId])
   @@index([playlistId])
   @@map("likes")
+}
+
+model BandwidthLog {
+  id     String   @id @default(uuid()) @db.Uuid
+  userId String   @map("user_id") @db.Uuid
+  date   DateTime @db.Date
+  bytes  BigInt   @default(0)
+
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("bandwidth_logs")
 }
 
 enum FeedbackType {

@@ -123,6 +123,7 @@ export const adminAPI = {
   approveUser: (id) => api.patch(`/admin/users/${id}/approve`),
   demoteUser: (id) => api.patch(`/admin/users/${id}/demote`),
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
+  getBandwidth: (days = 30) => api.get(`/admin/bandwidth?days=${days}`),
 };
 
 // --- Feedback ---

@@ -74,4 +74,54 @@ async function deleteUser(id, requesterId) {
   await prisma.user.delete({ where: { id } });
 }
 
-module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser };
+/**
+ * Returns bandwidth usage per user, with daily breakdown.
+ * @param {number} days - Number of days to look back (default 30)
+ * @returns {Promise<object>} { trackingSince, users: [{ userId, username, totalBytes, days: [{ date, bytes }] }] }
+ */
+async function getBandwidthStats(days = 30) {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  since.setHours(0, 0, 0, 0);
+
+  // Get earliest log date (tracking since)
+  const earliest = await prisma.bandwidthLog.findFirst({
+    orderBy: { date: 'asc' },
+    select: { date: true },
+  });
+
+  const logs = await prisma.bandwidthLog.findMany({
+    where: { date: { gte: since } },
+    include: { user: { select: { username: true } } },
+    orderBy: [{ userId: 'asc' }, { date: 'asc' }],
+  });
+
+  // Group by user
+  const userMap = new Map();
+  for (const log of logs) {
+    if (!userMap.has(log.userId)) {
+      userMap.set(log.userId, {
+        userId: log.userId,
+        username: log.user.username,
+        totalBytes: BigInt(0),
+        days: [],
+      });
+    }
+    const entry = userMap.get(log.userId);
+    entry.totalBytes += log.bytes;
+    entry.days.push({ date: log.date, bytes: log.bytes.toString() });
+  }
+
+  // Sort by totalBytes descending
+  const users = Array.from(userMap.values())
+    .sort((a, b) => (b.totalBytes > a.totalBytes ? 1 : -1))
+    .map(u => ({ ...u, totalBytes: u.totalBytes.toString() }));
+
+  return {
+    trackingSince: earliest?.date || null,
+    periodDays: days,
+    users,
+  };
+}
+
+module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats };

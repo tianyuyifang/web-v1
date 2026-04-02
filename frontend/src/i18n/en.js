@@ -324,4 +324,17 @@ export default {
   feedbackBadSong: "Bad Song",
   feedbackRequestSong: "Request Song",
   feedbackGeneral: "General",
+
+  // Bandwidth
+  bandwidthTitle: "Bandwidth Usage",
+  bandwidthTrackingSince: "Tracking since",
+  bandwidthNoData: "No bandwidth data yet",
+  bandwidthUser: "User",
+  bandwidthTotal: "Total",
+  bandwidthAvgDay: "Avg/day",
+  bandwidthPeriod: "days",
+  bandwidthDay1: "24h",
+  bandwidthDay7: "7d",
+  bandwidthDay30: "30d",
+  bandwidthDay90: "90d",
 };

@@ -324,4 +324,17 @@ export default {
   feedbackBadSong: "问题歌曲",
   feedbackRequestSong: "请求歌曲",
   feedbackGeneral: "一般",
+
+  // Bandwidth
+  bandwidthTitle: "带宽用量",
+  bandwidthTrackingSince: "开始追踪",
+  bandwidthNoData: "暂无带宽数据",
+  bandwidthUser: "用户",
+  bandwidthTotal: "总计",
+  bandwidthAvgDay: "日均",
+  bandwidthPeriod: "天",
+  bandwidthDay1: "24小时",
+  bandwidthDay7: "7天",
+  bandwidthDay30: "30天",
+  bandwidthDay90: "90天",
 };

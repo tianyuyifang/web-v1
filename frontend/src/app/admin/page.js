@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { adminAPI, feedbackAPI } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
 import UserTable from "@/components/admin/UserTable";
+import BandwidthPanel from "@/components/admin/BandwidthPanel";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 export default function AdminPage() {
@@ -149,6 +150,7 @@ export default function AdminPage() {
             </div>
           )}
         </section>
+        <BandwidthPanel />
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ const config = require('./config');
 const prisma = require('./db/client');
 const errorHandler = require('./middleware/errorHandler');
 const { authMiddleware, requireRole, requireApproved } = require('./middleware/auth');
+const trackBandwidth = require('./middleware/bandwidth');
 
 const app = express();
 
@@ -37,7 +38,7 @@ app.use('/api/songs',     authMiddleware, requireApproved, require('./routes/son
 app.use('/api/clips',     authMiddleware, requireApproved, require('./routes/clips'));
 app.use('/api/playlists', authMiddleware, requireApproved, require('./routes/playlists'));
 app.use('/api/likes',     authMiddleware, requireApproved, require('./routes/likes'));
-app.use('/api/stream',    authMiddleware, requireApproved, require('./routes/stream'));
+app.use('/api/stream',    authMiddleware, requireApproved, trackBandwidth, require('./routes/stream'));
 app.use('/api/sse',       authMiddleware, requireApproved, require('./routes/sse'));
 app.use('/api/users',     authMiddleware, requireApproved, require('./routes/users'));
 

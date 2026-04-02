@@ -53,4 +53,15 @@ router.delete('/users/:id', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/bandwidth?days=30 — bandwidth usage per user
+router.get('/bandwidth', async (req, res, next) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 365);
+    const stats = await adminService.getBandwidthStats(days);
+    res.json(stats);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

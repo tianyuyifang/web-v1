@@ -37,7 +37,13 @@ export default function PlaylistCard({ playlist }) {
           {clipCount} {clipCount !== 1 ? t("clips") : t("clip")}
         </span>
         {badge && (
-          <span className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs font-medium text-muted">
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+            playlist.isOwner
+              ? (playlist.isPublic ? "bg-green-600 text-white" : "bg-red-600 text-white")
+              : playlist.isShared
+                ? "bg-blue-600 text-white"
+                : "bg-green-600 text-white"
+          }`}>
             {badge}
           </span>
         )}

@@ -67,7 +67,7 @@ export function getSharedContext() {
  * Returns the AudioBuffer if already cached, otherwise fetches and caches it.
  */
 export async function getAudioBuffer(clipId, version) {
-  const cacheKey = version > 1 ? `${clipId}_v${version}` : clipId;
+  const cacheKey = version ? `${clipId}_v${version}` : clipId;
   const entry = cache.get(cacheKey);
   if (entry?.buffer) {
     touchCache(cacheKey);
@@ -95,7 +95,7 @@ export async function getAudioBuffer(clipId, version) {
  * Check if a clip's audio buffer is already cached (synchronous).
  */
 export function hasCachedBuffer(clipId, version) {
-  const cacheKey = version > 1 ? `${clipId}_v${version}` : clipId;
+  const cacheKey = version ? `${clipId}_v${version}` : clipId;
   return cache.get(cacheKey)?.buffer != null;
 }
 
@@ -103,7 +103,7 @@ export function hasCachedBuffer(clipId, version) {
  * Get the normalization gain for a clip (1.0 if not yet computed).
  */
 export function getNormGain(clipId, version) {
-  const cacheKey = version > 1 ? `${clipId}_v${version}` : clipId;
+  const cacheKey = version ? `${clipId}_v${version}` : clipId;
   return cache.get(cacheKey)?.normGain ?? 1;
 }
 
@@ -116,7 +116,7 @@ export function getNormGain(clipId, version) {
  */
 export async function preloadClips(clips, concurrency = 3) {
   const queue = clips.filter(({ clipId, version }) => {
-    const cacheKey = version > 1 ? `${clipId}_v${version}` : clipId;
+    const cacheKey = version ? `${clipId}_v${version}` : clipId;
     return !cache.has(cacheKey);
   });
   let i = 0;

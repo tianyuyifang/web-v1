@@ -147,7 +147,7 @@ export const getStreamUrl = (songId) => {
 
 export const getClipStreamUrl = (clipId, version) => {
   const { base, token } = streamBase();
-  const params = [token ? `token=${token}` : "", version > 1 ? `v=${version}` : ""].filter(Boolean).join("&");
+  const params = [token ? `token=${token}` : "", version ? `v=${version}` : ""].filter(Boolean).join("&");
   return `${base}/stream/clip/${clipId}${params ? `?${params}` : ""}`;
 };
 

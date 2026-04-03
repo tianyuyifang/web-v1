@@ -11,10 +11,10 @@ async function streamFile(filePath, req, res, { isClip = false } = {}) {
   const stat = await fsp.stat(filePath);
   const fileSize = stat.size;
 
-  // Cache headers — clips are immutable, songs may change rarely
+  // Cache headers — use version query param for cache busting on clips
   const cacheControl = isClip
-    ? 'public, max-age=31536000, immutable'  // 1 year, never revalidate
-    : 'public, max-age=86400';               // 1 day for full songs
+    ? 'public, max-age=86400'    // 1 day for clips (version param busts cache on regenerate)
+    : 'public, max-age=86400';   // 1 day for full songs
 
   const range = parseRangeHeader(req.headers.range, fileSize);
 

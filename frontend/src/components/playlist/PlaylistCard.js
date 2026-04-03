@@ -28,7 +28,7 @@ export default function PlaylistCard({ playlist }) {
         <RichText text={playlist.name} />
       </h3>
       {playlist.description && (
-        <p className="mt-1.5 truncate text-xs text-muted">
+        <p className="mt-1.5 whitespace-pre-line text-xs text-muted">
           <RichText text={playlist.description} />
         </p>
       )}

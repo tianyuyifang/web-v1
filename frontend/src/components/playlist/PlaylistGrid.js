@@ -22,10 +22,11 @@ import PlayerBox from "@/components/player/PlayerBox";
 import SpeedControl from "@/components/player/SpeedControl";
 import PitchControl from "@/components/player/PitchControl";
 import ColorTag from "@/components/player/ColorTag";
+import LikeButton from "@/components/player/LikeButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
-function SortableCompactRow({ playlistClip, onRemove }) {
+function SortableCompactRow({ playlistClip, playlistId, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: playlistClip.clipId });
 
@@ -41,10 +42,18 @@ function SortableCompactRow({ playlistClip, onRemove }) {
     >
       <span className="cursor-grab text-muted">⠿</span>
       <span className="w-6 shrink-0 text-right text-xs text-muted">{playlistClip.position + 1}.</span>
+      {playlistClip.colorTag && (
+        <div className="flex shrink-0 gap-0.5 self-stretch">
+          {playlistClip.colorTag.split("|").filter(Boolean).map((c) => (
+            <div key={c} className="w-[3px] rounded-full" style={{ background: c }} />
+          ))}
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <span className="text-sm font-medium text-theme">{clip.song.title}</span>
         <span className="ml-2 text-xs text-muted">{clip.song.artist.replace(/_/g, "/")}</span>
       </div>
+      <LikeButton playlistId={playlistId} clipId={playlistClip.clipId} />
       {onRemove && (
         <button
           onClick={(e) => { e.stopPropagation(); onRemove(playlistClip.clipId); }}
@@ -382,7 +391,7 @@ export default function PlaylistGrid({
         <SortableContext items={filteredClips.map((c) => c.clipId)} strategy={verticalListSortingStrategy}>
           <div className="rounded-xl border border-border bg-surface">
             {filteredClips.map((pc) => (
-              <SortableCompactRow key={pc.clipId} playlistClip={pc} onRemove={setRemoveConfirmClipId} />
+              <SortableCompactRow key={pc.clipId} playlistClip={pc} playlistId={playlist.id} onRemove={setRemoveConfirmClipId} />
             ))}
           </div>
         </SortableContext>

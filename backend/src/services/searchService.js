@@ -170,7 +170,6 @@ async function searchPlaylists(query, userId) {
       shares: { where: { userId }, select: { id: true } },
       copyPermissions: { where: { userId }, select: { id: true } },
     },
-    take: 200,
   });
 
   // Sort: emojis first, then alphabetical by pinyin (stripped of leading emojis/symbols)

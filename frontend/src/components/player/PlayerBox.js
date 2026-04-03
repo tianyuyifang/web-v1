@@ -53,6 +53,7 @@ export default memo(function PlayerBox({
     playerId,
     clipId,
     clipLength: clip.length,
+    clipVersion: clip.version,
     speed,
     pitch,
   });

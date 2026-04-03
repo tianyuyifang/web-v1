@@ -84,6 +84,7 @@ model Clip {
   filePath  String?  @map("file_path")
   lyrics    String?
   isGlobal  Boolean  @default(true) @map("is_global")
+  version   Int      @default(1)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 

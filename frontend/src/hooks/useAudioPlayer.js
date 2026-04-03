@@ -18,6 +18,7 @@ export default function useAudioPlayer({
   playerId,
   clipId,
   clipLength,
+  clipVersion,
   speed = 1.0,
   pitch = 0,
 }) {
@@ -39,8 +40,8 @@ export default function useAudioPlayer({
 
   // Check if buffer is already preloaded
   useEffect(() => {
-    if (hasCachedBuffer(clipId)) setIsLoaded(true);
-  }, [clipId]);
+    if (hasCachedBuffer(clipId, clipVersion)) setIsLoaded(true);
+  }, [clipId, clipVersion]);
 
   // Load audio buffer (uses shared cache and shared AudioContext)
   const loadBuffer = useCallback(async () => {
@@ -48,7 +49,7 @@ export default function useAudioPlayer({
 
     audioCtxRef.current = getSharedContext();
 
-    const audioBuffer = await getAudioBuffer(clipId);
+    const audioBuffer = await getAudioBuffer(clipId, clipVersion);
     bufferRef.current = audioBuffer;
     setIsLoaded(true);
     return audioBuffer;
@@ -136,7 +137,7 @@ export default function useAudioPlayer({
         gainRef.current = ctx.createGain();
         gainRef.current.connect(ctx.destination);
       }
-      gainRef.current.gain.value = volume * getNormGain(clipId);
+      gainRef.current.gain.value = volume * getNormGain(clipId, clipVersion);
 
       // Create PitchShifter from the current offset position
       const shifter = new PitchShifter(ctx, buffer, 4096, () => {
@@ -201,7 +202,7 @@ export default function useAudioPlayer({
   const setVolume = useCallback((v) => {
     setVolumeState(v);
     if (gainRef.current) {
-      gainRef.current.gain.value = v * getNormGain(clipId);
+      gainRef.current.gain.value = v * getNormGain(clipId, clipVersion);
     }
   }, [clipId]);
 

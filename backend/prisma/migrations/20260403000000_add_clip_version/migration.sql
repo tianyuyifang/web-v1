@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "clips" ADD COLUMN "version" INTEGER NOT NULL DEFAULT 1;

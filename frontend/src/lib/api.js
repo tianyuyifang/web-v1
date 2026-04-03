@@ -145,9 +145,10 @@ export const getStreamUrl = (songId) => {
   return `${base}/stream/song/${songId}${token ? `?token=${token}` : ""}`;
 };
 
-export const getClipStreamUrl = (clipId) => {
+export const getClipStreamUrl = (clipId, version) => {
   const { base, token } = streamBase();
-  return `${base}/stream/clip/${clipId}${token ? `?token=${token}` : ""}`;
+  const params = [token ? `token=${token}` : "", version > 1 ? `v=${version}` : ""].filter(Boolean).join("&");
+  return `${base}/stream/clip/${clipId}${params ? `?${params}` : ""}`;
 };
 
 export const getLikesSSEUrl = (playlistId) => {

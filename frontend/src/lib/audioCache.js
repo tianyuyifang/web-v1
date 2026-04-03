@@ -66,42 +66,45 @@ export function getSharedContext() {
  * Get a cached AudioBuffer for a clip, or start fetching it.
  * Returns the AudioBuffer if already cached, otherwise fetches and caches it.
  */
-export async function getAudioBuffer(clipId) {
-  const entry = cache.get(clipId);
+export async function getAudioBuffer(clipId, version) {
+  const cacheKey = version > 1 ? `${clipId}_v${version}` : clipId;
+  const entry = cache.get(cacheKey);
   if (entry?.buffer) {
-    touchCache(clipId);
+    touchCache(cacheKey);
     return entry.buffer;
   }
   if (entry?.promise) return entry.promise;
 
   const promise = (async () => {
     const ctx = getSharedContext();
-    const url = getClipStreamUrl(clipId);
+    const url = getClipStreamUrl(clipId, version);
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
     const normGain = calcNormGain(audioBuffer);
-    cache.set(clipId, { buffer: audioBuffer, normGain, promise: null });
-    touchCache(clipId);
+    cache.set(cacheKey, { buffer: audioBuffer, normGain, promise: null });
+    touchCache(cacheKey);
     return audioBuffer;
   })();
 
-  cache.set(clipId, { buffer: null, normGain: 1, promise });
+  cache.set(cacheKey, { buffer: null, normGain: 1, promise });
   return promise;
 }
 
 /**
  * Check if a clip's audio buffer is already cached (synchronous).
  */
-export function hasCachedBuffer(clipId) {
-  return cache.get(clipId)?.buffer != null;
+export function hasCachedBuffer(clipId, version) {
+  const cacheKey = version > 1 ? `${clipId}_v${version}` : clipId;
+  return cache.get(cacheKey)?.buffer != null;
 }
 
 /**
  * Get the normalization gain for a clip (1.0 if not yet computed).
  */
-export function getNormGain(clipId) {
-  return cache.get(clipId)?.normGain ?? 1;
+export function getNormGain(clipId, version) {
+  const cacheKey = version > 1 ? `${clipId}_v${version}` : clipId;
+  return cache.get(cacheKey)?.normGain ?? 1;
 }
 
 /**
@@ -111,15 +114,18 @@ export function getNormGain(clipId) {
  * @param {string[]} clipIds - Clip IDs to preload
  * @param {number} concurrency - Max concurrent fetches
  */
-export async function preloadClips(clipIds, concurrency = 3) {
-  const queue = clipIds.filter((id) => !cache.has(id));
+export async function preloadClips(clips, concurrency = 3) {
+  const queue = clips.filter(({ clipId, version }) => {
+    const cacheKey = version > 1 ? `${clipId}_v${version}` : clipId;
+    return !cache.has(cacheKey);
+  });
   let i = 0;
 
   async function next() {
     while (i < queue.length) {
-      const clipId = queue[i++];
+      const { clipId, version } = queue[i++];
       try {
-        await getAudioBuffer(clipId);
+        await getAudioBuffer(clipId, version);
       } catch {
         // skip failed loads silently
       }

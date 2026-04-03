@@ -48,7 +48,7 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
       }
       clip = await prisma.clip.update({
         where: { id: clip.id },
-        data: { lyrics: clipLyrics, filePath: clipFilename, length },
+        data: { lyrics: clipLyrics, filePath: clipFilename, length, version: { increment: 1 } },
       });
     } else {
       clip = await prisma.clip.create({

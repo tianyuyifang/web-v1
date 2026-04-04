@@ -11,10 +11,20 @@ async function streamFile(filePath, req, res, { isClip = false } = {}) {
   const stat = await fsp.stat(filePath);
   const fileSize = stat.size;
 
-  // Cache headers — use version query param for cache busting on clips
+  // ETag based on file size + last modified time
+  const etag = `"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`;
+  const lastModified = stat.mtime.toUTCString();
+
+  // Return 304 if client has a matching cached copy
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304);
+    return res.end();
+  }
+
+  // Cache headers — clips use version param for cache busting on regenerate
   const cacheControl = isClip
-    ? 'public, max-age=86400'    // 1 day for clips (version param busts cache on regenerate)
-    : 'public, max-age=86400';   // 1 day for full songs
+    ? 'public, max-age=2592000'   // 30 days for clips (version param busts cache)
+    : 'public, max-age=604800';   // 7 days for full songs
 
   const range = parseRangeHeader(req.headers.range, fileSize);
 
@@ -28,6 +38,8 @@ async function streamFile(filePath, req, res, { isClip = false } = {}) {
       'Content-Length': contentLength,
       'Content-Type': 'audio/mpeg',
       'Cache-Control': cacheControl,
+      'ETag': etag,
+      'Last-Modified': lastModified,
     });
 
     const stream = fs.createReadStream(filePath, { start, end });
@@ -39,6 +51,8 @@ async function streamFile(filePath, req, res, { isClip = false } = {}) {
       'Content-Type': 'audio/mpeg',
       'Accept-Ranges': 'bytes',
       'Cache-Control': cacheControl,
+      'ETag': etag,
+      'Last-Modified': lastModified,
     });
 
     const stream = fs.createReadStream(filePath);

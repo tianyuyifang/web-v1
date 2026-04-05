@@ -54,6 +54,7 @@ model Song {
 
   songArtists          SongArtist[]
   clips                Clip[]
+  likes                Like[]
 
   @@index([titlePinyinInitials])
   @@index([titlePinyinConcat])
@@ -91,7 +92,6 @@ model Clip {
   song          Song           @relation(fields: [songId], references: [id], onDelete: Cascade)
   user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   playlistClips PlaylistClip[]
-  likes         Like[]
 
   @@index([songId, userId])
   @@index([songId, start])
@@ -175,14 +175,14 @@ model Like {
   id         String   @id @default(uuid()) @db.Uuid
   userId     String?  @map("user_id") @db.Uuid
   playlistId String   @map("playlist_id") @db.Uuid
-  clipId     String   @map("clip_id") @db.Uuid
+  songId     String   @map("song_id") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
-  clip       Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  song       Song     @relation(fields: [songId], references: [id], onDelete: Cascade)
 
-  @@unique([playlistId, clipId])
+  @@unique([playlistId, songId])
   @@index([playlistId])
   @@map("likes")
 }

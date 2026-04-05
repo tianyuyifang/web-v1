@@ -4,21 +4,21 @@ import { useCallback } from "react";
 import { likesAPI } from "@/lib/api";
 import usePlayerStore from "@/store/playerStore";
 
-export default function useLikes({ playlistId, clipId }) {
-  const isLiked = usePlayerStore((s) => s.isClipLiked(playlistId, clipId));
-  const toggleClipLike = usePlayerStore((s) => s.toggleClipLike);
+export default function useLikes({ playlistId, songId }) {
+  const isLiked = usePlayerStore((s) => s.isSongLiked(playlistId, songId));
+  const toggleSongLike = usePlayerStore((s) => s.toggleSongLike);
 
   const toggleLike = useCallback(async () => {
     // Optimistic update
-    toggleClipLike(playlistId, clipId);
+    toggleSongLike(playlistId, songId);
 
     try {
-      await likesAPI.toggle({ playlistId, clipId });
+      await likesAPI.toggle({ playlistId, songId });
     } catch {
       // Rollback on error
-      toggleClipLike(playlistId, clipId);
+      toggleSongLike(playlistId, songId);
     }
-  }, [playlistId, clipId, toggleClipLike]);
+  }, [playlistId, songId, toggleSongLike]);
 
   return { isLiked, toggleLike };
 }

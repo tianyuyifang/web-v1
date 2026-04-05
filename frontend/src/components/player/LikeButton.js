@@ -3,8 +3,8 @@
 import { memo } from "react";
 import useLikes from "@/hooks/useLikes";
 
-export default memo(function LikeButton({ playlistId, clipId }) {
-  const { isLiked, toggleLike } = useLikes({ playlistId, clipId });
+export default memo(function LikeButton({ playlistId, songId }) {
+  const { isLiked, toggleLike } = useLikes({ playlistId, songId });
 
   return (
     <button

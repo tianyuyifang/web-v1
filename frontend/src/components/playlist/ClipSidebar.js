@@ -80,7 +80,7 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
                   {pc.clip.song.artist.replace(/_/g, "/")} · {formatDuration(pc.clip.start)}
                 </p>
               </div>
-              <LikeButton playlistId={playlistId} clipId={pc.clipId} />
+              <LikeButton playlistId={playlistId} songId={pc.clip.song.id} />
               {onClipClick && (
                 <button
                   onClick={() => onClipClick(pc.clipId)}

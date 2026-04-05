@@ -10,23 +10,23 @@ const usePlayerStore = create((set, get) => ({
   triggerPlayFromStart: (clipId) => set({ playFromStartClipId: clipId }),
   clearPlayFromStart: () => set({ playFromStartClipId: null }),
 
-  // Liked clips cache — Set of "playlistId:clipId" keys
-  likedClips: new Set(),
+  // Liked songs cache — Set of "playlistId:songId" keys
+  likedSongs: new Set(),
 
-  setLikedClips: (clipKeys) => set({ likedClips: new Set(clipKeys) }),
+  setLikedSongs: (keys) => set({ likedSongs: new Set(keys) }),
 
-  isClipLiked: (playlistId, clipId) =>
-    get().likedClips.has(`${playlistId}:${clipId}`),
+  isSongLiked: (playlistId, songId) =>
+    get().likedSongs.has(`${playlistId}:${songId}`),
 
-  toggleClipLike: (playlistId, clipId) => {
-    const key = `${playlistId}:${clipId}`;
-    const next = new Set(get().likedClips);
+  toggleSongLike: (playlistId, songId) => {
+    const key = `${playlistId}:${songId}`;
+    const next = new Set(get().likedSongs);
     if (next.has(key)) {
       next.delete(key);
     } else {
       next.add(key);
     }
-    set({ likedClips: next });
+    set({ likedSongs: next });
   },
 }));
 

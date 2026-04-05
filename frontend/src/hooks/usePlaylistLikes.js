@@ -6,7 +6,7 @@ import usePlayerStore from "@/store/playerStore";
 
 /**
  * Connects to SSE stream for real-time like updates on a playlist.
- * Updates the shared likedClips store when events arrive.
+ * Updates the shared likedSongs store when events arrive.
  */
 export default function usePlaylistLikes(playlistId) {
   useEffect(() => {
@@ -17,16 +17,16 @@ export default function usePlaylistLikes(playlistId) {
 
     es.addEventListener("like-update", (e) => {
       try {
-        const { clipId, liked } = JSON.parse(e.data);
-        const key = `${playlistId}:${clipId}`;
+        const { songId, liked } = JSON.parse(e.data);
+        const key = `${playlistId}:${songId}`;
         const store = usePlayerStore.getState();
-        const next = new Set(store.likedClips);
+        const next = new Set(store.likedSongs);
         if (liked) {
           next.add(key);
         } else {
           next.delete(key);
         }
-        usePlayerStore.setState({ likedClips: next });
+        usePlayerStore.setState({ likedSongs: next });
       } catch {
         // ignore parse errors
       }

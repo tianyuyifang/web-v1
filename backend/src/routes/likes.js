@@ -1,11 +1,11 @@
 const router = require('express').Router();
 const likeService = require('../services/likeService');
 
-// POST /api/likes/toggle — toggle like on a clip within a playlist
+// POST /api/likes/toggle — toggle like on a song within a playlist
 router.post('/toggle', async (req, res, next) => {
   try {
-    const { playlistId, clipId } = req.body;
-    const result = await likeService.toggleLike(req.user.id, playlistId, clipId);
+    const { playlistId, songId } = req.body;
+    const result = await likeService.toggleLike(req.user.id, playlistId, songId);
     res.json(result);
   } catch (err) {
     next(err);

@@ -41,7 +41,7 @@ export default function PlaylistPage() {
   const [showCompare, setShowCompare] = useState(false);
   const [highlightedClipId, setHighlightedClipId] = useState(null);
 
-  const setLikedClips = usePlayerStore((s) => s.setLikedClips);
+  const setLikedSongs = usePlayerStore((s) => s.setLikedSongs);
   const triggerPlayFromStart = usePlayerStore((s) => s.triggerPlayFromStart);
 
   // SSE: real-time like updates from other users
@@ -59,14 +59,14 @@ export default function PlaylistPage() {
     Promise.all([playlistsAPI.getById(id), likesAPI.getAll(id)])
       .then(([playlistRes, likesRes]) => {
         setPlaylist(playlistRes.data);
-        setLikedClips(likesRes.data.likes);
+        setLikedSongs(likesRes.data.likes);
       })
       .catch((err) => {
         const status = err.response?.status;
         if (status === 404 || status === 403) router.push("/playlists");
       })
       .finally(() => setLoading(false));
-  }, [id, router, setLikedClips]);
+  }, [id, router, setLikedSongs]);
 
   const handleColumnChange = useCallback((count) => {
     setColumns(count);
@@ -127,8 +127,8 @@ export default function PlaylistPage() {
   const handleUnlikeAll = useCallback(async () => {
     await likesAPI.unlikeAll(id);
     const store = usePlayerStore.getState();
-    const newLiked = new Set([...store.likedClips].filter((k) => !k.startsWith(`${id}:`)));
-    usePlayerStore.setState({ likedClips: newLiked });
+    const newLiked = new Set([...store.likedSongs].filter((k) => !k.startsWith(`${id}:`)));
+    usePlayerStore.setState({ likedSongs: newLiked });
   }, [id]);
 
   const handlePublicConfirm = useCallback(async () => {

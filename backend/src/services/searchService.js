@@ -27,7 +27,7 @@ function detectQueryType(query) {
  * Search songs across title + artist using the appropriate strategy.
  * Returns raw Prisma results (songs with clips).
  */
-async function searchSongs(query, cursor, limit) {
+async function searchSongs(query, cursor, limit, strict = false) {
   const type = detectQueryType(query);
 
   // No query — return all songs paginated
@@ -61,8 +61,8 @@ async function searchSongs(query, cursor, limit) {
       OR s.title_pinyin_concat ILIKE $3
       OR s.artist_pinyin_concat ILIKE $3
       OR sa.artist_pinyin_concat ILIKE $3
-      OR s.title_pinyin_concat % $1
-      OR s.title_pinyin % $1
+      ${strict ? '' : `OR s.title_pinyin_concat % $1
+      OR s.title_pinyin % $1`}
     )`;
   } else if (type === 'full_pinyin') {
     // Spaced pinyin — search both spaced and concat columns + trigram fallback
@@ -73,8 +73,8 @@ async function searchSongs(query, cursor, limit) {
       s.title_pinyin ILIKE $2
       OR s.artist_pinyin ILIKE $2
       OR sa.artist_pinyin ILIKE $2
-      OR s.title_pinyin % $1
-      OR s.title_pinyin_concat % $1
+      ${strict ? '' : `OR s.title_pinyin % $1
+      OR s.title_pinyin_concat % $1`}
     )`;
   } else {
     // chinese — ILIKE on title/artist + trigram fallback
@@ -84,7 +84,7 @@ async function searchSongs(query, cursor, limit) {
     whereClause = `(
       s.title ILIKE $2
       OR sa.artist_name ILIKE $2
-      OR s.title % $1
+      ${strict ? '' : 'OR s.title % $1'}
     )`;
   }
 

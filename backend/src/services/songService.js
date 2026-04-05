@@ -2,8 +2,8 @@ const prisma = require('../db/client');
 const { NotFoundError } = require('../utils/errors');
 const { searchSongs } = require('./searchService');
 
-async function getSongs(query, cursor, limit) {
-  const songs = await searchSongs(query, cursor, limit);
+async function getSongs(query, cursor, limit, strict = false) {
+  const songs = await searchSongs(query, cursor, limit, strict);
 
   const hasMore = songs.length > limit;
   const results = hasMore ? songs.slice(0, limit) : songs;

@@ -7,8 +7,9 @@ router.get('/', async (req, res, next) => {
     const q = req.query.q || '';
     const cursor = req.query.cursor || null;
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+    const strict = req.query.strict === '1';
 
-    const result = await songService.getSongs(q, cursor, limit);
+    const result = await songService.getSongs(q, cursor, limit, strict);
     res.json(result);
   } catch (err) {
     next(err);

@@ -14,6 +14,7 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onClipS
   // --- Search ---
   const { query, setQuery, results, isSearching } = useSearch({
     endpoint: "/songs",
+    extraParams: { strict: 1 },
   });
 
   const handleSelectClip = async (clipId) => {

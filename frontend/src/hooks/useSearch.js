@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import api from "@/lib/api";
 
-export default function useSearch({ endpoint, debounceMs = 300 }) {
+export default function useSearch({ endpoint, debounceMs = 300, extraParams = {} }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -22,7 +22,7 @@ export default function useSearch({ endpoint, debounceMs = 300 }) {
 
     timerRef.current = setTimeout(async () => {
       try {
-        const res = await api.get(endpoint, { params: { q: query } });
+        const res = await api.get(endpoint, { params: { q: query, ...extraParams } });
         setResults(res.data.songs ?? res.data);
       } catch {
         setResults([]);

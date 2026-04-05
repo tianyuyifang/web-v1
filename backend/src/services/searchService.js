@@ -53,39 +53,69 @@ async function searchSongs(query, cursor, limit, strict = false) {
     // Search initials (prefix), concat pinyin (substring), and trigram similarity
     params.push(query);             // $1 = raw query
     params.push(`${query}%`);       // $2 = prefix pattern
-    params.push(`%${query}%`);      // $3 = substring pattern
 
-    whereClause = `(
-      s.title_pinyin_initials LIKE $2
-      OR sa.artist_pinyin_initials LIKE $2
-      OR s.title_pinyin_concat ILIKE $3
-      OR s.artist_pinyin_concat ILIKE $3
-      OR sa.artist_pinyin_concat ILIKE $3
-      ${strict ? '' : `OR s.title_pinyin_concat % $1
-      OR s.title_pinyin % $1`}
-    )`;
+    if (strict) {
+      // Strict: prefix-only on initials and concat pinyin (no substring, no trigram)
+      whereClause = `(
+        s.title_pinyin_initials LIKE $2
+        OR sa.artist_pinyin_initials LIKE $2
+        OR s.title_pinyin_concat ILIKE $2
+        OR s.artist_pinyin_concat ILIKE $2
+        OR sa.artist_pinyin_concat ILIKE $2
+      )`;
+    } else {
+      params.push(`%${query}%`);   // $3 = substring pattern
+      whereClause = `(
+        s.title_pinyin_initials LIKE $2
+        OR sa.artist_pinyin_initials LIKE $2
+        OR s.title_pinyin_concat ILIKE $3
+        OR s.artist_pinyin_concat ILIKE $3
+        OR sa.artist_pinyin_concat ILIKE $3
+        OR s.title_pinyin_concat % $1
+        OR s.title_pinyin % $1
+      )`;
+    }
   } else if (type === 'full_pinyin') {
     // Spaced pinyin — search both spaced and concat columns + trigram fallback
     params.push(query);             // $1 = raw query
-    params.push(`%${query}%`);      // $2 = substring pattern
 
-    whereClause = `(
-      s.title_pinyin ILIKE $2
-      OR s.artist_pinyin ILIKE $2
-      OR sa.artist_pinyin ILIKE $2
-      ${strict ? '' : `OR s.title_pinyin % $1
-      OR s.title_pinyin_concat % $1`}
-    )`;
+    if (strict) {
+      params.push(`${query}%`);    // $2 = prefix pattern
+      whereClause = `(
+        s.title_pinyin ILIKE $2
+        OR s.artist_pinyin ILIKE $2
+        OR sa.artist_pinyin ILIKE $2
+      )`;
+    } else {
+      params.push(`%${query}%`);   // $2 = substring pattern
+      whereClause = `(
+        s.title_pinyin ILIKE $2
+        OR s.artist_pinyin ILIKE $2
+        OR sa.artist_pinyin ILIKE $2
+        OR s.title_pinyin % $1
+        OR s.title_pinyin_concat % $1
+      )`;
+    }
   } else {
     // chinese — ILIKE on title/artist + trigram fallback
     params.push(query);             // $1 = raw query
-    params.push(`%${query}%`);      // $2 = substring pattern
 
-    whereClause = `(
-      s.title ILIKE $2
-      OR sa.artist_name ILIKE $2
-      ${strict ? '' : 'OR s.title % $1'}
-    )`;
+    if (strict) {
+      params.push(`${query}%`);    // $2 = prefix pattern
+      params.push(`%${query}%`);   // $3 = substring pattern
+      whereClause = `(
+        s.title ILIKE $2
+        OR s.title ILIKE $3
+        OR sa.artist_name ILIKE $3
+      )`;
+    } else {
+      params.push(`%${query}%`);   // $2 = substring pattern
+      whereClause = `(
+        s.title ILIKE $2
+        OR sa.artist_name ILIKE $2
+        OR s.title % $1
+      )`;
+    }
   }
 
   // Cursor condition

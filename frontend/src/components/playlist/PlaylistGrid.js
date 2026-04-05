@@ -53,7 +53,7 @@ function SortableCompactRow({ playlistClip, playlistId, onRemove }) {
         <span className="text-sm font-medium text-theme">{clip.song.title}</span>
         <span className="ml-2 text-xs text-muted">{clip.song.artist.replace(/_/g, "/")}</span>
       </div>
-      <LikeButton playlistId={playlistId} songId={clip.song.id} />
+      <LikeButton playlistId={playlistId} clipId={playlistClip.clipId} />
       {onRemove && (
         <button
           onClick={(e) => { e.stopPropagation(); onRemove(playlistClip.clipId); }}

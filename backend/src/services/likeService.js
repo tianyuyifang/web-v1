@@ -19,15 +19,15 @@ async function canToggleLike(userId, playlistId) {
 }
 
 /**
- * Shared toggle: one like per (playlistId, songId).
+ * Shared toggle: one like per (playlistId, clipId).
  * Anyone with non-public access can toggle it on or off for everyone.
  */
-async function toggleLike(userId, playlistId, songId) {
+async function toggleLike(userId, playlistId, clipId) {
   const allowed = await canToggleLike(userId, playlistId);
-  if (!allowed) throw new ForbiddenError('No permission to like songs in this playlist');
+  if (!allowed) throw new ForbiddenError('No permission to like clips in this playlist');
 
   const existing = await prisma.like.findUnique({
-    where: { playlistId_songId: { playlistId, songId } },
+    where: { playlistId_clipId: { playlistId, clipId } },
   });
 
   let liked;
@@ -36,30 +36,30 @@ async function toggleLike(userId, playlistId, songId) {
     liked = false;
   } else {
     await prisma.like.create({
-      data: { userId, playlistId, songId },
+      data: { userId, playlistId, clipId },
     });
     liked = true;
   }
 
   // Broadcast to all SSE clients watching this playlist
-  broadcast(playlistId, 'like-update', { songId, liked });
+  broadcast(playlistId, 'like-update', { clipId, liked });
 
   return { liked };
 }
 
 /**
- * Get all liked songIds for a playlist (shared pool).
+ * Get all liked clipIds for a playlist (shared pool).
  */
 async function getPlaylistLikes(playlistId) {
   const likes = await prisma.like.findMany({
     where: { playlistId },
-    select: { songId: true },
+    select: { clipId: true },
   });
-  return likes.map((l) => `${playlistId}:${l.songId}`);
+  return likes.map((l) => `${playlistId}:${l.clipId}`);
 }
 
 /**
- * Get all liked songs across all playlists the user can access.
+ * Get all liked clips across all playlists the user can access.
  * Used for initial page load.
  */
 async function getUserLikes(userId) {
@@ -79,14 +79,14 @@ async function getUserLikes(userId) {
 
   const likes = await prisma.like.findMany({
     where: { playlistId: { in: uniqueIds } },
-    select: { playlistId: true, songId: true },
+    select: { playlistId: true, clipId: true },
   });
 
-  return likes.map((l) => `${l.playlistId}:${l.songId}`);
+  return likes.map((l) => `${l.playlistId}:${l.clipId}`);
 }
 
 /**
- * Unlike all songs in a playlist. Broadcasts each removal via SSE.
+ * Unlike all clips in a playlist. Broadcasts each removal via SSE.
  */
 async function unlikeAllInPlaylist(userId, playlistId) {
   const allowed = await canToggleLike(userId, playlistId);
@@ -94,7 +94,7 @@ async function unlikeAllInPlaylist(userId, playlistId) {
 
   const likes = await prisma.like.findMany({
     where: { playlistId },
-    select: { songId: true },
+    select: { clipId: true },
   });
 
   const result = await prisma.like.deleteMany({
@@ -102,7 +102,7 @@ async function unlikeAllInPlaylist(userId, playlistId) {
   });
 
   for (const l of likes) {
-    broadcast(playlistId, 'like-update', { songId: l.songId, liked: false });
+    broadcast(playlistId, 'like-update', { clipId: l.clipId, liked: false });
   }
 
   return { removed: result.count };

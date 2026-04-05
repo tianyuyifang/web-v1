@@ -304,8 +304,8 @@ async function swapClip(playlistId, oldClipId, newClipId) {
   if (!existing) throw new NotFoundError('PlaylistClip');
 
   // Swap in a transaction: delete old, create new with same position/customizations
-  // Likes are per-song so they carry over automatically
-  const [, created] = await prisma.$transaction([
+  const [,, created] = await prisma.$transaction([
+    prisma.like.deleteMany({ where: { playlistId, clipId: oldClipId } }),
     prisma.playlistClip.delete({
       where: { playlistId_clipId: { playlistId, clipId: oldClipId } },
     }),

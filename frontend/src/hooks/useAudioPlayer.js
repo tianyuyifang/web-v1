@@ -30,6 +30,10 @@ export default function useAudioPlayer({
   const timerRef = useRef(null);
   const startTimeRef = useRef(0);
   const offsetRef = useRef(0);
+  // Epoch counter — incremented on every play/stop. Async play() calls compare
+  // their captured epoch against this ref to detect if they were superseded
+  // (e.g. user clicked play twice during loading, or switched to another clip).
+  const playEpochRef = useRef(0);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -57,8 +61,10 @@ export default function useAudioPlayer({
     return audioBuffer;
   }, [clipId]);
 
-  // Stop and clean up the current shifter
+  // Stop and clean up the current shifter.
+  // Bumps epoch so any in-flight play() invocations detect they were superseded.
   const stopShifter = useCallback(() => {
+    playEpochRef.current += 1;
     if (timerRef.current) {
       cancelAnimationFrame(timerRef.current);
       timerRef.current = null;
@@ -121,19 +127,26 @@ export default function useAudioPlayer({
   }, [stopShifter]);
 
   const play = useCallback(async () => {
+    // Stop any existing playback FIRST (also bumps epoch, invalidating any
+    // in-flight play() calls that haven't yet attached a shifter).
+    stopShifter();
+    const myEpoch = ++playEpochRef.current;
+
     try {
       const buffer = await loadBuffer();
+      // Aborted? Another play/stop happened during the load.
+      if (myEpoch !== playEpochRef.current) return;
+
       const ctx = audioCtxRef.current;
 
       if (ctx.state === "suspended") {
         await ctx.resume();
+        if (myEpoch !== playEpochRef.current) return;
       }
-
-      // Stop any existing playback
-      stopShifter();
 
       // Import SoundTouch dynamically (it's ESM-friendly)
       const { PitchShifter } = await import(/* webpackChunkName: "soundtouchjs" */ "soundtouchjs");
+      if (myEpoch !== playEpochRef.current) return;
 
       // Create gain node for volume
       if (!gainRef.current) {
@@ -144,7 +157,8 @@ export default function useAudioPlayer({
 
       // Create PitchShifter from the current offset position
       const shifter = new PitchShifter(ctx, buffer, 4096, () => {
-        // onEnd callback
+        // onEnd callback — only act if this shifter is still the active one
+        if (shifterRef.current !== shifter) return;
         stopShifter();
         setCurrentTime(0);
         offsetRef.current = 0;

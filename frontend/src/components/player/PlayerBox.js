@@ -208,7 +208,7 @@ export default memo(function PlayerBox({
           <div className="flex-1" />
 
           {/* Like button */}
-          <LikeButton playlistId={playlistId} clipId={clipId} />
+          <LikeButton playlistId={playlistId} clipId={clipId} fontSize={26} />
         </div>
 
         {/* Edit mode: speed/pitch controls + remove */}

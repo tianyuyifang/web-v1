@@ -6,8 +6,13 @@ import { formatDuration } from "@/lib/utils";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import VolumeControl from "@/components/player/VolumeControl";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import usePlayerStore from "@/store/playerStore";
 
 import { getToken } from "@/lib/auth";
+
+// Sentinel id used in the shared player store so ClipCreator participates
+// in the "only one player at a time" rule alongside useAudioPlayer instances.
+const CLIP_CREATOR_PLAYER_ID = "__clip_creator__";
 
 function checkIsAdmin() {
   try {
@@ -34,6 +39,29 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
   const [lyrics, setLyrics] = useState(song.lyrics || null);
   const audioRef = useRef(null);
   const lyricsContainerRef = useRef(null);
+
+  const activePlayerId = usePlayerStore((s) => s.activePlayerId);
+  const setActivePlayer = usePlayerStore((s) => s.setActivePlayer);
+
+  // Pause our audio when another player (a clip PlayerBox) becomes active
+  useEffect(() => {
+    if (activePlayerId && activePlayerId !== CLIP_CREATOR_PLAYER_ID) {
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
+      }
+      setIsPlaying(false);
+    }
+  }, [activePlayerId]);
+
+  // On unmount, if we were the active player, clear the active flag
+  useEffect(() => {
+    return () => {
+      const store = usePlayerStore.getState();
+      if (store.activePlayerId === CLIP_CREATOR_PLAYER_ID) {
+        store.setActivePlayer(null);
+      }
+    };
+  }, []);
 
   // Fetch lyrics if not provided (e.g. from playlist detail which omits them)
   useEffect(() => {
@@ -90,6 +118,7 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
       if (e.code === "Space") {
         e.preventDefault();
         if (audio.paused) {
+          setActivePlayer(CLIP_CREATOR_PLAYER_ID);
           audio.play().catch(() => {});
           setIsPlaying(true);
         } else {
@@ -113,7 +142,7 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [setActivePlayer]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
@@ -122,10 +151,11 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
       audio.pause();
       setIsPlaying(false);
     } else {
+      setActivePlayer(CLIP_CREATOR_PLAYER_ID);
       audio.play().catch(() => {});
       setIsPlaying(true);
     }
-  }, [isPlaying]);
+  }, [isPlaying, setActivePlayer]);
 
   const handleSeek = useCallback((e) => {
     const t = parseFloat(e.target.value);
@@ -180,6 +210,7 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
                 if (audioRef.current) {
                   audioRef.current.currentTime = line.time;
                   setCurrentTime(line.time);
+                  setActivePlayer(CLIP_CREATOR_PLAYER_ID);
                   audioRef.current.play().catch(() => {});
                   setIsPlaying(true);
                 }

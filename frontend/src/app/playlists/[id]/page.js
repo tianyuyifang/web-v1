@@ -51,7 +51,7 @@ export default function PlaylistPage() {
 
   useEffect(() => {
     if (!playlist?.clips?.length) return;
-    preloadClips(playlist.clips.map((pc) => ({ clipId: pc.clipId, version: pc.clip.version })));
+    preloadClips(playlist.clips.map((pc) => ({ clipId: pc.clipId, version: pc.clip.version })), 8);
   }, [playlist?.clips]);
 
   useEffect(() => {

@@ -7,7 +7,7 @@ import { getClipStreamUrl } from "@/lib/api";
  * Keyed by clipId → { buffer: AudioBuffer, normGain: number, promise: Promise }
  * Prevents duplicate fetches across multiple useAudioPlayer instances.
  */
-const MAX_CACHE_SIZE = 30;
+const MAX_CACHE_SIZE = 80;
 const cache = new Map();
 
 /**
@@ -108,14 +108,17 @@ export function getNormGain(clipId, version) {
 }
 
 /**
- * Preload audio buffers for a list of clip IDs.
- * Fetches concurrently with a concurrency limit to avoid overwhelming the network.
+ * Preload audio buffers for a list of clips.
+ * Only preloads the first `limit` clips (default 8) to save bandwidth.
+ * Remaining clips load on-demand when played via getAudioBuffer.
  *
- * @param {string[]} clipIds - Clip IDs to preload
+ * @param {Array<{clipId: string, version?: number}>} clips - Clips to preload
+ * @param {number} limit - Max clips to preload (0 = all)
  * @param {number} concurrency - Max concurrent fetches
  */
-export async function preloadClips(clips, concurrency = 3) {
-  const queue = clips.filter(({ clipId, version }) => {
+export async function preloadClips(clips, limit = 8, concurrency = 3) {
+  const candidates = limit > 0 ? clips.slice(0, limit) : clips;
+  const queue = candidates.filter(({ clipId, version }) => {
     const cacheKey = version ? `${clipId}_v${version}` : clipId;
     return !cache.has(cacheKey);
   });

@@ -42,9 +42,7 @@ async function searchSongs(query, cursor, limit, strict = false) {
   }
 
   // Build raw SQL for search
-  // Lower trigram threshold for short queries to catch partial matches
-  const threshold = 0.35;
-  await prisma.$executeRawUnsafe(`SET pg_trgm.similarity_threshold = ${threshold}`);
+  // pg_trgm.similarity_threshold is set once per connection in db/client.js
 
   const params = [];
   let whereClause;

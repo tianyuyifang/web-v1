@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const prisma = require('./db/client');
@@ -18,6 +19,7 @@ app.use((req, res, next) => {
 });
 
 // Global middleware
+app.use(compression());
 app.use(cors({ origin: config.frontendUrl, credentials: true }));
 app.use(express.json());
 

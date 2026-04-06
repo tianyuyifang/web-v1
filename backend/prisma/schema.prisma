@@ -168,6 +168,7 @@ model PlaylistClip {
 
   @@unique([playlistId, clipId])
   @@index([clipId])
+  @@index([playlistId, position], map: "idx_playlist_clips_playlist_position")
   @@map("playlist_clips")
 }
 

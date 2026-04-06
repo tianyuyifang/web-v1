@@ -26,35 +26,8 @@ async function getUserPlaylists(userId, query) {
 }
 
 async function getPlaylistById(playlistId, userId, clipQuery) {
-  // If clip search query provided, use filtered results
-  let playlistClips;
-  if (clipQuery) {
-    playlistClips = await searchClipsInPlaylist(playlistId, clipQuery);
-  } else {
-    playlistClips = await prisma.playlistClip.findMany({
-      where: { playlistId },
-      orderBy: { position: 'asc' },
-      include: {
-        clip: {
-          include: {
-            song: {
-              select: {
-                id: true,
-                title: true,
-                artist: true,
-                duration: true,
-                titlePinyin: true,
-                titlePinyinInitials: true,
-                titlePinyinConcat: true,
-                artistPinyinConcat: true,
-              },
-            },
-          },
-        },
-      },
-    });
-  }
-
+  // Single query for playlist metadata + shares + copy permissions.
+  // Clips are also included unless a clip search query requires a separate filtered fetch.
   const playlist = await prisma.playlist.findUnique({
     where: { id: playlistId },
     include: {
@@ -68,10 +41,37 @@ async function getPlaylistById(playlistId, userId, clipQuery) {
           user: { select: { id: true, username: true } },
         },
       },
+      ...(!clipQuery ? {
+        playlistClips: {
+          orderBy: { position: 'asc' },
+          include: {
+            clip: {
+              include: {
+                song: {
+                  select: {
+                    id: true,
+                    title: true,
+                    artist: true,
+                    duration: true,
+                    titlePinyin: true,
+                    titlePinyinInitials: true,
+                    titlePinyinConcat: true,
+                    artistPinyinConcat: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      } : {}),
     },
   });
 
   if (!playlist) throw new NotFoundError('Playlist');
+
+  const playlistClips = clipQuery
+    ? await searchClipsInPlaylist(playlistId, clipQuery)
+    : playlist.playlistClips;
 
   const isOwner = playlist.userId === userId;
   const isShared = playlist.shares.some((s) => s.userId === userId);

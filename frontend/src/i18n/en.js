@@ -7,6 +7,7 @@ export default {
   // Navbar
   welcome: "Welcome,",
   navPlaylists: "Playlists",
+  navGuide: "Guide",
   navAdmin: "Admin",
   navSettings: "Settings",
   navLogout: "Logout",

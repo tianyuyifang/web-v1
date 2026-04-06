@@ -7,6 +7,7 @@ export default {
   // Navbar
   welcome: "欢迎，",
   navPlaylists: "播放列表",
+  navGuide: "使用指南",
   navAdmin: "管理",
   navSettings: "设置",
   navLogout: "退出登录",

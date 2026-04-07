@@ -110,7 +110,17 @@ export default function PlaylistPage() {
         ...prev,
         clips: prev.clips.map((c) =>
           c.clipId === oldClipId
-            ? { ...c, clipId: res.data.clip.id, clip: { id: res.data.clip.id, start: res.data.clip.start, length: res.data.clip.length, lyrics: res.data.clip.lyrics, song: res.data.clip.song } }
+            ? {
+                ...c,
+                clipId: res.data.clip.id,
+                clip: {
+                  id: res.data.clip.id,
+                  start: res.data.clip.start,
+                  length: res.data.clip.length,
+                  version: res.data.clip.version,
+                  song: res.data.clip.song,
+                },
+              }
             : c
         ),
       }));

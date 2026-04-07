@@ -1,13 +1,30 @@
 "use client";
 
-import { useMemo, useEffect, useRef, memo } from "react";
+import { useMemo, useEffect, useRef, useState, memo } from "react";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import { fetchLyrics, getCachedLyrics } from "@/lib/lyricsCache";
 
-export default memo(function LyricsBox({ lyrics, currentTime, clipStart }) {
+export default memo(function LyricsBox({ clipId, clipVersion, currentTime, clipStart }) {
   const { t } = useLanguage();
   const containerRef = useRef(null);
   const innerRef = useRef(null);
+
+  // Lyrics are fetched on demand from /api/clips/:id/lyrics.
+  // Seed with cached value (if any) so first render is instant for revisits.
+  const [lyrics, setLyrics] = useState(() => getCachedLyrics(clipId, clipVersion));
+
+  useEffect(() => {
+    let cancelled = false;
+    const cached = getCachedLyrics(clipId, clipVersion);
+    setLyrics(cached);
+    if (cached !== null) return;
+    fetchLyrics(clipId, clipVersion).then((result) => {
+      if (!cancelled) setLyrics(result);
+    });
+    return () => { cancelled = true; };
+  }, [clipId, clipVersion]);
+
   const parsed = useMemo(() => parseLRC(lyrics), [lyrics]);
 
   const isStatic = parsed.length > 0 && parsed[0].time === -1;

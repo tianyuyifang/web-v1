@@ -150,7 +150,8 @@ export default memo(function PlayerBox({
 
         {/* Lyrics — clean, no background */}
         <LyricsBox
-          lyrics={clip.lyrics}
+          clipId={clipId}
+          clipVersion={clip.version}
           currentTime={currentTime}
           clipStart={0}
         />

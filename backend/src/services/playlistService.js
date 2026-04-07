@@ -107,7 +107,7 @@ async function getPlaylistById(playlistId, userId, clipQuery) {
         id: pc.clip.id,
         start: pc.clip.start,
         length: pc.clip.length,
-        lyrics: pc.clip.lyrics,
+        // lyrics intentionally omitted — fetched on-demand via GET /api/clips/:id/lyrics
         song: pc.clip.song,
       },
     })),

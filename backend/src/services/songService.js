@@ -9,8 +9,9 @@ async function getSongs(query, cursor, limit, strict = false) {
   const results = hasMore ? songs.slice(0, limit) : songs;
   const nextCursor = hasMore ? results[results.length - 1].id : null;
 
+  // List responses omit lyrics to save egress — use getSongById for full song detail.
   return {
-    songs: results.map(formatSong),
+    songs: results.map((s) => formatSong(s, { includeLyrics: false })),
     nextCursor,
   };
 }
@@ -21,17 +22,17 @@ async function getSongById(songId) {
     include: { clips: { orderBy: { start: 'asc' } } },
   });
   if (!song) throw new NotFoundError('Song');
-  return formatSong(song);
+  return formatSong(song, { includeLyrics: true });
 }
 
-function formatSong(song) {
+function formatSong(song, { includeLyrics = true } = {}) {
   return {
     id: song.id,
     title: song.title,
     artist: song.artist,
     duration: song.duration,
     filePath: song.filePath,
-    lyrics: song.lyrics,
+    ...(includeLyrics ? { lyrics: song.lyrics } : {}),
     starts: song.starts,
     clips: (song.clips || []).map((c) => ({
       id: c.id,

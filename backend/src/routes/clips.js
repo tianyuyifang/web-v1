@@ -29,6 +29,22 @@ router.post('/auto', validate(autoClipSchema), async (req, res, next) => {
   }
 });
 
+// GET /api/clips/:id/lyrics — fetch lyrics for a single clip on demand
+router.get('/:id/lyrics', async (req, res, next) => {
+  try {
+    const clip = await prisma.clip.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, lyrics: true, version: true },
+    });
+    if (!clip) return res.status(404).json({ error: { message: 'Clip not found' } });
+    // Lyrics are immutable for a given (clipId, version) — aggressive cache
+    res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+    res.json({ id: clip.id, lyrics: clip.lyrics, version: clip.version });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /api/clips/:id/toggle-global — admin toggle clip visibility
 router.put('/:id/toggle-global', requireRole('ADMIN'), async (req, res, next) => {
   try {

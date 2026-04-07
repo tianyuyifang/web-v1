@@ -1,6 +1,7 @@
 "use client";
 
 import { getClipStreamUrl } from "@/lib/api";
+import { getClipBytes, putClipBytes } from "@/lib/clipDB";
 
 /**
  * Shared audio buffer cache.
@@ -64,7 +65,13 @@ export function getSharedContext() {
 
 /**
  * Get a cached AudioBuffer for a clip, or start fetching it.
- * Returns the AudioBuffer if already cached, otherwise fetches and caches it.
+ *
+ * Lookup order:
+ *   1. In-memory decoded AudioBuffer (fastest — ready to play)
+ *   2. IndexedDB raw bytes (no network — re-decode locally)
+ *   3. Network fetch (slowest — then persist to IDB for next session)
+ *
+ * Returns the AudioBuffer once ready.
  */
 export async function getAudioBuffer(clipId, version) {
   const cacheKey = version ? `${clipId}_v${version}` : clipId;
@@ -77,9 +84,21 @@ export async function getAudioBuffer(clipId, version) {
 
   const promise = (async () => {
     const ctx = getSharedContext();
-    const url = getClipStreamUrl(clipId, version);
-    const response = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
+
+    // Try IndexedDB first — avoids the network entirely for previously played clips
+    let arrayBuffer = await getClipBytes(clipId, version);
+
+    if (!arrayBuffer) {
+      // Miss — fetch from network
+      const url = getClipStreamUrl(clipId, version);
+      const response = await fetch(url);
+      arrayBuffer = await response.arrayBuffer();
+      // Persist for next session. putClipBytes is best-effort and can't block playback.
+      // We need to clone because decodeAudioData may detach the ArrayBuffer.
+      const copy = arrayBuffer.slice(0);
+      putClipBytes(clipId, version, copy).catch(() => {});
+    }
+
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
     const normGain = calcNormGain(audioBuffer);
     cache.set(cacheKey, { buffer: audioBuffer, normGain, promise: null });

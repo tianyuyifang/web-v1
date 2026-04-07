@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const crypto = require('crypto');
 const validate = require('../middleware/validate');
 const { playlistAccess, requireView, requireOwner } = require('../middleware/playlistAccess');
 const {
@@ -46,7 +47,22 @@ router.get('/:id', playlistAccess, requireView, async (req, res, next) => {
       req.user.id,
       req.query.q || ''
     );
-    res.json(playlist);
+
+    // Compute ETag from the serialized body. For a ~50-clip playlist this
+    // is cheap (~1ms) and lets browsers return 304 on repeat fetches.
+    const body = JSON.stringify(playlist);
+    const etag = `"${crypto.createHash('sha1').update(body).digest('base64').slice(0, 22)}"`;
+    res.setHeader('ETag', etag);
+    // Allow short-lived browser cache with background revalidation.
+    // Private because playlists may contain user-specific flags (isOwner, etc.)
+    res.setHeader('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.send(body);
   } catch (err) {
     next(err);
   }

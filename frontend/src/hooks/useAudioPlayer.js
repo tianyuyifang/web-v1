@@ -126,6 +126,27 @@ export default function useAudioPlayer({
     };
   }, [stopShifter]);
 
+  // Mobile fix: when the tab becomes visible again, the AudioContext may
+  // have been suspended or interrupted (common on iOS Safari and Android
+  // Chrome when switching apps). Proactively resume it so the next play()
+  // call doesn't silently produce no audio.
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== "visible") return;
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
+      if (ctx.state !== "running" && ctx.state !== "closed") {
+        try {
+          await ctx.resume();
+        } catch {
+          // ignore — will retry on next play() call
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
   const play = useCallback(async () => {
     // Stop any existing playback FIRST (also bumps epoch, invalidating any
     // in-flight play() calls that haven't yet attached a shifter).
@@ -139,7 +160,8 @@ export default function useAudioPlayer({
 
       const ctx = audioCtxRef.current;
 
-      if (ctx.state === "suspended") {
+      // Catches "suspended", "interrupted" (iOS Safari), and any non-running state
+      if (ctx.state !== "running") {
         await ctx.resume();
         if (myEpoch !== playEpochRef.current) return;
       }

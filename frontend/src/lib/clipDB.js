@@ -8,7 +8,7 @@
  * which is much cheaper than re-fetching from the network.
  *
  * Cache policy:
- *   - Up to MAX_ENTRIES clips (~200 * ~175KB = ~35MB)
+ *   - Up to MAX_ENTRIES clips (~500 * ~175KB ≈ ~87MB)
  *   - LRU eviction based on `lastAccessedAt`
  *   - Entries keyed by `clipId_v${version}` so force-regenerate invalidates old
  */
@@ -16,7 +16,7 @@
 const DB_NAME = "musicapp-clips";
 const DB_VERSION = 1;
 const STORE = "clips";
-const MAX_ENTRIES = 200;
+const MAX_ENTRIES = 500;
 
 let dbPromise = null;
 

@@ -446,6 +446,8 @@ export default function PlaylistGrid({
               highlighted={highlightedClipId === pc.clipId}
               onUpdate={onClipUpdated}
               position={pc.position + 1}
+              allClips={playlist.clips}
+              clipIndex={pc.position}
             />
           ))}
         </div>
@@ -482,6 +484,8 @@ export default function PlaylistGrid({
               position={pc.position + 1}
               totalClips={playlist.clips.length}
               onMove={handleMove}
+              allClips={playlist.clips}
+              clipIndex={pc.position}
             />
           ))}
         </div>

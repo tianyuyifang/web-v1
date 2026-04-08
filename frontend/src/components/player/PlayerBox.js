@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, memo } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import { createPortal } from "react-dom";
 import useAudioPlayer from "@/hooks/useAudioPlayer";
 import usePlayerStore from "@/store/playerStore";
@@ -15,6 +15,14 @@ import ClipComment from "./ClipComment";
 import ClipSwitcher from "./ClipSwitcher";
 import AddClipModal from "@/components/playlist/AddClipModal";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import {
+  enqueueVisible,
+  enqueueHover,
+  enqueueNeighborhood,
+} from "@/lib/preloadScheduler";
+
+const VIEWPORT_DWELL_MS = 500;
+const NEIGHBORHOOD_COUNT = 8;
 
 export default memo(function PlayerBox({
   playlistClip,
@@ -27,6 +35,8 @@ export default memo(function PlayerBox({
   position,
   totalClips,
   onMove,
+  allClips,
+  clipIndex,
 }) {
   const { t } = useLanguage();
   const [showNewClip, setShowNewClip] = useState(false);
@@ -64,6 +74,49 @@ export default memo(function PlayerBox({
     playFromStart();
   }, [playFromStartClipId, clipId, clearPlayFromStart, playFromStart]);
 
+  // --- Preload scheduler wiring ---
+
+  // Viewport preload: when the card is continuously visible for 500ms,
+  // enqueue its clip at low priority. Fast scrolling triggers nothing.
+  const containerRef = useRef(null);
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    let dwellTimer = null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        if (entry.isIntersecting) {
+          dwellTimer = setTimeout(() => {
+            enqueueVisible(clipId, clip.version);
+          }, VIEWPORT_DWELL_MS);
+        } else if (dwellTimer) {
+          clearTimeout(dwellTimer);
+          dwellTimer = null;
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      if (dwellTimer) clearTimeout(dwellTimer);
+    };
+  }, [clipId, clip.version]);
+
+  // Neighborhood preload: when this clip starts playing, queue the next N
+  // clips in the playlist (if the parent provided the clip list + index).
+  useEffect(() => {
+    if (!isPlaying || !Array.isArray(allClips) || clipIndex == null) return;
+    enqueueNeighborhood(allClips, clipIndex, NEIGHBORHOOD_COUNT);
+  }, [isPlaying, allClips, clipIndex]);
+
+  // Hover preload: fire on mouse enter over the play button.
+  const handlePlayButtonHover = useCallback(() => {
+    enqueueHover(clipId, clip.version);
+  }, [clipId, clip.version]);
+
   const highlightClass = highlighted
     ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-background shadow-amber-400/30 shadow-lg"
     : "";
@@ -85,6 +138,7 @@ export default memo(function PlayerBox({
 
   return (
     <div
+      ref={containerRef}
       id={`playerbox-${clipId}`}
       className={`relative overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all ${highlightClass}`}
     >
@@ -168,6 +222,7 @@ export default memo(function PlayerBox({
           {/* Play button */}
           <button
             onClick={isPlaying ? pause : play}
+            onMouseEnter={handlePlayButtonHover}
             aria-label={isPlaying ? t("pause") : t("play")}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm transition-all hover:bg-primary-hover hover:scale-105 active:scale-95"
           >

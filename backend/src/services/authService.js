@@ -16,11 +16,9 @@ async function comparePassword(plain, hash) {
 }
 
 function signToken(user, sessionId) {
-  return jwt.sign(
-    { sub: user.id, username: user.username, role: user.role, sid: sessionId },
-    config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
-  );
+  const payload = { sub: user.id, username: user.username, role: user.role };
+  if (sessionId) payload.sid = sessionId;
+  return jwt.sign(payload, config.jwtSecret, { expiresIn: config.jwtExpiresIn });
 }
 
 async function register({ username, password }) {
@@ -159,7 +157,9 @@ async function refreshToken(req) {
   // Reuse the same sessionId — only login generates a new one.
   // This avoids a race condition where two tabs refreshing simultaneously
   // would generate different sids, causing one tab to get SESSION_REPLACED.
-  const newToken = signToken(user, payload.sid || user.activeSessionId);
+  // Use existing sid if available; omit from JWT if neither exists (pre-migration)
+  const sid = payload.sid || user.activeSessionId || undefined;
+  const newToken = signToken(user, sid);
   return { token: newToken };
 }
 

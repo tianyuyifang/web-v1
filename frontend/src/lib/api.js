@@ -42,7 +42,7 @@ function maybeRefreshToken() {
   if (remainingMs < -60 * 60 * 1000) return;
 
   isRefreshing = true;
-  api.post("/auth/refresh")
+  api.post("/auth/refresh", null, { timeout: 10000 })
     .then((res) => {
       if (res.data?.token) {
         setToken(res.data.token);

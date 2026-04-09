@@ -65,8 +65,10 @@ export function getSharedContext() {
 
 // Per-session retry counter: prevents retrying a persistently broken clip on every click.
 // Max 3 attempts per cache key per session; after that, the clip is considered broken.
+// Capped at 500 entries to prevent memory leak in long sessions.
 const retryCounts = new Map();
 const MAX_RETRIES = 3;
+const MAX_RETRY_ENTRIES = 500;
 
 /**
  * Get a cached AudioBuffer for a clip, or start fetching it.
@@ -155,6 +157,9 @@ export async function getAudioBuffer(clipId, version) {
   promise.catch(() => {
     cache.delete(cacheKey);
     retryCounts.set(cacheKey, (retryCounts.get(cacheKey) || 0) + 1);
+    // Prevent memory leak: if the map grows too large, clear all entries
+    // (resets retry counts, allowing fresh attempts for previously failed clips)
+    if (retryCounts.size > MAX_RETRY_ENTRIES) retryCounts.clear();
   });
 
   return promise;

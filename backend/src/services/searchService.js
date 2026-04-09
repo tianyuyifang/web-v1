@@ -42,7 +42,8 @@ async function searchSongs(query, cursor, limit, strict = false) {
   }
 
   // Build raw SQL for search
-  // pg_trgm.similarity_threshold is set once per connection in db/client.js
+  // Set threshold per query to ensure correctness after DB reconnects
+  await prisma.$executeRawUnsafe('SET pg_trgm.similarity_threshold = 0.35');
 
   const params = [];
   let whereClause;

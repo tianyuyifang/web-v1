@@ -133,6 +133,9 @@ export default function useAudioPlayer({
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== "visible") return;
+      // Invalidate any in-flight play() calls that were suspended during the
+      // tab switch — they may hold stale state or a frozen AudioContext.
+      playEpochRef.current += 1;
       const ctx = audioCtxRef.current;
       if (!ctx) return;
       if (ctx.state !== "running" && ctx.state !== "closed") {

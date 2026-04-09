@@ -1,7 +1,7 @@
 "use client";
 
 import { getClipStreamUrl } from "@/lib/api";
-import { getClipBytes, putClipBytes } from "@/lib/clipDB";
+import { getClipBytes, putClipBytes, deleteClipBytes } from "@/lib/clipDB";
 
 /**
  * Shared audio buffer cache.
@@ -63,6 +63,11 @@ export function getSharedContext() {
   return sharedCtx;
 }
 
+// Per-session retry counter: prevents retrying a persistently broken clip on every click.
+// Max 3 attempts per cache key per session; after that, the clip is considered broken.
+const retryCounts = new Map();
+const MAX_RETRIES = 3;
+
 /**
  * Get a cached AudioBuffer for a clip, or start fetching it.
  *
@@ -70,6 +75,14 @@ export function getSharedContext() {
  *   1. In-memory decoded AudioBuffer (fastest — ready to play)
  *   2. IndexedDB raw bytes (no network — re-decode locally)
  *   3. Network fetch (slowest — then persist to IDB for next session)
+ *
+ * Error recovery:
+ *   - Failed entries are removed from the in-memory cache so the next call retries.
+ *   - Corrupted IDB entries are detected by a failed decodeAudioData and deleted.
+ *   - Network responses are validated via response.ok before persisting.
+ *   - Bytes are persisted to IDB only after a successful decode.
+ *   - A per-session retry cap (3 attempts) prevents hammering the server for
+ *     persistently broken clips.
  *
  * Returns the AudioBuffer once ready.
  */
@@ -82,24 +95,54 @@ export async function getAudioBuffer(clipId, version) {
   }
   if (entry?.promise) return entry.promise;
 
+  // Check retry cap before starting a new fetch
+  const retries = retryCounts.get(cacheKey) || 0;
+  if (retries >= MAX_RETRIES) {
+    throw new Error(`Clip ${clipId} failed ${MAX_RETRIES} times this session, giving up`);
+  }
+
   const promise = (async () => {
     const ctx = getSharedContext();
+    let fromIDB = false;
 
     // Try IndexedDB first — avoids the network entirely for previously played clips
     let arrayBuffer = await getClipBytes(clipId, version);
 
-    if (!arrayBuffer) {
-      // Miss — fetch from network
-      const url = getClipStreamUrl(clipId, version);
-      const response = await fetch(url);
-      arrayBuffer = await response.arrayBuffer();
-      // Persist for next session. putClipBytes is best-effort and can't block playback.
-      // We need to clone because decodeAudioData may detach the ArrayBuffer.
-      const copy = arrayBuffer.slice(0);
-      putClipBytes(clipId, version, copy).catch(() => {});
+    if (arrayBuffer) {
+      fromIDB = true;
+      // Validate IDB bytes by attempting to decode. If corrupted, delete and fall through to network.
+      try {
+        // decodeAudioData detaches the ArrayBuffer, so clone before attempting
+        const copy = arrayBuffer.slice(0);
+        const audioBuffer = await ctx.decodeAudioData(copy);
+        const normGain = calcNormGain(audioBuffer);
+        cache.set(cacheKey, { buffer: audioBuffer, normGain, promise: null });
+        touchCache(cacheKey);
+        return audioBuffer;
+      } catch {
+        // IDB bytes are corrupted — delete and refetch from network
+        deleteClipBytes(clipId, version).catch(() => {});
+        arrayBuffer = null;
+        fromIDB = false;
+      }
     }
 
+    // Network fetch
+    const url = getClipStreamUrl(clipId, version);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} fetching clip ${clipId}`);
+    }
+    arrayBuffer = await response.arrayBuffer();
+
+    // Clone before decode (decodeAudioData detaches the buffer)
+    const bytesToPersist = arrayBuffer.slice(0);
+
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+    // Only persist to IDB AFTER successful decode — prevents storing corrupted bytes
+    putClipBytes(clipId, version, bytesToPersist).catch(() => {});
+
     const normGain = calcNormGain(audioBuffer);
     cache.set(cacheKey, { buffer: audioBuffer, normGain, promise: null });
     touchCache(cacheKey);
@@ -107,6 +150,13 @@ export async function getAudioBuffer(clipId, version) {
   })();
 
   cache.set(cacheKey, { buffer: null, normGain: 1, promise });
+
+  // If the promise fails, clean up so the next call can retry (up to MAX_RETRIES)
+  promise.catch(() => {
+    cache.delete(cacheKey);
+    retryCounts.set(cacheKey, (retryCounts.get(cacheKey) || 0) + 1);
+  });
+
   return promise;
 }
 

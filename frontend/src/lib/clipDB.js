@@ -86,6 +86,20 @@ export async function getClipBytes(clipId, version) {
 }
 
 /**
+ * Delete a clip entry from IndexedDB. Used to recover from corrupted bytes.
+ */
+export async function deleteClipBytes(clipId, version) {
+  const db = await openDB();
+  if (!db) return;
+  try {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).delete(buildKey(clipId, version));
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * Store raw clip bytes in IndexedDB. Best-effort; fails silently if IDB quota
  * is exceeded or the store is unavailable.
  */

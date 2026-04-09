@@ -36,14 +36,14 @@ export default function PlaylistCard({ playlist, listView }) {
           {playlist.ownerName ? `@${playlist.ownerName}` : ""}
         </span>
 
-        {/* Description */}
-        <span className="hidden min-w-0 flex-1 truncate text-xs text-muted md:block">
-          {playlist.description ? <RichText text={playlist.description} /> : ""}
-        </span>
-
         {/* Clip count */}
         <span className="shrink-0 text-xs text-muted">
           {clipCount} {clipCount !== 1 ? t("clips") : t("clip")}
+        </span>
+
+        {/* Description */}
+        <span className="hidden min-w-0 flex-1 truncate text-xs text-muted md:block">
+          {playlist.description ? <RichText text={playlist.description} /> : ""}
         </span>
 
         {/* Badge */}

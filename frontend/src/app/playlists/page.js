@@ -106,8 +106,8 @@ export default function PlaylistsPage() {
             placeholder={t("searchPlaylists")}
           />
         </div>
-        {/* View toggle */}
-        <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+        {/* View toggle — height matched to SearchBar (py-2 + border = 38px) */}
+        <div className="flex items-center gap-0.5 self-stretch rounded-lg border border-border bg-background p-0.5">
           <button
             onClick={() => toggleView("grid")}
             className={`rounded-md px-2 py-1.5 transition-colors ${

@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
-const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const prisma = require('./db/client');
 const errorHandler = require('./middleware/errorHandler');
@@ -27,17 +26,9 @@ app.use(compression());
 app.use(cors({ origin: config.frontendUrl, credentials: true }));
 app.use(express.json());
 
-// Rate limiting on auth endpoints
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 attempts per window
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: { message: 'Too many attempts, please try again later' } },
-});
-
 // Public routes (no auth required)
-app.use('/api/auth', authLimiter, require('./routes/auth'));
+// Rate limiting is applied per-endpoint inside auth.js (only on login + register)
+app.use('/api/auth', require('./routes/auth'));
 
 // Protected routes (auth + approved members + active session)
 app.use('/api/songs',     authMiddleware, requireApproved, requireActiveSession, require('./routes/songs'));

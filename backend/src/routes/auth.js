@@ -1,11 +1,22 @@
 const router = require('express').Router();
+const rateLimit = require('express-rate-limit');
 const validate = require('../middleware/validate');
 const { authMiddleware, requireActiveSession } = require('../middleware/auth');
 const { registerSchema, loginSchema, changePasswordSchema, changeUsernameSchema, updatePreferencesSchema } = require('../validators/auth');
 const authService = require('../services/authService');
 
+// Rate limit only login + register (brute-force targets).
+// Other auth routes require a valid JWT so brute-force isn't a risk.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { message: 'Too many attempts, please try again later' } },
+});
+
 // POST /api/auth/register
-router.post('/register', validate(registerSchema), async (req, res, next) => {
+router.post('/register', authLimiter, validate(registerSchema), async (req, res, next) => {
   try {
     const result = await authService.register(req.validated);
     res.status(201).json(result);
@@ -15,7 +26,7 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
 });
 
 // POST /api/auth/login
-router.post('/login', validate(loginSchema), async (req, res, next) => {
+router.post('/login', authLimiter, validate(loginSchema), async (req, res, next) => {
   try {
     const result = await authService.login(req.validated);
     res.json(result);

@@ -159,43 +159,52 @@ html.warm.palette-mauve   { --primary: #7a5a82; --primary-hover: #8b7090; --acce
    Surface styles — override surface appearance
    ─────────────────────────────────────────────── */
 
-/* Glass — translucent surfaces with backdrop blur */
+/* Glass — frosted matte surfaces using noise texture instead of backdrop-filter.
+   Looks like frosted glass without the GPU cost of real-time blur. Higher opacity
+   hides content behind panels; SVG noise adds the matte/grain texture. */
+
+/* Inline SVG noise pattern — 100x100 semi-transparent dots, tiled.
+   Used as background-image on glass surfaces for the frosted texture. */
+html.style-glass {
+  --glass-noise: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
 html.dark.style-glass {
-  --surface:         rgba(37, 37, 64, 0.6);
-  --surface-hover:   rgba(47, 47, 74, 0.7);
-  --input-bg:        rgba(30, 30, 52, 0.5);
+  --surface:         rgba(37, 37, 64, 0.88);
+  --surface-hover:   rgba(47, 47, 74, 0.92);
+  --input-bg:        rgba(30, 30, 52, 0.85);
   --border:          rgba(255, 255, 255, 0.08);
   --shadow:          rgba(0, 0, 0, 0.3);
 }
 html.style-glass:not(.dark):not(.high-contrast):not(.warm) {
-  --surface:         rgba(255, 255, 255, 0.5);
-  --surface-hover:   rgba(232, 232, 240, 0.6);
-  --input-bg:        rgba(245, 245, 250, 0.5);
+  --surface:         rgba(255, 255, 255, 0.85);
+  --surface-hover:   rgba(232, 232, 240, 0.9);
+  --input-bg:        rgba(245, 245, 250, 0.85);
   --border:          rgba(0, 0, 0, 0.08);
   --shadow:          rgba(0, 0, 0, 0.08);
 }
 html.style-glass.high-contrast {
-  --surface:         rgba(20, 20, 40, 0.7);
-  --surface-hover:   rgba(30, 30, 56, 0.8);
-  --input-bg:        rgba(14, 14, 30, 0.6);
+  --surface:         rgba(20, 20, 40, 0.9);
+  --surface-hover:   rgba(30, 30, 56, 0.93);
+  --input-bg:        rgba(14, 14, 30, 0.88);
   --border:          rgba(255, 255, 255, 0.12);
   --shadow:          rgba(0, 0, 0, 0.5);
 }
-
 html.style-glass.warm {
-  --surface:         rgba(253, 252, 250, 0.5);
-  --surface-hover:   rgba(237, 231, 218, 0.6);
-  --input-bg:        rgba(245, 240, 232, 0.5);
+  --surface:         rgba(253, 252, 250, 0.88);
+  --surface-hover:   rgba(237, 231, 218, 0.92);
+  --input-bg:        rgba(245, 240, 232, 0.85);
   --border:          rgba(44, 40, 32, 0.08);
   --shadow:          rgba(44, 40, 32, 0.08);
 }
 
-/* Glass blur only on fixed/sticky containers — not on scrolling cards */
+/* Apply noise texture to nav, sidebar, and sticky headers for frosted look.
+   Zero GPU cost — just a tiled SVG background, no backdrop-filter. */
 html.style-glass nav,
 html.style-glass aside,
 html.style-glass [data-sticky-header] {
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  backdrop-filter: blur(12px) saturate(1.2);
+  background-image: var(--glass-noise);
+  background-size: 200px 200px;
 }
 
 /* Modals, dialogs, and dropdowns must be opaque in glass mode.

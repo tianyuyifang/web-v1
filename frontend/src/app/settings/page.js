@@ -9,8 +9,6 @@ import { clearToken } from "@/lib/auth";
 const THEME_OPTIONS = [
   { value: "dark", labelKey: "themeDark", descKey: "themeDarkDesc" },
   { value: "light", labelKey: "themeLight", descKey: "themeLightDesc" },
-  { value: "high-contrast", labelKey: "themeHighContrast", descKey: "themeHighContrastDesc" },
-  { value: "warm", labelKey: "themeWarm", descKey: "themeWarmDesc" },
 ];
 
 const LANG_OPTIONS = [

@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import useAuthStore from "@/store/authStore";
 
-const THEMES = ["dark", "light", "high-contrast", "warm"];
+const THEMES = ["dark", "light"];
 const PALETTES = ["indigo", "cyan", "coral", "teal", "slate", "sage", "mauve"];
 const PALETTE_COLORS = {
   indigo:  "#6366f1",

@@ -170,18 +170,19 @@ html.style-glass {
 }
 
 html.dark.style-glass {
-  --surface:         rgba(37, 37, 64, 0.88);
-  --surface-hover:   rgba(47, 47, 74, 0.92);
-  --input-bg:        rgba(30, 30, 52, 0.85);
+  --surface:         rgba(42, 42, 72, 0.92);
+  --surface-hover:   rgba(52, 52, 82, 0.95);
+  --input-bg:        rgba(35, 35, 60, 0.9);
   --border:          rgba(255, 255, 255, 0.08);
   --shadow:          rgba(0, 0, 0, 0.3);
 }
 html.style-glass:not(.dark):not(.high-contrast):not(.warm) {
-  --surface:         rgba(255, 255, 255, 0.85);
-  --surface-hover:   rgba(232, 232, 240, 0.9);
-  --input-bg:        rgba(245, 245, 250, 0.85);
-  --border:          rgba(0, 0, 0, 0.08);
-  --shadow:          rgba(0, 0, 0, 0.08);
+  /* #F8F8FA tint to match the color-blending effect of real backdrop-filter blur */
+  --surface:         rgba(248, 248, 250, 0.92);
+  --surface-hover:   rgba(238, 238, 245, 0.95);
+  --input-bg:        rgba(244, 244, 250, 0.9);
+  --border:          rgba(0, 0, 0, 0.06);
+  --shadow:          rgba(0, 0, 0, 0.06);
 }
 html.style-glass.high-contrast {
   --surface:         rgba(20, 20, 40, 0.9);

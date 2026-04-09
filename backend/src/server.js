@@ -10,6 +10,10 @@ const trackBandwidth = require('./middleware/bandwidth');
 
 const app = express();
 
+// Trust the first proxy (Nginx) so req.ip reflects the real client IP.
+// Required for rate limiting to work per-user instead of per-server.
+app.set('trust proxy', 1);
+
 // Security headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');

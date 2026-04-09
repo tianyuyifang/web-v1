@@ -26,19 +26,17 @@ export default function PlaylistCard({ playlist, listView }) {
         href={`/playlists/${playlist.id}`}
         className="flex items-center gap-3 border-b border-border/50 px-3 py-2.5 transition-colors hover:bg-surface-hover"
       >
-        {/* Name */}
-        <span className="w-40 shrink-0 truncate text-sm font-medium text-theme sm:w-48 md:w-56">
-          <RichText text={playlist.name} />
+        {/* Name + clip count inline */}
+        <span className="shrink-0 truncate text-sm text-theme">
+          <span className="font-medium"><RichText text={playlist.name} /></span>
+          <span className="ml-2 text-xs text-muted">
+            {clipCount} {clipCount !== 1 ? t("clips") : t("clip")}
+          </span>
         </span>
 
         {/* Owner */}
-        <span className="hidden w-16 shrink-0 truncate text-xs text-primary sm:block">
+        <span className="hidden shrink-0 truncate text-xs text-primary sm:block">
           {playlist.ownerName ? `@${playlist.ownerName}` : ""}
-        </span>
-
-        {/* Clip count */}
-        <span className="shrink-0 text-xs text-muted">
-          {clipCount} {clipCount !== 1 ? t("clips") : t("clip")}
         </span>
 
         {/* Description */}

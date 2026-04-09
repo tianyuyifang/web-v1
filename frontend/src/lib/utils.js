@@ -45,6 +45,18 @@ export function matchesSearch(query, ...fields) {
 }
 
 /**
+ * Get/set playlist view preference (grid or list).
+ */
+const VIEW_KEY = "playlist-view";
+export function getPlaylistView() {
+  if (typeof window === "undefined") return "grid";
+  return localStorage.getItem(VIEW_KEY) || "grid";
+}
+export function setPlaylistView(view) {
+  localStorage.setItem(VIEW_KEY, view);
+}
+
+/**
  * Get the earliest clip start time for a song.
  */
 export function getDefaultStart(song) {

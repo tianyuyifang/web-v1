@@ -64,4 +64,14 @@ router.post('/me', authMiddleware, async (req, res, next) => {
   }
 });
 
+// POST /api/auth/refresh — silently refresh a token that's still valid (or expired < 24h)
+router.post('/refresh', async (req, res, next) => {
+  try {
+    const result = await authService.refreshToken(req);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

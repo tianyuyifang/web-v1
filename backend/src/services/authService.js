@@ -103,4 +103,45 @@ async function updatePreferences(userId, preferences) {
   return user;
 }
 
-module.exports = { register, login, getMe, changePassword, changeUsername, updatePreferences };
+/**
+ * Refresh a JWT token. Accepts tokens that are still valid or expired by up to 24 hours.
+ * Verifies the user still exists and is still MEMBER/ADMIN.
+ * Returns a fresh token with a new 7-day expiry.
+ */
+async function refreshToken(req) {
+  const header = req.headers.authorization;
+  const token = header && header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) throw new UnauthorizedError('Missing token');
+
+  let payload;
+  try {
+    // First try normal verification (token not expired)
+    payload = jwt.verify(token, config.jwtSecret);
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      // Allow tokens expired by up to 24 hours — gives users a grace window
+      // to refresh even if they come back slightly after expiry
+      payload = jwt.verify(token, config.jwtSecret, { ignoreExpiration: true });
+      const expiredAt = payload.exp * 1000;
+      const gracePeriod = 24 * 60 * 60 * 1000; // 24 hours
+      if (Date.now() - expiredAt > gracePeriod) {
+        throw new UnauthorizedError('Token expired too long ago');
+      }
+    } else {
+      throw new UnauthorizedError('Invalid token');
+    }
+  }
+
+  // Verify user still exists and is active
+  const user = await prisma.user.findUnique({
+    where: { id: payload.sub },
+    select: { id: true, username: true, role: true },
+  });
+  if (!user) throw new UnauthorizedError('User not found');
+  if (user.role === 'PENDING') throw new UnauthorizedError('Account not approved');
+
+  const newToken = signToken(user);
+  return { token: newToken };
+}
+
+module.exports = { register, login, getMe, changePassword, changeUsername, updatePreferences, refreshToken };

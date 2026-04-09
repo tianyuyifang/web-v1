@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getToken, clearToken } from "./auth";
+import { getToken, setToken, clearToken } from "./auth";
 
 const api = axios.create({
   baseURL: "/api",
@@ -15,12 +15,62 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// --- Silent token refresh ---
+// Refreshes the JWT in the background when it has < 1 day until expiry.
+// Uses a flag to prevent multiple concurrent refresh calls.
+let isRefreshing = false;
+
+function getTokenExp() {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.exp ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function maybeRefreshToken() {
+  if (isRefreshing) return;
+  const exp = getTokenExp();
+  if (!exp) return;
+  const remainingMs = exp - Date.now();
+  // Refresh when less than 1 day remains
+  if (remainingMs > 24 * 60 * 60 * 1000) return;
+  // Don't refresh if already expired by more than 1 hour (let the 401 handler take over)
+  if (remainingMs < -60 * 60 * 1000) return;
+
+  isRefreshing = true;
+  api.post("/auth/refresh")
+    .then((res) => {
+      if (res.data?.token) {
+        setToken(res.data.token);
+      }
+    })
+    .catch(() => {
+      // Refresh failed — do nothing. The existing token will either
+      // still work (not expired yet) or trigger a 401 → login redirect.
+    })
+    .finally(() => {
+      isRefreshing = false;
+    });
+}
+
 // Handle 401 — redirect to login (skip for auth endpoints)
+// Also trigger silent refresh check on every successful response.
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Check if token needs refreshing after each successful API call
+    const url = response.config?.url || "";
+    if (!url.includes("/auth/refresh")) {
+      maybeRefreshToken();
+    }
+    return response;
+  },
   (error) => {
     const url = error.config?.url || "";
-    const isAuthRoute = url.includes("/auth/login") || url.includes("/auth/register");
+    const isAuthRoute = url.includes("/auth/login") || url.includes("/auth/register") || url.includes("/auth/refresh");
     if (error.response?.status === 401 && !isAuthRoute) {
       clearToken();
       if (typeof window !== "undefined") {
@@ -36,6 +86,7 @@ export const authAPI = {
   register: (data) => api.post("/auth/register", data),
   login: (data) => api.post("/auth/login", data),
   me: () => api.post("/auth/me"),
+  refresh: () => api.post("/auth/refresh"),
   changePassword: (data) => api.put("/auth/password", data),
   changeUsername: (data) => api.put("/auth/username", data),
   updatePreferences: (preferences) => api.put("/auth/preferences", { preferences }),

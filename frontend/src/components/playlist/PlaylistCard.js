@@ -26,20 +26,20 @@ export default function PlaylistCard({ playlist, listView }) {
         href={`/playlists/${playlist.id}`}
         className="flex items-center gap-3 border-b border-border/50 px-3 py-2.5 transition-colors hover:bg-surface-hover"
       >
-        {/* Name + clip count inline */}
-        <span className="shrink-0 truncate text-sm text-theme">
+        {/* Name + clip count inline — variable width */}
+        <span className="min-w-0 shrink truncate text-sm text-theme sm:w-56 sm:shrink-0 md:w-64">
           <span className="font-medium"><RichText text={playlist.name} /></span>
           <span className="ml-2 text-xs text-muted">
             {clipCount} {clipCount !== 1 ? t("clips") : t("clip")}
           </span>
         </span>
 
-        {/* Owner */}
-        <span className="hidden shrink-0 truncate text-xs text-primary sm:block">
+        {/* Owner — fixed column, vertically aligned across rows */}
+        <span className="hidden w-20 shrink-0 truncate text-xs text-primary sm:block">
           {playlist.ownerName ? `@${playlist.ownerName}` : ""}
         </span>
 
-        {/* Description */}
+        {/* Description — fills remaining space, vertically aligned across rows */}
         <span className="hidden min-w-0 flex-1 truncate text-xs text-muted md:block">
           {playlist.description ? <RichText text={playlist.description} /> : ""}
         </span>

@@ -98,7 +98,7 @@ export default function PlaylistsPage() {
         </button>
       </div>
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex items-start gap-3">
         <div className="flex-1">
           <SearchBar
             value={query}
@@ -106,8 +106,8 @@ export default function PlaylistsPage() {
             placeholder={t("searchPlaylists")}
           />
         </div>
-        {/* View toggle — exact height match with SearchBar */}
-        <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background px-0.5">
+        {/* View toggle — h matches SearchBar input: text-sm(20px) + py-2(16px) + border(2px) = 38px */}
+        <div className="flex h-[38px] items-center gap-0.5 rounded-lg border border-border bg-surface px-1">
           <button
             onClick={() => toggleView("grid")}
             className={`rounded-md px-2 py-1.5 transition-colors ${

@@ -15,6 +15,7 @@ export default {
   // Login
   loginTitle: "Welcome back",
   loginSubtitle: "Sign in to your MusicClip account",
+  sessionReplacedMessage: "Your account was logged in on another device. Please log in again.",
   username: "Username",
   password: "Password",
   signingIn: "Signing in...",

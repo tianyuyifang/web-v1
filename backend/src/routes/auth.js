@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const validate = require('../middleware/validate');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireActiveSession } = require('../middleware/auth');
 const { registerSchema, loginSchema, changePasswordSchema, changeUsernameSchema, updatePreferencesSchema } = require('../validators/auth');
 const authService = require('../services/authService');
 
@@ -55,7 +55,7 @@ router.put('/preferences', authMiddleware, validate(updatePreferencesSchema), as
 });
 
 // POST /api/auth/me
-router.post('/me', authMiddleware, async (req, res, next) => {
+router.post('/me', authMiddleware, requireActiveSession, async (req, res, next) => {
   try {
     const user = await authService.getMe(req.user.id);
     res.json({ user });
@@ -70,6 +70,11 @@ router.post('/refresh', async (req, res, next) => {
     const result = await authService.refreshToken(req);
     res.json(result);
   } catch (err) {
+    if (err.code === 'SESSION_REPLACED') {
+      return res.status(403).json({
+        error: { code: 'SESSION_REPLACED', message: err.message },
+      });
+    }
     next(err);
   }
 });

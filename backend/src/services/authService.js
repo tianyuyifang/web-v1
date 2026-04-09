@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const config = require('../config');
 const prisma = require('../db/client');
 const { UnauthorizedError, ValidationError } = require('../utils/errors');
@@ -14,9 +15,9 @@ async function comparePassword(plain, hash) {
   return bcrypt.compare(plain, hash);
 }
 
-function signToken(user) {
+function signToken(user, sessionId) {
   return jwt.sign(
-    { sub: user.id, username: user.username, role: user.role },
+    { sub: user.id, username: user.username, role: user.role, sid: sessionId },
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn }
   );
@@ -46,7 +47,14 @@ async function login({ username, password }) {
   const valid = await comparePassword(password, user.passwordHash);
   if (!valid) throw new UnauthorizedError('Invalid username or password');
 
-  const token = signToken(user);
+  // Generate a new sessionId and store it — invalidates any previous session
+  const sessionId = crypto.randomUUID();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { activeSessionId: sessionId },
+  });
+
+  const token = signToken(user, sessionId);
   return {
     token,
     user: { id: user.id, username: user.username, role: user.role, preferences: user.preferences },
@@ -135,12 +143,23 @@ async function refreshToken(req) {
   // Verify user still exists and is active
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { id: true, username: true, role: true },
+    select: { id: true, username: true, role: true, activeSessionId: true },
   });
   if (!user) throw new UnauthorizedError('User not found');
   if (user.role === 'PENDING') throw new UnauthorizedError('Account not approved');
 
-  const newToken = signToken(user);
+  // Check session is still the active one (if session restriction is in effect)
+  if (user.activeSessionId && payload.sid && user.activeSessionId !== payload.sid) {
+    const err = new Error('Your account was logged in on another device');
+    err.status = 403;
+    err.code = 'SESSION_REPLACED';
+    throw err;
+  }
+
+  // Reuse the same sessionId — only login generates a new one.
+  // This avoids a race condition where two tabs refreshing simultaneously
+  // would generate different sids, causing one tab to get SESSION_REPLACED.
+  const newToken = signToken(user, payload.sid || user.activeSessionId);
   return { token: newToken };
 }
 

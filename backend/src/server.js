@@ -5,7 +5,7 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const prisma = require('./db/client');
 const errorHandler = require('./middleware/errorHandler');
-const { authMiddleware, requireRole, requireApproved } = require('./middleware/auth');
+const { authMiddleware, requireRole, requireApproved, requireActiveSession } = require('./middleware/auth');
 const trackBandwidth = require('./middleware/bandwidth');
 
 const app = express();
@@ -35,20 +35,20 @@ const authLimiter = rateLimit({
 // Public routes (no auth required)
 app.use('/api/auth', authLimiter, require('./routes/auth'));
 
-// Protected routes (auth + approved members only)
-app.use('/api/songs',     authMiddleware, requireApproved, require('./routes/songs'));
-app.use('/api/clips',     authMiddleware, requireApproved, require('./routes/clips'));
-app.use('/api/playlists', authMiddleware, requireApproved, require('./routes/playlists'));
-app.use('/api/likes',     authMiddleware, requireApproved, require('./routes/likes'));
-app.use('/api/stream',    authMiddleware, requireApproved, trackBandwidth, require('./routes/stream'));
-app.use('/api/sse',       authMiddleware, requireApproved, require('./routes/sse'));
-app.use('/api/users',     authMiddleware, requireApproved, require('./routes/users'));
+// Protected routes (auth + approved members + active session)
+app.use('/api/songs',     authMiddleware, requireApproved, requireActiveSession, require('./routes/songs'));
+app.use('/api/clips',     authMiddleware, requireApproved, requireActiveSession, require('./routes/clips'));
+app.use('/api/playlists', authMiddleware, requireApproved, requireActiveSession, require('./routes/playlists'));
+app.use('/api/likes',     authMiddleware, requireApproved, requireActiveSession, require('./routes/likes'));
+app.use('/api/stream',    authMiddleware, requireApproved, requireActiveSession, trackBandwidth, require('./routes/stream'));
+app.use('/api/sse',       authMiddleware, requireApproved, requireActiveSession, require('./routes/sse'));
+app.use('/api/users',     authMiddleware, requireApproved, requireActiveSession, require('./routes/users'));
 
 // Feedback routes (submit = approved users, list/delete = admin)
-app.use('/api/feedback', authMiddleware, requireApproved, require('./routes/feedback'));
+app.use('/api/feedback', authMiddleware, requireApproved, requireActiveSession, require('./routes/feedback'));
 
 // Admin routes (auth + ADMIN role only)
-app.use('/api/admin', authMiddleware, requireRole('ADMIN'), require('./routes/admin'));
+app.use('/api/admin', authMiddleware, requireRole('ADMIN'), requireActiveSession, require('./routes/admin'));
 
 // Error handling
 app.use(errorHandler);

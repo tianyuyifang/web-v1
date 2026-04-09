@@ -15,6 +15,7 @@ export default {
   // Login
   loginTitle: "欢迎回来",
   loginSubtitle: "登录你的 MusicClip 账号",
+  sessionReplacedMessage: "你的账号已在其他设备上登录，请重新登录。",
   username: "用户名",
   password: "密码",
   signingIn: "登录中...",

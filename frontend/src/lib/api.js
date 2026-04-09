@@ -71,6 +71,17 @@ api.interceptors.response.use(
   (error) => {
     const url = error.config?.url || "";
     const isAuthRoute = url.includes("/auth/login") || url.includes("/auth/register") || url.includes("/auth/refresh");
+
+    // Session replaced by another login — clear token and redirect with reason
+    if (error.response?.status === 403 && error.response?.data?.error?.code === "SESSION_REPLACED") {
+      clearToken();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login?reason=session_replaced";
+      }
+      return Promise.reject(error);
+    }
+
+    // Expired or invalid token — clear and redirect to login
     if (error.response?.status === 401 && !isAuthRoute) {
       clearToken();
       if (typeof window !== "undefined") {

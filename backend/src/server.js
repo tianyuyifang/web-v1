@@ -22,7 +22,14 @@ app.use((req, res, next) => {
 });
 
 // Global middleware
-app.use(compression());
+app.use(compression({
+  // Skip SSE responses — they're tiny (~50 bytes per event) and compression
+  // buffers them internally, delaying real-time delivery until the buffer fills.
+  filter: (req, res) => {
+    if (req.path.startsWith('/api/sse')) return false;
+    return compression.filter(req, res);
+  },
+}));
 app.use(cors({ origin: config.frontendUrl, credentials: true }));
 app.use(express.json());
 

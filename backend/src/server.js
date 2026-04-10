@@ -36,7 +36,7 @@ app.use('/api/clips',     authMiddleware, requireApproved, requireActiveSession,
 app.use('/api/playlists', authMiddleware, requireApproved, requireActiveSession, require('./routes/playlists'));
 app.use('/api/likes',     authMiddleware, requireApproved, requireActiveSession, require('./routes/likes'));
 app.use('/api/stream',    authMiddleware, requireApproved, requireActiveSession, trackBandwidth, require('./routes/stream'));
-app.use('/api/sse',       authMiddleware, requireApproved, requireActiveSession, require('./routes/sse'));
+app.use('/api/sse',       authMiddleware, requireApproved, require('./routes/sse')); // no requireActiveSession — SSE is read-only
 app.use('/api/users',     authMiddleware, requireApproved, requireActiveSession, require('./routes/users'));
 
 // Feedback routes (submit = approved users, list/delete = admin)

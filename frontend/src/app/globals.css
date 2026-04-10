@@ -170,9 +170,9 @@ html.style-glass {
 }
 
 html.dark.style-glass {
-  --surface:         rgba(42, 42, 72, 0.92);
-  --surface-hover:   rgba(52, 52, 82, 0.95);
-  --input-bg:        rgba(35, 35, 60, 0.9);
+  --surface:         rgba(37, 37, 64, 0.6);
+  --surface-hover:   rgba(47, 47, 74, 0.7);
+  --input-bg:        rgba(30, 30, 52, 0.5);
   --border:          rgba(255, 255, 255, 0.08);
   --shadow:          rgba(0, 0, 0, 0.3);
 }

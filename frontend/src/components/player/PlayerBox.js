@@ -117,7 +117,7 @@ export default memo(function PlayerBox({
     enqueueHover(clipId, clip.version);
   }, [clipId, clip.version]);
 
-  const highlightClass = highlighted
+  const highlightClass = (highlighted || isPlaying)
     ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-background shadow-amber-400/30 shadow-lg"
     : "";
 

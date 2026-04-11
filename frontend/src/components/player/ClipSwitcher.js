@@ -29,16 +29,14 @@ export default function ClipSwitcher({ songId, currentClipId, onSwap, onNewClip 
   const handleOpen = async () => {
     if (open) { setOpen(false); return; }
     setOpen(true);
-    if (!clips) {
-      setLoading(true);
-      try {
-        const res = await songsAPI.getClips(songId);
-        setClips(res.data.clips);
-      } catch {
-        setClips([]);
-      } finally {
-        setLoading(false);
-      }
+    setLoading(true);
+    try {
+      const res = await songsAPI.getClips(songId);
+      setClips(res.data.clips);
+    } catch {
+      setClips([]);
+    } finally {
+      setLoading(false);
     }
   };
 

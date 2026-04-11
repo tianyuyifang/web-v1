@@ -46,11 +46,11 @@ async function getSongClips(songId, userId, userRole) {
   const clips = await prisma.clip.findMany({
     where: {
       songId,
-      // Admins see all clips; others see global + their own
+      // Admins see all clips; others see global + clips in their playlists (discovery model)
       ...(userRole === 'ADMIN' ? {} : {
         OR: [
           { isGlobal: true },
-          ...(userId ? [{ userId }] : []),
+          ...(userId ? [{ playlistClips: { some: { playlist: { userId } } } }] : []),
         ],
       }),
     },

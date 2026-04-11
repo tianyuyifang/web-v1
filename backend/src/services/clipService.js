@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const prisma = require('../db/client');
 const config = require('../config');
@@ -23,9 +24,21 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
     throw new ValidationError({ start: ['Start time exceeds song duration'] });
   }
 
+  // Helper: update song.starts to include a new start time
+  async function ensureSongStart(songId, start, currentStarts) {
+    const existing = currentStarts ? currentStarts.split('|').map(Number) : [];
+    if (existing.includes(start)) return;
+    const merged = [...new Set([...existing, start])]
+      .sort((a, b) => a - b)
+      .join('|');
+    await prisma.song.update({
+      where: { id: songId },
+      data: { starts: merged },
+    });
+  }
+
   // Admin force-regenerate: find any existing clip at this start time and re-clip
   if (force && userRole === 'ADMIN') {
-    const fs = require('fs');
     let clip = await prisma.clip.findFirst({ where: { songId, start } });
 
     const clipLyrics = sliceLRC(song.lyrics, start, start + length);
@@ -38,6 +51,11 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
     try { fs.unlinkSync(outputPath.replace(/\.mp3$/i, '.lrc')); } catch {}
 
     clipAudio({ sourcePath, outputPath, start, length, lyrics: clipLyrics });
+
+    // Validate output file was created
+    if (!fs.existsSync(outputPath)) {
+      throw new ValidationError({ clip: ['Audio clipping failed — output file not created'] });
+    }
 
     if (clip) {
       // Also delete old file if filename changed
@@ -61,22 +79,18 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
         },
       });
     }
+
+    // Fix 1a: update song.starts for force path
+    await ensureSongStart(songId, start, song.starts);
+
     return clip;
   }
 
-  // Check if a global clip already exists at this start time — reuse it
+  // Check if any clip already exists at this start time — reuse it
   let clip = await prisma.clip.findFirst({
-    where: { songId, start, isGlobal: true },
+    where: { songId, start },
   });
   if (clip) return clip;
-
-  // Check if this user already has a clip at this start time
-  if (userId) {
-    clip = await prisma.clip.findFirst({
-      where: { songId, start, userId },
-    });
-    if (clip) return clip;
-  }
 
   // Slice and adjust lyrics for this clip
   const clipLyrics = sliceLRC(song.lyrics, start, start + length);
@@ -94,7 +108,12 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
     lyrics: clipLyrics,
   });
 
-  // Create clip record in DB — user clips default to non-global
+  // Validate output file was created
+  if (!fs.existsSync(outputPath)) {
+    throw new ValidationError({ clip: ['Audio clipping failed — output file not created'] });
+  }
+
+  // Create clip record — all clips are global
   // Wrap in try-catch to handle race condition (concurrent creation)
   try {
     clip = await prisma.clip.create({
@@ -102,26 +121,18 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
         songId, start, length,
         filePath: clipFilename,
         lyrics: clipLyrics,
-        userId: userId || null,
-        isGlobal: !userId || userRole === 'ADMIN',
+        isGlobal: true,
       },
     });
   } catch (err) {
     // If duplicate was created by concurrent request, return the existing one
-    clip = await prisma.clip.findFirst({ where: { songId, start, isGlobal: true } });
+    clip = await prisma.clip.findFirst({ where: { songId, start } });
     if (clip) return clip;
     throw err;
   }
 
   // Update song.starts column
-  const existing = song.starts ? song.starts.split('|').map(Number) : [];
-  const merged = [...new Set([...existing, start])]
-    .sort((a, b) => a - b)
-    .join('|');
-  await prisma.song.update({
-    where: { id: songId },
-    data: { starts: merged },
-  });
+  await ensureSongStart(songId, start, song.starts);
 
   return clip;
 }

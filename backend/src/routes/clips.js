@@ -50,9 +50,15 @@ router.put('/:id/toggle-global', requireRole('ADMIN'), async (req, res, next) =>
   try {
     const clip = await prisma.clip.findUnique({ where: { id: req.params.id } });
     if (!clip) return res.status(404).json({ error: { message: 'Clip not found' } });
+    const newIsGlobal = !clip.isGlobal;
+    const updateData = { isGlobal: newIsGlobal };
+    // When toggling to non-global, ensure the clip has an owner
+    if (!newIsGlobal && !clip.userId) {
+      updateData.userId = req.user.id;
+    }
     const updated = await prisma.clip.update({
       where: { id: req.params.id },
-      data: { isGlobal: !clip.isGlobal },
+      data: updateData,
     });
     res.json(updated);
   } catch (err) {
@@ -80,13 +86,41 @@ router.delete('/:id', requireRole('ADMIN'), async (req, res, next) => {
       });
     }
 
-    // Reassign all playlistClip references to the replacement clip
-    await prisma.playlistClip.updateMany({
-      where: { clipId: clip.id },
-      data: { clipId: replacement.id },
+    // Find playlists that already have the replacement clip — can't reassign those
+    const conflicting = await prisma.playlistClip.findMany({
+      where: { clipId: replacement.id },
+      select: { playlistId: true },
     });
+    const conflictingPlaylistIds = conflicting.map((pc) => pc.playlistId);
 
-    await prisma.clip.delete({ where: { id: req.params.id } });
+    // Transaction: reassign/remove playlist references, clean up likes, delete clip
+    await prisma.$transaction([
+      // Delete likes for the clip being deleted (all playlists, all users)
+      prisma.like.deleteMany({ where: { clipId: clip.id } }),
+      // Playlists that already have the replacement: just remove the old entry
+      ...(conflictingPlaylistIds.length > 0
+        ? [prisma.playlistClip.deleteMany({
+            where: { clipId: clip.id, playlistId: { in: conflictingPlaylistIds } },
+          })]
+        : []),
+      // Remaining playlists: reassign to replacement
+      prisma.playlistClip.updateMany({
+        where: { clipId: clip.id },
+        data: { clipId: replacement.id },
+      }),
+      // Delete the clip record
+      prisma.clip.delete({ where: { id: req.params.id } }),
+    ]);
+
+    // Delete audio files from disk (outside transaction — non-critical)
+    if (clip.filePath) {
+      const path = require('path');
+      const fs = require('fs');
+      const config = require('../config');
+      const mp3Path = path.join(config.clipsBasePath, clip.filePath);
+      try { fs.unlinkSync(mp3Path); } catch {}
+      try { fs.unlinkSync(mp3Path.replace(/\.mp3$/i, '.lrc')); } catch {}
+    }
 
     // Update song.starts — rebuild from remaining clips
     const remainingClips = await prisma.clip.findMany({
@@ -101,7 +135,7 @@ router.delete('/:id', requireRole('ADMIN'), async (req, res, next) => {
       data: { starts },
     });
 
-    res.json({ message: 'Clip deleted', replacedBy: replacement?.id || null });
+    res.json({ message: 'Clip deleted', replacedBy: replacement.id });
   } catch (err) {
     next(err);
   }

@@ -27,7 +27,7 @@ export function fetchLyrics(clipId, version) {
   if (entry?.promise) return entry.promise;
 
   const promise = clipsAPI
-    .getLyrics(clipId)
+    .getLyrics(clipId, version)
     .then((res) => {
       const lyrics = res.data?.lyrics ?? null;
       cache.set(key, { lyrics, promise: null });

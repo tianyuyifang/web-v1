@@ -116,7 +116,7 @@ export const clipsAPI = {
   autoClip: (data) => api.post("/clips/auto", data),
   toggleGlobal: (id) => api.put(`/clips/${id}/toggle-global`),
   delete: (id) => api.delete(`/clips/${id}`),
-  getLyrics: (id) => api.get(`/clips/${id}/lyrics`),
+  getLyrics: (id, version) => api.get(`/clips/${id}/lyrics${version ? `?v=${version}` : ''}`),
 };
 
 // --- Playlists ---

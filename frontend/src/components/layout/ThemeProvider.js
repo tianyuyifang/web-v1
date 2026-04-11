@@ -14,7 +14,7 @@ const PALETTE_COLORS = {
   sage:    "#6b8f71",
   mauve:   "#8b7090",
 };
-const STYLES = ["default", "glass", "mono", "gradient"];
+const STYLES = ["default", "glass"];
 
 const ThemeContext = createContext({});
 
@@ -47,20 +47,20 @@ function applyStyle(style) {
 }
 
 export default function ThemeProvider({ children }) {
-  const [theme, setThemeState] = useState("dark");
+  const [theme, setThemeState] = useState("light");
   const [palette, setPaletteState] = useState("indigo");
-  const [style, setStyleState] = useState("default");
+  const [style, setStyleState] = useState("glass");
   const user = useAuthStore((s) => s.user);
   const updatePreferences = useAuthStore((s) => s.updatePreferences);
 
   useEffect(() => {
     const prefs = user?.preferences || {};
-    const savedTheme = prefs.theme || localStorage.getItem("theme") || "dark";
+    const savedTheme = prefs.theme || localStorage.getItem("theme") || "light";
     const savedPalette = prefs.palette || localStorage.getItem("palette") || "indigo";
-    const savedStyle = prefs.style || localStorage.getItem("style") || "default";
-    const validTheme = THEMES.includes(savedTheme) ? savedTheme : "dark";
+    const savedStyle = prefs.style || localStorage.getItem("style") || "glass";
+    const validTheme = THEMES.includes(savedTheme) ? savedTheme : "light";
     const validPalette = PALETTES.includes(savedPalette) ? savedPalette : "indigo";
-    const validStyle = STYLES.includes(savedStyle) ? savedStyle : "default";
+    const validStyle = STYLES.includes(savedStyle) ? savedStyle : "glass";
     setThemeState(validTheme);
     setPaletteState(validPalette);
     setStyleState(validStyle);
@@ -73,7 +73,7 @@ export default function ThemeProvider({ children }) {
   }, [user]);
 
   const setTheme = (t) => {
-    const valid = THEMES.includes(t) ? t : "dark";
+    const valid = THEMES.includes(t) ? t : "light";
     setThemeState(valid);
     localStorage.setItem("theme", valid);
     applyTheme(valid);
@@ -89,7 +89,7 @@ export default function ThemeProvider({ children }) {
   };
 
   const setStyle = (s) => {
-    const valid = STYLES.includes(s) ? s : "default";
+    const valid = STYLES.includes(s) ? s : "glass";
     setStyleState(valid);
     localStorage.setItem("style", valid);
     applyStyle(valid);

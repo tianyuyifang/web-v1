@@ -288,8 +288,6 @@ export default {
   surfaceStyle: "风格",
   style_default: "实色",
   style_glass: "毛玻璃",
-  style_mono: "黑白",
-  style_gradient: "渐变",
   language: "语言",
   themeDark: "深色",
   themeDarkDesc: "护眼深色调，适合夜间使用",

@@ -49,8 +49,8 @@ export function matchesSearch(query, ...fields) {
  */
 const VIEW_KEY = "playlist-view";
 export function getPlaylistView() {
-  if (typeof window === "undefined") return "grid";
-  return localStorage.getItem(VIEW_KEY) || "grid";
+  if (typeof window === "undefined") return "list";
+  return localStorage.getItem(VIEW_KEY) || "list";
 }
 export function setPlaylistView(view) {
   localStorage.setItem(VIEW_KEY, view);

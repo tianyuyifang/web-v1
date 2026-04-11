@@ -231,45 +231,6 @@ html.style-glass.warm .absolute.bg-surface {
   background-color: #FDFCFA !important;
 }
 
-/* Mono — grayscale primary, pure typography focus */
-html.dark.style-mono {
-  --primary:         #a0a0b8;
-  --primary-hover:   #c0c0d0;
-  --accent:          #8080a0;
-  --text-on-primary: #1a1a2e;
-}
-html.style-mono:not(.dark):not(.high-contrast):not(.warm) {
-  --primary:         #4a4a5e;
-  --primary-hover:   #3a3a4e;
-  --accent:          #6a6a80;
-  --text-on-primary: #ffffff;
-}
-html.style-mono.high-contrast {
-  --primary:         #d0d0e0;
-  --primary-hover:   #e8e8f0;
-  --accent:          #b0b0c8;
-  --text-on-primary: #000000;
-}
-html.style-mono.warm {
-  --primary:         #8a7e72;
-  --primary-hover:   #6B6258;
-  --accent:          #9E9488;
-  --text-on-primary: #FDFCFA;
-}
-
-/* Gradient — animated moving gradient background */
-@keyframes gradientShift {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-html.style-gradient body {
-  background: linear-gradient(-45deg, var(--background), color-mix(in srgb, var(--primary) 20%, var(--background)), var(--background), color-mix(in srgb, var(--accent) 15%, var(--background)));
-  background-size: 400% 400%;
-  animation: gradientShift 20s ease infinite;
-}
-
 /* ───────────────────────────────────────────────
    Base styles
    ─────────────────────────────────────────────── */

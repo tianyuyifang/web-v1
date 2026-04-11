@@ -288,8 +288,6 @@ export default {
   surfaceStyle: "Style",
   style_default: "Solid",
   style_glass: "Glass",
-  style_mono: "Mono",
-  style_gradient: "Gradient",
   language: "Language",
   themeDark: "Dark",
   themeDarkDesc: "Easy on the eyes, deep navy tones",

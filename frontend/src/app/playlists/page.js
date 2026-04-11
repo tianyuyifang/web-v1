@@ -66,14 +66,14 @@ export default function PlaylistsPage() {
         </h2>
         {isList ? (
           <div className={listClass}>
-            {items.map((playlist) => (
-              <PlaylistCard key={playlist.id} playlist={playlist} listView />
+            {items.map((playlist, i) => (
+              <PlaylistCard key={playlist.id} playlist={playlist} listView number={i + 1} />
             ))}
           </div>
         ) : (
           <div className={gridClass}>
-            {items.map((playlist) => (
-              <PlaylistCard key={playlist.id} playlist={playlist} />
+            {items.map((playlist, i) => (
+              <PlaylistCard key={playlist.id} playlist={playlist} number={i + 1} />
             ))}
           </div>
         )}

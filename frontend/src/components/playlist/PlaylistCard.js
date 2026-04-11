@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import RichText from "@/components/ui/RichText";
 
-export default function PlaylistCard({ playlist, listView }) {
+export default function PlaylistCard({ playlist, listView, number }) {
   const { t } = useLanguage();
   const clipCount = playlist.clipCount ?? playlist.clips?.length ?? 0;
 
@@ -26,6 +26,10 @@ export default function PlaylistCard({ playlist, listView }) {
         href={`/playlists/${playlist.id}`}
         className="flex items-center gap-3 border-b border-border/50 px-3 py-2.5 transition-colors hover:bg-surface-hover"
       >
+        {/* Number */}
+        {number != null && (
+          <span className="w-5 shrink-0 text-right text-xs text-muted">{number}</span>
+        )}
         {/* Name + clip count inline — variable width */}
         <span className="min-w-0 shrink truncate text-sm text-theme sm:w-56 sm:shrink-0 md:w-64">
           <span className="font-medium"><RichText text={playlist.name} /></span>
@@ -64,6 +68,7 @@ export default function PlaylistCard({ playlist, listView }) {
         </span>
       )}
       <h3 className="truncate text-base font-semibold transition-colors group-hover:text-primary" style={{ color: "var(--text)" }}>
+        {number != null && <span className="text-sm font-normal text-muted">{number}. </span>}
         <RichText text={playlist.name} />
       </h3>
       {playlist.description && (

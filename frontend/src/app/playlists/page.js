@@ -62,7 +62,7 @@ export default function PlaylistsPage() {
     return (
       <section>
         <h2 className="mb-4 text-lg font-semibold" style={{ color: "var(--text)" }}>
-          {title}
+          {title} <span className="text-sm font-normal text-muted">({items.length})</span>
         </h2>
         {isList ? (
           <div className={listClass}>

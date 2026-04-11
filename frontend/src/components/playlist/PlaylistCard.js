@@ -28,7 +28,7 @@ export default function PlaylistCard({ playlist, listView, number }) {
       >
         {/* Number */}
         {number != null && (
-          <span className="w-5 shrink-0 text-right text-xs text-muted">{number}</span>
+          <span className="w-5 shrink-0 text-center text-xs text-muted">{number}</span>
         )}
         {/* Name + clip count inline — variable width */}
         <span className="min-w-0 shrink truncate text-sm text-theme sm:w-56 sm:shrink-0 md:w-64">

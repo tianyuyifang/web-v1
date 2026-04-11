@@ -118,7 +118,7 @@ export default memo(function PlayerBox({
   }, [clipId, clip.version]);
 
   const highlightClass = (highlighted || isPlaying)
-    ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-background shadow-amber-400/30 shadow-lg"
+    ? "ring-2 ring-offset-2 ring-offset-background shadow-lg dark:ring-white dark:shadow-white/20 ring-amber-400 shadow-amber-400/30"
     : "";
 
   // Stable callbacks for memoized children

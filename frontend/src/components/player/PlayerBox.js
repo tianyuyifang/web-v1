@@ -49,7 +49,6 @@ export default memo(function PlayerBox({
 
   const playFromStartClipId = usePlayerStore((s) => s.playFromStartClipId);
   const clearPlayFromStart = usePlayerStore((s) => s.clearPlayFromStart);
-  const isActivePlayer = usePlayerStore((s) => s.activePlayerId === playerId);
 
   const {
     play,
@@ -146,7 +145,7 @@ export default memo(function PlayerBox({
       className="flex cursor-pointer items-center gap-1.5 border-b border-border/50 px-2 py-[3px] transition-colors hover:bg-surface-hover sm:hidden"
     >
       {position != null && (
-        <span className="w-5 shrink-0 text-right text-[11px] text-muted">{position}.</span>
+        <span className="w-5 shrink-0 text-right text-xs text-muted">{position}.</span>
       )}
       {colorTag && (
         <div className="flex shrink-0 gap-0.5">
@@ -172,8 +171,8 @@ export default memo(function PlayerBox({
     >
       {/* Header row */}
       <div
-        onClick={() => !isActivePlayer && onToggleExpand?.(clipId)}
-        className={`flex items-center gap-2 px-3 py-2 ${!isActivePlayer ? "cursor-pointer" : ""}`}
+        onClick={() => !isPlaying && onToggleExpand?.(clipId)}
+        className={`flex items-center gap-2 px-3 py-2 ${!isPlaying ? "cursor-pointer" : ""}`}
       >
         {position != null && (
           <span className="w-6 shrink-0 text-right text-xs text-muted">{position}.</span>
@@ -195,10 +194,10 @@ export default memo(function PlayerBox({
       <div className="flex gap-2 px-3 pb-3">
         {/* Left: lyrics + comment */}
         <div
-          className={`min-w-0 flex-1 ${!isActivePlayer ? "cursor-pointer" : ""}`}
+          className={`min-w-0 flex-1 ${!isPlaying ? "cursor-pointer" : ""}`}
           onClick={(e) => {
-            // Collapse on click unless playing/paused, or clicking interactive elements
-            if (isActivePlayer) return;
+            // Collapse on click unless currently playing, or clicking interactive elements
+            if (isPlaying) return;
             const tag = e.target.tagName;
             if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON") return;
             onToggleExpand?.(clipId);

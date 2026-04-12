@@ -142,23 +142,23 @@ export default memo(function PlayerBox({
   const phoneCollapsedView = collapsed ? (
     <div
       onClick={() => onToggleExpand?.(clipId)}
-      className="flex cursor-pointer items-center gap-1.5 border-b border-border/50 px-2 py-[3px] transition-colors hover:bg-surface-hover sm:hidden"
+      className="flex cursor-pointer items-baseline gap-1.5 border-b border-border/50 px-2 py-[3px] transition-colors hover:bg-surface-hover sm:hidden"
     >
       {position != null && (
         <span className="w-5 shrink-0 text-right text-xs text-muted">{position}.</span>
       )}
       {colorTag && (
-        <div className="flex shrink-0 gap-0.5">
+        <div className="flex shrink-0 gap-0.5 self-center">
           {colorTag.split("|").filter(Boolean).map((c) => (
             <div key={c} className="h-2.5 w-2.5 rounded-full" style={{ background: c }} />
           ))}
         </div>
       )}
-      <span className="min-w-0 flex-1 truncate">
+      <div className="min-w-0 flex-1 truncate">
         <span className="text-xs font-medium text-theme">{song.title}</span>
         <span className="ml-1.5 text-[11px] text-muted">{song.artist.replace(/_/g, "/")}</span>
-      </span>
-      <div onClick={(e) => e.stopPropagation()} className="shrink-0 [&_button]:h-5 [&_button]:w-5 [&_button]:text-sm">
+      </div>
+      <div onClick={(e) => e.stopPropagation()} className="shrink-0 self-center [&_button]:h-5 [&_button]:w-5 [&_button]:text-sm">
         <LikeButton playlistId={playlistId} clipId={clipId} fontSize={14} />
       </div>
     </div>
@@ -172,22 +172,22 @@ export default memo(function PlayerBox({
       {/* Header row */}
       <div
         onClick={() => !isPlaying && onToggleExpand?.(clipId)}
-        className={`flex items-center gap-2 px-3 py-2 ${!isPlaying ? "cursor-pointer" : ""}`}
+        className={`flex items-baseline gap-2 px-3 py-2 ${!isPlaying ? "cursor-pointer" : ""}`}
       >
         {position != null && (
           <span className="w-6 shrink-0 text-right text-xs text-muted">{position}.</span>
         )}
         {colorTag && (
-          <div className="flex shrink-0 gap-0.5 self-stretch">
+          <div className="flex shrink-0 gap-0.5 self-center" style={{ height: "1em" }}>
             {colorTag.split("|").filter(Boolean).map((c) => (
               <div key={c} className="w-[3px] rounded-full" style={{ background: c }} />
             ))}
           </div>
         )}
-        <span className="min-w-0 flex-1 truncate">
+        <div className="min-w-0 flex-1 truncate">
           <span className="text-sm font-medium text-theme">{song.title}</span>
           <span className="ml-2 text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
-        </span>
+        </div>
       </div>
 
       {/* Body: lyrics left, controls right */}

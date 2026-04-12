@@ -142,7 +142,7 @@ export default memo(function PlayerBox({
   const phoneCollapsedView = collapsed ? (
     <div
       onClick={() => onToggleExpand?.(clipId)}
-      className="flex cursor-pointer items-baseline gap-1.5 border-b border-border/50 px-2 py-[3px] transition-colors hover:bg-surface-hover sm:hidden"
+      className="flex cursor-pointer items-baseline gap-1.5 border-b border-border/50 px-2 transition-colors hover:bg-surface-hover sm:hidden"
     >
       {position != null && (
         <span className="w-5 shrink-0 text-right text-xs text-muted">{position}.</span>
@@ -158,8 +158,8 @@ export default memo(function PlayerBox({
         <span className="text-xs font-medium text-theme">{song.title}</span>
         <span className="ml-1.5 text-[11px] text-muted">{song.artist.replace(/_/g, "/")}</span>
       </div>
-      <div onClick={(e) => e.stopPropagation()} className="shrink-0 self-center [&_button]:h-5 [&_button]:w-5 [&_button]:text-sm">
-        <LikeButton playlistId={playlistId} clipId={clipId} fontSize={14} />
+      <div onClick={(e) => e.stopPropagation()} className="shrink-0 self-center [&_button]:h-5 [&_button]:w-5">
+        <LikeButton playlistId={playlistId} clipId={clipId} fontSize={20} />
       </div>
     </div>
   ) : null;

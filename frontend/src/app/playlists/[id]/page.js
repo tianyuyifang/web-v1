@@ -44,6 +44,25 @@ export default function PlaylistPage() {
   const setLikedClips = usePlayerStore((s) => s.setLikedClips);
   const triggerPlayFromStart = usePlayerStore((s) => s.triggerPlayFromStart);
 
+  // Phone only: auto-hide sticky header on scroll down, show on scroll up
+  const stickyHeaderRef = useRef(null);
+  const lastScrollYRef = useRef(0);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    if (!mq.matches) return;
+    const onScroll = () => {
+      const node = stickyHeaderRef.current;
+      if (!node) return;
+      const y = window.scrollY;
+      const down = y > lastScrollYRef.current && y > 80;
+      lastScrollYRef.current = y;
+      node.style.transform = down ? `translateY(-${node.offsetHeight}px)` : "";
+      node.style.transition = "transform 0.25s ease";
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   // SSE: real-time like updates from other users
   usePlaylistLikes(id);
 
@@ -217,7 +236,7 @@ export default function PlaylistPage() {
       />
 
       <div className="min-w-0 flex-1">
-        <div data-sticky-header className="sticky top-0 z-30 border-b border-border pb-3 pt-16" style={{ backgroundColor: "var(--background)" }}>
+        <div ref={stickyHeaderRef} data-sticky-header className="sticky top-0 z-30 border-b border-border pb-3 pt-16" style={{ backgroundColor: "var(--background)" }}>
           <PlaylistHeader
             playlist={playlist}
             editMode={editMode}

@@ -54,9 +54,7 @@ export default function Navbar() {
             className="flex items-center gap-2 text-lg font-bold tracking-tight"
             style={{ color: "var(--text)" }}
           >
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-xs font-bold text-white">
-              M
-            </span>
+            <img src="/brand_icon.jpg" alt="logo" className="h-7 w-7 rounded-lg object-cover" />
             {t("appName")}
           </Link>
           {isAuthenticated && (

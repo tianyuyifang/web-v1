@@ -99,6 +99,11 @@ export default function PlaylistGrid({
     setExpandedClipId((prev) => (prev === clipId ? null : clipId));
   }, []);
 
+  // Auto-expand when a clip starts playing
+  useEffect(() => {
+    if (playingClipId) setExpandedClipId(playingClipId);
+  }, [playingClipId]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -463,7 +468,7 @@ export default function PlaylistGrid({
               position={pc.position + 1}
               allClips={playlist.clips}
               clipIndex={pc.position}
-              collapsed={pc.clipId !== expandedClipId && pc.clipId !== playingClipId}
+              collapsed={pc.clipId !== expandedClipId}
               onToggleExpand={handleToggleExpand}
             />
           ))}
@@ -503,7 +508,7 @@ export default function PlaylistGrid({
               onMove={handleMove}
               allClips={playlist.clips}
               clipIndex={pc.position}
-              collapsed={pc.clipId !== expandedClipId && pc.clipId !== playingClipId}
+              collapsed={pc.clipId !== expandedClipId}
               onToggleExpand={handleToggleExpand}
             />
           ))}

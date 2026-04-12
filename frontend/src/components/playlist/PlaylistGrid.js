@@ -103,7 +103,7 @@ export default function PlaylistGrid({
   const handleToggleExpand = useCallback((clipId) => {
     setExpandedClipId((prev) => {
       if (prev === clipId) return null; // collapse current
-      if (prev === activelyPlayingClipId) return prev; // block — playing clip is expanded
+      if (activelyPlayingClipId && prev === activelyPlayingClipId) return prev; // block — playing clip is expanded
       return clipId; // expand new
     });
   }, [activelyPlayingClipId]);

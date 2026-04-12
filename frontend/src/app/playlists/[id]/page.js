@@ -44,40 +44,8 @@ export default function PlaylistPage() {
   const setLikedClips = usePlayerStore((s) => s.setLikedClips);
   const triggerPlayFromStart = usePlayerStore((s) => s.triggerPlayFromStart);
 
-  // Phone only: auto-hide sticky header on scroll down, show on scroll up
-  const stickyHeaderRef = useRef(null);
-  const lastScrollYRef = useRef(0);
-  const hideAnchorRef = useRef(0);
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 639px)");
-    if (!mq.matches) return;
-    let hidden = false;
-    const onScroll = () => {
-      const node = stickyHeaderRef.current;
-      if (!node) return;
-      const y = window.scrollY;
-      const down = y > lastScrollYRef.current;
-      if (down) {
-        // Scrolling down — hide after passing 80px
-        hideAnchorRef.current = y;
-        if (y > 80 && !hidden) {
-          hidden = true;
-          node.style.transform = `translateY(-${node.offsetHeight}px)`;
-          node.style.transition = "transform 0.25s ease";
-        }
-      } else {
-        // Scrolling up — show only after 50px of upward scroll
-        if (hidden && hideAnchorRef.current - y > 50) {
-          hidden = false;
-          node.style.transform = "";
-          node.style.transition = "transform 0.25s ease";
-        }
-      }
-      lastScrollYRef.current = y;
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  // Phone only: toggle sticky header visibility
+  const [phoneHeaderHidden, setPhoneHeaderHidden] = useState(false);
 
   // SSE: real-time like updates from other users
   usePlaylistLikes(id);
@@ -252,7 +220,19 @@ export default function PlaylistPage() {
       />
 
       <div className="min-w-0 flex-1">
-        <div ref={stickyHeaderRef} data-sticky-header className="sticky top-0 z-30 border-b border-border pb-3 pt-16" style={{ backgroundColor: "var(--background)" }}>
+        <div data-sticky-header className="sticky top-0 z-30 border-b border-border pb-3 pt-16" style={{ backgroundColor: "var(--background)" }}>
+          {/* Phone toggle button */}
+          <button
+            onClick={() => setPhoneHeaderHidden((v) => !v)}
+            className="mb-1 flex w-full items-center justify-center sm:hidden"
+          >
+            <span className="rounded-full border border-border bg-surface px-3 py-0.5 text-xs text-muted">
+              {phoneHeaderHidden ? "▼ " + t("showHeader") : "▲ " + t("hideHeader")}
+            </span>
+          </button>
+
+          {/* Header content — hidden on phone when toggled */}
+          <div className={phoneHeaderHidden ? "hidden sm:block" : ""}>
           <PlaylistHeader
             playlist={playlist}
             editMode={editMode}
@@ -301,6 +281,7 @@ export default function PlaylistPage() {
               ))}
             </div>
           )}
+          </div>
         </div>
 
         <div className="pt-4">

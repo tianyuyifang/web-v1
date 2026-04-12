@@ -337,4 +337,6 @@ export default {
   bandwidthDay7: "7d",
   bandwidthDay30: "30d",
   bandwidthDay90: "90d",
+  hideHeader: "Hide",
+  showHeader: "Show",
 };

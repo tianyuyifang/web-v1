@@ -9,7 +9,8 @@
     "seed": "node scripts/seed.js",
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",
-    "db:studio": "npx prisma studio"
+    "db:studio": "npx prisma studio",
+    "backup": "bash scripts/backup-db.sh"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

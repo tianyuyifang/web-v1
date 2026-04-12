@@ -70,6 +70,9 @@ async function searchSongs(query, cursor, limit, strict = false) {
         OR s.title_pinyin_concat ILIKE $3
         OR s.artist_pinyin_concat ILIKE $3
         OR sa.artist_pinyin_concat ILIKE $3
+        OR s.title_pinyin_all ILIKE $3
+        OR s.artist_pinyin_all ILIKE $3
+        OR sa.artist_pinyin_all ILIKE $3
         OR s.title_pinyin_concat % $1
         OR s.title_pinyin % $1
       )`;
@@ -91,6 +94,9 @@ async function searchSongs(query, cursor, limit, strict = false) {
         s.title_pinyin ILIKE $2
         OR s.artist_pinyin ILIKE $2
         OR sa.artist_pinyin ILIKE $2
+        OR s.title_pinyin_all ILIKE $2
+        OR s.artist_pinyin_all ILIKE $2
+        OR sa.artist_pinyin_all ILIKE $2
         OR s.title_pinyin % $1
         OR s.title_pinyin_concat % $1
       )`;
@@ -160,6 +166,7 @@ async function searchPlaylists(query, userId) {
       OR: [
         { namePinyinInitials: { startsWith: query } },
         { namePinyin: { contains: query, mode: 'insensitive' } },
+        { namePinyinAll: { contains: query, mode: 'insensitive' } },
         { user: { username: { contains: query, mode: 'insensitive' } } },
       ],
     };
@@ -167,6 +174,7 @@ async function searchPlaylists(query, userId) {
     nameFilter = {
       OR: [
         { namePinyin: { contains: query, mode: 'insensitive' } },
+        { namePinyinAll: { contains: query, mode: 'insensitive' } },
         { user: { username: { contains: query, mode: 'insensitive' } } },
       ],
     };
@@ -231,6 +239,8 @@ async function searchClipsInPlaylist(playlistId, query) {
             { titlePinyinInitials: { startsWith: query } },
             { titlePinyinConcat: { contains: query, mode: 'insensitive' } },
             { artistPinyinConcat: { contains: query, mode: 'insensitive' } },
+            { titlePinyinAll: { contains: query, mode: 'insensitive' } },
+            { artistPinyinAll: { contains: query, mode: 'insensitive' } },
           ],
         },
       },
@@ -242,6 +252,8 @@ async function searchClipsInPlaylist(playlistId, query) {
           OR: [
             { titlePinyin: { contains: query, mode: 'insensitive' } },
             { artistPinyin: { contains: query, mode: 'insensitive' } },
+            { titlePinyinAll: { contains: query, mode: 'insensitive' } },
+            { artistPinyinAll: { contains: query, mode: 'insensitive' } },
           ],
         },
       },

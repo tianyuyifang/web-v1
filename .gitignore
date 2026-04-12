@@ -23,3 +23,6 @@ Thumbs.db
 # Misc
 backend/venv/
 *.tar.gz
+
+# Local DB backups
+backups/

@@ -38,4 +38,26 @@ function toPinyinConcat(chinese) {
     .join('');
 }
 
-module.exports = { toPinyin, toPinyinInitials, toPinyinConcat };
+/**
+ * Convert Chinese text to a flat string of all possible pinyin readings.
+ * For polyphonic characters, all readings are included (deduplicated).
+ * e.g. "音乐" → "yin le yue yao lao"  (乐 has multiple readings)
+ * Used for fuzzy/trigram search to match any valid pronunciation.
+ */
+function toPinyinAll(chinese) {
+  if (!chinese) return null;
+  const readings = pinyinFn(chinese, { style: STYLE_NORMAL, heteronym: true });
+  const allPinyin = [];
+  for (const charReadings of readings) {
+    for (const r of charReadings) {
+      // Strip tone marks to plain ASCII pinyin
+      const plain = r.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (!allPinyin.includes(plain)) {
+        allPinyin.push(plain);
+      }
+    }
+  }
+  return allPinyin.join(' ');
+}
+
+module.exports = { toPinyin, toPinyinInitials, toPinyinConcat, toPinyinAll };

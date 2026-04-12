@@ -20,7 +20,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { PrismaClient } = require('@prisma/client');
-const { toPinyin, toPinyinInitials, toPinyinConcat } = require('../src/utils/pinyin');
+const { toPinyin, toPinyinInitials, toPinyinConcat, toPinyinAll } = require('../src/utils/pinyin');
 const { sliceLRC } = require('../src/utils/lrc');
 const { clipAudio } = require('./clip-audio');
 
@@ -181,11 +181,13 @@ function processSong(metadata, lyrics) {
   const titlePinyin = toPinyin(title);
   const titlePinyinInitials = toPinyinInitials(title);
   const titlePinyinConcat = toPinyinConcat(title);
+  const titlePinyinAll = toPinyinAll(title);
 
   // Pinyin for combined artist string
   const artistPinyin = toPinyin(artist);
   const artistPinyinInitials = toPinyinInitials(artist);
   const artistPinyinConcat = toPinyinConcat(artist);
+  const artistPinyinAll = toPinyinAll(artist);
 
   // Split artists by "_" for the song_artists table
   const artistNames = artist.split('_').map((a) => a.trim()).filter(Boolean);
@@ -194,6 +196,7 @@ function processSong(metadata, lyrics) {
     artistPinyin: toPinyin(name),
     artistPinyinInitials: toPinyinInitials(name),
     artistPinyinConcat: toPinyinConcat(name),
+    artistPinyinAll: toPinyinAll(name),
     position,
   }));
 
@@ -212,9 +215,11 @@ function processSong(metadata, lyrics) {
       titlePinyin,
       titlePinyinInitials,
       titlePinyinConcat,
+      titlePinyinAll,
       artistPinyin,
       artistPinyinInitials,
       artistPinyinConcat,
+      artistPinyinAll,
     },
     artists,
   };

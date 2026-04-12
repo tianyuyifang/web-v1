@@ -1,6 +1,6 @@
 const prisma = require('../db/client');
 const { NotFoundError, ForbiddenError } = require('../utils/errors');
-const { toPinyin, toPinyinInitials } = require('../utils/pinyin');
+const { toPinyin, toPinyinInitials, toPinyinAll } = require('../utils/pinyin');
 const { searchPlaylists, searchClipsInPlaylist } = require('./searchService');
 
 // ---------------------------------------------------------------------------
@@ -127,6 +127,7 @@ async function createPlaylist(userId, { name, description, isPublic }) {
       isPublic,
       namePinyin: toPinyin(name),
       namePinyinInitials: toPinyinInitials(name),
+      namePinyinAll: toPinyinAll(name),
     },
   });
   return playlist;
@@ -138,6 +139,7 @@ async function updatePlaylist(playlistId, data) {
     updateData.name = data.name;
     updateData.namePinyin = toPinyin(data.name);
     updateData.namePinyinInitials = toPinyinInitials(data.name);
+    updateData.namePinyinAll = toPinyinAll(data.name);
   }
   if (data.description !== undefined) updateData.description = data.description;
   if (data.isPublic !== undefined) updateData.isPublic = data.isPublic;
@@ -255,6 +257,7 @@ async function copyPlaylist(playlistId, userId) {
       isPublic: false,
       namePinyin: toPinyin(`Copy of ${original.name}`),
       namePinyinInitials: toPinyinInitials(`Copy of ${original.name}`),
+      namePinyinAll: toPinyinAll(`Copy of ${original.name}`),
       playlistClips: {
         create: original.playlistClips.map((pc) => ({
           clipId: pc.clipId,

@@ -46,9 +46,11 @@ model Song {
   titlePinyin          String?  @map("title_pinyin")
   titlePinyinInitials  String?  @map("title_pinyin_initials")
   titlePinyinConcat    String?  @map("title_pinyin_concat")
+  titlePinyinAll       String?  @map("title_pinyin_all")
   artistPinyin         String?  @map("artist_pinyin")
   artistPinyinInitials String?  @map("artist_pinyin_initials")
   artistPinyinConcat   String?  @map("artist_pinyin_concat")
+  artistPinyinAll      String?  @map("artist_pinyin_all")
 
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -68,6 +70,7 @@ model SongArtist {
   artistPinyin         String? @map("artist_pinyin")
   artistPinyinInitials String? @map("artist_pinyin_initials")
   artistPinyinConcat   String? @map("artist_pinyin_concat")
+  artistPinyinAll      String? @map("artist_pinyin_all")
   position             Int    @default(0)
 
   song                 Song   @relation(fields: [songId], references: [id], onDelete: Cascade)
@@ -108,6 +111,7 @@ model Playlist {
 
   namePinyin          String?  @map("name_pinyin")
   namePinyinInitials  String?  @map("name_pinyin_initials")
+  namePinyinAll       String?  @map("name_pinyin_all")
 
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz

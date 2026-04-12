@@ -339,4 +339,5 @@ export default {
   bandwidthDay90: "90天",
   hideHeader: "收起",
   showHeader: "展开",
+  results: "条结果",
 };

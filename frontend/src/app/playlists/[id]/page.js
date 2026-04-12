@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { playlistsAPI, likesAPI } from "@/lib/api";
 import usePlayerStore from "@/store/playerStore";
 import usePlaylistLikes from "@/hooks/usePlaylistLikes";
-import { getColumnCount, setColumnCount as saveColumnCount } from "@/lib/utils";
+import { getColumnCount, setColumnCount as saveColumnCount, matchesSearch } from "@/lib/utils";
 import PlaylistHeader from "@/components/playlist/PlaylistHeader";
 import PlaylistGrid from "@/components/playlist/PlaylistGrid";
 import ClipSidebar from "@/components/playlist/ClipSidebar";
@@ -46,6 +46,32 @@ export default function PlaylistPage() {
 
   // Phone only: toggle sticky header visibility
   const [phoneHeaderHidden, setPhoneHeaderHidden] = useState(false);
+
+  // Phone only: bottom search sheet
+  const [phoneSearch, setPhoneSearch] = useState("");
+  const phoneSearchResults = useMemo(() => {
+    if (!phoneSearch || !playlist?.clips) return [];
+    return playlist.clips.filter((pc) =>
+      matchesSearch(
+        phoneSearch,
+        pc.clip.song.title,
+        pc.clip.song.artist,
+        pc.comment,
+        pc.clip.song.titlePinyin,
+        pc.clip.song.titlePinyinInitials,
+        pc.clip.song.titlePinyinConcat,
+        pc.clip.song.artistPinyinConcat
+      )
+    );
+  }, [phoneSearch, playlist?.clips]);
+
+  const handlePhoneSearchSelect = useCallback((clipId) => {
+    setPhoneSearch("");
+    setHighlightedClipId(clipId);
+    document.getElementById(`playerbox-${clipId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    triggerPlayFromStart(clipId);
+    setTimeout(() => setHighlightedClipId(null), 3000);
+  }, [triggerPlayFromStart]);
 
   // SSE: real-time like updates from other users
   usePlaylistLikes(id);
@@ -360,6 +386,60 @@ export default function PlaylistPage() {
           onClose={() => setShowCompare(false)}
         />
       )}
+
+      {/* Phone only: fixed bottom search bar + results sheet */}
+      <div className="sm:hidden">
+        {/* Results sheet — slides up when searching */}
+        {phoneSearch && phoneSearchResults.length > 0 && (
+          <div className="fixed bottom-12 left-0 right-0 z-40 max-h-[30vh] overflow-y-auto border-t border-border bg-surface shadow-lg">
+            <div className="px-2 py-1 text-[11px] text-muted">
+              {phoneSearchResults.length} {t("results")}
+            </div>
+            {phoneSearchResults.map((pc) => (
+              <button
+                key={pc.clipId}
+                onClick={() => handlePhoneSearchSelect(pc.clipId)}
+                className="flex w-full items-baseline gap-1.5 border-t border-border/30 px-2 py-1 text-left transition-colors active:bg-surface-hover"
+              >
+                <span className="w-5 shrink-0 text-right text-xs text-muted">{pc.position + 1}.</span>
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="text-xs font-medium text-theme">{pc.clip.song.title}</span>
+                  <span className="ml-1.5 text-[11px] text-muted">{pc.clip.song.artist.replace(/_/g, "/")}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {phoneSearch && phoneSearchResults.length === 0 && (
+          <div className="fixed bottom-12 left-0 right-0 z-40 border-t border-border bg-surface px-3 py-2 shadow-lg">
+            <p className="text-xs text-muted">{t("noClipsFound")}</p>
+          </div>
+        )}
+
+        {/* Search bar */}
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-surface px-3 py-2">
+          <div className="relative">
+            <input
+              type="text"
+              value={phoneSearch}
+              onChange={(e) => setPhoneSearch(e.target.value)}
+              placeholder={t("filterClips")}
+              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 pr-8 text-sm text-theme placeholder-muted focus:border-primary focus:outline-none"
+            />
+            {phoneSearch && (
+              <button
+                onClick={() => setPhoneSearch("")}
+                className="absolute right-0 top-0 flex h-full w-8 items-center justify-center text-muted"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Spacer so content isn't hidden behind fixed bar */}
+        <div className="h-14" />
+      </div>
     </div>
   );
 }

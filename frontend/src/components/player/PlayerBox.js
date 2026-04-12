@@ -15,7 +15,6 @@ import ClipComment from "./ClipComment";
 import ClipSwitcher from "./ClipSwitcher";
 import AddClipModal from "@/components/playlist/AddClipModal";
 import { useLanguage } from "@/components/layout/LanguageProvider";
-import { formatDuration } from "@/lib/utils";
 import {
   enqueueVisible,
   enqueueHover,
@@ -146,7 +145,7 @@ export default memo(function PlayerBox({
         ref={containerRef}
         id={`playerbox-${clipId}`}
         onClick={() => onToggleExpand?.(clipId)}
-        className="flex cursor-pointer items-center gap-2 border-b border-border/50 px-3 py-2.5 transition-colors hover:bg-surface-hover sm:hidden"
+        className="flex cursor-pointer items-center gap-2 border-b border-border/50 px-3 transition-colors hover:bg-surface-hover sm:hidden"
       >
         {position != null && (
           <span className="w-6 shrink-0 text-right text-xs text-muted">{position}.</span>
@@ -174,10 +173,10 @@ export default memo(function PlayerBox({
       id={`playerbox-${clipId}`}
       className={`relative border-b border-border bg-surface transition-all sm:hidden ${highlightClass}`}
     >
-      {/* Header row — tap to collapse (unless playing) */}
+      {/* Header row */}
       <div
         onClick={() => !isPlaying && onToggleExpand?.(clipId)}
-        className={`flex items-center gap-2 px-3 py-2.5 ${!isPlaying ? "cursor-pointer" : ""}`}
+        className={`flex items-center gap-2 px-3 py-2 ${!isPlaying ? "cursor-pointer" : ""}`}
       >
         {position != null && (
           <span className="w-6 shrink-0 text-right text-xs text-muted">{position}.</span>
@@ -193,13 +192,25 @@ export default memo(function PlayerBox({
           <span className="text-sm font-medium text-theme">{song.title}</span>
           <span className="ml-2 text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
         </div>
-        <LikeButton playlistId={playlistId} clipId={clipId} fontSize={20} />
+        {/* Like button — stop propagation to prevent collapse */}
+        <div onClick={(e) => e.stopPropagation()}>
+          <LikeButton playlistId={playlistId} clipId={clipId} fontSize={20} />
+        </div>
       </div>
 
       {/* Body: lyrics left, controls right */}
       <div className="flex gap-2 px-3 pb-3">
         {/* Left: lyrics + comment */}
-        <div className="min-w-0 flex-1">
+        <div
+          className={`min-w-0 flex-1 ${!isPlaying ? "cursor-pointer" : ""}`}
+          onClick={(e) => {
+            // Collapse on click unless playing, or clicking interactive elements
+            if (isPlaying) return;
+            const tag = e.target.tagName;
+            if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON") return;
+            onToggleExpand?.(clipId);
+          }}
+        >
           <div className="text-xs">
             <LyricsBox
               clipId={clipId}
@@ -208,15 +219,17 @@ export default memo(function PlayerBox({
               clipStart={0}
             />
           </div>
-          <ClipComment
-            comment={comment}
-            onChange={handleCommentChange}
-            editable
-          />
+          <div onClick={(e) => e.stopPropagation()}>
+            <ClipComment
+              comment={comment}
+              onChange={handleCommentChange}
+              editable
+            />
+          </div>
         </div>
 
         {/* Right: controls column */}
-        <div className="flex w-20 shrink-0 flex-col items-center justify-center gap-2">
+        <div className="flex w-20 shrink-0 flex-col items-center justify-center gap-4">
           {/* Play/pause */}
           <button
             onClick={isPlaying ? pause : play}
@@ -247,18 +260,6 @@ export default memo(function PlayerBox({
               <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
             </svg>
           </button>
-
-          {/* Mini progress bar */}
-          <div className="w-full">
-            <ProgressBar
-              currentTime={currentTime}
-              duration={duration}
-              onSeek={seek}
-            />
-            <div className="mt-0.5 text-center text-[10px] text-muted">
-              {formatDuration(currentTime)}
-            </div>
-          </div>
         </div>
       </div>
 

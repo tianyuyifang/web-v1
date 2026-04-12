@@ -7,7 +7,7 @@
 
 require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
-const { toPinyinAll } = require('../src/utils/pinyin');
+const { toPinyinAll, toPinyinInitialsAll } = require('../src/utils/pinyin');
 
 const prisma = new PrismaClient();
 
@@ -24,7 +24,9 @@ async function main() {
       where: { id: song.id },
       data: {
         titlePinyinAll: toPinyinAll(song.title),
+        titlePinyinInitialsAll: toPinyinInitialsAll(song.title),
         artistPinyinAll: toPinyinAll(song.artist),
+        artistPinyinInitialsAll: toPinyinInitialsAll(song.artist),
       },
     });
     songCount++;
@@ -44,6 +46,7 @@ async function main() {
       where: { id: sa.id },
       data: {
         artistPinyinAll: toPinyinAll(sa.artistName),
+        artistPinyinInitialsAll: toPinyinInitialsAll(sa.artistName),
       },
     });
     saCount++;

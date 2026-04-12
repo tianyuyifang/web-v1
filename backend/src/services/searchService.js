@@ -55,18 +55,28 @@ async function searchSongs(query, cursor, limit, strict = false) {
 
     if (strict) {
       // Strict: prefix-only on initials and concat pinyin (no substring, no trigram)
+      params.push(`%|${query}%`);  // $3 = initials_all mid-variant prefix (e.g. %|xxtl%)
       whereClause = `(
         s.title_pinyin_initials LIKE $2
         OR sa.artist_pinyin_initials LIKE $2
+        OR s.title_pinyin_initials_all LIKE $2
+        OR s.title_pinyin_initials_all LIKE $3
+        OR sa.artist_pinyin_initials_all LIKE $2
+        OR sa.artist_pinyin_initials_all LIKE $3
         OR s.title_pinyin_concat ILIKE $2
         OR s.artist_pinyin_concat ILIKE $2
         OR sa.artist_pinyin_concat ILIKE $2
       )`;
     } else {
       params.push(`%${query}%`);   // $3 = substring pattern
+      params.push(`%|${query}%`);  // $4 = initials_all mid-variant prefix
       whereClause = `(
         s.title_pinyin_initials LIKE $2
         OR sa.artist_pinyin_initials LIKE $2
+        OR s.title_pinyin_initials_all LIKE $2
+        OR s.title_pinyin_initials_all LIKE $4
+        OR sa.artist_pinyin_initials_all LIKE $2
+        OR sa.artist_pinyin_initials_all LIKE $4
         OR s.title_pinyin_concat ILIKE $3
         OR s.artist_pinyin_concat ILIKE $3
         OR sa.artist_pinyin_concat ILIKE $3
@@ -237,6 +247,7 @@ async function searchClipsInPlaylist(playlistId, query) {
         song: {
           OR: [
             { titlePinyinInitials: { startsWith: query } },
+            { titlePinyinInitialsAll: { contains: query } },
             { titlePinyinConcat: { contains: query, mode: 'insensitive' } },
             { artistPinyinConcat: { contains: query, mode: 'insensitive' } },
             { titlePinyinAll: { contains: query, mode: 'insensitive' } },

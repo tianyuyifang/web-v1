@@ -60,4 +60,32 @@ function toPinyinAll(chinese) {
   return allPinyin.join(' ');
 }
 
-module.exports = { toPinyin, toPinyinInitials, toPinyinConcat, toPinyinAll };
+/**
+ * Generate all possible pinyin initial combinations for polyphonic characters.
+ * Returns pipe-delimited string of all variants.
+ * e.g. "侠行天龙" → "xhtl|xxtl"  (行 = h or x)
+ * Most songs produce 1-4 variants. Capped at 16 to prevent explosion.
+ */
+function toPinyinInitialsAll(chinese) {
+  if (!chinese) return null;
+  const readings = pinyinFn(chinese, { style: STYLE_FIRST_LETTER, heteronym: true });
+  // Deduplicate initials per character
+  const perChar = readings.map((r) => [...new Set(r)]);
+
+  // Generate all combinations via iterative cartesian product
+  let combos = [''];
+  for (const chars of perChar) {
+    const next = [];
+    for (const prefix of combos) {
+      for (const ch of chars) {
+        next.push(prefix + ch);
+      }
+    }
+    combos = next;
+    if (combos.length > 16) break; // safety cap
+  }
+
+  return [...new Set(combos)].join('|');
+}
+
+module.exports = { toPinyin, toPinyinInitials, toPinyinConcat, toPinyinAll, toPinyinInitialsAll };

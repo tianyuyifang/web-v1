@@ -39,6 +39,7 @@ export default memo(function PlayerBox({
   clipIndex,
   collapsed,
   onToggleExpand,
+  onPlayStateChange,
 }) {
   const { t } = useLanguage();
   const [showNewClip, setShowNewClip] = useState(false);
@@ -75,6 +76,11 @@ export default memo(function PlayerBox({
     clearPlayFromStart();
     playFromStart();
   }, [playFromStartClipId, clipId, clearPlayFromStart, playFromStart]);
+
+  // Notify parent of play state changes (used by phone UI collapse logic)
+  useEffect(() => {
+    onPlayStateChange?.(clipId, isPlaying);
+  }, [clipId, isPlaying, onPlayStateChange]);
 
   // --- Preload scheduler wiring ---
 

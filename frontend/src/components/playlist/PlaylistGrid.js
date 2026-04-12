@@ -86,6 +86,7 @@ export default function PlaylistGrid({
   const { t } = useLanguage();
   const [sectionPromptClipId, setSectionPromptClipId] = useState(null);
   const [expandedClipId, setExpandedClipId] = useState(null);
+  const [activelyPlayingClipId, setActivelyPlayingClipId] = useState(null);
 
   // Derive playing clipId from the active player (format: "playlistId-clipId")
   const activePlayerId = usePlayerStore((s) => s.activePlayerId);
@@ -95,9 +96,17 @@ export default function PlaylistGrid({
     return activePlayerId.startsWith(prefix) ? activePlayerId.slice(prefix.length) : null;
   }, [activePlayerId, playlist.id]);
 
-  const handleToggleExpand = useCallback((clipId) => {
-    setExpandedClipId((prev) => (prev === clipId ? null : clipId));
+  const handlePlayStateChange = useCallback((clipId, isPlaying) => {
+    setActivelyPlayingClipId(isPlaying ? clipId : null);
   }, []);
+
+  const handleToggleExpand = useCallback((clipId) => {
+    setExpandedClipId((prev) => {
+      if (prev === clipId) return null; // collapse current
+      if (prev === activelyPlayingClipId) return prev; // block — playing clip is expanded
+      return clipId; // expand new
+    });
+  }, [activelyPlayingClipId]);
 
   // Auto-expand when a clip starts playing
   useEffect(() => {
@@ -470,6 +479,7 @@ export default function PlaylistGrid({
               clipIndex={pc.position}
               collapsed={pc.clipId !== expandedClipId}
               onToggleExpand={handleToggleExpand}
+              onPlayStateChange={handlePlayStateChange}
             />
           ))}
         </div>
@@ -510,6 +520,7 @@ export default function PlaylistGrid({
               clipIndex={pc.position}
               collapsed={pc.clipId !== expandedClipId}
               onToggleExpand={handleToggleExpand}
+              onPlayStateChange={handlePlayStateChange}
             />
           ))}
         </div>

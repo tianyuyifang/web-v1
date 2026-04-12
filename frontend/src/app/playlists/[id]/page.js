@@ -12,6 +12,7 @@ import PlaylistHeader from "@/components/playlist/PlaylistHeader";
 import PlaylistGrid from "@/components/playlist/PlaylistGrid";
 import ClipSidebar from "@/components/playlist/ClipSidebar";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import LikeButton from "@/components/player/LikeButton";
 import { preloadClips } from "@/lib/audioCache";
 
 // Lazy-load modals — only downloaded when opened
@@ -64,14 +65,6 @@ export default function PlaylistPage() {
       )
     );
   }, [phoneSearch, playlist?.clips]);
-
-  const handlePhoneSearchSelect = useCallback((clipId) => {
-    setPhoneSearch("");
-    setHighlightedClipId(clipId);
-    document.getElementById(`playerbox-${clipId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-    triggerPlayFromStart(clipId);
-    setTimeout(() => setHighlightedClipId(null), 3000);
-  }, [triggerPlayFromStart]);
 
   // SSE: real-time like updates from other users
   usePlaylistLikes(id);
@@ -396,17 +389,19 @@ export default function PlaylistPage() {
               {phoneSearchResults.length} {t("results")}
             </div>
             {phoneSearchResults.map((pc) => (
-              <button
+              <div
                 key={pc.clipId}
-                onClick={() => handlePhoneSearchSelect(pc.clipId)}
-                className="flex w-full items-baseline gap-1.5 border-t border-border/30 px-2 py-1 text-left transition-colors active:bg-surface-hover"
+                className="flex items-baseline gap-1.5 border-t border-border/30 px-2 py-1"
               >
                 <span className="w-5 shrink-0 text-right text-xs text-muted">{pc.position + 1}.</span>
                 <span className="min-w-0 flex-1 truncate">
                   <span className="text-xs font-medium text-theme">{pc.clip.song.title}</span>
                   <span className="ml-1.5 text-[11px] text-muted">{pc.clip.song.artist.replace(/_/g, "/")}</span>
                 </span>
-              </button>
+                <div className="shrink-0 self-center [&_button]:h-5 [&_button]:w-5">
+                  <LikeButton playlistId={playlist.id} clipId={pc.clipId} fontSize={16} />
+                </div>
+              </div>
             ))}
           </div>
         )}

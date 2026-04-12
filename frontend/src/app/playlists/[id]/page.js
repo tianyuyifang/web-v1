@@ -47,17 +47,33 @@ export default function PlaylistPage() {
   // Phone only: auto-hide sticky header on scroll down, show on scroll up
   const stickyHeaderRef = useRef(null);
   const lastScrollYRef = useRef(0);
+  const hideAnchorRef = useRef(0);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 639px)");
     if (!mq.matches) return;
+    let hidden = false;
     const onScroll = () => {
       const node = stickyHeaderRef.current;
       if (!node) return;
       const y = window.scrollY;
-      const down = y > lastScrollYRef.current && y > 80;
+      const down = y > lastScrollYRef.current;
+      if (down) {
+        // Scrolling down — hide after passing 80px
+        hideAnchorRef.current = y;
+        if (y > 80 && !hidden) {
+          hidden = true;
+          node.style.transform = `translateY(-${node.offsetHeight}px)`;
+          node.style.transition = "transform 0.25s ease";
+        }
+      } else {
+        // Scrolling up — show only after 50px of upward scroll
+        if (hidden && hideAnchorRef.current - y > 50) {
+          hidden = false;
+          node.style.transform = "";
+          node.style.transition = "transform 0.25s ease";
+        }
+      }
       lastScrollYRef.current = y;
-      node.style.transform = down ? `translateY(-${node.offsetHeight}px)` : "";
-      node.style.transition = "transform 0.25s ease";
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);

@@ -15,6 +15,7 @@ import ClipComment from "./ClipComment";
 import ClipSwitcher from "./ClipSwitcher";
 import AddClipModal from "@/components/playlist/AddClipModal";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import { formatDuration } from "@/lib/utils";
 import {
   enqueueVisible,
   enqueueHover,
@@ -37,6 +38,8 @@ export default memo(function PlayerBox({
   onMove,
   allClips,
   clipIndex,
+  collapsed,
+  onToggleExpand,
 }) {
   const { t } = useLanguage();
   const [showNewClip, setShowNewClip] = useState(false);
@@ -136,11 +139,153 @@ export default memo(function PlayerBox({
     return parts.join("  ");
   })();
 
-  return (
+  // --- Phone collapsed view (below sm) ---
+  if (collapsed) {
+    return (
+      <div
+        ref={containerRef}
+        id={`playerbox-${clipId}`}
+        onClick={() => onToggleExpand?.(clipId)}
+        className="flex cursor-pointer items-center gap-2 border-b border-border/50 px-3 py-2.5 transition-colors hover:bg-surface-hover sm:hidden"
+      >
+        {position != null && (
+          <span className="w-6 shrink-0 text-right text-xs text-muted">{position}.</span>
+        )}
+        {colorTag && (
+          <div className="flex shrink-0 gap-0.5 self-stretch">
+            {colorTag.split("|").filter(Boolean).map((c) => (
+              <div key={c} className="w-[3px] rounded-full" style={{ background: c }} />
+            ))}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <span className="text-sm font-medium text-theme">{song.title}</span>
+          <span className="ml-2 text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
+        </div>
+        <LikeButton playlistId={playlistId} clipId={clipId} fontSize={20} />
+      </div>
+    );
+  }
+
+  // --- Phone expanded view (below sm) ---
+  const phoneExpandedView = (
     <div
       ref={containerRef}
       id={`playerbox-${clipId}`}
-      className={`relative overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all ${highlightClass}`}
+      className={`relative border-b border-border bg-surface transition-all sm:hidden ${highlightClass}`}
+    >
+      {/* Header row — tap to collapse (unless playing) */}
+      <div
+        onClick={() => !isPlaying && onToggleExpand?.(clipId)}
+        className={`flex items-center gap-2 px-3 py-2.5 ${!isPlaying ? "cursor-pointer" : ""}`}
+      >
+        {position != null && (
+          <span className="w-6 shrink-0 text-right text-xs text-muted">{position}.</span>
+        )}
+        {colorTag && (
+          <div className="flex shrink-0 gap-0.5 self-stretch">
+            {colorTag.split("|").filter(Boolean).map((c) => (
+              <div key={c} className="w-[3px] rounded-full" style={{ background: c }} />
+            ))}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <span className="text-sm font-medium text-theme">{song.title}</span>
+          <span className="ml-2 text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
+        </div>
+        <LikeButton playlistId={playlistId} clipId={clipId} fontSize={20} />
+      </div>
+
+      {/* Body: lyrics left, controls right */}
+      <div className="flex gap-2 px-3 pb-3">
+        {/* Left: lyrics + comment */}
+        <div className="min-w-0 flex-1">
+          <div className="text-xs">
+            <LyricsBox
+              clipId={clipId}
+              clipVersion={clip.version}
+              currentTime={currentTime}
+              clipStart={0}
+            />
+          </div>
+          <ClipComment
+            comment={comment}
+            onChange={handleCommentChange}
+            editable
+          />
+        </div>
+
+        {/* Right: controls column */}
+        <div className="flex w-20 shrink-0 flex-col items-center justify-center gap-2">
+          {/* Play/pause */}
+          <button
+            onClick={isPlaying ? pause : play}
+            onMouseEnter={handlePlayButtonHover}
+            aria-label={isPlaying ? t("pause") : t("play")}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-white shadow-sm active:scale-95"
+          >
+            {isPlaying ? (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                <rect x="5" y="3" width="4.5" height="18" rx="1" />
+                <rect x="14.5" y="3" width="4.5" height="18" rx="1" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 translate-x-0.5">
+                <polygon points="5,2 21,12 5,22" />
+              </svg>
+            )}
+          </button>
+
+          {/* Replay */}
+          <button
+            onClick={playFromStart}
+            aria-label={t("replay")}
+            className="flex items-center text-muted active:text-primary"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+              <polyline points="1 4 1 10 7 10" />
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            </svg>
+          </button>
+
+          {/* Mini progress bar */}
+          <div className="w-full">
+            <ProgressBar
+              currentTime={currentTime}
+              duration={duration}
+              onSeek={seek}
+            />
+            <div className="mt-0.5 text-center text-[10px] text-muted">
+              {formatDuration(currentTime)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit mode controls */}
+      {editMode && (
+        <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2">
+          <SpeedControl speed={speed} onChange={handleSpeedChange} />
+          <PitchControl pitch={pitch} onChange={handlePitchChange} />
+          {onRemove && (
+            <button
+              onClick={() => onRemove(clipId)}
+              className="ml-auto text-xs font-medium text-red-400"
+            >
+              {t("remove")}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  // --- Desktop view (sm and above) ---
+  const desktopView = (
+    <div
+      ref={containerRef}
+      id={`playerbox-${clipId}`}
+      className={`relative hidden overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all sm:block ${highlightClass}`}
     >
       {/* Color tag flags — top right, always editable */}
       <ColorTag
@@ -311,5 +456,12 @@ export default memo(function PlayerBox({
         document.body
       )}
     </div>
+  );
+
+  return (
+    <>
+      {phoneExpandedView}
+      {desktopView}
+    </>
   );
 })

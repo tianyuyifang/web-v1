@@ -25,6 +25,7 @@ import ColorTag from "@/components/player/ColorTag";
 import LikeButton from "@/components/player/LikeButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import usePlayerStore from "@/store/playerStore";
 
 function SortableCompactRow({ playlistClip, playlistId, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -84,6 +85,20 @@ export default function PlaylistGrid({
 }) {
   const { t } = useLanguage();
   const [sectionPromptClipId, setSectionPromptClipId] = useState(null);
+  const [expandedClipId, setExpandedClipId] = useState(null);
+
+  // Derive playing clipId from the active player (format: "playlistId-clipId")
+  const activePlayerId = usePlayerStore((s) => s.activePlayerId);
+  const playingClipId = useMemo(() => {
+    if (!activePlayerId) return null;
+    const prefix = `${playlist.id}-`;
+    return activePlayerId.startsWith(prefix) ? activePlayerId.slice(prefix.length) : null;
+  }, [activePlayerId, playlist.id]);
+
+  const handleToggleExpand = useCallback((clipId) => {
+    setExpandedClipId((prev) => (prev === clipId ? null : clipId));
+  }, []);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -448,6 +463,8 @@ export default function PlaylistGrid({
               position={pc.position + 1}
               allClips={playlist.clips}
               clipIndex={pc.position}
+              collapsed={pc.clipId !== expandedClipId && pc.clipId !== playingClipId}
+              onToggleExpand={handleToggleExpand}
             />
           ))}
         </div>
@@ -486,6 +503,8 @@ export default function PlaylistGrid({
               onMove={handleMove}
               allClips={playlist.clips}
               clipIndex={pc.position}
+              collapsed={pc.clipId !== expandedClipId && pc.clipId !== playingClipId}
+              onToggleExpand={handleToggleExpand}
             />
           ))}
         </div>

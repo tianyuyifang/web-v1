@@ -12,7 +12,7 @@ import PlaylistHeader from "@/components/playlist/PlaylistHeader";
 import PlaylistGrid from "@/components/playlist/PlaylistGrid";
 import ClipSidebar from "@/components/playlist/ClipSidebar";
 import { useLanguage } from "@/components/layout/LanguageProvider";
-import LikeButton from "@/components/player/LikeButton";
+import useLikes from "@/hooks/useLikes";
 import { preloadClips } from "@/lib/audioCache";
 
 // Lazy-load modals — only downloaded when opened
@@ -20,6 +20,24 @@ const AddClipModal = dynamic(() => import("@/components/playlist/AddClipModal"),
 const SharePlaylistModal = dynamic(() => import("@/components/playlist/SharePlaylistModal"), { ssr: false });
 const ComparePlaylistModal = dynamic(() => import("@/components/playlist/ComparePlaylistModal"), { ssr: false });
 const ConfirmDialog = dynamic(() => import("@/components/ui/ConfirmDialog"), { ssr: false });
+
+// Phone-only: compact chip for search results with like toggle
+function LikeChip({ playlistId, pc }) {
+  const { isLiked, toggleLike } = useLikes({ playlistId, clipId: pc.clipId });
+  return (
+    <button
+      onClick={toggleLike}
+      className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+        isLiked
+          ? "border-red-500/30 bg-red-500/10 text-red-500"
+          : "border-border bg-surface text-theme"
+      }`}
+    >
+      <span className="max-w-[120px] truncate">{pc.clip.song.title}</span>
+      <span className="text-xs">{isLiked ? "♥" : "♡"}</span>
+    </button>
+  );
+}
 
 export default function PlaylistPage() {
   const { id } = useParams();
@@ -384,25 +402,12 @@ export default function PlaylistPage() {
       <div className="sm:hidden">
         {/* Results sheet — slides up when searching */}
         {phoneSearch && phoneSearchResults.length > 0 && (
-          <div className="fixed bottom-12 left-0 right-0 z-40 max-h-[30vh] overflow-y-auto border-t border-border bg-surface shadow-lg">
-            <div className="px-2 py-1 text-[11px] text-muted">
-              {phoneSearchResults.length} {t("results")}
+          <div className="fixed bottom-12 left-0 right-0 z-40 max-h-[30vh] overflow-y-auto border-t border-border bg-surface px-2 py-2 shadow-lg">
+            <div className="flex flex-wrap gap-1.5">
+              {phoneSearchResults.map((pc) => (
+                <LikeChip key={pc.clipId} playlistId={playlist.id} pc={pc} />
+              ))}
             </div>
-            {phoneSearchResults.map((pc) => (
-              <div
-                key={pc.clipId}
-                className="flex items-baseline gap-1.5 border-t border-border/30 px-2 py-1"
-              >
-                <span className="w-5 shrink-0 text-right text-xs text-muted">{pc.position + 1}.</span>
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="text-xs font-medium text-theme">{pc.clip.song.title}</span>
-                  <span className="ml-1.5 text-[11px] text-muted">{pc.clip.song.artist.replace(/_/g, "/")}</span>
-                </span>
-                <div className="shrink-0 self-center [&_button]:h-5 [&_button]:w-5">
-                  <LikeButton playlistId={playlist.id} clipId={pc.clipId} fontSize={16} />
-                </div>
-              </div>
-            ))}
           </div>
         )}
         {phoneSearch && phoneSearchResults.length === 0 && (
@@ -411,7 +416,7 @@ export default function PlaylistPage() {
           </div>
         )}
 
-        {/* Search bar */}
+        {/* Search bar — text-base (16px) prevents iOS auto-zoom */}
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-surface px-3 py-2">
           <div className="relative">
             <input
@@ -419,7 +424,7 @@ export default function PlaylistPage() {
               value={phoneSearch}
               onChange={(e) => setPhoneSearch(e.target.value)}
               placeholder={t("filterClips")}
-              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 pr-8 text-sm text-theme placeholder-muted focus:border-primary focus:outline-none"
+              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 pr-8 text-base text-theme placeholder-muted focus:border-primary focus:outline-none"
             />
             {phoneSearch && (
               <button

@@ -85,7 +85,7 @@ export default function PlaylistGrid({
 }) {
   const { t } = useLanguage();
   const [sectionPromptClipId, setSectionPromptClipId] = useState(null);
-  const [expandedClipId, setExpandedClipId] = useState(null);
+  const [expandedClipIds, setExpandedClipIds] = useState(new Set());
 
   // Derive playing clipId from the active player (format: "playlistId-clipId")
   const activePlayerId = usePlayerStore((s) => s.activePlayerId);
@@ -96,12 +96,20 @@ export default function PlaylistGrid({
   }, [activePlayerId, playlist.id]);
 
   const handleToggleExpand = useCallback((clipId) => {
-    setExpandedClipId((prev) => (prev === clipId ? null : clipId));
+    setExpandedClipIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(clipId)) next.delete(clipId);
+      else next.add(clipId);
+      return next;
+    });
   }, []);
 
   // Auto-expand when a clip starts playing
   useEffect(() => {
-    if (playingClipId) setExpandedClipId(playingClipId);
+    if (playingClipId) setExpandedClipIds((prev) => {
+      if (prev.has(playingClipId)) return prev;
+      return new Set(prev).add(playingClipId);
+    });
   }, [playingClipId]);
 
   const sensors = useSensors(
@@ -468,7 +476,7 @@ export default function PlaylistGrid({
               position={pc.position + 1}
               allClips={playlist.clips}
               clipIndex={pc.position}
-              collapsed={pc.clipId !== expandedClipId}
+              collapsed={!expandedClipIds.has(pc.clipId)}
               onToggleExpand={handleToggleExpand}
             />
           ))}
@@ -508,7 +516,7 @@ export default function PlaylistGrid({
               onMove={handleMove}
               allClips={playlist.clips}
               clipIndex={pc.position}
-              collapsed={pc.clipId !== expandedClipId}
+              collapsed={!expandedClipIds.has(pc.clipId)}
               onToggleExpand={handleToggleExpand}
             />
           ))}

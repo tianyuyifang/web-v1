@@ -49,6 +49,7 @@ export default memo(function PlayerBox({
 
   const playFromStartClipId = usePlayerStore((s) => s.playFromStartClipId);
   const clearPlayFromStart = usePlayerStore((s) => s.clearPlayFromStart);
+  const isActivePlayer = usePlayerStore((s) => s.activePlayerId === playerId);
 
   const {
     play,
@@ -139,44 +140,40 @@ export default memo(function PlayerBox({
   })();
 
   // --- Phone collapsed view (below sm) ---
-  if (collapsed) {
-    return (
-      <div
-        ref={containerRef}
-        id={`playerbox-${clipId}`}
-        onClick={() => onToggleExpand?.(clipId)}
-        className="flex cursor-pointer items-center gap-2 border-b border-border/50 px-3 transition-colors hover:bg-surface-hover sm:hidden"
-      >
-        {position != null && (
-          <span className="w-6 shrink-0 text-right text-xs text-muted">{position}.</span>
-        )}
-        {colorTag && (
-          <div className="flex shrink-0 gap-0.5 self-stretch">
-            {colorTag.split("|").filter(Boolean).map((c) => (
-              <div key={c} className="w-[3px] rounded-full" style={{ background: c }} />
-            ))}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <span className="text-sm font-medium text-theme">{song.title}</span>
-          <span className="ml-2 text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
+  const phoneCollapsedView = collapsed ? (
+    <div
+      onClick={() => onToggleExpand?.(clipId)}
+      className="flex cursor-pointer items-center gap-1.5 border-b border-border/50 px-2 py-[3px] transition-colors hover:bg-surface-hover sm:hidden"
+    >
+      {position != null && (
+        <span className="w-5 shrink-0 text-right text-[11px] text-muted">{position}.</span>
+      )}
+      {colorTag && (
+        <div className="flex shrink-0 gap-0.5">
+          {colorTag.split("|").filter(Boolean).map((c) => (
+            <div key={c} className="h-2.5 w-2.5 rounded-full" style={{ background: c }} />
+          ))}
         </div>
-        <LikeButton playlistId={playlistId} clipId={clipId} fontSize={20} />
+      )}
+      <div className="min-w-0 flex-1 truncate">
+        <span className="text-xs font-medium text-theme">{song.title}</span>
+        <span className="ml-1.5 text-[11px] text-muted">{song.artist.replace(/_/g, "/")}</span>
       </div>
-    );
-  }
+      <div onClick={(e) => e.stopPropagation()} className="shrink-0 [&_button]:h-5 [&_button]:w-5 [&_button]:text-sm">
+        <LikeButton playlistId={playlistId} clipId={clipId} fontSize={14} />
+      </div>
+    </div>
+  ) : null;
 
   // --- Phone expanded view (below sm) ---
-  const phoneExpandedView = (
+  const phoneExpandedView = collapsed ? null : (
     <div
-      ref={containerRef}
-      id={`playerbox-${clipId}`}
       className={`relative border-b border-border bg-surface transition-all sm:hidden ${highlightClass}`}
     >
       {/* Header row */}
       <div
-        onClick={() => !isPlaying && onToggleExpand?.(clipId)}
-        className={`flex items-center gap-2 px-3 py-2 ${!isPlaying ? "cursor-pointer" : ""}`}
+        onClick={() => !isActivePlayer && onToggleExpand?.(clipId)}
+        className={`flex items-center gap-2 px-3 py-2 ${!isActivePlayer ? "cursor-pointer" : ""}`}
       >
         {position != null && (
           <span className="w-6 shrink-0 text-right text-xs text-muted">{position}.</span>
@@ -191,10 +188,6 @@ export default memo(function PlayerBox({
         <div className="min-w-0 flex-1">
           <span className="text-sm font-medium text-theme">{song.title}</span>
           <span className="ml-2 text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
-        </div>
-        {/* Like button — stop propagation to prevent collapse */}
-        <div onClick={(e) => e.stopPropagation()}>
-          <LikeButton playlistId={playlistId} clipId={clipId} fontSize={20} />
         </div>
       </div>
 
@@ -202,10 +195,10 @@ export default memo(function PlayerBox({
       <div className="flex gap-2 px-3 pb-3">
         {/* Left: lyrics + comment */}
         <div
-          className={`min-w-0 flex-1 ${!isPlaying ? "cursor-pointer" : ""}`}
+          className={`min-w-0 flex-1 ${!isActivePlayer ? "cursor-pointer" : ""}`}
           onClick={(e) => {
-            // Collapse on click unless playing, or clicking interactive elements
-            if (isPlaying) return;
+            // Collapse on click unless playing/paused, or clicking interactive elements
+            if (isActivePlayer) return;
             const tag = e.target.tagName;
             if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON") return;
             onToggleExpand?.(clipId);
@@ -228,8 +221,8 @@ export default memo(function PlayerBox({
           </div>
         </div>
 
-        {/* Right: controls column */}
-        <div className="flex w-20 shrink-0 flex-col items-center justify-center gap-4">
+        {/* Right: 2x2 grid of controls */}
+        <div className="grid w-20 shrink-0 grid-cols-2 gap-2">
           {/* Play/pause */}
           <button
             onClick={isPlaying ? pause : play}
@@ -253,13 +246,27 @@ export default memo(function PlayerBox({
           <button
             onClick={playFromStart}
             aria-label={t("replay")}
-            className="flex items-center text-muted active:text-primary"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted active:text-primary"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
               <polyline points="1 4 1 10 7 10" />
               <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
             </svg>
           </button>
+
+          {/* Color tag */}
+          <div className="flex h-9 w-9 items-center justify-center">
+            <ColorTag
+              color={colorTag}
+              editable={true}
+              onChange={handleColorTagChange}
+            />
+          </div>
+
+          {/* Like */}
+          <div className="flex h-9 w-9 items-center justify-center [&_button]:h-9 [&_button]:w-9">
+            <LikeButton playlistId={playlistId} clipId={clipId} fontSize={18} />
+          </div>
         </div>
       </div>
 
@@ -461,6 +468,7 @@ export default memo(function PlayerBox({
 
   return (
     <>
+      {phoneCollapsedView}
       {phoneExpandedView}
       {desktopView}
     </>

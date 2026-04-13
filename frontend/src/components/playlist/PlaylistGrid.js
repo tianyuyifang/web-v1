@@ -39,7 +39,7 @@ function SortableCompactRow({ playlistClip, playlistId, onRemove }) {
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
       {...attributes}
       {...listeners}
-      className="flex items-center gap-3 border-b border-border/20 px-3 py-2 hover:bg-surface-hover"
+      className="flex items-center gap-3 border-b border-border px-3 py-2 hover:bg-surface-hover"
     >
       <span className="cursor-grab text-muted">⠿</span>
       <span className="w-6 shrink-0 text-right text-xs text-muted">{playlistClip.position + 1}.</span>
@@ -362,7 +362,7 @@ export default function PlaylistGrid({
             <div
               key={pc.clipId}
               onClick={(e) => toggleSelect(pc.clipId, e)}
-              className={`flex cursor-pointer items-center gap-3 border-b border-border/20 px-3 py-2.5 last:border-0 transition-colors ${
+              className={`flex cursor-pointer items-center gap-3 border-b border-border px-3 py-2.5 last:border-0 transition-colors ${
                 selectedClips?.has(pc.clipId) ? "bg-primary/10" : "hover:bg-surface-hover"
               }`}
             >

@@ -24,7 +24,7 @@ export default function PlaylistCard({ playlist, listView, number }) {
     return (
       <Link
         href={`/playlists/${playlist.id}`}
-        className="flex items-center gap-3 border-b border-border/50 px-3 py-2.5 transition-colors hover:bg-surface-hover"
+        className="flex items-center gap-3 border-b border-border/20 px-3 py-2.5 transition-colors hover:bg-surface-hover"
       >
         {/* Number */}
         {number != null && (

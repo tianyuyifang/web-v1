@@ -143,7 +143,7 @@ export default memo(function PlayerBox({
   const phoneCollapsedView = collapsed ? (
     <div
       onClick={() => onToggleExpand?.(clipId)}
-      className="flex cursor-pointer items-baseline gap-1.5 border-b border-border/50 px-2 transition-colors hover:bg-surface-hover sm:hidden"
+      className="flex cursor-pointer items-baseline gap-1.5 border-b border-border/20 px-2 transition-colors hover:bg-surface-hover sm:hidden"
     >
       {position != null && (
         <span className="w-5 shrink-0 text-right text-xs text-muted">{position}.</span>
@@ -168,7 +168,7 @@ export default memo(function PlayerBox({
   // --- Phone expanded view (below sm) ---
   const phoneExpandedView = collapsed ? null : (
     <div
-      className={`relative border-b border-border bg-surface transition-all sm:hidden ${highlightClass}`}
+      className={`relative border-b border-border/20 bg-surface transition-all sm:hidden ${highlightClass}`}
     >
       {/* Header row */}
       <div

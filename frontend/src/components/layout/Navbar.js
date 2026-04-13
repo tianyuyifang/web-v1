@@ -6,9 +6,11 @@ import { usePathname, useRouter } from "next/navigation";
 import useAuth from "@/hooks/useAuth";
 import useAuthStore from "@/store/authStore";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import { useTheme } from "@/components/layout/ThemeProvider";
 
 export default function Navbar() {
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
+  const { theme } = useTheme();
   const init = useAuthStore((s) => s.init);
   const router = useRouter();
   const pathname = usePathname();
@@ -54,7 +56,7 @@ export default function Navbar() {
             className="flex items-center gap-2 text-lg font-bold tracking-tight"
             style={{ color: "var(--text)" }}
           >
-            <img src="/brand_icon.png" alt="logo" className="h-7 w-7 rounded-lg object-cover" />
+            <img src={theme === "dark" ? "/brand_icon_dark.png" : "/brand_icon_light.png"} alt="logo" className="h-7 w-7 rounded-lg object-cover" />
             {t("appName")}
           </Link>
           {isAuthenticated && (

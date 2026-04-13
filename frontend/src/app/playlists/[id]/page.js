@@ -423,6 +423,19 @@ export default function PlaylistPage() {
               type="text"
               value={phoneSearch}
               onChange={(e) => setPhoneSearch(e.target.value)}
+              onFocus={() => {
+                const y = window.scrollY;
+                document.body.style.position = "fixed";
+                document.body.style.top = `-${y}px`;
+                document.body.style.width = "100%";
+              }}
+              onBlur={() => {
+                const top = document.body.style.top;
+                document.body.style.position = "";
+                document.body.style.top = "";
+                document.body.style.width = "";
+                window.scrollTo(0, parseInt(top || "0") * -1);
+              }}
               placeholder={t("filterClips")}
               className="w-full rounded-lg border border-border bg-background px-3 py-1.5 pr-8 text-base text-theme placeholder-muted focus:border-primary focus:outline-none"
             />

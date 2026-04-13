@@ -189,6 +189,9 @@ export default memo(function PlayerBox({
           <span className="text-sm font-medium text-theme">{song.title}</span>
           <span className="ml-2 text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
         </div>
+        {metaText && (
+          <span className="shrink-0 text-xs text-muted">{metaText}</span>
+        )}
       </div>
 
       {/* Body: lyrics left, controls right */}
@@ -265,7 +268,7 @@ export default memo(function PlayerBox({
 
           {/* Like */}
           <div className="flex h-9 w-9 items-center justify-center [&_button]:h-9 [&_button]:w-9">
-            <LikeButton playlistId={playlistId} clipId={clipId} fontSize={18} />
+            <LikeButton playlistId={playlistId} clipId={clipId} fontSize={20} />
           </div>
         </div>
       </div>

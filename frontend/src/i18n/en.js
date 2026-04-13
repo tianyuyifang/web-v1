@@ -1,6 +1,6 @@
 export default {
   // App
-  appTitle: "Music Clip Playlists",
+  appTitle: "Q你一下",
   appDescription: "Create and manage music clip playlists",
   appName: "Q你一下",
 
@@ -14,7 +14,7 @@ export default {
 
   // Login
   loginTitle: "Welcome back",
-  loginSubtitle: "Sign in to your MusicClip account",
+  loginSubtitle: "Sign in to your Q你一下 account",
   sessionReplacedMessage: "Your account was logged in on another device. Please log in again.",
   username: "Username",
   password: "Password",
@@ -28,7 +28,7 @@ export default {
 
   // Register
   registerTitle: "Create account",
-  registerSubtitle: "Join MusicClip to start building playlists",
+  registerSubtitle: "Join Q你一下 to start building playlists",
   confirmPassword: "Confirm Password",
   usernameRequired: "Username is required",
   usernameMin: "Username must be at least 2 characters",

@@ -14,7 +14,7 @@ export default {
 
   // Login
   loginTitle: "欢迎回来",
-  loginSubtitle: "登录你的 MusicClip 账号",
+  loginSubtitle: "登录你的「Q你一下」账号",
   sessionReplacedMessage: "你的账号已在其他设备上登录，请重新登录。",
   username: "用户名",
   password: "密码",
@@ -28,7 +28,7 @@ export default {
 
   // Register
   registerTitle: "创建账号",
-  registerSubtitle: "加入 MusicClip，开始创建播放列表",
+  registerSubtitle: "加入「Q你一下」，开始创建播放列表",
   confirmPassword: "确认密码",
   usernameRequired: "请输入用户名",
   usernameMin: "用户名至少2个字符",

@@ -4,7 +4,7 @@ import ThemeProvider from "@/components/layout/ThemeProvider";
 import LanguageProvider from "@/components/layout/LanguageProvider";
 
 export const metadata = {
-  title: "Music Clip Playlists",
+  title: "Q你一下",
   description: "Create and manage music clip playlists",
 };
 

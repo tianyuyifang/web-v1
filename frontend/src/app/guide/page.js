@@ -481,8 +481,8 @@ export default function GuidePage() {
         </h1>
         <p className="mt-1 text-sm text-muted">
           {lang === "zh"
-            ? "了解如何使用 MusicClip 的各项功能"
-            : "Learn how to use every feature of MusicClip"}
+            ? "了解如何使用「Q你一下」的各项功能"
+            : "Learn how to use every feature of Q你一下"}
         </p>
       </div>
 

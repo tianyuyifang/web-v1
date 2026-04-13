@@ -2,7 +2,7 @@ export default {
   // App
   appTitle: "Music Clip Playlists",
   appDescription: "Create and manage music clip playlists",
-  appName: "MusicClip",
+  appName: "Q你一下",
 
   // Navbar
   welcome: "Welcome,",

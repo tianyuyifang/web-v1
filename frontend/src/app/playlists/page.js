@@ -44,11 +44,11 @@ export default function PlaylistsPage() {
     [playlists]
   );
   const sharedPlaylists = useMemo(
-    () => playlists.filter((p) => !p.isOwner && p.isShared),
+    () => playlists.filter((p) => !p.isOwner && (p.isShared || p.canCopy)),
     [playlists]
   );
   const publicPlaylists = useMemo(
-    () => playlists.filter((p) => !p.isOwner && !p.isShared),
+    () => playlists.filter((p) => !p.isOwner && !p.isShared && !p.canCopy),
     [playlists]
   );
 

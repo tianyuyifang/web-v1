@@ -311,6 +311,12 @@ export default function PlaylistPage() {
 
           {/* Section jump buttons + desktop toggle — always visible */}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setDesktopHeaderCollapsed((v) => !v)}
+              className="hidden rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted transition-colors hover:bg-surface-hover sm:inline-flex"
+            >
+              {desktopHeaderCollapsed ? "▼" : "▲"}
+            </button>
             {sections.map((s) => (
               <button
                 key={s.clipId}
@@ -320,12 +326,6 @@ export default function PlaylistPage() {
                 {s.label}
               </button>
             ))}
-            <button
-              onClick={() => setDesktopHeaderCollapsed((v) => !v)}
-              className="ml-auto hidden rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted transition-colors hover:bg-surface-hover sm:inline-flex"
-            >
-              {desktopHeaderCollapsed ? "▼" : "▲"}
-            </button>
           </div>
         </div>
 

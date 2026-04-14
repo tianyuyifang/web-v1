@@ -48,6 +48,8 @@ async function searchSongs(query, cursor, limit, strict = false) {
   const params = [];
   let whereClause;
 
+  let orderClause = 'ORDER BY s.id ASC';
+
   if (type === 'pinyin_any') {
     // Search initials (prefix), concat pinyin (substring), and trigram similarity
     params.push(query);             // $1 = raw query
@@ -67,6 +69,10 @@ async function searchSongs(query, cursor, limit, strict = false) {
         OR s.artist_pinyin_concat ILIKE $2
         OR sa.artist_pinyin_concat ILIKE $2
       )`;
+      orderClause = `ORDER BY CASE
+        WHEN s.title_pinyin_initials = $1 OR s.title_pinyin_concat ILIKE $1 THEN 0
+        WHEN s.title_pinyin_initials LIKE $2 OR s.title_pinyin_concat ILIKE $2 THEN 1
+        ELSE 2 END, s.title ASC`;
     } else {
       params.push(`%${query}%`);   // $3 = substring pattern
       params.push(`%|${query}%`);  // $4 = initials_all mid-variant prefix
@@ -98,6 +104,10 @@ async function searchSongs(query, cursor, limit, strict = false) {
         OR s.artist_pinyin ILIKE $2
         OR sa.artist_pinyin ILIKE $2
       )`;
+      orderClause = `ORDER BY CASE
+        WHEN s.title_pinyin ILIKE $1 THEN 0
+        WHEN s.title_pinyin ILIKE $2 THEN 1
+        ELSE 2 END, s.title ASC`;
     } else {
       params.push(`%${query}%`);   // $2 = substring pattern
       whereClause = `(
@@ -123,6 +133,11 @@ async function searchSongs(query, cursor, limit, strict = false) {
         OR s.title ILIKE $3
         OR sa.artist_name ILIKE $3
       )`;
+      orderClause = `ORDER BY CASE
+        WHEN s.title ILIKE $1 THEN 0
+        WHEN s.title ILIKE $2 THEN 1
+        WHEN s.title ILIKE $3 THEN 2
+        ELSE 3 END, s.title ASC`;
     } else {
       params.push(`%${query}%`);   // $2 = substring pattern
       whereClause = `(
@@ -144,11 +159,11 @@ async function searchSongs(query, cursor, limit, strict = false) {
   const limitParam = `$${params.length}`;
 
   const sql = `
-    SELECT DISTINCT s.id FROM songs s
+    SELECT DISTINCT s.id, s.title FROM songs s
     LEFT JOIN song_artists sa ON sa.song_id = s.id
     WHERE ${whereClause}
     ${cursorClause}
-    ORDER BY s.id ASC
+    ${orderClause}
     LIMIT ${limitParam}
   `;
 
@@ -157,11 +172,14 @@ async function searchSongs(query, cursor, limit, strict = false) {
 
   if (ids.length === 0) return [];
 
-  return prisma.song.findMany({
+  // Preserve the relevance order from the raw SQL
+  const songs = await prisma.song.findMany({
     where: { id: { in: ids } },
-    orderBy: { id: 'asc' },
     include: { clips: { orderBy: { start: 'asc' } } },
   });
+  const idOrder = new Map(ids.map((id, i) => [id, i]));
+  songs.sort((a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0));
+  return songs;
 }
 
 /**

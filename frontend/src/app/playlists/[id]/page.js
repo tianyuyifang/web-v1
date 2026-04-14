@@ -66,6 +66,9 @@ export default function PlaylistPage() {
   // Phone only: toggle sticky header visibility
   const [phoneHeaderHidden, setPhoneHeaderHidden] = useState(false);
 
+  // Desktop only: collapse header to minimal bar
+  const [desktopHeaderCollapsed, setDesktopHeaderCollapsed] = useState(false);
+
   // Phone only: bottom search sheet
   const [phoneSearch, setPhoneSearch] = useState("");
   const phoneSearchResults = useMemo(() => {
@@ -268,8 +271,28 @@ export default function PlaylistPage() {
             </span>
           </button>
 
-          {/* Header content — hidden on phone when toggled */}
-          <div className={phoneHeaderHidden ? "hidden sm:block" : ""}>
+          {/* Desktop collapsed minimal bar — only visible on sm+ when collapsed */}
+          {desktopHeaderCollapsed && (
+            <div className="mb-2 hidden items-center justify-between sm:flex">
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-bold" style={{ color: "var(--text)" }}>
+                  {playlist.name}
+                </h1>
+                <span className="text-xs text-muted">
+                  {playlist.clips?.length || 0} {t("clips")}
+                </span>
+              </div>
+              <button
+                onClick={() => setDesktopHeaderCollapsed(false)}
+                className="hidden rounded-full border border-border bg-surface px-3 py-0.5 text-xs text-muted transition-colors hover:bg-surface-hover sm:inline-flex"
+              >
+                ▼ {t("showHeader")}
+              </button>
+            </div>
+          )}
+
+          {/* Header content — hidden on phone when toggled, hidden on desktop when collapsed */}
+          <div className={`${phoneHeaderHidden ? "hidden sm:block" : ""} ${desktopHeaderCollapsed ? "sm:hidden" : ""}`}>
           <PlaylistHeader
             playlist={playlist}
             editMode={editMode}
@@ -295,6 +318,16 @@ export default function PlaylistPage() {
             batchMode={batchMode}
           />
 
+          {/* Desktop collapse button */}
+          <div className="mb-2 hidden justify-end sm:flex">
+            <button
+              onClick={() => setDesktopHeaderCollapsed(true)}
+              className="rounded-full border border-border bg-surface px-3 py-0.5 text-xs text-muted transition-colors hover:bg-surface-hover"
+            >
+              ▲ {t("hideHeader")}
+            </button>
+          </div>
+
           <input
             type="text"
             value={gridSearch}
@@ -304,7 +337,9 @@ export default function PlaylistPage() {
           />
 
           <div id="batch-controls-portal" />
+          </div>
 
+          {/* Section jump buttons — always visible */}
           {sections.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {sections.map((s) => (
@@ -318,7 +353,6 @@ export default function PlaylistPage() {
               ))}
             </div>
           )}
-          </div>
         </div>
 
         <div className="pt-4">

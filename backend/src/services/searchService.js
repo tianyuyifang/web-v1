@@ -159,10 +159,11 @@ async function searchSongs(query, cursor, limit, strict = false) {
   const limitParam = `$${params.length}`;
 
   const sql = `
-    SELECT DISTINCT s.id, s.title FROM songs s
+    SELECT s.id, s.title FROM songs s
     LEFT JOIN song_artists sa ON sa.song_id = s.id
     WHERE ${whereClause}
     ${cursorClause}
+    GROUP BY s.id, s.title
     ${orderClause}
     LIMIT ${limitParam}
   `;

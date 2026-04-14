@@ -318,6 +318,56 @@ router.post('/:id/compare/netease', playlistAccess, requireView, async (req, res
   }
 });
 
+// POST /api/playlists/:id/compare/internal — compare with another internal playlist
+router.post('/:id/compare/internal', playlistAccess, requireView, async (req, res, next) => {
+  try {
+    const prisma = require('../db/client');
+    const { targetPlaylistId } = req.body;
+    if (!targetPlaylistId) {
+      return res.status(400).json({ error: { message: 'targetPlaylistId is required' } });
+    }
+    // Validate UUID format
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetPlaylistId)) {
+      return res.status(400).json({ error: { message: 'Invalid playlist ID format' } });
+    }
+    // Check target playlist exists and user has access
+    const target = await prisma.playlist.findUnique({
+      where: { id: targetPlaylistId },
+      include: {
+        shares: { where: { userId: req.user.id }, select: { id: true }, take: 1 },
+        copyPermissions: { where: { userId: req.user.id }, select: { id: true }, take: 1 },
+      },
+    });
+    if (!target) {
+      return res.status(404).json({ error: { message: 'Playlist not found' } });
+    }
+    const canView = target.userId === req.user.id || target.isPublic
+      || target.shares.length > 0 || target.copyPermissions.length > 0;
+    if (!canView) {
+      return res.status(404).json({ error: { message: 'Playlist not found' } });
+    }
+    // Fetch songs from the target playlist
+    const targetClips = await prisma.playlistClip.findMany({
+      where: { playlistId: targetPlaylistId },
+      include: { clip: { select: { song: { select: { id: true, title: true, artist: true } } } } },
+    });
+    // Deduplicate by songId and format as externalSongs
+    const seen = new Set();
+    const externalSongs = [];
+    for (const pc of targetClips) {
+      const song = pc.clip.song;
+      if (!seen.has(song.id)) {
+        seen.add(song.id);
+        externalSongs.push({ title: song.title, artist: song.artist });
+      }
+    }
+    const report = await compareWithPlaylist(req.params.id, externalSongs);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+});
+
 /**
  * Compare external songs with a local playlist's songs.
  * Returns: { missing, titleMatch, artistMismatch, externalTotal, localTotal }

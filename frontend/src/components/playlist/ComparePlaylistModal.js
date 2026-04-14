@@ -1,28 +1,58 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { playlistsAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 export default function ComparePlaylistModal({ playlistId, onClose }) {
   const { t } = useLanguage();
-  const [source, setSource] = useState(null); // "qq" | "netease"
+  const [source, setSource] = useState(null); // "qq" | "netease" | "internal"
   const [inputId, setInputId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [report, setReport] = useState(null);
 
-  const handleCompare = async () => {
-    const trimmed = inputId.trim();
+  // Internal playlist search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (source !== "internal" || !searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await playlistsAPI.list({ q: searchQuery.trim() });
+        const data = Array.isArray(res.data) ? res.data : res.data.playlists || [];
+        // Exclude the current playlist
+        setSearchResults(data.filter((p) => p.id !== playlistId));
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, source, playlistId]);
+
+  const handleCompare = async (targetId) => {
+    const trimmed = targetId || inputId.trim();
     if (!trimmed) return;
     setLoading(true);
     setError("");
     setReport(null);
     try {
-      const res =
-        source === "qq"
-          ? await playlistsAPI.compareWithQQ(playlistId, trimmed)
-          : await playlistsAPI.compareWithNetease(playlistId, trimmed);
+      let res;
+      if (source === "qq") {
+        res = await playlistsAPI.compareWithQQ(playlistId, trimmed);
+      } else if (source === "netease") {
+        res = await playlistsAPI.compareWithNetease(playlistId, trimmed);
+      } else {
+        res = await playlistsAPI.compareWithInternal(playlistId, trimmed);
+      }
       setReport(res.data);
     } catch (err) {
       setError(err.response?.data?.error?.message || t("compareFailed"));
@@ -34,6 +64,8 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
   const handleBack = () => {
     setSource(null);
     setInputId("");
+    setSearchQuery("");
+    setSearchResults([]);
     setError("");
     setReport(null);
   };
@@ -76,10 +108,17 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
                 <div className="font-medium text-theme">{t("compareNetease")}</div>
                 <div className="mt-0.5 text-xs text-muted">{t("compareNeteaseDesc")}</div>
               </button>
+              <button
+                onClick={() => setSource("internal")}
+                className="w-full rounded-lg border border-border bg-background px-4 py-3 text-left transition-colors hover:border-primary"
+              >
+                <div className="font-medium text-theme">{t("compareInternal")}</div>
+                <div className="mt-0.5 text-xs text-muted">{t("compareInternalDesc")}</div>
+              </button>
             </div>
           )}
 
-          {source && !report && (
+          {source && source !== "internal" && !report && (
             <div className="space-y-3">
               <button onClick={handleBack} className="text-sm text-primary hover:underline">
                 {t("returnButton")}
@@ -102,7 +141,7 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
               />
               {error && <p className="text-sm text-red-400">{error}</p>}
               <button
-                onClick={handleCompare}
+                onClick={() => handleCompare()}
                 disabled={loading || !inputId.trim()}
                 className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:opacity-50"
               >
@@ -111,12 +150,53 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
             </div>
           )}
 
+          {source === "internal" && !report && (
+            <div className="space-y-3">
+              <button onClick={handleBack} className="text-sm text-primary hover:underline">
+                {t("returnButton")}
+              </button>
+              <label className="block text-sm font-medium text-theme">
+                {t("compareInternal")}
+              </label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t("searchPlaylistPlaceholder")}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-theme placeholder-muted focus:border-primary focus:outline-none"
+                autoFocus
+              />
+              {error && <p className="text-sm text-red-400">{error}</p>}
+              {searching && <p className="text-xs text-muted">{t("searching")}</p>}
+              {searchResults.length > 0 && (
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-background">
+                  {searchResults.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => handleCompare(p.id)}
+                      disabled={loading}
+                      className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-sm transition-colors last:border-0 hover:bg-surface-hover disabled:opacity-50"
+                    >
+                      <span className="min-w-0 flex-1 truncate font-medium text-theme">{p.name}</span>
+                      <span className="shrink-0 text-xs text-muted">{p.clipCount} {t("clips")}</span>
+                      {p.ownerName && <span className="shrink-0 text-xs text-primary">@{p.ownerName}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {searchQuery.trim() && !searching && searchResults.length === 0 && (
+                <p className="text-xs text-muted">{t("noPlaylistsMatch")}</p>
+              )}
+              {loading && <p className="text-sm text-muted">{t("comparing")}</p>}
+            </div>
+          )}
+
           {report && (
             <div className="space-y-4">
               {/* Summary */}
               <div className="rounded-lg border border-border bg-background px-4 py-3">
                 <div className="text-sm text-muted">
-                  {t("compareExternal")}: {report.externalTotal} {t("compareSongs")} &middot; {t("compareLocal")}: {report.localTotal} {t("compareSongs")}
+                  {t("compareTarget")}: {report.externalTotal} {t("compareSongs")} &middot; {t("compareCurrent")}: {report.localTotal} {t("compareSongs")}
                 </div>
                 <div className="mt-2 flex gap-4 text-sm">
                   <span className="text-green-400">
@@ -175,8 +255,8 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
                         <tr className="border-b border-border text-left text-xs text-muted">
                           <th className="px-3 py-1.5 font-medium">#</th>
                           <th className="px-3 py-1.5 font-medium">{t("title")}</th>
-                          <th className="px-3 py-1.5 font-medium">{t("compareExternal")}</th>
-                          <th className="px-3 py-1.5 font-medium">{t("compareLocal")}</th>
+                          <th className="px-3 py-1.5 font-medium">{t("compareTarget")}</th>
+                          <th className="px-3 py-1.5 font-medium">{t("compareCurrent")}</th>
                         </tr>
                       </thead>
                       <tbody>

@@ -157,6 +157,8 @@ export const playlistsAPI = {
     api.post(`/playlists/${id}/compare/qq`, { qqPlaylistId }),
   compareWithNetease: (id, neteasePlaylistId) =>
     api.post(`/playlists/${id}/compare/netease`, { neteasePlaylistId }),
+  compareWithInternal: (id, targetPlaylistId) =>
+    api.post(`/playlists/${id}/compare/internal`, { targetPlaylistId }),
 
   // Shares
   getShares: (id) => api.get(`/playlists/${id}/shares`),

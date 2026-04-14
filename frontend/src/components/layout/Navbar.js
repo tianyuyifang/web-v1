@@ -57,7 +57,7 @@ export default function Navbar() {
             style={{ color: "var(--text)" }}
           >
             <img src={theme === "dark" ? "/brand_icon_dark.png" : "/brand_icon_light.png"} alt="logo" className="h-7 w-7 rounded-lg object-cover" />
-            <img src="/qni_yixia.png" alt="Q你一下" className="h-5 object-contain" />
+            <img src={theme === "dark" ? "/qni_yixia_dark.png" : "/qni_yixia_light.png"} alt="Q你一下" className="h-5 object-contain" />
           </Link>
           {isAuthenticated && (
             <span className="hidden text-sm text-muted sm:inline">

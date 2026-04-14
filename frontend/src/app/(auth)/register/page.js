@@ -17,7 +17,7 @@ export default function RegisterPage() {
             alt="logo"
             className="mb-4 h-14 w-14 rounded-2xl object-cover"
           />
-          <img src="/qni_yixia.png" alt="Q你一下" className="h-7 object-contain" />
+          <img src={theme === "dark" ? "/qni_yixia_dark.png" : "/qni_yixia_light.png"} alt="Q你一下" className="h-7 object-contain" />
         </div>
         <div className="rounded-xl border border-border bg-surface p-6 shadow-lg shadow-black/5">
           <RegisterForm />

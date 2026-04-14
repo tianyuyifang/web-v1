@@ -49,6 +49,7 @@ export default memo(function PlayerBox({
 
   const playFromStartClipId = usePlayerStore((s) => s.playFromStartClipId);
   const clearPlayFromStart = usePlayerStore((s) => s.clearPlayFromStart);
+  const isLiked = usePlayerStore((s) => s.isClipLiked(playlistId, clipId));
 
   const {
     play,
@@ -143,7 +144,7 @@ export default memo(function PlayerBox({
   const phoneCollapsedView = collapsed ? (
     <div
       onClick={() => onToggleExpand?.(clipId)}
-      className="flex cursor-pointer items-baseline gap-1.5 border-b border-border px-2 transition-colors hover:bg-surface-hover sm:hidden"
+      className={`flex cursor-pointer items-baseline gap-1.5 border-b border-border px-2 transition-colors hover:bg-surface-hover sm:hidden ${isLiked ? "opacity-40" : ""}`}
     >
       {position != null && (
         <span className="w-5 shrink-0 text-right text-xs text-muted">{position}.</span>
@@ -156,7 +157,7 @@ export default memo(function PlayerBox({
         </div>
       )}
       <div className="min-w-0 flex-1 truncate">
-        <span className="text-sm font-medium text-theme">{song.title}</span>
+        <span className={`text-sm font-medium text-theme ${isLiked ? "line-through" : ""}`}>{song.title}</span>
         <span className="ml-1.5 text-[11px] text-muted">{song.artist.replace(/_/g, "/")}</span>
       </div>
       <div onClick={(e) => e.stopPropagation()} className="shrink-0 self-center [&_button]:h-5 [&_button]:w-5">
@@ -168,7 +169,7 @@ export default memo(function PlayerBox({
   // --- Phone expanded view (below sm) ---
   const phoneExpandedView = collapsed ? null : (
     <div
-      className={`relative border-b border-border bg-surface transition-all sm:hidden ${highlightClass}`}
+      className={`relative border-b border-border bg-surface transition-all sm:hidden ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
     >
       {/* Header row */}
       <div
@@ -186,7 +187,7 @@ export default memo(function PlayerBox({
           </div>
         )}
         <div className="min-w-0 flex-1 truncate">
-          <span className="text-sm font-medium text-theme">{song.title}</span>
+          <span className={`text-sm font-medium text-theme ${isLiked ? "line-through" : ""}`}>{song.title}</span>
           <span className="ml-2 text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>
         </div>
       </div>
@@ -298,7 +299,7 @@ export default memo(function PlayerBox({
     <div
       ref={containerRef}
       id={`playerbox-${clipId}`}
-      className={`relative hidden overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all sm:block ${highlightClass}`}
+      className={`relative hidden overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all sm:block ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
     >
       {/* Color tag flags — top right, always editable */}
       <ColorTag
@@ -342,7 +343,7 @@ export default memo(function PlayerBox({
 
         {/* Title row: title + artist on same line */}
         <div className="mb-2.5 flex min-w-0 items-baseline gap-2 overflow-hidden pr-8">
-          <h3 className="shrink-0 text-lg font-semibold leading-tight" style={{ color: "var(--text)" }}>
+          <h3 className={`shrink-0 text-lg font-semibold leading-tight ${isLiked ? "line-through" : ""}`} style={{ color: "var(--text)" }}>
             {song.title}
           </h3>
           <span className="min-w-0 truncate text-xs text-muted">{song.artist.replace(/_/g, "/")}</span>

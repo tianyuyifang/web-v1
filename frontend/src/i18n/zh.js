@@ -207,6 +207,16 @@ export default {
   copyPermission: "复制权限",
   searchUserCopy: "搜索用户以授予复制权限...",
 
+  // Batch share modal
+  batchShare: "批量分享",
+  batchShareDesc: "选择播放列表以分享或授予复制权限给用户。",
+  searchUserBatchShare: "搜索用户...",
+  selectAll: "全选",
+  deselectAll: "取消全选",
+  applyBatchShare: "应用",
+  batchShareSuccess: "批量分享更新成功。",
+  batchShareNoChange: "没有需要更改的内容。",
+
   // Import modal
   importPlaylist: "导入播放列表",
   chooseFileButton: "选择文件",

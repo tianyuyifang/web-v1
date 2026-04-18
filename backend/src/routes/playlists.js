@@ -39,6 +39,43 @@ router.post('/', validate(createPlaylistSchema), async (req, res, next) => {
   }
 });
 
+// ========================= Batch Share =========================
+
+// GET /api/playlists/batch-share-status?userId=xxx — get share/copy status for all my playlists with a target user
+router.get('/batch-share-status', async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: { message: 'userId query param is required' } });
+    }
+    const status = await shareService.getBatchShareStatus(req.user.id, userId);
+    res.json({ playlists: status });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/playlists/batch-share — batch add/remove shares and copy permissions
+router.post('/batch-share', async (req, res, next) => {
+  try {
+    const { userId, sharePlaylistIds, unsharePlaylistIds, copyPlaylistIds, uncopyPlaylistIds } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: { message: 'userId is required' } });
+    }
+    await shareService.batchShare(req.user.id, userId, {
+      sharePlaylistIds: sharePlaylistIds || [],
+      unsharePlaylistIds: unsharePlaylistIds || [],
+      copyPlaylistIds: copyPlaylistIds || [],
+      uncopyPlaylistIds: uncopyPlaylistIds || [],
+    });
+    res.json({ message: 'Batch share updated' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ========================= Playlist Detail =========================
+
 // GET /api/playlists/:id — playlist with clips
 router.get('/:id', playlistAccess, requireView, async (req, res, next) => {
   try {

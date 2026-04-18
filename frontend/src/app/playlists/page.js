@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { playlistsAPI } from "@/lib/api";
 import PlaylistCard from "@/components/playlist/PlaylistCard";
 import SearchBar from "@/components/library/SearchBar";
+import BatchShareModal from "@/components/playlist/BatchShareModal";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { getPlaylistView, setPlaylistView } from "@/lib/utils";
 
@@ -15,6 +16,7 @@ export default function PlaylistsPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("grid");
+  const [showBatchShare, setShowBatchShare] = useState(false);
 
   useEffect(() => { setView(getPlaylistView()); }, []);
 
@@ -90,12 +92,21 @@ export default function PlaylistsPage() {
             {playlists.length} {playlists.length !== 1 ? t("playlistsPlural") : t("playlist")}
           </p>
         </div>
-        <button
-          onClick={() => router.push("/playlists/new")}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-hover"
-        >
-          {t("newPlaylist")}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBatchShare(true)}
+            className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-semibold hover:bg-surface-hover"
+            style={{ color: "var(--text)" }}
+          >
+            {t("batchShare")}
+          </button>
+          <button
+            onClick={() => router.push("/playlists/new")}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-hover"
+          >
+            {t("newPlaylist")}
+          </button>
+        </div>
       </div>
 
       <div className="mb-6 flex items-start gap-3">
@@ -162,6 +173,9 @@ export default function PlaylistsPage() {
           {renderSection(t("sharedPlaylists"), sharedPlaylists)}
           {renderSection(t("publicPlaylists"), publicPlaylists)}
         </div>
+      )}
+      {showBatchShare && (
+        <BatchShareModal onClose={() => setShowBatchShare(false)} />
       )}
     </div>
   );

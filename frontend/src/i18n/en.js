@@ -207,6 +207,16 @@ export default {
   copyPermission: "Copy Permission",
   searchUserCopy: "Search user to grant copy...",
 
+  // Batch share modal
+  batchShare: "Batch Share",
+  batchShareDesc: "Select playlists to share or grant copy permission to a user.",
+  searchUserBatchShare: "Search user...",
+  selectAll: "Select All",
+  deselectAll: "Deselect All",
+  applyBatchShare: "Apply",
+  batchShareSuccess: "Batch share updated successfully.",
+  batchShareNoChange: "No changes to apply.",
+
   // Import modal
   importPlaylist: "Import Playlist",
   chooseFileButton: "Choose File",

@@ -144,17 +144,26 @@ export default function PlaylistHeader({
             )}
 
             {playlist.isOwner && (
-              <button
-                onClick={onToggleEditMode}
-                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                  editMode
-                    ? "bg-accent text-black shadow-sm"
-                    : "border border-border bg-surface hover:bg-surface-hover"
-                }`}
-                style={editMode ? {} : { color: "var(--text)" }}
-              >
-                {editMode ? t("done") : t("edit")}
-              </button>
+              <>
+                <button
+                  onClick={onShare}
+                  className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium hover:bg-surface-hover"
+                  style={{ color: "var(--text)" }}
+                >
+                  {t("share")}
+                </button>
+                <button
+                  onClick={onToggleEditMode}
+                  className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                    editMode
+                      ? "bg-accent text-black shadow-sm"
+                      : "border border-border bg-surface hover:bg-surface-hover"
+                  }`}
+                  style={editMode ? {} : { color: "var(--text)" }}
+                >
+                  {editMode ? t("done") : t("edit")}
+                </button>
+              </>
             )}
 
             {!playlist.isOwner && playlist.canCopy && (
@@ -208,13 +217,6 @@ export default function PlaylistHeader({
                 className="rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-primary-hover"
               >
                 {t("addClip")}
-              </button>
-              <button
-                onClick={onShare}
-                className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium hover:bg-surface-hover"
-                style={{ color: "var(--text)" }}
-              >
-                {t("share")}
               </button>
               <button
                 onClick={onDelete}

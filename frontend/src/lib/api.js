@@ -172,6 +172,11 @@ export const playlistsAPI = {
     api.post(`/playlists/${id}/copy-permissions`, data),
   removeCopyPermission: (id, userId) =>
     api.delete(`/playlists/${id}/copy-permissions/${userId}`),
+
+  // Batch share
+  getBatchShareStatus: (userId) =>
+    api.get("/playlists/batch-share-status", { params: { userId } }),
+  batchShare: (data) => api.post("/playlists/batch-share", data),
 };
 
 // --- Likes ---

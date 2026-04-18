@@ -61,7 +61,7 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onClipS
                   : "text-muted hover:text-theme"
               }`}
             >
-              {t("search")}
+              {t("searchSingle")}
             </button>
             <button
               onClick={() => setTab("import")}
@@ -374,7 +374,7 @@ function ImportTab({ playlistId, onImported }) {
 
 function ImportReport({ result, onBack }) {
   const { t } = useLanguage();
-  const { added, skipped, notFound = [], artistMismatch = [] } = result;
+  const { added, skipped, notFound = [], titleConflict = [] } = result;
 
   // Parse notFound strings into { title, artist }
   const notFoundParsed = notFound.map((s) => {
@@ -395,9 +395,9 @@ function ImportReport({ result, onBack }) {
           <span className="text-muted">
             {t("importReportSkipped")}: {skipped}
           </span>
-          {artistMismatch.length > 0 && (
+          {titleConflict.length > 0 && (
             <span className="text-yellow-400">
-              {t("compareArtistMismatch")}: {artistMismatch.length}
+              {t("importTitleConflict")}: {titleConflict.length}
             </span>
           )}
           {notFoundParsed.length > 0 && (
@@ -437,11 +437,11 @@ function ImportReport({ result, onBack }) {
         </div>
       )}
 
-      {/* Artist mismatch table */}
-      {artistMismatch.length > 0 && (
+      {/* Title conflict table */}
+      {titleConflict.length > 0 && (
         <div>
           <h3 className="mb-2 text-sm font-semibold text-yellow-400">
-            {t("compareArtistMismatchTitle")} ({artistMismatch.length})
+            {t("importTitleConflict")} ({titleConflict.length})
           </h3>
           <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-background">
             <table className="w-full text-sm">
@@ -454,7 +454,7 @@ function ImportReport({ result, onBack }) {
                 </tr>
               </thead>
               <tbody>
-                {artistMismatch.map((s, i) => (
+                {titleConflict.map((s, i) => (
                   <tr key={i} className="border-b border-border last:border-0">
                     <td className="px-3 py-1.5 text-muted">{i + 1}</td>
                     <td className="px-3 py-1.5 text-theme">{s.title}</td>

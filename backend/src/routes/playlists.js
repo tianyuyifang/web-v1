@@ -284,19 +284,22 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
       return res.status(404).json({ error: { message: 'Source playlist not found' } });
     }
 
-    // Get clips from source playlist
+    // Get clips from source playlist with song info
     const sourceClips = await prisma.playlistClip.findMany({
       where: { playlistId: targetPlaylistId },
       orderBy: { position: 'asc' },
-      select: { clipId: true },
+      include: { clip: { include: { song: { select: { title: true, artist: true } } } } },
     });
 
-    // Get existing clips in target playlist
-    const existingClips = await prisma.playlistClip.findMany({
+    // Build title map of existing songs in target playlist
+    const existingSongs = await prisma.playlistClip.findMany({
       where: { playlistId: req.params.id },
-      select: { clipId: true },
+      include: { clip: { include: { song: { select: { title: true, artist: true } } } } },
     });
-    const existingSet = new Set(existingClips.map((c) => c.clipId));
+    const existingTitleMap = new Map();
+    for (const pc of existingSongs) {
+      existingTitleMap.set(pc.clip.song.title.toLowerCase(), pc.clip.song.artist);
+    }
 
     // Get max position
     const maxPos = await prisma.playlistClip.aggregate({
@@ -307,21 +310,34 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
 
     let added = 0;
     let skipped = 0;
+    const titleConflict = [];
 
     for (const sc of sourceClips) {
-      if (existingSet.has(sc.clipId)) {
-        skipped++;
+      const songTitle = sc.clip.song.title;
+      const songArtist = sc.clip.song.artist;
+      const existingArtist = existingTitleMap.get(songTitle.toLowerCase());
+
+      if (existingArtist !== undefined) {
+        const dbArtists = existingArtist.split('_').map((a) => a.trim().toLowerCase());
+        const srcArtists = songArtist.split('_').map((a) => a.trim().toLowerCase());
+        const sameArtist = srcArtists.some((sa) => dbArtists.some((da) => da.includes(sa) || sa.includes(da)));
+        if (sameArtist) {
+          skipped++;
+        } else {
+          titleConflict.push({ title: songTitle, externalArtist: songArtist, localArtist: existingArtist });
+        }
         continue;
       }
+
       await prisma.playlistClip.create({
         data: { playlistId: req.params.id, clipId: sc.clipId, position },
       });
-      existingSet.add(sc.clipId);
+      existingTitleMap.set(songTitle.toLowerCase(), songArtist);
       position++;
       added++;
     }
 
-    res.json({ added, skipped, notFound: [], artistMismatch: [] });
+    res.json({ added, skipped, notFound: [], titleConflict });
   } catch (err) {
     next(err);
   }

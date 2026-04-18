@@ -162,10 +162,12 @@ export default {
   uploadXlsx: "Choose XLSX File",
   importSuccess: "Added {added} clips, skipped {skipped}",
   importNotFound: "Not found:",
+  searchSingle: "Search Song",
   importReportAdded: "Added",
   importReportSkipped: "Skipped",
-  importReportExtArtist: "External Artist",
-  importReportLocalArtist: "Local Artist",
+  importReportExtArtist: "Import Artist",
+  importReportLocalArtist: "Playlist Artist",
+  importTitleConflict: "Same title, different artist (not added)",
   importAgain: "Import Again",
 
   // Compare playlist

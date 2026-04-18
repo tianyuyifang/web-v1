@@ -131,18 +131,21 @@ async function importByNetease(neteasePlaylistId, targetPlaylistId) {
   const neteaseSongs = await fetchNeteasePlaylist(neteasePlaylistId);
 
   if (neteaseSongs.length === 0) {
-    return { added: 0, skipped: 0, notFound: [], artistMismatch: [] };
+    return { added: 0, skipped: 0, notFound: [], titleConflict: [] };
   }
 
   const mp3BasePath = process.env.MP3_BASE_PATH;
   const clipsBasePath = process.env.CLIPS_BASE_PATH;
 
-  // Get existing clip IDs in target
-  const existingClips = await prisma.playlistClip.findMany({
+  // Build title map of existing songs in target playlist
+  const existingSongs = await prisma.playlistClip.findMany({
     where: { playlistId: targetPlaylistId },
-    select: { clipId: true },
+    include: { clip: { include: { song: { select: { title: true, artist: true } } } } },
   });
-  const existingSet = new Set(existingClips.map((c) => c.clipId));
+  const existingTitleMap = new Map();
+  for (const pc of existingSongs) {
+    existingTitleMap.set(pc.clip.song.title.toLowerCase(), pc.clip.song.artist);
+  }
 
   // Get max position
   const maxPos = await prisma.playlistClip.aggregate({
@@ -154,18 +157,28 @@ async function importByNetease(neteasePlaylistId, targetPlaylistId) {
   let added = 0;
   let skipped = 0;
   const notFound = [];
-  const artistMismatch = [];
+  const titleConflict = [];
 
   for (const neteaseSong of neteaseSongs) {
-    const { song, artistMatch } = await findSongInDB(neteaseSong.title, neteaseSong.artist);
+    const { song } = await findSongInDB(neteaseSong.title, neteaseSong.artist);
 
     if (!song) {
       notFound.push(`${neteaseSong.title} - ${neteaseSong.artist}`);
       continue;
     }
 
-    if (!artistMatch) {
-      artistMismatch.push({ title: neteaseSong.title, externalArtist: neteaseSong.artist, localArtist: song.artist });
+    // Check if song title already exists in target playlist
+    const existingArtist = existingTitleMap.get(song.title.toLowerCase());
+    if (existingArtist !== undefined) {
+      const dbArtists = existingArtist.split('_').map((a) => a.trim().toLowerCase());
+      const extArtists = song.artist.split('_').map((a) => a.trim().toLowerCase());
+      const sameArtist = extArtists.some((ea) => dbArtists.some((da) => da.includes(ea) || ea.includes(da)));
+      if (sameArtist) {
+        skipped++;
+      } else {
+        titleConflict.push({ title: song.title, externalArtist: neteaseSong.artist, localArtist: existingArtist });
+      }
+      continue;
     }
 
     // Determine start time from song's starts field
@@ -203,21 +216,15 @@ async function importByNetease(neteasePlaylistId, targetPlaylistId) {
       });
     }
 
-    // Skip if clip already in playlist
-    if (existingSet.has(clip.id)) {
-      skipped++;
-      continue;
-    }
-
     await prisma.playlistClip.create({
       data: { playlistId: targetPlaylistId, clipId: clip.id, position },
     });
-    existingSet.add(clip.id);
+    existingTitleMap.set(song.title.toLowerCase(), song.artist);
     position++;
     added++;
   }
 
-  return { added, skipped, notFound, artistMismatch };
+  return { added, skipped, notFound, titleConflict };
 }
 
 // CLI usage

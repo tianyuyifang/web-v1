@@ -62,12 +62,15 @@ async function importByFile(input, targetPlaylistId) {
   const mp3BasePath = process.env.MP3_BASE_PATH;
   const clipsBasePath = process.env.CLIPS_BASE_PATH;
 
-  // Get existing clip IDs in target
-  const existingClips = await prisma.playlistClip.findMany({
+  // Build title map of existing songs in target playlist
+  const existingSongs = await prisma.playlistClip.findMany({
     where: { playlistId: targetPlaylistId },
-    select: { clipId: true },
+    include: { clip: { include: { song: { select: { title: true, artist: true } } } } },
   });
-  const existingSet = new Set(existingClips.map((c) => c.clipId));
+  const existingTitleMap = new Map();
+  for (const pc of existingSongs) {
+    existingTitleMap.set(pc.clip.song.title.toLowerCase(), pc.clip.song.artist);
+  }
 
   // Get max position
   const maxPos = await prisma.playlistClip.aggregate({
@@ -79,7 +82,7 @@ async function importByFile(input, targetPlaylistId) {
   let added = 0;
   let skipped = 0;
   const notFound = [];
-  const artistMismatch = [];
+  const titleConflict = [];
 
   for (const entry of entries) {
     // Match song by title + artist
@@ -92,8 +95,6 @@ async function importByFile(input, targetPlaylistId) {
       },
     });
 
-    let artistMatch = !!song;
-
     // If no match with artist, try title-only
     if (!song) {
       const titleMatches = await prisma.song.findMany({
@@ -101,7 +102,6 @@ async function importByFile(input, targetPlaylistId) {
       });
       if (titleMatches.length === 1) {
         song = titleMatches[0];
-        artistMatch = false;
       }
     }
 
@@ -110,8 +110,18 @@ async function importByFile(input, targetPlaylistId) {
       continue;
     }
 
-    if (!artistMatch) {
-      artistMismatch.push({ title: entry.title, externalArtist: entry.artist, localArtist: song.artist });
+    // Check if song title already exists in target playlist
+    const existingArtist = existingTitleMap.get(song.title.toLowerCase());
+    if (existingArtist !== undefined) {
+      const dbArtists = existingArtist.split('_').map((a) => a.trim().toLowerCase());
+      const extArtists = song.artist.split('_').map((a) => a.trim().toLowerCase());
+      const sameArtist = extArtists.some((ea) => dbArtists.some((da) => da.includes(ea) || ea.includes(da)));
+      if (sameArtist) {
+        skipped++;
+      } else {
+        titleConflict.push({ title: song.title, externalArtist: entry.artist, localArtist: existingArtist });
+      }
+      continue;
     }
 
     // Determine start time from song's starts field
@@ -149,21 +159,15 @@ async function importByFile(input, targetPlaylistId) {
       });
     }
 
-    // Skip if clip already in playlist
-    if (existingSet.has(clip.id)) {
-      skipped++;
-      continue;
-    }
-
     await prisma.playlistClip.create({
       data: { playlistId: targetPlaylistId, clipId: clip.id, position },
     });
-    existingSet.add(clip.id);
+    existingTitleMap.set(song.title.toLowerCase(), song.artist);
     position++;
     added++;
   }
 
-  return { added, skipped, notFound, artistMismatch };
+  return { added, skipped, notFound, titleConflict };
 }
 
 // CLI usage

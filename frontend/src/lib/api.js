@@ -134,6 +134,8 @@ export const playlistsAPI = {
     api.post(`/playlists/${id}/import/by-qq`, { qqPlaylistId }),
   importClipsByNetease: (id, neteasePlaylistId) =>
     api.post(`/playlists/${id}/import/by-netease`, { neteasePlaylistId }),
+  importClipsByInternal: (id, targetPlaylistId) =>
+    api.post(`/playlists/${id}/import/by-internal`, { targetPlaylistId }),
   importClipsByFile: (id, file) => {
     const formData = new FormData();
     formData.append("file", file);

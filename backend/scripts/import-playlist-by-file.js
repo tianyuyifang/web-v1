@@ -79,10 +79,11 @@ async function importByFile(input, targetPlaylistId) {
   let added = 0;
   let skipped = 0;
   const notFound = [];
+  const artistMismatch = [];
 
   for (const entry of entries) {
     // Match song by title + artist
-    const song = await prisma.song.findFirst({
+    let song = await prisma.song.findFirst({
       where: {
         title: { equals: entry.title, mode: 'insensitive' },
         ...(entry.artist
@@ -91,9 +92,26 @@ async function importByFile(input, targetPlaylistId) {
       },
     });
 
+    let artistMatch = !!song;
+
+    // If no match with artist, try title-only
+    if (!song) {
+      const titleMatches = await prisma.song.findMany({
+        where: { title: { equals: entry.title, mode: 'insensitive' } },
+      });
+      if (titleMatches.length === 1) {
+        song = titleMatches[0];
+        artistMatch = false;
+      }
+    }
+
     if (!song) {
       notFound.push(`${entry.title} - ${entry.artist}`);
       continue;
+    }
+
+    if (!artistMatch) {
+      artistMismatch.push({ title: entry.title, externalArtist: entry.artist, localArtist: song.artist });
     }
 
     // Determine start time from song's starts field
@@ -145,7 +163,7 @@ async function importByFile(input, targetPlaylistId) {
     added++;
   }
 
-  return { added, skipped, notFound };
+  return { added, skipped, notFound, artistMismatch };
 }
 
 // CLI usage

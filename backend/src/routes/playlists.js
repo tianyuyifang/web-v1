@@ -257,6 +257,76 @@ router.post('/:id/import/by-file', playlistAccess, requireOwner, async (req, res
   }
 });
 
+// POST /api/playlists/:id/import/by-internal — import clips from another internal playlist
+router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req, res, next) => {
+  try {
+    const { targetPlaylistId } = req.body;
+    if (!targetPlaylistId) {
+      return res.status(400).json({ error: { message: 'targetPlaylistId is required' } });
+    }
+
+    const prisma = require('../db/client');
+
+    // Verify source playlist exists and user has access
+    const source = await prisma.playlist.findUnique({
+      where: { id: targetPlaylistId },
+      include: {
+        shares: { where: { userId: req.user.id }, select: { id: true }, take: 1 },
+        copyPermissions: { where: { userId: req.user.id }, select: { id: true }, take: 1 },
+      },
+    });
+    if (!source) {
+      return res.status(404).json({ error: { message: 'Source playlist not found' } });
+    }
+    const canView = source.userId === req.user.id || source.isPublic
+      || source.shares.length > 0 || source.copyPermissions.length > 0;
+    if (!canView) {
+      return res.status(404).json({ error: { message: 'Source playlist not found' } });
+    }
+
+    // Get clips from source playlist
+    const sourceClips = await prisma.playlistClip.findMany({
+      where: { playlistId: targetPlaylistId },
+      orderBy: { position: 'asc' },
+      select: { clipId: true },
+    });
+
+    // Get existing clips in target playlist
+    const existingClips = await prisma.playlistClip.findMany({
+      where: { playlistId: req.params.id },
+      select: { clipId: true },
+    });
+    const existingSet = new Set(existingClips.map((c) => c.clipId));
+
+    // Get max position
+    const maxPos = await prisma.playlistClip.aggregate({
+      where: { playlistId: req.params.id },
+      _max: { position: true },
+    });
+    let position = (maxPos._max.position ?? -1) + 1;
+
+    let added = 0;
+    let skipped = 0;
+
+    for (const sc of sourceClips) {
+      if (existingSet.has(sc.clipId)) {
+        skipped++;
+        continue;
+      }
+      await prisma.playlistClip.create({
+        data: { playlistId: req.params.id, clipId: sc.clipId, position },
+      });
+      existingSet.add(sc.clipId);
+      position++;
+      added++;
+    }
+
+    res.json({ added, skipped, notFound: [], artistMismatch: [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ========================= Shares =========================
 
 // GET /api/playlists/:id/shares

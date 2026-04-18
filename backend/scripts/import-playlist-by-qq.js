@@ -59,6 +59,7 @@ function fetchQQPlaylist(qqPlaylistId) {
 
 /**
  * Find a song in the local DB by title and artist.
+ * Returns { song, artistMatch } so callers can track mismatches.
  */
 async function findSongInDB(title, artist) {
   const songs = await prisma.song.findMany({
@@ -67,7 +68,7 @@ async function findSongInDB(title, artist) {
     },
   });
 
-  if (songs.length === 0) return null;
+  if (songs.length === 0) return { song: null, artistMatch: false };
 
   if (artist) {
     const qqArtists = artist.split('_').map((a) => a.trim().toLowerCase());
@@ -76,11 +77,11 @@ async function findSongInDB(title, artist) {
       const hasMatch = qqArtists.some((qa) =>
         dbArtists.some((da) => da.includes(qa) || qa.includes(da))
       );
-      if (hasMatch) return song;
+      if (hasMatch) return { song, artistMatch: true };
     }
   }
 
-  return songs.length === 1 ? songs[0] : null;
+  return songs.length === 1 ? { song: songs[0], artistMatch: false } : { song: null, artistMatch: false };
 }
 
 /**
@@ -94,7 +95,7 @@ async function importByQQ(qqPlaylistId, targetPlaylistId) {
   const qqSongs = await fetchQQPlaylist(qqPlaylistId);
 
   if (qqSongs.length === 0) {
-    return { added: 0, skipped: 0, notFound: [] };
+    return { added: 0, skipped: 0, notFound: [], artistMismatch: [] };
   }
 
   const mp3BasePath = process.env.MP3_BASE_PATH;
@@ -117,13 +118,18 @@ async function importByQQ(qqPlaylistId, targetPlaylistId) {
   let added = 0;
   let skipped = 0;
   const notFound = [];
+  const artistMismatch = [];
 
   for (const qqSong of qqSongs) {
-    const song = await findSongInDB(qqSong.title, qqSong.artist);
+    const { song, artistMatch } = await findSongInDB(qqSong.title, qqSong.artist);
 
     if (!song) {
       notFound.push(`${qqSong.title} - ${qqSong.artist}`);
       continue;
+    }
+
+    if (!artistMatch) {
+      artistMismatch.push({ title: qqSong.title, externalArtist: qqSong.artist, localArtist: song.artist });
     }
 
     // Determine start time from song's starts field
@@ -175,7 +181,7 @@ async function importByQQ(qqPlaylistId, targetPlaylistId) {
     added++;
   }
 
-  return { added, skipped, notFound };
+  return { added, skipped, notFound, artistMismatch };
 }
 
 // CLI usage

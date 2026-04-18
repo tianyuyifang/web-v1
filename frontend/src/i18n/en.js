@@ -153,6 +153,8 @@ export default {
   importByNeteaseDesc: "Paste a NetEase Cloud Music playlist ID to match and import songs",
   neteasePlaylistIdPlaceholder: "NetEase playlist ID...",
   importByPlaylistId: "Import from Playlist",
+  importByInternal: "Import from Internal Playlist",
+  importByInternalDesc: "Search for a playlist to import all its clips",
   importByFile: "Import from File",
   playlistIdPlaceholder: "Paste playlist ID...",
   importButton: "Import",
@@ -160,6 +162,11 @@ export default {
   uploadXlsx: "Choose XLSX File",
   importSuccess: "Added {added} clips, skipped {skipped}",
   importNotFound: "Not found:",
+  importReportAdded: "Added",
+  importReportSkipped: "Skipped",
+  importReportExtArtist: "External Artist",
+  importReportLocalArtist: "Local Artist",
+  importAgain: "Import Again",
 
   // Compare playlist
   comparePlaylist: "Compare",

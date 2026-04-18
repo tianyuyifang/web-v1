@@ -121,6 +121,10 @@ export default function PlaylistPage() {
     setShowAddClip(false);
   }, []);
 
+  const handleBulkImported = useCallback(() => {
+    playlistsAPI.getById(id).then((res) => setPlaylist(res.data));
+  }, [id]);
+
   const handleClipRemoved = useCallback((clipId) => {
     setPlaylist((prev) => ({
       ...prev,
@@ -354,6 +358,7 @@ export default function PlaylistPage() {
           playlistId={playlist.id}
           onClose={() => setShowAddClip(false)}
           onClipAdded={handleClipAdded}
+          onBulkImported={handleBulkImported}
         />
       )}
 

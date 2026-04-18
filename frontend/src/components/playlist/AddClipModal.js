@@ -11,8 +11,9 @@ function artistDisplay(a) {
   return a ? a.replace(/_/g, " / ") : "";
 }
 
-export default function AddClipModal({ playlistId, onClose, onClipAdded, onClipSelected, initialSong }) {
+export default function AddClipModal({ playlistId, onClose, onClipAdded, onBulkImported, onClipSelected, initialSong }) {
   const { t } = useLanguage();
+  const showImportTab = !onClipSelected;
   const [tab, setTab] = useState("search"); // "search" | "import"
   const [clipSong, setClipSong] = useState(initialSong || null);
 
@@ -52,28 +53,30 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onClipS
           </div>
 
           {/* Tab switcher */}
-          <div className="mb-4 flex gap-1 rounded-lg border border-border bg-background p-1">
-            <button
-              onClick={() => setTab("search")}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                tab === "search"
-                  ? "bg-primary text-white shadow-sm"
-                  : "text-muted hover:text-theme"
-              }`}
-            >
-              {t("searchSingle")}
-            </button>
-            <button
-              onClick={() => setTab("import")}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                tab === "import"
-                  ? "bg-primary text-white shadow-sm"
-                  : "text-muted hover:text-theme"
-              }`}
-            >
-              {t("importClips")}
-            </button>
-          </div>
+          {showImportTab && (
+            <div className="mb-4 flex gap-1 rounded-lg border border-border bg-background p-1">
+              <button
+                onClick={() => setTab("search")}
+                className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  tab === "search"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-muted hover:text-theme"
+                }`}
+              >
+                {t("searchSingle")}
+              </button>
+              <button
+                onClick={() => setTab("import")}
+                className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  tab === "import"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-muted hover:text-theme"
+                }`}
+              >
+                {t("importClips")}
+              </button>
+            </div>
+          )}
 
           {tab === "search" && (
             <>
@@ -158,8 +161,8 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onClipS
             </>
           )}
 
-          {tab === "import" && (
-            <ImportTab playlistId={playlistId} onImported={onClipAdded} />
+          {tab === "import" && showImportTab && (
+            <ImportTab playlistId={playlistId} onImported={onBulkImported} />
           )}
         </div>
       </div>

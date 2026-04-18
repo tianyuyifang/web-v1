@@ -147,6 +147,7 @@ export const playlistsAPI = {
   // Clips within playlist
   addClip: (id, data) => api.post(`/playlists/${id}/clips`, data),
   removeClip: (id, data) => api.delete(`/playlists/${id}/clips`, { data }),
+  batchRemoveClips: (id, clipIds) => api.delete(`/playlists/${id}/clips/batch`, { data: { clipIds } }),
   reorderClips: (id, data) => api.put(`/playlists/${id}/clips/reorder`, data),
   batchUpdateClips: (id, updates) => api.put(`/playlists/${id}/clips/batch`, { updates }),
   updateClip: (id, clipId, data) =>

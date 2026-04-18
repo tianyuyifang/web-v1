@@ -252,12 +252,17 @@ export default function PlaylistGrid({
 
   const [showBatchRemoveConfirm, setShowBatchRemoveConfirm] = useState(false);
 
-  const batchRemove = useCallback(() => {
+  const batchRemove = useCallback(async () => {
     if (!selectedClips?.size) return;
-    for (const clipId of selectedClips) handleRemove(clipId);
+    try {
+      await playlistsAPI.batchRemoveClips(playlist.id, [...selectedClips]);
+      for (const clipId of selectedClips) onClipRemoved(clipId);
+    } catch {
+      // silent
+    }
     setShowBatchRemoveConfirm(false);
     onBatchDone?.();
-  }, [selectedClips, handleRemove, onBatchDone]);
+  }, [selectedClips, playlist.id, onClipRemoved, onBatchDone]);
 
   // Group clips into sections
   const sectionGroups = useMemo(() => {

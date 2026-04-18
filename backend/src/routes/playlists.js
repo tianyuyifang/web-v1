@@ -148,6 +148,20 @@ router.delete('/:id/clips', playlistAccess, requireOwner, async (req, res, next)
   }
 });
 
+// DELETE /api/playlists/:id/clips/batch — batch remove clips from playlist
+router.delete('/:id/clips/batch', playlistAccess, requireOwner, async (req, res, next) => {
+  try {
+    const { clipIds } = req.body;
+    if (!Array.isArray(clipIds) || clipIds.length === 0) {
+      return res.status(400).json({ error: { message: 'clipIds array is required' } });
+    }
+    await playlistService.batchRemoveClips(req.params.id, clipIds, req.user.id);
+    res.json({ message: 'Clips removed', count: clipIds.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /api/playlists/:id/clips/reorder — update clip positions
 router.put('/:id/clips/reorder', playlistAccess, requireOwner, validate(reorderClipsSchema), async (req, res, next) => {
   try {

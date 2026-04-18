@@ -339,6 +339,35 @@ async function swapClip(playlistId, oldClipId, newClipId) {
   return created;
 }
 
+async function batchRemoveClips(playlistId, clipIds, userId) {
+  // Delete likes for all clips in one go
+  await prisma.like.deleteMany({
+    where: { playlistId, clipId: { in: clipIds } },
+  });
+
+  // Delete all playlist clips in one go
+  await prisma.playlistClip.deleteMany({
+    where: { playlistId, clipId: { in: clipIds } },
+  });
+
+  // Re-number remaining clips once
+  const remaining = await prisma.playlistClip.findMany({
+    where: { playlistId },
+    orderBy: { position: 'asc' },
+    select: { id: true },
+  });
+  if (remaining.length > 0) {
+    await prisma.$transaction(
+      remaining.map((pc, index) =>
+        prisma.playlistClip.update({
+          where: { id: pc.id },
+          data: { position: index },
+        })
+      )
+    );
+  }
+}
+
 module.exports = {
   getUserPlaylists,
   getPlaylistById,
@@ -347,6 +376,7 @@ module.exports = {
   deletePlaylist,
   addClipToPlaylist,
   removeClipFromPlaylist,
+  batchRemoveClips,
   reorderClips,
   updateClipCustomization,
   batchUpdateClips,

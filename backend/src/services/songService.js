@@ -2,7 +2,7 @@ const prisma = require('../db/client');
 const { NotFoundError } = require('../utils/errors');
 const { searchSongs } = require('./searchService');
 
-async function getSongs(query, cursor, limit, strict = false) {
+async function getSongs(query, cursor, limit, strict = false, userRole) {
   const songs = await searchSongs(query, cursor, limit, strict);
 
   const hasMore = songs.length > limit;
@@ -11,21 +11,28 @@ async function getSongs(query, cursor, limit, strict = false) {
 
   // List responses omit lyrics to save egress — use getSongById for full song detail.
   return {
-    songs: results.map((s) => formatSong(s, { includeLyrics: false })),
+    songs: results.map((s) => formatSong(s, { includeLyrics: false, userRole })),
     nextCursor,
   };
 }
 
-async function getSongById(songId) {
+async function getSongById(songId, userRole) {
   const song = await prisma.song.findUnique({
     where: { id: songId },
     include: { clips: { orderBy: { start: 'asc' } } },
   });
   if (!song) throw new NotFoundError('Song');
-  return formatSong(song, { includeLyrics: true });
+  return formatSong(song, { includeLyrics: true, userRole });
 }
 
-function formatSong(song, { includeLyrics = true } = {}) {
+function formatSong(song, { includeLyrics = true, userRole } = {}) {
+  const clips = (song.clips || [])
+    .filter((c) => userRole === 'ADMIN' || c.isGlobal)
+    .map((c) => ({
+      id: c.id,
+      start: c.start,
+      length: c.length,
+    }));
   return {
     id: song.id,
     title: song.title,
@@ -34,11 +41,7 @@ function formatSong(song, { includeLyrics = true } = {}) {
     filePath: song.filePath,
     ...(includeLyrics ? { lyrics: song.lyrics } : {}),
     starts: song.starts,
-    clips: (song.clips || []).map((c) => ({
-      id: c.id,
-      start: c.start,
-      length: c.length,
-    })),
+    clips,
   };
 }
 

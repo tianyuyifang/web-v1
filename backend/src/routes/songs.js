@@ -9,7 +9,7 @@ router.get('/', async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
     const strict = req.query.strict === '1';
 
-    const result = await songService.getSongs(q, cursor, limit, strict);
+    const result = await songService.getSongs(q, cursor, limit, strict, req.user?.role);
     res.json(result);
   } catch (err) {
     next(err);
@@ -19,7 +19,7 @@ router.get('/', async (req, res, next) => {
 // GET /api/songs/:id — song detail with clips
 router.get('/:id', async (req, res, next) => {
   try {
-    const song = await songService.getSongById(req.params.id);
+    const song = await songService.getSongById(req.params.id, req.user?.role);
     res.json(song);
   } catch (err) {
     next(err);

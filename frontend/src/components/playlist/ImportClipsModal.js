@@ -9,6 +9,7 @@ export default function ImportClipsModal({ playlistId, onClose, onImported }) {
   const fileInputRef = useRef(null);
   const [qqId, setQqId] = useState("");
   const [neteaseId, setNeteaseId] = useState("");
+  const [kugouId, setKugouId] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState("");
@@ -36,6 +37,22 @@ export default function ImportClipsModal({ playlistId, onClose, onImported }) {
     setImportResult(null);
     try {
       const res = await playlistsAPI.importClipsByNetease(playlistId, neteaseId.trim());
+      setImportResult(res.data);
+      onImported?.(res.data);
+    } catch (err) {
+      setImportError(err.response?.data?.error?.message || t("importFailed"));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleImportByKugou = async () => {
+    if (!kugouId.trim()) return;
+    setImporting(true);
+    setImportError("");
+    setImportResult(null);
+    try {
+      const res = await playlistsAPI.importClipsByKugou(playlistId, kugouId.trim());
       setImportResult(res.data);
       onImported?.(res.data);
     } catch (err) {
@@ -111,6 +128,28 @@ export default function ImportClipsModal({ playlistId, onClose, onImported }) {
               <button
                 onClick={handleImportByNetease}
                 disabled={importing || !neteaseId.trim()}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
+              >
+                {importing ? t("importingClips") : t("importButton")}
+              </button>
+            </div>
+          </div>
+
+          {/* Import from KuGou */}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-theme">{t("importByKugou")}</h3>
+            <p className="mb-2 text-xs text-muted">{t("importByKugouDesc")}</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={kugouId}
+                onChange={(e) => setKugouId(e.target.value)}
+                placeholder={t("kugouPlaylistIdPlaceholder")}
+                className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-theme placeholder-muted focus:border-primary focus:outline-none"
+              />
+              <button
+                onClick={handleImportByKugou}
+                disabled={importing || !kugouId.trim()}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
               >
                 {importing ? t("importingClips") : t("importButton")}

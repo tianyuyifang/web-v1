@@ -6,7 +6,7 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
 
 export default function ComparePlaylistModal({ playlistId, onClose }) {
   const { t } = useLanguage();
-  const [source, setSource] = useState(null); // "qq" | "netease" | "internal"
+  const [source, setSource] = useState(null); // "qq" | "netease" | "kugou" | "internal"
   const [inputId, setInputId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -50,6 +50,8 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
         res = await playlistsAPI.compareWithQQ(playlistId, trimmed);
       } else if (source === "netease") {
         res = await playlistsAPI.compareWithNetease(playlistId, trimmed);
+      } else if (source === "kugou") {
+        res = await playlistsAPI.compareWithKugou(playlistId, trimmed);
       } else {
         res = await playlistsAPI.compareWithInternal(playlistId, trimmed);
       }
@@ -109,6 +111,13 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
                 <div className="mt-0.5 text-xs text-muted">{t("compareNeteaseDesc")}</div>
               </button>
               <button
+                onClick={() => setSource("kugou")}
+                className="w-full rounded-lg border border-border bg-background px-4 py-3 text-left transition-colors hover:border-primary"
+              >
+                <div className="font-medium text-theme">{t("compareKugou")}</div>
+                <div className="mt-0.5 text-xs text-muted">{t("compareKugouDesc")}</div>
+              </button>
+              <button
                 onClick={() => setSource("internal")}
                 className="w-full rounded-lg border border-border bg-background px-4 py-3 text-left transition-colors hover:border-primary"
               >
@@ -124,7 +133,7 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
                 {t("returnButton")}
               </button>
               <label className="block text-sm font-medium text-theme">
-                {source === "qq" ? t("compareQQ") : t("compareNetease")}
+                {source === "qq" ? t("compareQQ") : source === "netease" ? t("compareNetease") : t("compareKugou")}
               </label>
               <input
                 type="text"
@@ -134,7 +143,9 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
                 placeholder={
                   source === "qq"
                     ? t("qqPlaylistIdPlaceholder")
-                    : t("neteasePlaylistIdPlaceholder")
+                    : source === "netease"
+                    ? t("neteasePlaylistIdPlaceholder")
+                    : t("kugouPlaylistIdPlaceholder")
                 }
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-theme placeholder-muted focus:border-primary focus:outline-none"
                 autoFocus

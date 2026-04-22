@@ -177,6 +177,7 @@ function ImportTab({ playlistId, onImported }) {
   const fileInputRef = useRef(null);
   const [qqId, setQqId] = useState("");
   const [neteaseId, setNeteaseId] = useState("");
+  const [kugouId, setKugouId] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState("");
@@ -233,6 +234,11 @@ function ImportTab({ playlistId, onImported }) {
   const handleNetease = () => {
     if (!neteaseId.trim()) return;
     doImport(() => playlistsAPI.importClipsByNetease(playlistId, neteaseId.trim()));
+  };
+
+  const handleKugou = () => {
+    if (!kugouId.trim()) return;
+    doImport(() => playlistsAPI.importClipsByKugou(playlistId, kugouId.trim()));
   };
 
   const handleInternal = (targetId) => {
@@ -297,6 +303,28 @@ function ImportTab({ playlistId, onImported }) {
           <button
             onClick={handleNetease}
             disabled={importing || !neteaseId.trim()}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
+          >
+            {importing ? t("importingClips") : t("importButton")}
+          </button>
+        </div>
+      </div>
+
+      {/* KuGou */}
+      <div>
+        <h3 className="mb-1 text-sm font-semibold text-theme">{t("importByKugou")}</h3>
+        <p className="mb-2 text-xs text-muted">{t("importByKugouDesc")}</p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={kugouId}
+            onChange={(e) => setKugouId(e.target.value)}
+            placeholder={t("kugouPlaylistIdPlaceholder")}
+            className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-theme placeholder-muted focus:border-primary focus:outline-none"
+          />
+          <button
+            onClick={handleKugou}
+            disabled={importing || !kugouId.trim()}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
           >
             {importing ? t("importingClips") : t("importButton")}

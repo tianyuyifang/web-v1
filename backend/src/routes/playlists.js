@@ -247,6 +247,21 @@ router.post('/:id/import/by-netease', playlistAccess, requireOwner, async (req, 
   }
 });
 
+// POST /api/playlists/:id/import/by-kugou — import clips from KuGou playlist
+router.post('/:id/import/by-kugou', playlistAccess, requireOwner, async (req, res, next) => {
+  try {
+    const { importByKugou } = require('../../scripts/import-playlist-by-kugou');
+    const { kugouPlaylistId } = req.body;
+    if (!kugouPlaylistId) {
+      return res.status(400).json({ error: { message: 'kugouPlaylistId is required' } });
+    }
+    const result = await importByKugou(kugouPlaylistId, req.params.id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/playlists/:id/import/by-file — import clips from xlsx file
 router.post('/:id/import/by-file', playlistAccess, requireOwner, async (req, res, next) => {
   try {
@@ -448,6 +463,22 @@ router.post('/:id/compare/netease', playlistAccess, requireView, async (req, res
       return res.status(400).json({ error: { message: 'neteasePlaylistId is required' } });
     }
     const externalSongs = await fetchNeteasePlaylist(neteasePlaylistId);
+    const report = await compareWithPlaylist(req.params.id, externalSongs);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/playlists/:id/compare/kugou — compare with a KuGou playlist
+router.post('/:id/compare/kugou', playlistAccess, requireView, async (req, res, next) => {
+  try {
+    const { fetchKugouPlaylist } = require('../../scripts/import-playlist-by-kugou');
+    const { kugouPlaylistId } = req.body;
+    if (!kugouPlaylistId) {
+      return res.status(400).json({ error: { message: 'kugouPlaylistId is required' } });
+    }
+    const externalSongs = await fetchKugouPlaylist(kugouPlaylistId);
     const report = await compareWithPlaylist(req.params.id, externalSongs);
     res.json(report);
   } catch (err) {

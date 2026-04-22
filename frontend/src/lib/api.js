@@ -134,6 +134,8 @@ export const playlistsAPI = {
     api.post(`/playlists/${id}/import/by-qq`, { qqPlaylistId }),
   importClipsByNetease: (id, neteasePlaylistId) =>
     api.post(`/playlists/${id}/import/by-netease`, { neteasePlaylistId }),
+  importClipsByKugou: (id, kugouPlaylistId) =>
+    api.post(`/playlists/${id}/import/by-kugou`, { kugouPlaylistId }),
   importClipsByInternal: (id, targetPlaylistId) =>
     api.post(`/playlists/${id}/import/by-internal`, { targetPlaylistId }),
   importClipsByFile: (id, file) => {
@@ -160,6 +162,8 @@ export const playlistsAPI = {
     api.post(`/playlists/${id}/compare/qq`, { qqPlaylistId }),
   compareWithNetease: (id, neteasePlaylistId) =>
     api.post(`/playlists/${id}/compare/netease`, { neteasePlaylistId }),
+  compareWithKugou: (id, kugouPlaylistId) =>
+    api.post(`/playlists/${id}/compare/kugou`, { kugouPlaylistId }),
   compareWithInternal: (id, targetPlaylistId) =>
     api.post(`/playlists/${id}/compare/internal`, { targetPlaylistId }),
 

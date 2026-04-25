@@ -167,6 +167,14 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
     setStart(Math.floor(currentTime));
   }, [currentTime]);
 
+  const handleSeekBy = useCallback((deltaSec) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const t = Math.max(0, Math.min(audio.duration || 0, Math.floor(audio.currentTime) + deltaSec));
+    audio.currentTime = t;
+    setCurrentTime(t);
+  }, []);
+
   const handleCreate = async (force = false) => {
     setCreating(true);
     setError("");
@@ -247,6 +255,22 @@ export default function ClipCreator({ song, onClose, onClipCreated }) {
           className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white hover:bg-primary-hover"
         >
           {isPlaying ? "⏸" : "▶"}
+        </button>
+
+        {/* Phone-only ±1s seek buttons (desktop has keyboard arrows) */}
+        <button
+          onClick={() => handleSeekBy(-1)}
+          aria-label="-1s"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-xs text-theme hover:bg-surface-hover sm:hidden"
+        >
+          −1s
+        </button>
+        <button
+          onClick={() => handleSeekBy(1)}
+          aria-label="+1s"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-xs text-theme hover:bg-surface-hover sm:hidden"
+        >
+          +1s
         </button>
 
         <button

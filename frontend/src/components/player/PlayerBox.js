@@ -278,7 +278,15 @@ export default memo(function PlayerBox({
 
       {/* Edit mode controls */}
       {editMode && (
-        <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/50 px-3 py-2">
+          {onSwap && (
+            <ClipSwitcher
+              songId={song.id}
+              currentClipId={clipId}
+              onSwap={handleSwap}
+              onNewClip={() => setShowNewClip(true)}
+            />
+          )}
           <SpeedControl speed={speed} onChange={handleSpeedChange} />
           <PitchControl pitch={pitch} onChange={handlePitchChange} />
           {onRemove && (

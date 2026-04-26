@@ -134,6 +134,8 @@ export default {
   // Clip sidebar
   clipsSidebar: "片段",
   filterClipsSidebar: "筛选片段...",
+  sortByPosition: "顺序",
+  sortByAlpha: "拼音",
   noClipsFound: "没有找到片段。",
 
   // Add clip modal

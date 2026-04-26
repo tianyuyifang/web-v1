@@ -134,6 +134,8 @@ export default {
   // Clip sidebar
   clipsSidebar: "Clips",
   filterClipsSidebar: "Filter clips...",
+  sortByPosition: "Position",
+  sortByAlpha: "A-Z",
   noClipsFound: "No clips found.",
 
   // Add clip modal

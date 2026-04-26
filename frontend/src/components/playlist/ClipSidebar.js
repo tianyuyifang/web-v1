@@ -8,26 +8,44 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
 export default function ClipSidebar({ clips, playlistId, onClipClick }) {
   const { t } = useLanguage();
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("position");
 
   const filtered = useMemo(() => {
-    if (!search) return clips;
-    return clips.filter((pc) =>
-      matchesSearch(
-        search,
-        pc.clip.song.title,
-        pc.clip.song.artist,
-        pc.clip.song.titlePinyin,
-        pc.clip.song.titlePinyinInitials,
-        pc.clip.song.titlePinyinConcat,
-        pc.clip.song.artistPinyinConcat
-      )
-    );
-  }, [clips, search]);
+    const base = !search
+      ? clips
+      : clips.filter((pc) =>
+          matchesSearch(
+            search,
+            pc.clip.song.title,
+            pc.clip.song.artist,
+            pc.clip.song.titlePinyin,
+            pc.clip.song.titlePinyinInitials,
+            pc.clip.song.titlePinyinConcat,
+            pc.clip.song.artistPinyinConcat
+          )
+        );
+
+    if (sortBy === "alpha") {
+      const key = (pc) => pc.clip.song.titlePinyin || pc.clip.song.title || "";
+      return [...base].sort((a, b) => key(a).localeCompare(key(b)));
+    }
+    return base;
+  }, [clips, search, sortBy]);
 
   return (
     <aside className="sticky top-[5.75rem] hidden max-h-[calc(100vh-5.75rem)] w-64 shrink-0 flex-col self-start rounded-lg border border-border bg-surface lg:flex">
       <div className="shrink-0 border-b border-border px-3 py-2">
-        <h2 className="mb-2 text-sm font-semibold text-theme">{t("clipsSidebar")}</h2>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-theme">{t("clipsSidebar")}</h2>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-theme focus:border-primary focus:outline-none"
+          >
+            <option value="position">{t("sortByPosition")}</option>
+            <option value="alpha">{t("sortByAlpha")}</option>
+          </select>
+        </div>
         <div className="relative">
           <input
             type="text"
@@ -56,7 +74,7 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
         ) : (
           filtered.map((pc) => (
             <Fragment key={pc.clipId}>
-            {pc.sectionLabel && (
+            {pc.sectionLabel && sortBy === "position" && (
               <div className="flex items-center gap-2 bg-background px-3 py-1.5">
                 <div className="h-px flex-1 bg-border" />
                 <span className="shrink-0 text-xs font-semibold text-muted">{pc.sectionLabel}</span>

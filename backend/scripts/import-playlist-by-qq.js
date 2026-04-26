@@ -64,7 +64,7 @@ function fetchQQPlaylist(qqPlaylistId) {
 async function findSongInDB(title, artist) {
   const songs = await prisma.song.findMany({
     where: {
-      title: { equals: title, mode: 'insensitive' },
+      title: { equals: title },
     },
   });
 
@@ -108,7 +108,7 @@ async function importByQQ(qqPlaylistId, targetPlaylistId) {
   });
   const existingTitleMap = new Map();
   for (const pc of existingSongs) {
-    existingTitleMap.set(pc.clip.song.title.toLowerCase(), pc.clip.song.artist);
+    existingTitleMap.set(pc.clip.song.title, pc.clip.song.artist);
   }
 
   // Get max position
@@ -132,7 +132,7 @@ async function importByQQ(qqPlaylistId, targetPlaylistId) {
     }
 
     // Check if song title already exists in target playlist
-    const existingArtist = existingTitleMap.get(song.title.toLowerCase());
+    const existingArtist = existingTitleMap.get(song.title);
     if (existingArtist !== undefined) {
       const dbArtists = existingArtist.split('_').map((a) => a.trim().toLowerCase());
       const extArtists = song.artist.split('_').map((a) => a.trim().toLowerCase());
@@ -183,7 +183,7 @@ async function importByQQ(qqPlaylistId, targetPlaylistId) {
     await prisma.playlistClip.create({
       data: { playlistId: targetPlaylistId, clipId: clip.id, position },
     });
-    existingTitleMap.set(song.title.toLowerCase(), song.artist);
+    existingTitleMap.set(song.title, song.artist);
     position++;
     added++;
   }

@@ -56,7 +56,7 @@ function fetchKugouPlaylist(kugouPlaylistId) {
 
 async function findSongInDB(title, artist) {
   const songs = await prisma.song.findMany({
-    where: { title: { equals: title, mode: 'insensitive' } },
+    where: { title: { equals: title } },
   });
   if (songs.length === 0) return { song: null, artistMatch: false };
 
@@ -90,7 +90,7 @@ async function importByKugou(kugouPlaylistId, targetPlaylistId) {
   });
   const existingTitleMap = new Map();
   for (const pc of existingSongs) {
-    existingTitleMap.set(pc.clip.song.title.toLowerCase(), pc.clip.song.artist);
+    existingTitleMap.set(pc.clip.song.title, pc.clip.song.artist);
   }
 
   const maxPos = await prisma.playlistClip.aggregate({
@@ -112,7 +112,7 @@ async function importByKugou(kugouPlaylistId, targetPlaylistId) {
       continue;
     }
 
-    const existingArtist = existingTitleMap.get(song.title.toLowerCase());
+    const existingArtist = existingTitleMap.get(song.title);
     if (existingArtist !== undefined) {
       const dbArtists = existingArtist.split('_').map((a) => a.trim().toLowerCase());
       const songArtists = song.artist.split('_').map((a) => a.trim().toLowerCase());
@@ -159,7 +159,7 @@ async function importByKugou(kugouPlaylistId, targetPlaylistId) {
     await prisma.playlistClip.create({
       data: { playlistId: targetPlaylistId, clipId: clip.id, position },
     });
-    existingTitleMap.set(song.title.toLowerCase(), song.artist);
+    existingTitleMap.set(song.title, song.artist);
     position++;
     added++;
   }

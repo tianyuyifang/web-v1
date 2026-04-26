@@ -69,7 +69,7 @@ async function importByFile(input, targetPlaylistId) {
   });
   const existingTitleMap = new Map();
   for (const pc of existingSongs) {
-    existingTitleMap.set(pc.clip.song.title.toLowerCase(), pc.clip.song.artist);
+    existingTitleMap.set(pc.clip.song.title, pc.clip.song.artist);
   }
 
   // Get max position
@@ -88,7 +88,7 @@ async function importByFile(input, targetPlaylistId) {
     // Match song by title + artist
     let song = await prisma.song.findFirst({
       where: {
-        title: { equals: entry.title, mode: 'insensitive' },
+        title: { equals: entry.title },
         ...(entry.artist
           ? { artist: { contains: entry.artist, mode: 'insensitive' } }
           : {}),
@@ -98,7 +98,7 @@ async function importByFile(input, targetPlaylistId) {
     // If no match with artist, try title-only
     if (!song) {
       const titleMatches = await prisma.song.findMany({
-        where: { title: { equals: entry.title, mode: 'insensitive' } },
+        where: { title: { equals: entry.title } },
       });
       if (titleMatches.length === 1) {
         song = titleMatches[0];
@@ -111,7 +111,7 @@ async function importByFile(input, targetPlaylistId) {
     }
 
     // Check if song title already exists in target playlist
-    const existingArtist = existingTitleMap.get(song.title.toLowerCase());
+    const existingArtist = existingTitleMap.get(song.title);
     if (existingArtist !== undefined) {
       const dbArtists = existingArtist.split('_').map((a) => a.trim().toLowerCase());
       const extArtists = song.artist.split('_').map((a) => a.trim().toLowerCase());
@@ -162,7 +162,7 @@ async function importByFile(input, targetPlaylistId) {
     await prisma.playlistClip.create({
       data: { playlistId: targetPlaylistId, clipId: clip.id, position },
     });
-    existingTitleMap.set(song.title.toLowerCase(), song.artist);
+    existingTitleMap.set(song.title, song.artist);
     position++;
     added++;
   }

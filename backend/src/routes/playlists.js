@@ -327,7 +327,7 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
     });
     const existingTitleMap = new Map();
     for (const pc of existingSongs) {
-      existingTitleMap.set(pc.clip.song.title.toLowerCase(), pc.clip.song.artist);
+      existingTitleMap.set(pc.clip.song.title, pc.clip.song.artist);
     }
 
     // Get max position
@@ -344,7 +344,7 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
     for (const sc of sourceClips) {
       const songTitle = sc.clip.song.title;
       const songArtist = sc.clip.song.artist;
-      const existingArtist = existingTitleMap.get(songTitle.toLowerCase());
+      const existingArtist = existingTitleMap.get(songTitle);
 
       if (existingArtist !== undefined) {
         const dbArtists = existingArtist.split('_').map((a) => a.trim().toLowerCase());
@@ -361,7 +361,7 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
       await prisma.playlistClip.create({
         data: { playlistId: req.params.id, clipId: sc.clipId, position },
       });
-      existingTitleMap.set(songTitle.toLowerCase(), songArtist);
+      existingTitleMap.set(songTitle, songArtist);
       position++;
       added++;
     }
@@ -564,10 +564,11 @@ async function compareWithPlaylist(playlistId, externalSongs) {
     }
   }
 
-  // Build title lookup map: lowercase title -> array of local songs (O(1) lookup)
+  // Build title lookup map: trimmed title -> array of local songs (O(1) lookup)
+  // Case-sensitive: "Love" and "love" are treated as distinct titles.
   const localByTitle = new Map();
   for (const song of localSongsMap.values()) {
-    const key = song.title.trim().toLowerCase();
+    const key = song.title.trim();
     if (!localByTitle.has(key)) localByTitle.set(key, []);
     localByTitle.get(key).push(song);
   }
@@ -577,7 +578,7 @@ async function compareWithPlaylist(playlistId, externalSongs) {
   const artistMismatch = [];
 
   for (const ext of externalSongs) {
-    const extTitle = ext.title.trim().toLowerCase();
+    const extTitle = ext.title.trim();
     const matches = localByTitle.get(extTitle);
 
     if (!matches) {
@@ -606,10 +607,10 @@ async function compareWithPlaylist(playlistId, externalSongs) {
     }
   }
 
-  // Find local songs not in external playlist
-  const extTitles = new Set(externalSongs.map((e) => e.title.trim().toLowerCase()));
+  // Find local songs not in external playlist (case-sensitive)
+  const extTitles = new Set(externalSongs.map((e) => e.title.trim()));
   const localOnly = [...localSongsMap.values()].filter(
-    (s) => !extTitles.has(s.title.trim().toLowerCase())
+    (s) => !extTitles.has(s.title.trim())
   );
 
   return {

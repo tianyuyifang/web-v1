@@ -5,6 +5,13 @@ import { matchesSearch, formatDuration } from "@/lib/utils";
 import LikeButton from "@/components/player/LikeButton";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
+function firstAlphaLetter(pc) {
+  const py = (pc.clip.song.titlePinyin || "").trim();
+  const src = py || pc.clip.song.title || "";
+  const ch = src.charAt(0).toUpperCase();
+  return /[A-Z]/.test(ch) ? ch : "#";
+}
+
 export default function ClipSidebar({ clips, playlistId, onClipClick }) {
   const { t } = useLanguage();
   const [search, setSearch] = useState("");
@@ -72,13 +79,25 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
         {filtered.length === 0 ? (
           <p className="p-3 text-xs text-muted">{t("noClipsFound")}</p>
         ) : (
-          filtered.map((pc) => (
+          (() => {
+            let prevLetter = null;
+            return filtered.map((pc) => {
+              const showLetter = sortBy === "alpha";
+              const letter = showLetter ? firstAlphaLetter(pc) : null;
+              const newGroup = showLetter && letter !== prevLetter;
+              if (showLetter) prevLetter = letter;
+              return (
             <Fragment key={pc.clipId}>
             {pc.sectionLabel && sortBy === "position" && (
               <div className="flex items-center gap-2 bg-background px-3 py-1.5">
                 <div className="h-px flex-1 bg-border" />
                 <span className="shrink-0 text-xs font-semibold text-muted">{pc.sectionLabel}</span>
                 <div className="h-px flex-1 bg-border" />
+              </div>
+            )}
+            {newGroup && (
+              <div className="sticky top-0 z-10 border-b border-border bg-background px-3 py-1 text-xs font-semibold text-muted">
+                {letter}
               </div>
             )}
             <div
@@ -112,7 +131,9 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
               )}
             </div>
             </Fragment>
-          ))
+              );
+            });
+          })()
         )}
       </div>
     </aside>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 // Render a string with 「...」 segments highlighted in brand color.
@@ -26,6 +27,7 @@ function highlightQuoted(text) {
 
 export default function AuthNotice() {
   const { t } = useLanguage();
+  const [open, setOpen] = useState(false);
 
   const Section = ({ labelKey, bodyKey }) => (
     <p>
@@ -35,20 +37,32 @@ export default function AuthNotice() {
   );
 
   return (
-    <div className="rounded-xl border border-border bg-surface px-5 py-4 text-sm text-muted">
-      <p className="mb-3 flex items-center gap-2 text-base font-semibold text-theme">
-        <span aria-hidden="true">📢</span>
-        {t("authNoticeTitle")}
-      </p>
-      <div className="space-y-2.5 leading-relaxed">
-        <p>{highlightQuoted(t("authNoticeIntro"))}</p>
-        <Section labelKey="authNoticeReviewLabel" bodyKey="authNoticeReviewBody" />
-        <Section labelKey="authNoticePlaylistLabel" bodyKey="authNoticePlaylistBody" />
-        <Section labelKey="authNoticePrivacyLabel" bodyKey="authNoticePrivacyBody" />
-        <Section labelKey="authNoticeFeeLabel" bodyKey="authNoticeFeeBody" />
-        <Section labelKey="authNoticeDisclaimerLabel" bodyKey="authNoticeDisclaimerBody" />
-        <p>{t("authNoticeOutro")}</p>
-      </div>
+    <div className="rounded-xl border border-border bg-surface text-xs text-muted">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+      >
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-theme">
+          <span aria-hidden="true">📢</span>
+          {t("authNoticeTitle")}
+        </span>
+        <span aria-hidden="true" className="text-xs text-muted">
+          {open ? "▲" : "▼"}
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-border px-4 py-3 leading-relaxed">
+          <p>{highlightQuoted(t("authNoticeIntro"))}</p>
+          <Section labelKey="authNoticeReviewLabel" bodyKey="authNoticeReviewBody" />
+          <Section labelKey="authNoticePlaylistLabel" bodyKey="authNoticePlaylistBody" />
+          <Section labelKey="authNoticePrivacyLabel" bodyKey="authNoticePrivacyBody" />
+          <Section labelKey="authNoticeFeeLabel" bodyKey="authNoticeFeeBody" />
+          <Section labelKey="authNoticeDisclaimerLabel" bodyKey="authNoticeDisclaimerBody" />
+          <p>{t("authNoticeOutro")}</p>
+        </div>
+      )}
     </div>
   );
 }

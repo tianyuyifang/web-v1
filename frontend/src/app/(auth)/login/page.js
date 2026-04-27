@@ -13,7 +13,7 @@ export default function LoginPage() {
   const reason = searchParams.get("reason");
 
   return (
-    <div className="flex min-h-[80vh] flex-col items-center justify-center px-4 py-8">
+    <div className="flex min-h-[80vh] items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center">
           <img
@@ -33,10 +33,10 @@ export default function LoginPage() {
         <div className="rounded-xl border border-border bg-surface p-6 shadow-lg shadow-black/5">
           <LoginForm />
         </div>
-      </div>
 
-      <div className="mt-4 w-full max-w-2xl">
-        <AuthNotice />
+        <div className="mt-4">
+          <AuthNotice />
+        </div>
       </div>
     </div>
   );

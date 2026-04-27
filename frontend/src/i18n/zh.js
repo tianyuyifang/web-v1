@@ -17,12 +17,13 @@ export default {
   loginSubtitle: "登录你的「Q你一下」账号",
   sessionReplacedMessage: "你的账号已在其他设备上登录，请重新登录。",
 
-  // Auth notice (shown above login/register forms)
-  authNoticeTitle: "关于本站",
-  authNoticeLine1: "本网站目前仍在开发中，尚未正式上线",
-  authNoticeLine2: "这是一个个人开发的小网站，主要供朋友们玩玩、唱唱",
-  authNoticeLine3: "当前阶段所有功能完全免费",
-  authNoticeLine4: "后期为分担服务器费用，将开放按月订阅，请知悉",
+  // Auth notice (shown below login/register forms)
+  authNoticeTitle: "站长碎碎念",
+  authNoticeIntro: "欢迎来到这个小小的音乐杀角落！本站纯属个人「用爱发电」，初衷是为身边的朋友和音乐杀同好们提供一个交流与游玩的自留地。",
+  authNoticeFee: "关于费用：目前本站处于全员免费开放阶段，欢迎大家尽情体验。由于服务器运维需要一定的成本，后期可能会开启「月度订阅」模式，所得费用将全部用于分担服务器支出，以维持网站的长久运行。",
+  authNoticePrivacy: "关于隐私与创作：我们非常鼓励大家制作并分享自己的个性化歌单。请放心，本站高度重视用户隐私，你的个人数据和私密歌单将得到严格保护，绝不外泄。",
+  authNoticeDisclaimer: "免责说明：本站由管理员个人维护及运营，相关规则的最终解释权归站长所有。",
+  authNoticeOutro: "感谢每一位热爱音乐与逻辑的小伙伴，在这个小空间里，祝大家玩得尽兴！",
   username: "用户名",
   password: "密码",
   signingIn: "登录中...",

@@ -17,12 +17,13 @@ export default {
   loginSubtitle: "Sign in to your Q你一下 account",
   sessionReplacedMessage: "Your account was logged in on another device. Please log in again.",
 
-  // Auth notice (shown above login/register forms)
-  authNoticeTitle: "About this site",
-  authNoticeLine1: "This site is still under development and not officially launched yet",
-  authNoticeLine2: "It's a small personal site, mainly for friends to play around and sing along",
-  authNoticeLine3: "All features are completely free at this stage",
-  authNoticeLine4: "Later, a monthly subscription will be introduced to help cover server costs",
+  // Auth notice (shown below login/register forms)
+  authNoticeTitle: "A note from the owner",
+  authNoticeIntro: "Welcome to this little music-game corner! This site is a personal labor of love, originally built as a small home for friends and fellow music-game fans to hang out and play.",
+  authNoticeFee: "About cost: the site is currently free for everyone — feel free to enjoy. Since running the server has ongoing costs, a monthly subscription may be introduced later, with all proceeds going toward covering server expenses to keep the site running long-term.",
+  authNoticePrivacy: "About privacy and your creations: you're warmly encouraged to make and share your own custom playlists. Rest assured, your privacy matters to us — your personal data and private playlists are strictly protected and will never be shared.",
+  authNoticeDisclaimer: "Disclaimer: this site is maintained and operated personally by the admin, who reserves final interpretation of all rules.",
+  authNoticeOutro: "Thanks to every friend who loves music and logic alike — have a great time in this little space!",
   username: "Username",
   password: "Password",
   signingIn: "Signing in...",

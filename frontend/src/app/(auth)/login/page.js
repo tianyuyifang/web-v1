@@ -30,10 +30,12 @@ export default function LoginPage() {
           </div>
         )}
 
-        <AuthNotice />
-
         <div className="rounded-xl border border-border bg-surface p-6 shadow-lg shadow-black/5">
           <LoginForm />
+        </div>
+
+        <div className="mt-4">
+          <AuthNotice />
         </div>
       </div>
     </div>

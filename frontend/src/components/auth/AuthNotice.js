@@ -6,17 +6,18 @@ export default function AuthNotice() {
   const { t } = useLanguage();
 
   return (
-    <div className="mb-4 rounded-xl border border-border bg-surface px-4 py-3 text-xs text-muted">
+    <div className="rounded-xl border border-border bg-surface px-4 py-3 text-xs text-muted">
       <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-theme">
-        <span aria-hidden="true">ℹ</span>
+        <span aria-hidden="true">📢</span>
         {t("authNoticeTitle")}
       </p>
-      <ul className="space-y-1 leading-relaxed">
-        <li>· {t("authNoticeLine1")}</li>
-        <li>· {t("authNoticeLine2")}</li>
-        <li>· {t("authNoticeLine3")}</li>
-        <li>· {t("authNoticeLine4")}</li>
-      </ul>
+      <div className="space-y-2 leading-relaxed">
+        <p>{t("authNoticeIntro")}</p>
+        <p>{t("authNoticeFee")}</p>
+        <p>{t("authNoticePrivacy")}</p>
+        <p>{t("authNoticeDisclaimer")}</p>
+        <p>{t("authNoticeOutro")}</p>
+      </div>
     </div>
   );
 }

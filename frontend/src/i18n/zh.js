@@ -16,6 +16,13 @@ export default {
   loginTitle: "欢迎回来",
   loginSubtitle: "登录你的「Q你一下」账号",
   sessionReplacedMessage: "你的账号已在其他设备上登录，请重新登录。",
+
+  // Auth notice (shown above login/register forms)
+  authNoticeTitle: "关于本站",
+  authNoticeLine1: "本网站目前仍在开发中，尚未正式上线",
+  authNoticeLine2: "这是一个个人开发的小网站，主要供朋友们玩玩、唱唱",
+  authNoticeLine3: "当前阶段所有功能完全免费",
+  authNoticeLine4: "后期为分担服务器费用，将开放按月订阅，请知悉",
   username: "用户名",
   password: "密码",
   signingIn: "登录中...",

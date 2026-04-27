@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import LoginForm from "@/components/auth/LoginForm";
+import AuthNotice from "@/components/auth/AuthNotice";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
 
@@ -28,6 +29,8 @@ export default function LoginPage() {
             {t("sessionReplacedMessage")}
           </div>
         )}
+
+        <AuthNotice />
 
         <div className="rounded-xl border border-border bg-surface p-6 shadow-lg shadow-black/5">
           <LoginForm />

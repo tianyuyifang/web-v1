@@ -1,6 +1,7 @@
 "use client";
 
 import RegisterForm from "@/components/auth/RegisterForm";
+import AuthNotice from "@/components/auth/AuthNotice";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
 
@@ -19,6 +20,8 @@ export default function RegisterPage() {
           />
           <img src={theme === "dark" ? "/qni_yixia_dark.png" : "/qni_yixia_light.png"} alt="Q你一下" className="h-7 object-contain" />
         </div>
+        <AuthNotice />
+
         <div className="rounded-xl border border-border bg-surface p-6 shadow-lg shadow-black/5">
           <RegisterForm />
         </div>

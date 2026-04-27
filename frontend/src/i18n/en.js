@@ -16,6 +16,13 @@ export default {
   loginTitle: "Welcome back",
   loginSubtitle: "Sign in to your Q你一下 account",
   sessionReplacedMessage: "Your account was logged in on another device. Please log in again.",
+
+  // Auth notice (shown above login/register forms)
+  authNoticeTitle: "About this site",
+  authNoticeLine1: "This site is still under development and not officially launched yet",
+  authNoticeLine2: "It's a small personal site, mainly for friends to play around and sing along",
+  authNoticeLine3: "All features are completely free at this stage",
+  authNoticeLine4: "Later, a monthly subscription will be introduced to help cover server costs",
   username: "Username",
   password: "Password",
   signingIn: "Signing in...",

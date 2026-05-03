@@ -129,7 +129,6 @@ export default function NewPlaylistPage() {
         <ImportClipsModal
           playlistId={createdPlaylistId}
           onClose={() => router.push(`/playlists/${createdPlaylistId}`)}
-          onImported={() => router.push(`/playlists/${createdPlaylistId}`)}
         />
       )}
     </div>

@@ -21,6 +21,7 @@ export default function useAudioPlayer({
   clipVersion,
   speed = 1.0,
   pitch = 0,
+  onClipEnded,
 }) {
   const shifterRef = useRef(null);
   const audioCtxRef = useRef(null);
@@ -34,6 +35,8 @@ export default function useAudioPlayer({
   // their captured epoch against this ref to detect if they were superseded
   // (e.g. user clicked play twice during loading, or switched to another clip).
   const playEpochRef = useRef(0);
+  const onClipEndedRef = useRef(onClipEnded);
+  useEffect(() => { onClipEndedRef.current = onClipEnded; }, [onClipEnded]);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -95,6 +98,7 @@ export default function useAudioPlayer({
         setCurrentTime(0);
         offsetRef.current = 0;
         setIsPlaying(false);
+        onClipEndedRef.current?.();
         return;
       }
 
@@ -188,6 +192,7 @@ export default function useAudioPlayer({
         setCurrentTime(0);
         offsetRef.current = 0;
         setIsPlaying(false);
+        onClipEndedRef.current?.();
       });
 
       shifter.pitchSemitones = pitch;

@@ -49,7 +49,29 @@ export default memo(function PlayerBox({
 
   const playFromStartClipId = usePlayerStore((s) => s.playFromStartClipId);
   const clearPlayFromStart = usePlayerStore((s) => s.clearPlayFromStart);
+  const triggerPlayFromStart = usePlayerStore((s) => s.triggerPlayFromStart);
+  const autoPlayEnabled = usePlayerStore((s) => s.autoPlayEnabled);
   const isLiked = usePlayerStore((s) => s.isClipLiked(playlistId, clipId));
+
+  const handleClipEnded = useCallback(() => {
+    if (!autoPlayEnabled) return;
+    if (!Array.isArray(allClips) || clipIndex == null) return;
+
+    // Read latest likedClips imperatively — no subscription needed,
+    // we only check at the moment a clip ends.
+    const liked = usePlayerStore.getState().likedClips;
+
+    for (let i = clipIndex + 1; i < allClips.length; i++) {
+      const next = allClips[i];
+      if (!next) continue;
+      const key = `${playlistId}:${next.clipId}`;
+      if (!liked.has(key)) {
+        triggerPlayFromStart(next.clipId);
+        return;
+      }
+    }
+    // No eligible next clip — chain ends naturally.
+  }, [autoPlayEnabled, allClips, clipIndex, playlistId, triggerPlayFromStart]);
 
   const {
     play,
@@ -69,6 +91,7 @@ export default memo(function PlayerBox({
     clipVersion: clip.version,
     speed,
     pitch,
+    onClipEnded: handleClipEnded,
   });
 
   useEffect(() => {

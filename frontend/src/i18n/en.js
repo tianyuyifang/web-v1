@@ -136,6 +136,8 @@ export default {
   done: "Done",
   addClip: "Add Clip",
   share: "Share",
+  autoPlayOn: "Auto-play: ON",
+  autoPlayOff: "Auto-play: OFF",
   delete: "Delete",
   copyPlaylist: "Copy Playlist",
 

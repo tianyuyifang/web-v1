@@ -136,6 +136,8 @@ export default {
   done: "完成",
   addClip: "添加片段",
   share: "分享",
+  autoPlayOn: "自动播放：开",
+  autoPlayOff: "自动播放：关",
   delete: "删除",
   copyPlaylist: "复制列表",
 

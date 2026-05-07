@@ -1,5 +1,25 @@
 import { create } from "zustand";
 
+const AUTOPLAY_KEY = "music_app_autoplay";
+
+const readAutoPlay = () => {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(AUTOPLAY_KEY) === "true";
+  } catch {
+    return false;
+  }
+};
+
+const writeAutoPlay = (v) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(AUTOPLAY_KEY, v ? "true" : "false");
+  } catch {
+    // ignore quota / private-mode errors
+  }
+};
+
 const usePlayerStore = create((set, get) => ({
   // Global playback — only one PlayerBox plays at a time
   activePlayerId: null,
@@ -27,6 +47,13 @@ const usePlayerStore = create((set, get) => ({
       next.add(key);
     }
     set({ likedClips: next });
+  },
+
+  // Admin auto-play mode — persisted in localStorage
+  autoPlayEnabled: readAutoPlay(),
+  setAutoPlayEnabled: (v) => {
+    writeAutoPlay(v);
+    set({ autoPlayEnabled: !!v });
   },
 }));
 

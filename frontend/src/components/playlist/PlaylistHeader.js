@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import RichText from "@/components/ui/RichText";
+import useAuth from "@/hooks/useAuth";
+import usePlayerStore from "@/store/playerStore";
 
 const COLUMN_OPTIONS = [1, 2, 3, 4, 5];
 
@@ -28,6 +30,9 @@ export default function PlaylistHeader({
   batchMode,
 }) {
   const { t } = useLanguage();
+  const { isAdmin } = useAuth();
+  const autoPlayEnabled = usePlayerStore((s) => s.autoPlayEnabled);
+  const setAutoPlayEnabled = usePlayerStore((s) => s.setAutoPlayEnabled);
   const [editName, setEditName] = useState(playlist.name);
   const [editDesc, setEditDesc] = useState(playlist.description || "");
 
@@ -123,6 +128,20 @@ export default function PlaylistHeader({
             >
               {t("return")}
             </button>
+
+            {isAdmin && (
+              <button
+                onClick={() => setAutoPlayEnabled(!autoPlayEnabled)}
+                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  autoPlayEnabled
+                    ? "bg-primary text-white shadow-sm hover:bg-primary-hover"
+                    : "border border-border bg-surface hover:bg-surface-hover"
+                }`}
+                style={autoPlayEnabled ? {} : { color: "var(--text)" }}
+              >
+                {autoPlayEnabled ? t("autoPlayOn") : t("autoPlayOff")}
+              </button>
+            )}
 
             {playlist.isOwner && (
               <button

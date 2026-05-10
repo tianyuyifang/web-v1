@@ -390,9 +390,13 @@ export default {
   showHeader: "展开",
   results: "条结果",
 
+  // 工具
+  navTools: "工具",
+  tools: "工具",
+  toolsDiffDescription: "对比两个列表，查看片段差异。",
+
   // 对比工具
   diff: "片段对比",
-  navDiff: "片段对比",
   diffBaseline: "原始列表 A",
   diffCurrent: "当前列表 B",
   diffSwap: "交换",

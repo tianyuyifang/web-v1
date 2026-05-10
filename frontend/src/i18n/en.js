@@ -390,9 +390,13 @@ export default {
   showHeader: "Show",
   results: "results",
 
+  // Tools
+  navTools: "Tools",
+  tools: "Tools",
+  toolsDiffDescription: "Compare a baseline playlist against a current one and see what changed.",
+
   // Diff tool
   diff: "Diff",
-  navDiff: "Diff",
   diffBaseline: "Baseline (A)",
   diffCurrent: "Current (B)",
   diffSwap: "Swap",

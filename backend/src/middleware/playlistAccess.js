@@ -32,8 +32,9 @@ async function playlistAccess(req, res, next) {
     const canView = isOwner || isShared || canCopy || playlist.isPublic;
     const canEdit = isOwner;
 
-    // Public playlists are always copyable; otherwise need explicit copy permission + view access
-    canCopy = playlist.isPublic || (canCopy && canView);
+    // Owners can always copy their own playlist; public playlists are always copyable;
+    // otherwise need explicit copy permission + view access.
+    canCopy = isOwner || playlist.isPublic || (canCopy && canView);
 
     // Remove shares/copyPermissions from the attached playlist object
     const { shares, copyPermissions, ...cleanPlaylist } = playlist;

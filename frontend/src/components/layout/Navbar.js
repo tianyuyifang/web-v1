@@ -71,7 +71,7 @@ export default function Navbar() {
             {/* Desktop nav */}
             <div className="hidden items-center gap-1 md:flex">
               {navLink("/playlists", t("navPlaylists"))}
-              {navLink("/tools/diff", t("navDiff"))}
+              {navLink("/tools", t("navTools"))}
               {navLink("/guide", t("navGuide"))}
               {navLink("/feedback", t("navFeedback"))}
               {isAdmin && navLink("/admin", t("navAdmin"))}

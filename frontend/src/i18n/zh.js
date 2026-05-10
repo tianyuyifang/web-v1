@@ -391,8 +391,8 @@ export default {
   results: "条结果",
 
   // 对比工具
-  diff: "对比",
-  navDiff: "对比",
+  diff: "片段对比",
+  navDiff: "片段对比",
   diffBaseline: "原始列表 A",
   diffCurrent: "当前列表 B",
   diffSwap: "交换",

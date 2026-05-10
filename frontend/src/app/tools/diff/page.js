@@ -151,7 +151,7 @@ export default function DiffPage() {
       {!aId || !bId ? (
         <p className="text-sm text-muted">{t("diffEmpty")}</p>
       ) : loading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <p className="text-sm text-muted">{t("loading")}</p>
       ) : error ? (
         <p className="text-sm text-red-400">{error}</p>
       ) : report ? (

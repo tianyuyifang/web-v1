@@ -121,7 +121,7 @@ function buildDiff(aRows, bRows) {
     const aPc = aMap.get(clipId);
     const diffs = [];
     if (aPc.speed !== bPc.speed) diffs.push('speed');
-    if (normalize(aPc.colorTag) !== normalize(bPc.colorTag)) diffs.push('colorTag');
+    if (aPc.colorTag !== bPc.colorTag) diffs.push('colorTag');
     if (!equalText(aPc.comment, bPc.comment)) diffs.push('comment');
     if (!equalText(aPc.sectionLabel, bPc.sectionLabel)) diffs.push('sectionLabel');
     if (diffs.length > 0) {
@@ -206,10 +206,12 @@ router.get('/diff', async (req, res, next) => {
     const [aClips, bClips] = await Promise.all([
       prisma.playlistClip.findMany({
         where: { playlistId: a },
+        orderBy: { position: 'asc' },
         include: { clip: { select: { song: { select: { title: true, artist: true } } } } },
       }),
       prisma.playlistClip.findMany({
         where: { playlistId: b },
+        orderBy: { position: 'asc' },
         include: { clip: { select: { song: { select: { title: true, artist: true } } } } },
       }),
     ]);

@@ -74,6 +74,157 @@ router.post('/batch-share', async (req, res, next) => {
   }
 });
 
+// ========================= Diff =========================
+
+/**
+ * Build a one-directional diff: B relative to A.
+ * Inputs are arrays of playlistClip rows already including clip.song.
+ * Returns { newInB, modifiedInB, removedFromB }.
+ *
+ * Comparison rules:
+ *   - speed: numeric exact equality
+ *   - colorTag: nullable string; null == null
+ *   - comment: nullable string; null and "" treated as equal; trimmed
+ *   - sectionLabel: nullable string; null and "" treated as equal; trimmed
+ *   - position and pitch are NOT compared
+ */
+function buildDiff(aRows, bRows) {
+  const normalize = (v) => {
+    if (v === null || v === undefined) return '';
+    return String(v).trim();
+  };
+  const equalText = (x, y) => normalize(x) === normalize(y);
+
+  const formatClip = (pc) => ({
+    clipId: pc.clipId,
+    song: { title: pc.clip.song.title, artist: pc.clip.song.artist },
+    speed: pc.speed,
+    colorTag: pc.colorTag,
+    comment: pc.comment,
+    sectionLabel: pc.sectionLabel,
+  });
+
+  const aMap = new Map();
+  for (const pc of aRows) aMap.set(pc.clipId, pc);
+  const bMap = new Map();
+  for (const pc of bRows) bMap.set(pc.clipId, pc);
+
+  const newInB = [];
+  const modifiedInB = [];
+  const removedFromB = [];
+
+  for (const [clipId, bPc] of bMap) {
+    if (!aMap.has(clipId)) {
+      newInB.push(formatClip(bPc));
+      continue;
+    }
+    const aPc = aMap.get(clipId);
+    const diffs = [];
+    if (aPc.speed !== bPc.speed) diffs.push('speed');
+    if (normalize(aPc.colorTag) !== normalize(bPc.colorTag)) diffs.push('colorTag');
+    if (!equalText(aPc.comment, bPc.comment)) diffs.push('comment');
+    if (!equalText(aPc.sectionLabel, bPc.sectionLabel)) diffs.push('sectionLabel');
+    if (diffs.length > 0) {
+      modifiedInB.push({
+        clipId,
+        song: { title: bPc.clip.song.title, artist: bPc.clip.song.artist },
+        a: {
+          speed: aPc.speed,
+          colorTag: aPc.colorTag,
+          comment: aPc.comment,
+          sectionLabel: aPc.sectionLabel,
+        },
+        b: {
+          speed: bPc.speed,
+          colorTag: bPc.colorTag,
+          comment: bPc.comment,
+          sectionLabel: bPc.sectionLabel,
+        },
+        diffs,
+      });
+    }
+  }
+
+  for (const [clipId, aPc] of aMap) {
+    if (!bMap.has(clipId)) {
+      removedFromB.push({
+        clipId,
+        song: { title: aPc.clip.song.title, artist: aPc.clip.song.artist },
+      });
+    }
+  }
+
+  return { newInB, modifiedInB, removedFromB };
+}
+
+// GET /api/playlists/diff?a=<uuid>&b=<uuid> — one-directional diff: B vs baseline A
+router.get('/diff', async (req, res, next) => {
+  try {
+    const prisma = require('../db/client');
+    const { a, b } = req.query;
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    if (!a || !b) {
+      return res.status(400).json({ error: { message: 'Both a and b query parameters are required' } });
+    }
+    if (!UUID_RE.test(a) || !UUID_RE.test(b)) {
+      return res.status(400).json({ error: { message: 'Invalid playlist ID format' } });
+    }
+    if (a === b) {
+      return res.status(400).json({ error: { message: 'Cannot diff a playlist against itself' } });
+    }
+
+    const userId = req.user.id;
+    const [aPl, bPl] = await Promise.all([
+      prisma.playlist.findUnique({
+        where: { id: a },
+        include: {
+          shares: { where: { userId }, select: { id: true }, take: 1 },
+          copyPermissions: { where: { userId }, select: { id: true }, take: 1 },
+        },
+      }),
+      prisma.playlist.findUnique({
+        where: { id: b },
+        include: {
+          shares: { where: { userId }, select: { id: true }, take: 1 },
+          copyPermissions: { where: { userId }, select: { id: true }, take: 1 },
+        },
+      }),
+    ]);
+
+    const canView = (pl) =>
+      !!pl &&
+      (pl.userId === userId ||
+        pl.isPublic ||
+        pl.shares.length > 0 ||
+        pl.copyPermissions.length > 0);
+
+    if (!canView(aPl) || !canView(bPl)) {
+      return res.status(404).json({ error: { message: 'Playlist not found' } });
+    }
+
+    const [aClips, bClips] = await Promise.all([
+      prisma.playlistClip.findMany({
+        where: { playlistId: a },
+        include: { clip: { select: { song: { select: { title: true, artist: true } } } } },
+      }),
+      prisma.playlistClip.findMany({
+        where: { playlistId: b },
+        include: { clip: { select: { song: { select: { title: true, artist: true } } } } },
+      }),
+    ]);
+
+    const diff = buildDiff(aClips, bClips);
+    res.json({
+      a: { id: aPl.id, name: aPl.name },
+      b: { id: bPl.id, name: bPl.name },
+      ...diff,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ========================= Playlist Detail =========================
 
 // GET /api/playlists/:id — playlist with clips

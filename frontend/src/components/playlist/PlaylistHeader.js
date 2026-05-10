@@ -185,7 +185,7 @@ export default function PlaylistHeader({
               </>
             )}
 
-            {!playlist.isOwner && playlist.canCopy && (
+            {(playlist.isOwner || playlist.canCopy) && (
               <button
                 onClick={onCopy}
                 className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium hover:bg-surface-hover"

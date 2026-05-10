@@ -47,6 +47,14 @@ export default function DiffReport({ report }) {
     colorTag: "tag",
     comment: "comment",
     sectionLabel: "section",
+    clipBoundaries: "clip",
+  };
+
+  const renderFieldValue = (field, side) => {
+    if (field === "clipBoundaries") {
+      return `start=${side.start},len=${side.length}`;
+    }
+    return formatValue(side[field]);
   };
 
   return (
@@ -81,7 +89,7 @@ export default function DiffReport({ report }) {
                   <span className="font-medium" style={{ color: "var(--text)" }}>
                     {fieldLabel[field] || field}:
                   </span>{" "}
-                  {formatValue(row.a[field])} → {formatValue(row.b[field])}
+                  {renderFieldValue(field, row.a)} → {renderFieldValue(field, row.b)}
                 </li>
               ))}
             </ul>

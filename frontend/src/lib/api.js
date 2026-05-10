@@ -167,6 +167,9 @@ export const playlistsAPI = {
   compareWithInternal: (id, targetPlaylistId) =>
     api.post(`/playlists/${id}/compare/internal`, { targetPlaylistId }),
 
+  // Diff
+  diff: (aId, bId) => api.get(`/playlists/diff`, { params: { a: aId, b: bId } }),
+
   // Shares
   getShares: (id) => api.get(`/playlists/${id}/shares`),
   addShare: (id, data) => api.post(`/playlists/${id}/shares`, data),

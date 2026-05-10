@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import RichText from "@/components/ui/RichText";
+import OverflowMenu from "@/components/ui/OverflowMenu";
 import useAuth from "@/hooks/useAuth";
 import usePlayerStore from "@/store/playerStore";
 
@@ -49,6 +50,37 @@ export default function PlaylistHeader({
       onUpdatePlaylist?.({ description: trimmed || null });
     }
   };
+
+  const overflowItems = [
+    {
+      label: t("share"),
+      onClick: () => onShare?.(),
+      hidden: !playlist.isOwner,
+    },
+    {
+      label: autoPlayEnabled ? t("autoPlayOn") : t("autoPlayOff"),
+      onClick: () => setAutoPlayEnabled(!autoPlayEnabled),
+      active: autoPlayEnabled,
+      hidden: !isAdmin,
+    },
+    {
+      label: t("comparePlaylist"),
+      onClick: () => onCompare?.(),
+      hidden: editMode,
+    },
+    {
+      label: compactView ? t("fullView") : t("compactView"),
+      onClick: () => onToggleCompact?.(),
+      active: compactView,
+      hidden: !editMode || !playlist.isOwner,
+    },
+    {
+      label: playlist.isPublic ? t("publicLabel") : t("privateLabel"),
+      onClick: () => onTogglePublic?.(),
+      active: playlist.isPublic,
+      hidden: !editMode || !playlist.isOwner,
+    },
+  ];
 
   return (
     <div className="mb-4 space-y-1.5">
@@ -129,20 +161,6 @@ export default function PlaylistHeader({
               {t("return")}
             </button>
 
-            {isAdmin && (
-              <button
-                onClick={() => setAutoPlayEnabled(!autoPlayEnabled)}
-                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                  autoPlayEnabled
-                    ? "bg-primary text-white shadow-sm hover:bg-primary-hover"
-                    : "border border-border bg-surface hover:bg-surface-hover"
-                }`}
-                style={autoPlayEnabled ? {} : { color: "var(--text)" }}
-              >
-                {autoPlayEnabled ? t("autoPlayOn") : t("autoPlayOff")}
-              </button>
-            )}
-
             {playlist.isOwner && (
               <button
                 onClick={onUnlikeAll}
@@ -152,25 +170,8 @@ export default function PlaylistHeader({
               </button>
             )}
 
-            {!editMode && (
-              <button
-                onClick={onCompare}
-                className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
-                style={{ color: "var(--text)" }}
-              >
-                {t("comparePlaylist")}
-              </button>
-            )}
-
             {playlist.isOwner && (
               <>
-                <button
-                  onClick={onShare}
-                  className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium hover:bg-surface-hover"
-                  style={{ color: "var(--text)" }}
-                >
-                  {t("share")}
-                </button>
                 <button
                   onClick={onToggleEditMode}
                   className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
@@ -194,21 +195,11 @@ export default function PlaylistHeader({
                 {t("copyPlaylist")}
               </button>
             )}
+            <OverflowMenu items={overflowItems} />
           </div>
 
           {editMode && playlist.isOwner && (
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <button
-                onClick={onToggleCompact}
-                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                  compactView
-                    ? "bg-primary text-white shadow-sm"
-                    : "border border-border bg-surface hover:bg-surface-hover"
-                }`}
-                style={compactView ? {} : { color: "var(--text)" }}
-              >
-                {compactView ? t("fullView") : t("compactView")}
-              </button>
               <button
                 onClick={onToggleBatch}
                 className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
@@ -219,17 +210,6 @@ export default function PlaylistHeader({
                 style={batchMode ? {} : { color: "var(--text)" }}
               >
                 {t("batch")}
-              </button>
-              <button
-                onClick={onTogglePublic}
-                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                  playlist.isPublic
-                    ? "bg-green-600 text-white hover:bg-green-500"
-                    : "border border-border bg-surface hover:bg-surface-hover"
-                }`}
-                style={playlist.isPublic ? {} : { color: "var(--text)" }}
-              >
-                {playlist.isPublic ? t("publicLabel") : t("privateLabel")}
               </button>
               <button
                 onClick={onAddClip}

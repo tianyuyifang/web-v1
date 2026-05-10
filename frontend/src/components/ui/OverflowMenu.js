@@ -62,7 +62,7 @@ export default function OverflowMenu({ items, align = "right" }) {
           ref={panelRef}
           className={`absolute ${alignClass} z-50 mt-1 min-w-[10rem] rounded-lg border border-border bg-surface p-1 shadow-lg`}
         >
-          {visibleItems.map((it, i) => {
+          {visibleItems.map((it) => {
             const base =
               "w-full rounded-md px-3 py-1.5 text-left text-sm font-medium transition-colors";
             let stateClass;
@@ -77,7 +77,7 @@ export default function OverflowMenu({ items, align = "right" }) {
 
             return (
               <button
-                key={i}
+                key={it.label}
                 onClick={() => {
                   it.onClick();
                   setOpen(false);

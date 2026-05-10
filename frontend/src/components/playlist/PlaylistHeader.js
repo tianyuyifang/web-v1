@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import RichText from "@/components/ui/RichText";
 import OverflowMenu from "@/components/ui/OverflowMenu";
@@ -35,19 +34,8 @@ export default function PlaylistHeader({
   const { isAdmin } = useAuth();
   const autoPlayEnabled = usePlayerStore((s) => s.autoPlayEnabled);
   const setAutoPlayEnabled = usePlayerStore((s) => s.setAutoPlayEnabled);
-  const router = useRouter();
   const [editName, setEditName] = useState(playlist.name);
   const [editDesc, setEditDesc] = useState(playlist.description || "");
-  const [isDesktop, setIsDesktop] = useState(true);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(min-width: 768px)");
-    const update = () => setIsDesktop(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
 
   const handleNameBlur = () => {
     const trimmed = editName.trim();
@@ -82,12 +70,6 @@ export default function PlaylistHeader({
       label: t("comparePlaylist"),
       onClick: () => onCompare?.(),
       hidden: editMode,
-    },
-    {
-      id: "diff",
-      label: t("diff"),
-      onClick: () => router.push(`/tools/diff?b=${playlist.id}`),
-      hidden: editMode || !isDesktop,
     },
     {
       id: "compact",

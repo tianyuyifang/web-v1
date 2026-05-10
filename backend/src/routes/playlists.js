@@ -78,14 +78,21 @@ router.post('/batch-share', async (req, res, next) => {
 
 /**
  * Build a one-directional diff: B relative to A.
- * Inputs are arrays of playlistClip rows already including clip.song.
- * Returns { newInB, modifiedInB, removedFromB }.
+ * Inputs are arrays of playlistClip rows that include clip.id, clip.songId,
+ * clip.start, clip.length, and clip.song.{title,artist}.
  *
- * Comparison rules:
+ * Two-pass matching:
+ *   1. Match by clip.id (same clip row). Differing metadata -> modifiedInB.
+ *   2. Among unmatched rows, pair by clip.songId in playlist-position order.
+ *      Each pair becomes a modifiedInB entry with `clipBoundaries` in its diffs.
+ *      Leftovers go to newInB / removedFromB.
+ *
+ * Comparison rules for metadata fields:
  *   - speed: numeric exact equality
- *   - colorTag: nullable string; null == null
+ *   - colorTag: nullable string; strict === (null != "")
  *   - comment: nullable string; null and "" treated as equal; trimmed
  *   - sectionLabel: nullable string; null and "" treated as equal; trimmed
+ *   - clipBoundaries: true if clip.start OR clip.length differs
  *   - position and pitch are NOT compared
  */
 function buildDiff(aRows, bRows) {
@@ -95,7 +102,7 @@ function buildDiff(aRows, bRows) {
   };
   const equalText = (x, y) => normalize(x) === normalize(y);
 
-  const formatClip = (pc) => ({
+  const formatNewOrRemoved = (pc) => ({
     clipId: pc.clipId,
     song: { title: pc.clip.song.title, artist: pc.clip.song.artist },
     speed: pc.speed,
@@ -104,52 +111,121 @@ function buildDiff(aRows, bRows) {
     sectionLabel: pc.sectionLabel,
   });
 
-  const aMap = new Map();
-  for (const pc of aRows) aMap.set(pc.clipId, pc);
-  const bMap = new Map();
-  for (const pc of bRows) bMap.set(pc.clipId, pc);
-
-  const newInB = [];
-  const modifiedInB = [];
-  const removedFromB = [];
-
-  for (const [clipId, bPc] of bMap) {
-    if (!aMap.has(clipId)) {
-      newInB.push(formatClip(bPc));
-      continue;
-    }
-    const aPc = aMap.get(clipId);
+  const computeDiffs = (aPc, bPc) => {
     const diffs = [];
     if (aPc.speed !== bPc.speed) diffs.push('speed');
     if (aPc.colorTag !== bPc.colorTag) diffs.push('colorTag');
     if (!equalText(aPc.comment, bPc.comment)) diffs.push('comment');
     if (!equalText(aPc.sectionLabel, bPc.sectionLabel)) diffs.push('sectionLabel');
+    if (
+      aPc.clip.start !== bPc.clip.start ||
+      aPc.clip.length !== bPc.clip.length
+    ) {
+      diffs.push('clipBoundaries');
+    }
+    return diffs;
+  };
+
+  const buildModifiedEntry = (aPc, bPc, diffs, sameClipId) => {
+    const entry = {
+      clipId: bPc.clipId,
+      song: { title: bPc.clip.song.title, artist: bPc.clip.song.artist },
+      a: {
+        speed: aPc.speed,
+        colorTag: aPc.colorTag,
+        comment: aPc.comment,
+        sectionLabel: aPc.sectionLabel,
+        start: aPc.clip.start,
+        length: aPc.clip.length,
+      },
+      b: {
+        speed: bPc.speed,
+        colorTag: bPc.colorTag,
+        comment: bPc.comment,
+        sectionLabel: bPc.sectionLabel,
+        start: bPc.clip.start,
+        length: bPc.clip.length,
+      },
+      diffs,
+    };
+    if (!sameClipId) entry.aClipId = aPc.clipId;
+    return entry;
+  };
+
+  // ---- Pass 1: match by clip.id ----
+  const aById = new Map();
+  for (const pc of aRows) aById.set(pc.clipId, pc);
+  const bById = new Map();
+  for (const pc of bRows) bById.set(pc.clipId, pc);
+
+  const modifiedInB = [];
+  const aUnmatched = [];
+  const bUnmatched = [];
+
+  for (const aPc of aRows) {
+    if (!bById.has(aPc.clipId)) {
+      aUnmatched.push(aPc);
+    }
+  }
+  for (const bPc of bRows) {
+    if (!aById.has(bPc.clipId)) {
+      bUnmatched.push(bPc);
+      continue;
+    }
+    const aPc = aById.get(bPc.clipId);
+    const diffs = computeDiffs(aPc, bPc);
     if (diffs.length > 0) {
-      modifiedInB.push({
-        clipId,
-        song: { title: bPc.clip.song.title, artist: bPc.clip.song.artist },
-        a: {
-          speed: aPc.speed,
-          colorTag: aPc.colorTag,
-          comment: aPc.comment,
-          sectionLabel: aPc.sectionLabel,
-        },
-        b: {
-          speed: bPc.speed,
-          colorTag: bPc.colorTag,
-          comment: bPc.comment,
-          sectionLabel: bPc.sectionLabel,
-        },
-        diffs,
-      });
+      modifiedInB.push(buildModifiedEntry(aPc, bPc, diffs, true));
     }
   }
 
-  for (const [clipId, aPc] of aMap) {
-    if (!bMap.has(clipId)) {
+  // ---- Pass 2: pair leftovers by clip.songId in order ----
+  const aBySongId = new Map();
+  for (const pc of aUnmatched) {
+    if (!aBySongId.has(pc.clip.songId)) aBySongId.set(pc.clip.songId, []);
+    aBySongId.get(pc.clip.songId).push(pc);
+  }
+  const bBySongId = new Map();
+  for (const pc of bUnmatched) {
+    if (!bBySongId.has(pc.clip.songId)) bBySongId.set(pc.clip.songId, []);
+    bBySongId.get(pc.clip.songId).push(pc);
+  }
+
+  const newInB = [];
+  const removedFromB = [];
+
+  // For each songId in B's leftovers, try to pair with A's leftovers of the same song.
+  for (const [songId, bList] of bBySongId) {
+    const aList = aBySongId.get(songId) || [];
+    const pairCount = Math.min(aList.length, bList.length);
+    for (let i = 0; i < pairCount; i++) {
+      const aPc = aList[i];
+      const bPc = bList[i];
+      const diffs = computeDiffs(aPc, bPc);
+      if (diffs.length > 0) {
+        modifiedInB.push(buildModifiedEntry(aPc, bPc, diffs, false));
+      }
+      // If diffs is empty (same song, same boundaries, same metadata, different clipId),
+      // intentionally skip — no change to report.
+    }
+    // Anything in B beyond the paired prefix is genuinely new.
+    for (let i = pairCount; i < bList.length; i++) {
+      newInB.push(formatNewOrRemoved(bList[i]));
+    }
+  }
+
+  // Anything in A whose songId never appeared in B's leftovers, OR whose count
+  // exceeded B's count for that songId, goes to removedFromB.
+  for (const [songId, aList] of aBySongId) {
+    const bList = bBySongId.get(songId) || [];
+    const pairCount = Math.min(aList.length, bList.length);
+    for (let i = pairCount; i < aList.length; i++) {
       removedFromB.push({
-        clipId,
-        song: { title: aPc.clip.song.title, artist: aPc.clip.song.artist },
+        clipId: aList[i].clipId,
+        song: {
+          title: aList[i].clip.song.title,
+          artist: aList[i].clip.song.artist,
+        },
       });
     }
   }
@@ -207,12 +283,32 @@ router.get('/diff', async (req, res, next) => {
       prisma.playlistClip.findMany({
         where: { playlistId: a },
         orderBy: { position: 'asc' },
-        include: { clip: { select: { song: { select: { title: true, artist: true } } } } },
+        include: {
+          clip: {
+            select: {
+              id: true,
+              songId: true,
+              start: true,
+              length: true,
+              song: { select: { title: true, artist: true } },
+            },
+          },
+        },
       }),
       prisma.playlistClip.findMany({
         where: { playlistId: b },
         orderBy: { position: 'asc' },
-        include: { clip: { select: { song: { select: { title: true, artist: true } } } } },
+        include: {
+          clip: {
+            select: {
+              id: true,
+              songId: true,
+              start: true,
+              length: true,
+              song: { select: { title: true, artist: true } },
+            },
+          },
+        },
       }),
     ]);
 

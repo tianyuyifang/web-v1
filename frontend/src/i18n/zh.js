@@ -389,4 +389,23 @@ export default {
   hideHeader: "收起",
   showHeader: "展开",
   results: "条结果",
+
+  // 对比工具
+  diff: "对比",
+  navDiff: "对比",
+  diffBaseline: "原始列表 A",
+  diffCurrent: "当前列表 B",
+  diffSwap: "交换",
+  diffChange: "更换",
+  diffSelectPlaylist: "搜索列表…",
+  diffNewInB: "新增",
+  diffModifiedInB: "已修改",
+  diffRemovedFromB: "已删除",
+  diffNoNew: "没有新增片段",
+  diffNoModified: "没有修改",
+  diffNoRemoved: "没有删除片段",
+  diffSummary: "新增 {n} · 修改 {m} · 删除 {k}",
+  diffDesktopOnly: "对比功能仅在平板或桌面端可用",
+  diffSameError: "无法和自身对比",
+  diffEmpty: "请选择两个列表进行对比",
 };

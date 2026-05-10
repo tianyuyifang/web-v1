@@ -389,4 +389,23 @@ export default {
   hideHeader: "Hide",
   showHeader: "Show",
   results: "results",
+
+  // Diff tool
+  diff: "Diff",
+  navDiff: "Diff",
+  diffBaseline: "Baseline (A)",
+  diffCurrent: "Current (B)",
+  diffSwap: "Swap",
+  diffChange: "change",
+  diffSelectPlaylist: "Search for a playlist…",
+  diffNewInB: "New in current",
+  diffModifiedInB: "Modified in current",
+  diffRemovedFromB: "Removed from current",
+  diffNoNew: "No new clips",
+  diffNoModified: "No modifications",
+  diffNoRemoved: "No removed clips",
+  diffSummary: "{n} new · {m} modified · {k} removed",
+  diffDesktopOnly: "Diff is only available on tablet or desktop.",
+  diffSameError: "Cannot diff a playlist against itself",
+  diffEmpty: "Pick two playlists to compare.",
 };

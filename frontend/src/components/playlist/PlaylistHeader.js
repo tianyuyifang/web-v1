@@ -53,28 +53,33 @@ export default function PlaylistHeader({
 
   const overflowItems = [
     {
+      id: "share",
       label: t("share"),
       onClick: () => onShare?.(),
       hidden: !playlist.isOwner,
     },
     {
+      id: "autoplay",
       label: autoPlayEnabled ? t("autoPlayOn") : t("autoPlayOff"),
       onClick: () => setAutoPlayEnabled(!autoPlayEnabled),
       active: autoPlayEnabled,
       hidden: !isAdmin,
     },
     {
+      id: "compare",
       label: t("comparePlaylist"),
       onClick: () => onCompare?.(),
       hidden: editMode,
     },
     {
+      id: "compact",
       label: compactView ? t("fullView") : t("compactView"),
       onClick: () => onToggleCompact?.(),
       active: compactView,
       hidden: !editMode || !playlist.isOwner,
     },
     {
+      id: "public",
       label: playlist.isPublic ? t("publicLabel") : t("privateLabel"),
       onClick: () => onTogglePublic?.(),
       active: playlist.isPublic,

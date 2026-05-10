@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
  * Dropdown overflow menu with a "⋯" trigger.
  *
  * Props:
- *  - items: Array<{ label: string, onClick: () => void, active?: boolean, destructive?: boolean, hidden?: boolean }>
+ *  - items: Array<{ id: string, label: string, onClick: () => void, active?: boolean, destructive?: boolean, hidden?: boolean }>
  *  - align: "left" | "right"  (default "right") — which edge of the trigger the panel aligns to
  */
 export default function OverflowMenu({ items, align = "right" }) {
@@ -77,7 +77,7 @@ export default function OverflowMenu({ items, align = "right" }) {
 
             return (
               <button
-                key={it.label}
+                key={it.id}
                 onClick={() => {
                   it.onClick();
                   setOpen(false);

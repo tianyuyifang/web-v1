@@ -33,6 +33,13 @@ const shareSchema = z.object({
   userId: z.string().uuid(),
 });
 
+const mergePlaylistSchema = z.object({
+  aId: z.string().uuid(),
+  bId: z.string().uuid(),
+}).refine((d) => d.aId !== d.bId, {
+  message: 'aId and bId must differ',
+});
+
 module.exports = {
   createPlaylistSchema,
   updatePlaylistSchema,
@@ -40,4 +47,5 @@ module.exports = {
   reorderClipsSchema,
   updateClipCustomizationSchema,
   shareSchema,
+  mergePlaylistSchema,
 };

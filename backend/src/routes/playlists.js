@@ -9,9 +9,11 @@ const {
   reorderClipsSchema,
   updateClipCustomizationSchema,
   shareSchema,
+  mergePlaylistSchema,
 } = require('../validators/playlists');
 const playlistService = require('../services/playlistService');
 const shareService = require('../services/shareService');
+const mergeService = require('../services/mergeService');
 const { ForbiddenError } = require('../utils/errors');
 
 // ========================= Playlist CRUD =========================
@@ -318,6 +320,19 @@ router.get('/diff', async (req, res, next) => {
       b: { id: bPl.id, name: bPl.name },
       ...diff,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ========================= Merge =========================
+
+// POST /api/playlists/merge — create a new playlist by merging B into A
+router.post('/merge', validate(mergePlaylistSchema), async (req, res, next) => {
+  try {
+    const { aId, bId } = req.validated;
+    const result = await mergeService.mergePlaylists(req.user.id, aId, bId);
+    res.status(201).json(result);
   } catch (err) {
     next(err);
   }

@@ -13,8 +13,9 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
  *  - onChange: (playlist | null) => void — fires with selection or with null when cleared
  *  - excludeId?: string — playlist id to omit from search results (the other side's selection)
  *  - placeholder?: string — override placeholder text
+ *  - ownerOnly?: boolean — if true, filter results to playlists where p.isOwner === true
  */
-export default function PlaylistPicker({ label, value, onChange, excludeId, placeholder }) {
+export default function PlaylistPicker({ label, value, onChange, excludeId, placeholder, ownerOnly }) {
   const { t } = useLanguage();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -30,13 +31,15 @@ export default function PlaylistPicker({ label, value, onChange, excludeId, plac
       try {
         const res = await playlistsAPI.list({ q: query.trim() });
         const list = Array.isArray(res.data) ? res.data : res.data.playlists || [];
-        setResults(list.filter((p) => p.id !== excludeId));
+        setResults(
+          list.filter((p) => p.id !== excludeId).filter((p) => !ownerOnly || p.isOwner)
+        );
       } catch {
         setResults([]);
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [query, open, excludeId]);
+  }, [query, open, excludeId, ownerOnly]);
 
   useEffect(() => {
     if (!open) return;
@@ -102,7 +105,7 @@ export default function PlaylistPicker({ label, value, onChange, excludeId, plac
                 className="w-full px-3 py-2 text-left text-sm hover:bg-surface-hover"
                 style={{ color: "var(--text)" }}
               >
-                {p.name}
+                {p.name} <span className="text-muted">— {p.isOwner ? t("you") : p.ownerName}</span>
               </button>
             </li>
           ))}

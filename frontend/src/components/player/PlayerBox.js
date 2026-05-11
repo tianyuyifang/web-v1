@@ -98,6 +98,9 @@ export default memo(function PlayerBox({
     if (playFromStartClipId !== clipId) return;
     clearPlayFromStart();
     playFromStart();
+    document
+      .getElementById(`playerbox-${clipId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [playFromStartClipId, clipId, clearPlayFromStart, playFromStart]);
 
 

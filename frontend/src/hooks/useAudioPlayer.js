@@ -38,6 +38,14 @@ export default function useAudioPlayer({
   const onClipEndedRef = useRef(onClipEnded);
   useEffect(() => { onClipEndedRef.current = onClipEnded; }, [onClipEnded]);
 
+  // Visibility tracking: refs so the visibilitychange handler reads fresh
+  // values without re-registering. wasPlayingBeforeHideRef remembers whether
+  // we should auto-resume when the tab becomes visible again.
+  const playRef = useRef(null);
+  const pauseRef = useRef(null);
+  const isPlayingRef = useRef(false);
+  const wasPlayingBeforeHideRef = useRef(false);
+
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -130,29 +138,49 @@ export default function useAudioPlayer({
     };
   }, [stopShifter]);
 
-  // Mobile fix: when the tab becomes visible again, the AudioContext may
-  // have been suspended or interrupted (common on iOS Safari and Android
-  // Chrome when switching apps). Proactively resume it so the next play()
-  // call doesn't silently produce no audio.
+  // Mobile fix: when the tab is hidden (user switches apps), pause cleanly so
+  // the current offset is captured. When the tab becomes visible again, resume
+  // playback from that offset so the user doesn't have to refresh the page.
+  // On iOS Safari and Android Chrome the AudioContext suspends on backgrounding;
+  // simply resuming it isn't enough — the PitchShifter graph needs to be rebuilt
+  // from a known offset, which is exactly what play() does.
   useEffect(() => {
     const handleVisibilityChange = async () => {
+      if (document.visibilityState === "hidden") {
+        // Snapshot whether we were playing, then pause to capture the offset.
+        if (isPlayingRef.current) {
+          wasPlayingBeforeHideRef.current = true;
+          pauseRef.current?.();
+        }
+        return;
+      }
       if (document.visibilityState !== "visible") return;
+
       // Invalidate any in-flight play() calls that were suspended during the
       // tab switch — they may hold stale state or a frozen AudioContext.
       playEpochRef.current += 1;
       const ctx = audioCtxRef.current;
-      if (!ctx) return;
-      if (ctx.state !== "running" && ctx.state !== "closed") {
+      if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
         try {
           await ctx.resume();
         } catch {
           // ignore — will retry on next play() call
         }
       }
+
+      // Auto-resume if we paused on hide.
+      if (wasPlayingBeforeHideRef.current) {
+        wasPlayingBeforeHideRef.current = false;
+        playRef.current?.();
+      }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
+
+  // Keep refs in sync with latest state/callbacks so the visibility handler
+  // (registered once) always reads current values.
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
   const play = useCallback(async () => {
     // Stop any existing playback FIRST (also bumps epoch, invalidating any
@@ -232,6 +260,10 @@ export default function useAudioPlayer({
     stopShifter();
     setIsPlaying(false);
   }, [speed, clipLength, stopShifter]);
+
+  // Keep refs to latest play/pause for the visibility handler.
+  useEffect(() => { playRef.current = play; }, [play]);
+  useEffect(() => { pauseRef.current = pause; }, [pause]);
 
   const seek = useCallback(
     (positionInClip) => {

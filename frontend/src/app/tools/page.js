@@ -13,6 +13,12 @@ export default function ToolsPage() {
       title: t("diff"),
       description: t("toolsDiffDescription"),
     },
+    {
+      id: "merge",
+      href: "/tools/merge",
+      title: t("merge"),
+      description: t("toolsMergeDescription"),
+    },
   ];
 
   return (

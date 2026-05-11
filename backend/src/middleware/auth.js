@@ -3,6 +3,14 @@ const config = require('../config');
 const prisma = require('../db/client');
 const { UnauthorizedError, ForbiddenError } = require('../utils/errors');
 
+// In-process cache for activeSessionId lookups. Avoids hammering Prisma's
+// connection pool on high-frequency authenticated routes (audio streaming).
+// Tradeoff: kicked sessions get up to SESSION_CACHE_TTL_MS of grace before
+// the next DB read picks up the new activeSessionId. Acceptable; this is a
+// performance optimization, not a security boundary.
+const SESSION_CACHE = new Map();
+const SESSION_CACHE_TTL_MS = 30 * 1000;
+
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
   // Also accept token as query param (needed for audio streaming via <audio> element)
@@ -33,18 +41,33 @@ async function requireActiveSession(req, res, next) {
     return next();
   }
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { activeSessionId: true },
-    });
-    if (!user) {
-      return next(new UnauthorizedError('User not found'));
+    const userId = req.user.id;
+    const now = Date.now();
+    let activeSessionId;
+
+    const cached = SESSION_CACHE.get(userId);
+    if (cached && cached.expiresAt > now) {
+      activeSessionId = cached.activeSessionId;
+    } else {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { activeSessionId: true },
+      });
+      if (!user) {
+        return next(new UnauthorizedError('User not found'));
+      }
+      activeSessionId = user.activeSessionId;
+      SESSION_CACHE.set(userId, {
+        activeSessionId,
+        expiresAt: now + SESSION_CACHE_TTL_MS,
+      });
     }
+
     // If activeSessionId is null, user hasn't logged in since migration — skip check
-    if (!user.activeSessionId) {
+    if (!activeSessionId) {
       return next();
     }
-    if (user.activeSessionId !== req.user.sid) {
+    if (activeSessionId !== req.user.sid) {
       return res.status(403).json({
         error: {
           code: 'SESSION_REPLACED',

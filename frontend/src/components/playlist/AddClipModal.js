@@ -355,7 +355,7 @@ function ImportTab({ playlistId, onImported }) {
                 >
                   <span className="truncate text-theme">{p.name}</span>
                   <span className="ml-2 shrink-0 text-xs text-muted">
-                    {p.clipCount} clips{p.ownerName ? ` · ${p.ownerName}` : ""}
+                    {p.clipCount} clips{!p.isOwner && p.ownerName ? ` · ${p.ownerName}` : ""}
                   </span>
                 </button>
               ))}

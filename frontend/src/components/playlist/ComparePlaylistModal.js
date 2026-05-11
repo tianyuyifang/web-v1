@@ -190,7 +190,7 @@ export default function ComparePlaylistModal({ playlistId, onClose }) {
                     >
                       <span className="min-w-0 flex-1 truncate font-medium text-theme">{p.name}</span>
                       <span className="shrink-0 text-xs text-muted">{p.clipCount} {t("clips")}</span>
-                      {p.ownerName && <span className="shrink-0 text-xs text-primary">@{p.ownerName}</span>}
+                      {!p.isOwner && p.ownerName && <span className="shrink-0 text-xs text-primary">@{p.ownerName}</span>}
                     </button>
                   ))}
                 </div>

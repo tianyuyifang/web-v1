@@ -40,7 +40,7 @@ export default function PlaylistCard({ playlist, listView, number }) {
 
         {/* Owner — fixed column, vertically aligned across rows */}
         <span className="hidden w-20 shrink-0 truncate text-xs text-primary sm:block">
-          {playlist.ownerName ? `@${playlist.ownerName}` : ""}
+          {!playlist.isOwner && playlist.ownerName ? `@${playlist.ownerName}` : ""}
         </span>
 
         {/* Description — fills remaining space, vertically aligned across rows */}
@@ -62,7 +62,7 @@ export default function PlaylistCard({ playlist, listView, number }) {
       href={`/playlists/${playlist.id}`}
       className="group relative block rounded-xl border border-border bg-surface p-5 shadow-sm transition-all hover:border-primary/30 hover:bg-surface-hover hover:shadow-md hover:shadow-primary/5"
     >
-      {playlist.ownerName && (
+      {!playlist.isOwner && playlist.ownerName && (
         <span className="absolute right-3 top-3 text-sm font-semibold text-primary">
           {playlist.ownerName}
         </span>

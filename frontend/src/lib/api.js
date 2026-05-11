@@ -170,6 +170,9 @@ export const playlistsAPI = {
   // Diff
   diff: (aId, bId) => api.get(`/playlists/diff`, { params: { a: aId, b: bId } }),
 
+  // Merge
+  merge: (aId, bId) => api.post(`/playlists/merge`, { aId, bId }),
+
   // Shares
   getShares: (id) => api.get(`/playlists/${id}/shares`),
   addShare: (id, data) => api.post(`/playlists/${id}/shares`, data),

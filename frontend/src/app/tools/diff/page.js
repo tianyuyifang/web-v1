@@ -110,7 +110,7 @@ export default function DiffPage() {
   if (!isDesktop) {
     return (
       <main className="mx-auto max-w-screen-md p-6">
-        <p className="text-center text-muted">{t("diffDesktopOnly")}</p>
+        <p className="text-center text-muted">{t("toolsDesktopOnly")}</p>
       </main>
     );
   }

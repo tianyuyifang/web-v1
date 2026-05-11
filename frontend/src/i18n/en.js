@@ -6,6 +6,7 @@ export default {
 
   // Navbar
   welcome: "Welcome,",
+  you: "you",
   navPlaylists: "Playlists",
   navGuide: "Guide",
   navAdmin: "Admin",
@@ -409,7 +410,17 @@ export default {
   diffNoModified: "No modifications",
   diffNoRemoved: "No removed clips",
   diffSummary: "{n} new · {m} modified · {k} removed",
-  diffDesktopOnly: "Diff is only available on tablet or desktop.",
+  toolsDesktopOnly: "Diff is only available on tablet or desktop.",
   diffSameError: "Cannot diff a playlist against itself",
   diffEmpty: "Pick two playlists to compare.",
+
+  // Merge tool
+  merge: "Merge",
+  toolsMergeDescription: "Merge updates from another playlist into yours, creating a new playlist.",
+  mergeBaseline: "Baseline (A) — must be yours",
+  mergeSource: "Source (B)",
+  mergeButton: "Merge",
+  mergeConfirmTitle: "Confirm merge",
+  mergeConfirmBody: "Will create a new playlist named \"{name}\". Continue?",
+  mergeSuccessSummary: "Created \"{name}\": {added} added · {merged} merged · {markedDifferent} marked different · {markedDeleted} marked deleted",
 };

@@ -6,6 +6,7 @@ export default {
 
   // Navbar
   welcome: "欢迎，",
+  you: "我",
   navPlaylists: "播放列表",
   navGuide: "使用指南",
   navAdmin: "管理",
@@ -409,7 +410,17 @@ export default {
   diffNoModified: "没有修改",
   diffNoRemoved: "没有删除片段",
   diffSummary: "新增 {n} · 修改 {m} · 删除 {k}",
-  diffDesktopOnly: "对比功能仅在平板或桌面端可用",
+  toolsDesktopOnly: "对比功能仅在平板或桌面端可用",
   diffSameError: "无法和自身对比",
   diffEmpty: "请选择两个列表进行对比",
+
+  // 合并工具
+  merge: "合并",
+  toolsMergeDescription: "把另一个列表的更新合并到我的列表，生成新列表。",
+  mergeBaseline: "我的列表 (A)",
+  mergeSource: "合并来源 (B)",
+  mergeButton: "合并",
+  mergeConfirmTitle: "确认合并",
+  mergeConfirmBody: "将创建新列表「{name}」，确认合并？",
+  mergeSuccessSummary: "已创建「{name}」：{added} 新增 · {merged} 合并 · {markedDifferent} 标记不同 · {markedDeleted} 标记删除",
 };

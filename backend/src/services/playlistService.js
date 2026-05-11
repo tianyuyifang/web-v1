@@ -18,7 +18,7 @@ async function getUserPlaylists(userId, query) {
     isOwner: p.userId === userId,
     isShared: p.shares.length > 0,
     canCopy: p.copyPermissions.length > 0,
-    ownerName: p.userId !== userId ? p.user.username : undefined,
+    ownerName: p.user.username,
     clipCount: p._count.playlistClips,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,

@@ -93,7 +93,7 @@ function buildMergeRows(aClips, bClips) {
     }
 
     // Rule 4: same clip.id in both
-    if (aByExactClip && aMatches.includes(aByExactClip) && !consumedA.has(aByExactClip.clipId)) {
+    if (aByExactClip && !consumedA.has(aByExactClip.clipId)) {
       rows.push({
         clipId: aByExactClip.clipId,
         speed: bPc.speed,                                                // B's speed
@@ -170,12 +170,7 @@ function buildMergeRows(aClips, bClips) {
  */
 async function mergePlaylists(callerId, aId, bId) {
   const [aPl, bPl] = await Promise.all([
-    prisma.playlist.findUnique({
-      where: { id: aId },
-      include: {
-        copyPermissions: { where: { userId: callerId }, select: { id: true }, take: 1 },
-      },
-    }),
+    prisma.playlist.findUnique({ where: { id: aId } }),
     prisma.playlist.findUnique({
       where: { id: bId },
       include: {

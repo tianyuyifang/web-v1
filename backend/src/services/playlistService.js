@@ -31,6 +31,7 @@ async function getPlaylistById(playlistId, userId, clipQuery) {
   const playlist = await prisma.playlist.findUnique({
     where: { id: playlistId },
     include: {
+      user: { select: { username: true } },
       shares: {
         include: {
           user: { select: { id: true, username: true } },
@@ -87,6 +88,7 @@ async function getPlaylistById(playlistId, userId, clipQuery) {
     isOwner,
     isShared,
     canCopy,
+    ownerName: playlist.user.username,
     // Only expose share/copy lists to owner
     ...(isOwner
       ? {

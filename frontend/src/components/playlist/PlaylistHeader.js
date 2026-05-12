@@ -124,6 +124,11 @@ export default function PlaylistHeader({
                 <span className="rounded-full bg-surface px-2 py-0.5 text-xs text-muted">
                   {playlist.clips?.length || 0} {t("clips")}
                 </span>
+                {playlist.ownerName && (
+                  <span className="rounded-full bg-surface px-2 py-0.5 text-xs text-muted">
+                    {playlist.isOwner ? t("you") : `@${playlist.ownerName}`}
+                  </span>
+                )}
                 <span className={`rounded-full px-2 py-0.5 text-xs ${
                   playlist.isPublic
                     ? "bg-green-600 text-white"

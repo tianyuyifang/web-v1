@@ -333,7 +333,7 @@ export default function PlaylistPage() {
           </div>
         </div>
 
-        <div className="pt-4">
+        <div className="pt-4 pb-16 sm:pb-0">
           <PlaylistGrid
             playlist={playlist}
             columns={columns}

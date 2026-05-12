@@ -72,6 +72,12 @@ export default function PlaylistHeader({
       hidden: editMode,
     },
     {
+      id: "copy",
+      label: t("copyPlaylist"),
+      onClick: () => onCopy?.(),
+      hidden: !(playlist.isOwner || playlist.canCopy),
+    },
+    {
       id: "compact",
       label: compactView ? t("fullView") : t("compactView"),
       onClick: () => onToggleCompact?.(),
@@ -191,15 +197,6 @@ export default function PlaylistHeader({
               </>
             )}
 
-            {(playlist.isOwner || playlist.canCopy) && (
-              <button
-                onClick={onCopy}
-                className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium hover:bg-surface-hover"
-                style={{ color: "var(--text)" }}
-              >
-                {t("copyPlaylist")}
-              </button>
-            )}
             <OverflowMenu items={overflowItems} />
           </div>
 

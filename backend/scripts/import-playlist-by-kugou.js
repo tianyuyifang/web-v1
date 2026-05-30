@@ -15,6 +15,7 @@ const path = require('path');
 const prisma = require('../src/db/client');
 const { sliceLRC } = require('../src/utils/lrc');
 const { clipAudio } = require('./clip-audio');
+const { findSongInDB } = require('./lib/find-song');
 
 const CLIP_LENGTH = 20;
 
@@ -52,26 +53,6 @@ function fetchKugouPlaylist(kugouPlaylistId) {
       }
     });
   });
-}
-
-async function findSongInDB(title, artist) {
-  const songs = await prisma.song.findMany({
-    where: { title: { equals: title } },
-  });
-  if (songs.length === 0) return { song: null, artistMatch: false };
-
-  if (artist) {
-    const extArtists = artist.split('_').map((a) => a.trim().toLowerCase());
-    for (const song of songs) {
-      const dbArtists = song.artist.split('_').map((a) => a.trim().toLowerCase());
-      const hasMatch = extArtists.some((ea) =>
-        dbArtists.some((da) => da.includes(ea) || ea.includes(da))
-      );
-      if (hasMatch) return { song, artistMatch: true };
-    }
-  }
-
-  return songs.length === 1 ? { song: songs[0], artistMatch: false } : { song: null, artistMatch: false };
 }
 
 async function importByKugou(kugouPlaylistId, targetPlaylistId) {

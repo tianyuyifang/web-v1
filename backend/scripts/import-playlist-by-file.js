@@ -20,6 +20,7 @@ const XLSX = require('xlsx');
 const prisma = require('../src/db/client');
 const { sliceLRC } = require('../src/utils/lrc');
 const { clipAudio } = require('./clip-audio');
+const { findSongInDB } = require('./lib/find-song');
 
 const CLIP_LENGTH = 20;
 
@@ -85,25 +86,9 @@ async function importByFile(input, targetPlaylistId) {
   const titleConflict = [];
 
   for (const entry of entries) {
-    // Match song by title + artist
-    let song = await prisma.song.findFirst({
-      where: {
-        title: { equals: entry.title },
-        ...(entry.artist
-          ? { artist: { contains: entry.artist, mode: 'insensitive' } }
-          : {}),
-      },
-    });
-
-    // If no match with artist, try title-only
-    if (!song) {
-      const titleMatches = await prisma.song.findMany({
-        where: { title: { equals: entry.title } },
-      });
-      if (titleMatches.length === 1) {
-        song = titleMatches[0];
-      }
-    }
+    // Match song by title + artist (shared logic: falls back to most-popular
+    // same-title song when the artist matches none of several candidates).
+    const { song } = await findSongInDB(entry.title, entry.artist);
 
     if (!song) {
       notFound.push(`${entry.title} - ${entry.artist}`);

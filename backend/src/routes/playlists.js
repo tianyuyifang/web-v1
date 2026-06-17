@@ -801,47 +801,37 @@ router.post('/:id/compare/internal', playlistAccess, requireView, async (req, re
 });
 
 /**
- * Compare external songs with a local playlist's songs.
- * Returns: { missing, titleMatch, artistMismatch, externalTotal, localTotal }
+ * Pure comparison of a local song list against an external song list. No DB access.
+ * @param {Array<{title, artist}>} localSongs - already deduplicated by songId
+ * @param {Array<{title, artist}>} externalSongs - raw (may contain duplicates)
+ * Returns: { missing, titleMatch, artistMismatch, localOnly, externalTotal, localTotal }
  */
-async function compareWithPlaylist(playlistId, externalSongs) {
-  const prisma = require('../db/client');
-
-  // Get all songs in the local playlist (select only needed fields)
-  const playlistClips = await prisma.playlistClip.findMany({
-    where: { playlistId },
-    include: {
-      clip: {
-        select: {
-          song: { select: { id: true, title: true, artist: true } },
-        },
-      },
-    },
-  });
-
-  // Deduplicate local songs by songId
-  const localSongsMap = new Map();
-  for (const pc of playlistClips) {
-    const song = pc.clip.song;
-    if (!localSongsMap.has(song.id)) {
-      localSongsMap.set(song.id, { title: song.title, artist: song.artist });
-    }
-  }
-
+function compareSongLists(localSongs, externalSongs) {
   // Build title lookup map: trimmed title -> array of local songs (O(1) lookup)
   // Case-sensitive: "Love" and "love" are treated as distinct titles.
   const localByTitle = new Map();
-  for (const song of localSongsMap.values()) {
+  for (const song of localSongs) {
     const key = song.title.trim();
     if (!localByTitle.has(key)) localByTitle.set(key, []);
     localByTitle.get(key).push(song);
+  }
+
+  // Deduplicate external songs: a duplicate is same title (trimmed, case-sensitive)
+  // AND same artist (trimmed, case-sensitive). Keeps the first occurrence.
+  const seenExternal = new Set();
+  const dedupedExternal = [];
+  for (const ext of externalSongs) {
+    const key = JSON.stringify([ext.title.trim(), ext.artist.trim()]);
+    if (seenExternal.has(key)) continue;
+    seenExternal.add(key);
+    dedupedExternal.push(ext);
   }
 
   const missing = [];
   const titleMatch = [];
   const artistMismatch = [];
 
-  for (const ext of externalSongs) {
+  for (const ext of dedupedExternal) {
     const extTitle = ext.title.trim();
     const matches = localByTitle.get(extTitle);
 
@@ -872,19 +862,48 @@ async function compareWithPlaylist(playlistId, externalSongs) {
   }
 
   // Find local songs not in external playlist (case-sensitive)
-  const extTitles = new Set(externalSongs.map((e) => e.title.trim()));
-  const localOnly = [...localSongsMap.values()].filter(
-    (s) => !extTitles.has(s.title.trim())
-  );
+  const extTitles = new Set(dedupedExternal.map((e) => e.title.trim()));
+  const localOnly = localSongs.filter((s) => !extTitles.has(s.title.trim()));
 
   return {
     missing,
     titleMatch,
     artistMismatch,
     localOnly,
-    externalTotal: externalSongs.length,
-    localTotal: localSongsMap.size,
+    externalTotal: dedupedExternal.length,
+    localTotal: localSongs.length,
   };
+}
+
+/**
+ * Compare external songs with a local playlist's songs.
+ * Returns: { missing, titleMatch, artistMismatch, localOnly, externalTotal, localTotal }
+ */
+async function compareWithPlaylist(playlistId, externalSongs) {
+  const prisma = require('../db/client');
+
+  // Get all songs in the local playlist (select only needed fields)
+  const playlistClips = await prisma.playlistClip.findMany({
+    where: { playlistId },
+    include: {
+      clip: {
+        select: {
+          song: { select: { id: true, title: true, artist: true } },
+        },
+      },
+    },
+  });
+
+  // Deduplicate local songs by songId
+  const localSongsMap = new Map();
+  for (const pc of playlistClips) {
+    const song = pc.clip.song;
+    if (!localSongsMap.has(song.id)) {
+      localSongsMap.set(song.id, { title: song.title, artist: song.artist });
+    }
+  }
+
+  return compareSongLists([...localSongsMap.values()], externalSongs);
 }
 
 // ========================= Copy =========================
@@ -903,3 +922,4 @@ router.post('/:id/copy', playlistAccess, async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.compareSongLists = compareSongLists;

@@ -280,6 +280,8 @@ export default {
   pause: "暂停",
   play: "播放",
   replay: "重播",
+  prevUnliked: "上一首未喜欢",
+  nextUnliked: "下一首未喜欢",
 
   // Sections
   addSection: "添加分区",

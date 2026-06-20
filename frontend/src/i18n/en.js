@@ -280,6 +280,8 @@ export default {
   pause: "Pause",
   play: "Play",
   replay: "Replay",
+  prevUnliked: "Previous unliked",
+  nextUnliked: "Next unliked",
 
   // Sections
   addSection: "Add section",

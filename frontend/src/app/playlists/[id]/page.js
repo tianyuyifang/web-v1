@@ -11,6 +11,7 @@ import { getColumnCount, setColumnCount as saveColumnCount, matchesSearch } from
 import PlaylistHeader from "@/components/playlist/PlaylistHeader";
 import PlaylistGrid from "@/components/playlist/PlaylistGrid";
 import ClipSidebar from "@/components/playlist/ClipSidebar";
+import FloatingClipNav from "@/components/player/FloatingClipNav";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import useLikes from "@/hooks/useLikes";
 import { preloadClips } from "@/lib/audioCache";
@@ -352,6 +353,8 @@ export default function PlaylistPage() {
           />
         </div>
       </div>
+
+      <FloatingClipNav clips={playlist.clips} playlistId={playlist.id} />
 
       {showAddClip && (
         <AddClipModal

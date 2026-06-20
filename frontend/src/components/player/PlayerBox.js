@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
+import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { createPortal } from "react-dom";
 import useAudioPlayer from "@/hooks/useAudioPlayer";
 import usePlayerStore from "@/store/playerStore";
@@ -53,8 +53,6 @@ export default memo(function PlayerBox({
   const triggerPlayFromStart = usePlayerStore((s) => s.triggerPlayFromStart);
   const autoPlayEnabled = usePlayerStore((s) => s.autoPlayEnabled);
   const isLiked = usePlayerStore((s) => s.isClipLiked(playlistId, clipId));
-  // Subscribe to likedClips so prev/next-unliked disabled state updates live.
-  const likedClips = usePlayerStore((s) => s.likedClips);
 
   const handleClipEnded = useCallback(() => {
     if (!autoPlayEnabled) return;
@@ -69,23 +67,6 @@ export default memo(function PlayerBox({
     }
     // No eligible next clip — chain ends naturally.
   }, [autoPlayEnabled, allClips, clipIndex, playlistId, triggerPlayFromStart]);
-
-  // Prev/Next-unliked navigation (manual, always available on the playing card).
-  // Recomputed when the clip list, position, or likes change.
-  const prevUnlikedIdx = useMemo(
-    () => findAdjacentUnliked(allClips, clipIndex, -1, likedClips, playlistId),
-    [allClips, clipIndex, likedClips, playlistId]
-  );
-  const nextUnlikedIdx = useMemo(
-    () => findAdjacentUnliked(allClips, clipIndex, 1, likedClips, playlistId),
-    [allClips, clipIndex, likedClips, playlistId]
-  );
-  const handlePrevUnliked = useCallback(() => {
-    if (prevUnlikedIdx >= 0) triggerPlayFromStart(allClips[prevUnlikedIdx].clipId);
-  }, [prevUnlikedIdx, allClips, triggerPlayFromStart]);
-  const handleNextUnliked = useCallback(() => {
-    if (nextUnlikedIdx >= 0) triggerPlayFromStart(allClips[nextUnlikedIdx].clipId);
-  }, [nextUnlikedIdx, allClips, triggerPlayFromStart]);
 
   const {
     play,
@@ -295,34 +276,6 @@ export default memo(function PlayerBox({
             </svg>
           </button>
 
-          {/* Prev/Next-unliked — only on the playing card */}
-          {isPlaying && (
-            <>
-              <button
-                onClick={handlePrevUnliked}
-                disabled={prevUnlikedIdx < 0}
-                aria-label={t("prevUnliked")}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted active:text-primary disabled:opacity-30"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
-                  <rect x="5" y="5" width="2.5" height="14" rx="1" />
-                  <polygon points="20,5 20,19 9,12" />
-                </svg>
-              </button>
-              <button
-                onClick={handleNextUnliked}
-                disabled={nextUnlikedIdx < 0}
-                aria-label={t("nextUnliked")}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted active:text-primary disabled:opacity-30"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
-                  <polygon points="4,5 4,19 15,12" />
-                  <rect x="16.5" y="5" width="2.5" height="14" rx="1" />
-                </svg>
-              </button>
-            </>
-          )}
-
           {/* Color tag */}
           <div className="flex h-9 w-9 items-center justify-center">
             <ColorTag
@@ -484,36 +437,6 @@ export default memo(function PlayerBox({
               <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
             </svg>
           </button>
-
-          {/* Prev/Next-unliked — only on the playing card */}
-          {isPlaying && (
-            <>
-              <button
-                onClick={handlePrevUnliked}
-                disabled={prevUnlikedIdx < 0}
-                aria-label={t("prevUnliked")}
-                title={t("prevUnliked")}
-                className="ml-2.5 flex shrink-0 items-center text-muted transition-colors hover:text-primary disabled:opacity-30 disabled:hover:text-muted"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-[17px] w-[17px]">
-                  <rect x="5" y="5" width="2.5" height="14" rx="1" />
-                  <polygon points="20,5 20,19 9,12" />
-                </svg>
-              </button>
-              <button
-                onClick={handleNextUnliked}
-                disabled={nextUnlikedIdx < 0}
-                aria-label={t("nextUnliked")}
-                title={t("nextUnliked")}
-                className="ml-2 flex shrink-0 items-center text-muted transition-colors hover:text-primary disabled:opacity-30 disabled:hover:text-muted"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-[17px] w-[17px]">
-                  <polygon points="4,5 4,19 15,12" />
-                  <rect x="16.5" y="5" width="2.5" height="14" rx="1" />
-                </svg>
-              </button>
-            </>
-          )}
 
           {/* Volume */}
           <div className="ml-2.5">

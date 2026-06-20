@@ -351,6 +351,9 @@ export default function PlaylistPage() {
             onClipSwapped={handleClipSwapped}
             onReorder={handleReorder}
           />
+          {/* Bottom spacer (~half a playing-card height) so the last clips can
+              scroll up off the bottom edge instead of sitting flush against it. */}
+          <div aria-hidden className="h-28 sm:h-32" />
         </div>
       </div>
 

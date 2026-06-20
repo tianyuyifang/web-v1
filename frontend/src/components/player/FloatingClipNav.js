@@ -1,27 +1,45 @@
 "use client";
 
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useRef, useState, useEffect } from "react";
 import usePlayerStore from "@/store/playerStore";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { findAdjacentUnliked } from "@/lib/clipNav";
 
+const POS_KEY = "floating-clipnav-pos";
+const DRAG_THRESHOLD = 5; // px of movement before a press counts as a drag (not a click)
+
 /**
- * Floating bottom-center control to jump to the previous/next *unliked* clip,
- * relative to the currently-active (last-played) clip in this playlist.
+ * Floating control to jump to the previous/next *unliked* clip, relative to the
+ * currently-active (last-played) clip in this playlist.
  *
- * Rendered once per playlist page. Hidden until a clip in this playlist has
- * been played. Reuses findAdjacentUnliked + triggerPlayFromStart so its
- * behavior matches the auto-advance.
+ * Draggable (mouse + touch); position persists in localStorage across sessions.
+ * Defaults to bottom-center. Hidden until a clip in this playlist has played.
  */
 export default function FloatingClipNav({ clips, playlistId }) {
   const { t } = useLanguage();
   const activePlayerId = usePlayerStore((s) => s.activePlayerId);
   const triggerPlayFromStart = usePlayerStore((s) => s.triggerPlayFromStart);
-  // Subscribe so disabled state updates live as likes change.
   const likedClips = usePlayerStore((s) => s.likedClips);
 
-  // activePlayerId is `${playlistId}-${clipId}`. Derive the active clip's index
-  // within this playlist; -1 / null if nothing in this playlist is active.
+  // Persisted position: {x, y} top-left in px, or null = default bottom-center.
+  const [pos, setPos] = useState(null);
+  const elRef = useRef(null);
+  const dragRef = useRef(null); // { startX, startY, originX, originY, pointerId, moved }
+  const justDraggedRef = useRef(false); // swallow the click right after a drag
+
+  // Load saved position once on mount.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(POS_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p && typeof p.x === "number" && typeof p.y === "number") setPos(p);
+      }
+    } catch {
+      // ignore malformed storage
+    }
+  }, []);
+
   const activeIndex = useMemo(() => {
     if (!activePlayerId || !Array.isArray(clips)) return -1;
     const prefix = `${playlistId}-`;
@@ -46,11 +64,99 @@ export default function FloatingClipNav({ clips, playlistId }) {
     if (nextIdx >= 0) triggerPlayFromStart(clips[nextIdx].clipId);
   }, [nextIdx, clips, triggerPlayFromStart]);
 
-  // Hidden until a clip in this playlist is active.
+  // Clamp a position so the pill stays fully on-screen.
+  const clamp = useCallback((x, y) => {
+    const el = elRef.current;
+    const w = el?.offsetWidth ?? 0;
+    const h = el?.offsetHeight ?? 0;
+    const maxX = Math.max(0, window.innerWidth - w);
+    const maxY = Math.max(0, window.innerHeight - h);
+    return { x: Math.min(Math.max(0, x), maxX), y: Math.min(Math.max(0, y), maxY) };
+  }, []);
+
+  const onPointerDown = useCallback((e) => {
+    const el = elRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      pointerId: e.pointerId,
+      moved: false,
+    };
+    // NOTE: do NOT capture the pointer here — capturing on the container
+    // retargets the following click away from the inner buttons, breaking
+    // plain clicks. Capture only once an actual drag begins (below).
+  }, []);
+
+  const onPointerMove = useCallback((e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return; // ignore tiny jitters
+    if (!d.moved) {
+      // Drag threshold crossed — now take pointer capture so the drag tracks
+      // even if the cursor leaves the pill.
+      d.moved = true;
+      elRef.current?.setPointerCapture?.(d.pointerId);
+    }
+    setPos(clamp(d.originX + dx, d.originY + dy));
+  }, [clamp]);
+
+  const onPointerUp = useCallback((e) => {
+    const d = dragRef.current;
+    if (d?.moved) elRef.current?.releasePointerCapture?.(e.pointerId);
+    dragRef.current = null;
+    if (d?.moved) {
+      // Mark that a drag just ended so the synthetic click is swallowed once,
+      // then persist the final position.
+      justDraggedRef.current = true;
+      setPos((p) => {
+        if (p) {
+          try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {}
+        }
+        return p;
+      });
+    }
+  }, []);
+
+  // Block the single click that follows a drag so it doesn't trigger prev/next.
+  const onClickCapture = useCallback((e) => {
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, []);
+
+  // Re-clamp on window resize so a saved position never ends up off-screen.
+  useEffect(() => {
+    if (!pos) return;
+    const onResize = () => setPos((p) => (p ? clamp(p.x, p.y) : p));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [pos, clamp]);
+
   if (activeIndex < 0) return null;
 
+  // Default (no saved pos): bottom-center via CSS. Custom pos: absolute coords.
+  const style = pos
+    ? { left: pos.x, top: pos.y }
+    : { left: "50%", bottom: 24, transform: "translateX(-50%)" };
+
   return (
-    <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-surface/95 px-1.5 py-1.5 shadow-lg backdrop-blur">
+    <div
+      ref={elRef}
+      style={style}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onClickCapture={onClickCapture}
+      className="fixed z-40 flex touch-none cursor-grab select-none items-center gap-1 rounded-full border border-border bg-surface/95 px-1.5 py-1.5 shadow-lg backdrop-blur active:cursor-grabbing"
+    >
       <button
         onClick={goPrev}
         disabled={prevIdx < 0}

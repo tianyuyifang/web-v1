@@ -309,6 +309,13 @@ export default {
   deleteUserTitle: "删除用户",
   deleteUserConfirm: "此操作不可撤销。确定要删除用户",
   actionFailed: "操作失败",
+  viewPlaylists: "查看歌单",
+  userPlaylistsTitle: "的歌单",
+  backToAdmin: "← 返回管理",
+  noPlaylistsForUser: "该用户没有歌单。",
+  copyToMyPlaylists: "复制",
+  copying: "复制中...",
+  copiedToast: "已复制到你的歌单",
 
   // Change username
   changeUsername: "修改用户名",

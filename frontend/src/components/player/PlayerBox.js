@@ -40,6 +40,7 @@ export default memo(function PlayerBox({
   clipIndex,
   collapsed,
   onToggleExpand,
+  isOwner = true,
 }) {
   const { t } = useLanguage();
   const [showNewClip, setShowNewClip] = useState(false);
@@ -238,7 +239,7 @@ export default memo(function PlayerBox({
             <ClipComment
               comment={comment}
               onChange={handleCommentChange}
-              editable
+              editable={isOwner}
             />
           </div>
         </div>
@@ -280,7 +281,7 @@ export default memo(function PlayerBox({
           <div className="flex h-9 w-9 items-center justify-center">
             <ColorTag
               color={colorTag}
-              editable={true}
+              editable={isOwner}
               onChange={handleColorTagChange}
             />
           </div>
@@ -330,10 +331,10 @@ export default memo(function PlayerBox({
       id={`playerbox-${clipId}`}
       className={`relative hidden overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all sm:block ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
     >
-      {/* Color tag flags — top right, always editable */}
+      {/* Color tag flags — top right, editable by owner only */}
       <ColorTag
         color={colorTag}
-        editable={true}
+        editable={isOwner}
         onChange={handleColorTagChange}
       />
 
@@ -477,11 +478,11 @@ export default memo(function PlayerBox({
           </div>
         )}
 
-        {/* Comment — editable in both modes */}
+        {/* Comment — editable by owner only */}
         <ClipComment
           comment={comment}
           onChange={handleCommentChange}
-          editable
+          editable={isOwner}
         />
       </div>
 

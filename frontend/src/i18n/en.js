@@ -309,6 +309,13 @@ export default {
   deleteUserTitle: "Delete User",
   deleteUserConfirm: "This action cannot be undone. Are you sure you want to delete user",
   actionFailed: "Action failed",
+  viewPlaylists: "View playlists",
+  userPlaylistsTitle: "playlists",
+  backToAdmin: "← Back to admin",
+  noPlaylistsForUser: "This user has no playlists.",
+  copyToMyPlaylists: "Copy",
+  copying: "Copying...",
+  copiedToast: "Copied to your playlists",
 
   // Change username
   changeUsername: "Change Username",

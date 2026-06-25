@@ -124,4 +124,45 @@ async function getBandwidthStats(days = 30) {
   };
 }
 
-module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats };
+/**
+ * Returns all playlists owned by the given user, for admin view-and-copy.
+ * Shaped like playlistService.getUserPlaylists but from the admin's perspective:
+ * the admin is never the owner, and may always copy.
+ * @param {string} userId - The owner whose playlists to list
+ * @returns {Promise<Array>}
+ */
+async function listUserPlaylists(userId) {
+  const owner = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, username: true },
+  });
+  if (!owner) throw new NotFoundError('User');
+
+  const playlists = await prisma.playlist.findMany({
+    where: { userId },
+    include: {
+      _count: { select: { playlistClips: true } },
+      user: { select: { username: true } },
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  return {
+    owner,
+    playlists: playlists.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      isPublic: p.isPublic,
+      isOwner: false,
+      isShared: false,
+      canCopy: true,
+      ownerName: p.user.username,
+      clipCount: p._count.playlistClips,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    })),
+  };
+}
+
+module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, listUserPlaylists };

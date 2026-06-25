@@ -483,6 +483,7 @@ export default function PlaylistGrid({
               clipIndex={pc.position}
               collapsed={!expandedClipIds.has(pc.clipId)}
               onToggleExpand={handleToggleExpand}
+              isOwner={playlist.isOwner}
             />
           ))}
         </div>
@@ -523,6 +524,7 @@ export default function PlaylistGrid({
               clipIndex={pc.position}
               collapsed={!expandedClipIds.has(pc.clipId)}
               onToggleExpand={handleToggleExpand}
+              isOwner={playlist.isOwner}
             />
           ))}
         </div>

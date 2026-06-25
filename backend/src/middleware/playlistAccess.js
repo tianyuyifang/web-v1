@@ -25,16 +25,19 @@ async function playlistAccess(req, res, next) {
       return next(new NotFoundError('Playlist'));
     }
 
+    const isAdmin = req.user.role === 'ADMIN';
     const isOwner = playlist.userId === userId;
     const isShared = playlist.shares.length > 0;
     let canCopy = playlist.copyPermissions.length > 0;
 
-    const canView = isOwner || isShared || canCopy || playlist.isPublic;
+    // Admins get automatic view + copy access to any playlist (for moderation /
+    // copy-to-self), but never edit access — edit stays owner-only below.
+    const canView = isOwner || isShared || canCopy || playlist.isPublic || isAdmin;
     const canEdit = isOwner;
 
     // Owners can always copy their own playlist; public playlists are always copyable;
-    // otherwise need explicit copy permission + view access.
-    canCopy = isOwner || playlist.isPublic || (canCopy && canView);
+    // admins can copy any playlist; otherwise need explicit copy permission + view access.
+    canCopy = isOwner || playlist.isPublic || isAdmin || (canCopy && canView);
 
     // Remove shares/copyPermissions from the attached playlist object
     const { shares, copyPermissions, ...cleanPlaylist } = playlist;

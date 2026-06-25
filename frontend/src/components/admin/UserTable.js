@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { adminAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 export default function UserTable({ users: initialUsers, onRefresh }) {
   const { t } = useLanguage();
+  const router = useRouter();
   const [users, setUsers] = useState(initialUsers);
   const [loading, setLoading] = useState({});
   const [error, setError] = useState("");
@@ -69,6 +71,12 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
                 {new Date(user.createdAt).toLocaleDateString()}
               </td>
               <td className="flex gap-2 py-3">
+                <button
+                  onClick={() => router.push(`/admin/users/${user.id}/playlists`)}
+                  className="rounded-md border border-border px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+                >
+                  {t("viewPlaylists")}
+                </button>
                 {user.role === "PENDING" && (
                   <button
                     onClick={() => perform(user.id, () => adminAPI.approveUser(user.id))}

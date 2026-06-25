@@ -25,7 +25,7 @@ async function getUserPlaylists(userId, query) {
   }));
 }
 
-async function getPlaylistById(playlistId, userId, clipQuery) {
+async function getPlaylistById(playlistId, userId, clipQuery, userRole) {
   // Single query for playlist metadata + shares + copy permissions.
   // Clips are also included unless a clip search query requires a separate filtered fetch.
   const playlist = await prisma.playlist.findUnique({
@@ -74,9 +74,13 @@ async function getPlaylistById(playlistId, userId, clipQuery) {
     ? await searchClipsInPlaylist(playlistId, clipQuery)
     : playlist.playlistClips;
 
+  const isAdmin = userRole === 'ADMIN';
   const isOwner = playlist.userId === userId;
   const isShared = playlist.shares.some((s) => s.userId === userId);
+  // Admins (and owners, and on public playlists) can always copy.
   const canCopy =
+    isOwner ||
+    isAdmin ||
     playlist.isPublic ||
     playlist.copyPermissions.some((cp) => cp.userId === userId);
 

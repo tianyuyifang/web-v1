@@ -53,6 +53,16 @@ router.delete('/users/:id', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/users/:id/playlists — list all playlists owned by a user (admin view-and-copy)
+router.get('/users/:id/playlists', async (req, res, next) => {
+  try {
+    const result = await adminService.listUserPlaylists(req.params.id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/admin/bandwidth?days=30 — bandwidth usage per user
 router.get('/bandwidth', async (req, res, next) => {
   try {

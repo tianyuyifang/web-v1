@@ -270,10 +270,12 @@ router.get('/diff', async (req, res, next) => {
       }),
     ]);
 
+    const isAdmin = req.user.role === 'ADMIN';
     const canView = (pl) =>
       !!pl &&
       (pl.userId === userId ||
         pl.isPublic ||
+        isAdmin ||
         pl.shares.length > 0 ||
         pl.copyPermissions.length > 0);
 
@@ -346,7 +348,8 @@ router.get('/:id', playlistAccess, requireView, async (req, res, next) => {
     const playlist = await playlistService.getPlaylistById(
       req.params.id,
       req.user.id,
-      req.query.q || ''
+      req.query.q || '',
+      req.user.role
     );
 
     // Compute ETag from the serialized body. For a ~50-clip playlist this
@@ -572,6 +575,7 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
       return res.status(404).json({ error: { message: 'Source playlist not found' } });
     }
     const canView = source.userId === req.user.id || source.isPublic
+      || req.user.role === 'ADMIN'
       || source.shares.length > 0 || source.copyPermissions.length > 0;
     if (!canView) {
       return res.status(404).json({ error: { message: 'Source playlist not found' } });
@@ -774,6 +778,7 @@ router.post('/:id/compare/internal', playlistAccess, requireView, async (req, re
       return res.status(404).json({ error: { message: 'Playlist not found' } });
     }
     const canView = target.userId === req.user.id || target.isPublic
+      || req.user.role === 'ADMIN'
       || target.shares.length > 0 || target.copyPermissions.length > 0;
     if (!canView) {
       return res.status(404).json({ error: { message: 'Playlist not found' } });

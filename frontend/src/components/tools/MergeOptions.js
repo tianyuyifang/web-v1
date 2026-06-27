@@ -37,14 +37,14 @@ export default function MergeOptions({ value, onChange, aName, bName }) {
       <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>
         {t("mergeOptionsTitle")}
       </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
         {FIELDS.map(({ key, combine }) => (
-          <label key={key} className="flex items-center justify-between gap-2 text-sm">
-            <span className="text-muted">{t(`mergeOpt_${key}`)}</span>
+          <label key={key} className="flex items-center gap-2 text-sm">
+            <span className="w-28 shrink-0 text-muted">{t(`mergeOpt_${key}`)}</span>
             <select
               value={opts[key]}
               onChange={(e) => set(key, e.target.value)}
-              className="rounded border border-border bg-surface px-2 py-1 text-sm"
+              className="min-w-0 flex-1 rounded border border-border bg-surface px-2 py-1 text-sm"
               style={{ color: "var(--text)" }}
             >
               <option value="A">{aLabel}</option>

@@ -111,5 +111,36 @@ console.log('Test: order option');
   check('no provenance leak', Object.keys(bOrder.rows[0]).sort().join(',') === 'clipId,colorTag,comment,pitch,sectionLabel,speed');
 }
 
+console.log('Test: defaults reproduce legacy behavior across all rules');
+{
+  const a = [
+    pc({ clipId: 'm1', songId: 's1', speed: 1.0, pitch: 4, colorTag: '#E8655A', comment: 'keepA', sectionLabel: 'aSec' }), // Rule 4
+    pc({ clipId: 'd1', songId: 's2', comment: 'orig' }),                                                                    // Rule 2 (diff clip)
+    pc({ clipId: 'x1', songId: 's4', comment: 'gone' }),                                                                    // Rule 5 (deleted)
+  ];
+  const b = [
+    pc({ clipId: 'm1', songId: 's1', speed: 1.2, pitch: -3, colorTag: '#4CAF50', comment: 'B', sectionLabel: 'bSec' }),     // Rule 4
+    pc({ clipId: 'd2', songId: 's2', comment: 'bDiff' }),                                                                    // Rule 2 (diff clip, same song)
+    pc({ clipId: 'n1', songId: 's3', comment: 'newB' }),                                                                     // Rule 1 (added)
+  ];
+
+  const omitted = buildMergeRows(a, b);
+  const explicit = buildMergeRows(a, b, { speed:'B', pitch:'A', comment:'A', colorTag:'combine', sectionLabel:'B', clipCut:'A', order:'B' });
+  check('omitted == explicit defaults', JSON.stringify(omitted) === JSON.stringify(explicit));
+
+  // Legacy expectations:
+  const byClip = Object.fromEntries(omitted.rows.map(r => [r.clipId, r]));
+  check('Rule4 speed=B', byClip['m1'].speed === 1.2);
+  check('Rule4 pitch=A', byClip['m1'].pitch === 4);
+  check('Rule4 comment=A', byClip['m1'].comment === 'keepA');
+  check('Rule4 colorTag=union', byClip['m1'].colorTag === '#E8655A|#4CAF50');
+  check('Rule4 sectionLabel=B', byClip['m1'].sectionLabel === 'bSec');
+  check('Rule2 keeps A clip d1 + flag', byClip['d1'].comment.includes('[B 中的片段不同]'));
+  check('Rule1 added n1', !!byClip['n1']);
+  check('Rule5 deleted x1 flagged', byClip['x1'].comment.includes('[此歌已删]'));
+  check('Rule5 at bottom', omitted.rows[omitted.rows.length - 1].clipId === 'x1');
+  check('summary', JSON.stringify(omitted.summary) === JSON.stringify({ added: 1, merged: 1, markedDifferent: 1, markedDeleted: 1 }));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { playlistsAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import PlaylistPicker from "@/components/tools/PlaylistPicker";
+import MergeOptions, { DEFAULT_MERGE_OPTIONS } from "@/components/tools/MergeOptions";
 
 function formatSummary(template, summary, name) {
   return template
@@ -25,6 +26,7 @@ export default function MergePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [isDesktop, setIsDesktop] = useState(true);
+  const [options, setOptions] = useState(DEFAULT_MERGE_OPTIONS);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -41,7 +43,7 @@ export default function MergePage() {
     setSubmitting(true);
     setError("");
     try {
-      const res = await playlistsAPI.merge(aPlaylist.id, bPlaylist.id);
+      const res = await playlistsAPI.merge(aPlaylist.id, bPlaylist.id, options);
       const { id, name, summary } = res.data;
       const message = formatSummary(t("mergeSuccessSummary"), summary, name);
       if (typeof window !== "undefined") {
@@ -84,6 +86,14 @@ export default function MergePage() {
           onChange={setBPlaylist}
           excludeId={aPlaylist?.id}
         />
+        {aPlaylist && bPlaylist && (
+          <MergeOptions
+            value={options}
+            onChange={setOptions}
+            aName={aPlaylist.name}
+            bName={bPlaylist.name}
+          />
+        )}
         <div>
           <button
             type="button"

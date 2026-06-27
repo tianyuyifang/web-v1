@@ -253,7 +253,7 @@ function buildMergeRows(aClips, bClips, options) {
  * Returns: { id, name, summary }.
  * Throws: ForbiddenError (caller does not own A), NotFoundError (B not viewable).
  */
-async function mergePlaylists(callerId, aId, bId) {
+async function mergePlaylists(callerId, aId, bId, options) {
   const [aPl, bPl] = await Promise.all([
     prisma.playlist.findUnique({ where: { id: aId } }),
     prisma.playlist.findUnique({
@@ -287,7 +287,7 @@ async function mergePlaylists(callerId, aId, bId) {
     }),
   ]);
 
-  const { rows, summary } = buildMergeRows(aClips, bClips);
+  const { rows, summary } = buildMergeRows(aClips, bClips, options);
 
   const newName = `更新版 ${aPl.name}`;
   const newPlaylist = await prisma.playlist.create({

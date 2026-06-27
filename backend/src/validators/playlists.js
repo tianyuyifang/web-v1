@@ -33,9 +33,23 @@ const shareSchema = z.object({
   userId: z.string().uuid(),
 });
 
+const AB = z.enum(['A', 'B']);
+const ABC = z.enum(['A', 'B', 'combine']);
+
+const mergeOptionsSchema = z.object({
+  speed: AB.optional(),
+  pitch: AB.optional(),
+  comment: ABC.optional(),
+  colorTag: ABC.optional(),
+  sectionLabel: AB.optional(),
+  clipCut: AB.optional(),
+  order: AB.optional(),
+}).optional();
+
 const mergePlaylistSchema = z.object({
   aId: z.string().uuid(),
   bId: z.string().uuid(),
+  options: mergeOptionsSchema,
 }).refine((d) => d.aId !== d.bId, {
   message: 'aId and bId must differ',
 });
@@ -48,4 +62,5 @@ module.exports = {
   updateClipCustomizationSchema,
   shareSchema,
   mergePlaylistSchema,
+  mergeOptionsSchema,
 };

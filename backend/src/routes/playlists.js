@@ -332,8 +332,8 @@ router.get('/diff', async (req, res, next) => {
 // POST /api/playlists/merge — create a new playlist by merging B into A
 router.post('/merge', validate(mergePlaylistSchema), async (req, res, next) => {
   try {
-    const { aId, bId } = req.validated;
-    const result = await mergeService.mergePlaylists(req.user.id, aId, bId);
+    const { aId, bId, options } = req.validated;
+    const result = await mergeService.mergePlaylists(req.user.id, aId, bId, options);
     res.status(201).json(result);
   } catch (err) {
     next(err);

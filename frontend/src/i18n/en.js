@@ -432,4 +432,13 @@ export default {
   mergeConfirmTitle: "Confirm merge",
   mergeConfirmBody: "Will create a new playlist named \"{name}\". Continue?",
   mergeSuccessSummary: "Created \"{name}\": {added} added · {merged} merged · {markedDifferent} marked different · {markedDeleted} marked deleted",
+  mergeOptionsTitle: "Merge options",
+  mergeOpt_speed: "Speed",
+  mergeOpt_pitch: "Pitch",
+  mergeOpt_comment: "Comment",
+  mergeOpt_colorTag: "Color tag",
+  mergeOpt_sectionLabel: "Section label",
+  mergeOpt_clipCut: "Clip (when song differs)",
+  mergeOpt_order: "Clip order",
+  mergeOpt_combine: "Combine",
 };

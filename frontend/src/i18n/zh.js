@@ -432,4 +432,13 @@ export default {
   mergeConfirmTitle: "确认合并",
   mergeConfirmBody: "将创建新列表「{name}」，确认合并？",
   mergeSuccessSummary: "已创建「{name}」：{added} 新增 · {merged} 合并 · {markedDifferent} 标记不同 · {markedDeleted} 标记删除",
+  mergeOptionsTitle: "合并选项",
+  mergeOpt_speed: "速度",
+  mergeOpt_pitch: "音调",
+  mergeOpt_comment: "备注",
+  mergeOpt_colorTag: "颜色标签",
+  mergeOpt_sectionLabel: "分段标签",
+  mergeOpt_clipCut: "片段（同歌不同片段时）",
+  mergeOpt_order: "片段顺序",
+  mergeOpt_combine: "合并两者",
 };

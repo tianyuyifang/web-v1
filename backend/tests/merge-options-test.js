@@ -82,5 +82,34 @@ console.log('Test: Rule 2 clipCut');
   check('clipCut=B not counted as deleted', summary.markedDeleted === 0);
 }
 
+console.log('Test: order option');
+{
+  // A: [s1(cA1), s2(cA2)] ; B: [s2(cB2 same clip as cA2), s3(cB3 new)]
+  const a = [
+    pc({ clipId: 'cA1', songId: 's1' }),
+    pc({ clipId: 'cA2', songId: 's2' }),
+  ];
+  const b = [
+    pc({ clipId: 'cA2', songId: 's2' }),  // Rule 4 match
+    pc({ clipId: 'cB3', songId: 's3' }),  // Rule 1 added
+  ];
+
+  const bOrder = buildMergeRows(a, b, { order: 'B' });
+  // B-order: matched/added in B's order [s2, s3], then A-only [s1] at bottom
+  check('B-order seq', bOrder.rows.map(r => r.clipId).join(',') === 'cA2,cB3,cA1');
+
+  const aOrder = buildMergeRows(a, b, { order: 'A' });
+  // A-order: A's order [s1, s2], then new-in-B [s3] at bottom
+  check('A-order seq', aOrder.rows.map(r => r.clipId).join(',') === 'cA1,cA2,cB3');
+
+  // summary identical regardless of order
+  check('summary added equal', bOrder.summary.added === aOrder.summary.added);
+  check('summary merged equal', bOrder.summary.merged === aOrder.summary.merged);
+  check('summary markedDeleted equal', bOrder.summary.markedDeleted === aOrder.summary.markedDeleted);
+
+  // returned rows must not leak provenance markers
+  check('no provenance leak', Object.keys(bOrder.rows[0]).sort().join(',') === 'clipId,colorTag,comment,pitch,sectionLabel,speed');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

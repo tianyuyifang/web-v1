@@ -104,7 +104,8 @@ function buildMergeRows(aClips, bClips, options) {
   const rows = [];
   let added = 0, merged = 0, markedDifferent = 0, markedDeleted = 0;
 
-  for (const bPc of bClips) {
+  for (let bi = 0; bi < bClips.length; bi++) {
+    const bPc = bClips[bi];
     const sid = bPc.clip.songId;
     const aMatches = aBySongId.get(sid) || [];
     const aByExactClip = aByClipId.get(bPc.clipId);
@@ -118,6 +119,8 @@ function buildMergeRows(aClips, bClips, options) {
         colorTag: bPc.colorTag,
         comment: bPc.comment,
         sectionLabel: bPc.sectionLabel,
+        __src: 'B',
+        __bPos: bi,
       });
       added++;
       continue;
@@ -132,6 +135,8 @@ function buildMergeRows(aClips, bClips, options) {
         colorTag: pick(opts.colorTag, aByExactClip.colorTag, bPc.colorTag, unionColorTags),
         comment: pick(opts.comment, aByExactClip.comment, bPc.comment, combineComment),
         sectionLabel: pick(opts.sectionLabel, aByExactClip.sectionLabel, bPc.sectionLabel),
+        __src: 'A',
+        __aClipId: aByExactClip.clipId,
       });
       consumedA.add(aByExactClip.clipId);
       merged++;
@@ -168,6 +173,8 @@ function buildMergeRows(aClips, bClips, options) {
         colorTag: pick(opts.colorTag, aPick.colorTag, bPc.colorTag, unionColorTags),
         comment: appendAnnotation(resolvedComment, ANNOTATION_CLIP_FROM_B),
         sectionLabel: pick(opts.sectionLabel, aPick.sectionLabel, bPc.sectionLabel),
+        __src: 'A',
+        __aClipId: aPick.clipId,
       });
       consumedA.add(aPick.clipId);
       markedDifferent++;
@@ -183,6 +190,8 @@ function buildMergeRows(aClips, bClips, options) {
       colorTag: aPick.colorTag,
       comment: newComment,
       sectionLabel: aPick.sectionLabel,
+      __src: 'A',
+      __aClipId: aPick.clipId,
     });
     consumedA.add(aPick.clipId);
     rule2FirstIndexBySong.set(sid, rows.length - 1);
@@ -199,12 +208,40 @@ function buildMergeRows(aClips, bClips, options) {
       colorTag: aPc.colorTag,
       comment: appendAnnotation(aPc.comment, ANNOTATION_DELETED),
       sectionLabel: aPc.sectionLabel,
+      __src: 'A',
+      __aClipId: aPc.clipId,
     });
     markedDeleted++;
   }
 
+  const stripProvenance = (r) => {
+    const { __src, __bPos, __aClipId, ...clean } = r;
+    return clean;
+  };
+
+  let ordered;
+  if (opts.order === 'A') {
+    // A's order first (every row whose __aClipId matches an A clip, in A's sequence),
+    // then rows sourced purely from B (added), in B's order.
+    const byAClipId = new Map();
+    for (const r of rows) {
+      if (r.__src === 'A' && r.__aClipId != null) byAClipId.set(r.__aClipId, r);
+    }
+    const aSeq = [];
+    for (const aPc of aClips) {
+      const r = byAClipId.get(aPc.clipId);
+      if (r) aSeq.push(r);
+    }
+    const bAdded = rows
+      .filter((r) => r.__src === 'B')
+      .sort((x, y) => x.__bPos - y.__bPos);
+    ordered = [...aSeq, ...bAdded];
+  } else {
+    ordered = rows; // B-walk order already correct (Rule 5 appended last)
+  }
+
   return {
-    rows,
+    rows: ordered.map(stripProvenance),
     summary: { added, merged, markedDifferent, markedDeleted },
   };
 }

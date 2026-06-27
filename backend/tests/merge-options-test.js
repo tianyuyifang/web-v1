@@ -60,5 +60,27 @@ console.log('Test: Rule 4 (same clip.id) honors options');
   check('opt comment=combine', r3.comment === 'A-note\nB-note');
 }
 
+console.log('Test: Rule 2 clipCut');
+{
+  // same song s1, different clip ids: A has cA, B has cB
+  const a = [pc({ clipId: 'cA', songId: 's1', speed: 1.0, pitch: 2, colorTag: '#E8655A', comment: 'A-note', sectionLabel: 'A-sec' })];
+  const b = [pc({ clipId: 'cB', songId: 's1', speed: 1.3, pitch: -1, colorTag: '#4CAF50', comment: 'B-note', sectionLabel: 'B-sec' })];
+
+  // clipCut="A" (default): keep A's clip, flag [B 中的片段不同]
+  const da = buildMergeRows(a, b).rows;
+  check('clipCut=A keeps A clip', da[0].clipId === 'cA');
+  check('clipCut=A flagged', da[0].comment.includes('[B 中的片段不同]'));
+  check('clipCut=A markedDifferent', buildMergeRows(a, b).summary.markedDifferent === 1);
+
+  // clipCut="B": emit B's clip, options-resolved fields, append [已采用 B 的片段]
+  const { rows, summary } = buildMergeRows(a, b, { clipCut: 'B', comment: 'A', speed: 'B', pitch: 'A' });
+  check('clipCut=B uses B clipId', rows[0].clipId === 'cB');
+  check('clipCut=B speed=B', rows[0].speed === 1.3);
+  check('clipCut=B pitch=A', rows[0].pitch === 2);
+  check('clipCut=B comment resolved+annotated', rows[0].comment === 'A-note\n[已采用 B 的片段]');
+  check('clipCut=B no leftover A row', rows.length === 1);
+  check('clipCut=B not counted as deleted', summary.markedDeleted === 0);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

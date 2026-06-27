@@ -150,14 +150,31 @@ function buildMergeRows(aClips, bClips, options) {
       continue;
     }
 
-    // First encounter for this songId in B with different clip.id. Find the first
-    // unconsumed A clip of this song and emit a Rule-2 row.
+    // First encounter for this songId in B with different clip.id.
     const aPick = aMatches.find((aPc) => !consumedA.has(aPc.clipId));
     if (!aPick) {
-      // All A clips of this song are already consumed (rare: A had multiple clips of same song,
-      // all matched by clip.id in earlier B iterations). Skip — nothing to emit.
+      // All A clips of this song already consumed. Skip.
       continue;
     }
+
+    if (opts.clipCut === 'B') {
+      // Adopt B's clip cut; resolve fields via options against the matched A clip,
+      // then annotate that the cut was swapped to B's.
+      const resolvedComment = pick(opts.comment, aPick.comment, bPc.comment, combineComment);
+      rows.push({
+        clipId: bPc.clipId,
+        speed: pick(opts.speed, aPick.speed, bPc.speed),
+        pitch: pick(opts.pitch, aPick.pitch, bPc.pitch),
+        colorTag: pick(opts.colorTag, aPick.colorTag, bPc.colorTag, unionColorTags),
+        comment: appendAnnotation(resolvedComment, ANNOTATION_CLIP_FROM_B),
+        sectionLabel: pick(opts.sectionLabel, aPick.sectionLabel, bPc.sectionLabel),
+      });
+      consumedA.add(aPick.clipId);
+      markedDifferent++;
+      continue;
+    }
+
+    // clipCut === 'A' (default): keep A's clip, flag it.
     const newComment = appendAnnotation(aPick.comment, ANNOTATION_DIFFERENT_CLIP);
     rows.push({
       clipId: aPick.clipId,

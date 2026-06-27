@@ -5,6 +5,36 @@ const { toPinyin, toPinyinInitials, toPinyinAll } = require('../utils/pinyin');
 const ANNOTATION_DIFFERENT_CLIP = '[B 中的片段不同]';
 const ANNOTATION_MULTIPLE_DIFFERENT_CLIPS = '[B 中存在多个不同片段]';
 const ANNOTATION_DELETED = '[此歌已删]';
+const ANNOTATION_CLIP_FROM_B = '[已采用 B 的片段]';
+
+const DEFAULT_MERGE_OPTIONS = Object.freeze({
+  speed: 'B',
+  pitch: 'A',
+  comment: 'A',
+  colorTag: 'combine',
+  sectionLabel: 'B',
+  clipCut: 'A',
+  order: 'B',
+});
+
+function normalizeOptions(options) {
+  return { ...DEFAULT_MERGE_OPTIONS, ...(options || {}) };
+}
+
+function pick(opt, aVal, bVal, combiner) {
+  if (opt === 'A') return aVal;
+  if (opt === 'B') return bVal;
+  return combiner ? combiner(aVal, bVal) : bVal;
+}
+
+function combineComment(a, b) {
+  const lines = [];
+  for (const v of [a, b]) {
+    if (v === null || v === undefined || v === '') continue;
+    if (!lines.includes(v)) lines.push(v);
+  }
+  return lines.length > 0 ? lines.join('\n') : null;
+}
 
 /**
  * Append an annotation line to an existing comment.
@@ -48,7 +78,8 @@ function unionColorTags(a, b) {
  *     ready to be written as playlistClip rows in order.
  *   summary is { added, merged, markedDifferent, markedDeleted } for the API response.
  */
-function buildMergeRows(aClips, bClips) {
+function buildMergeRows(aClips, bClips, options) {
+  const opts = normalizeOptions(options);
   // Index A by songId -> ordered list of A clips for that song
   const aBySongId = new Map();
   for (const pc of aClips) {
@@ -96,11 +127,11 @@ function buildMergeRows(aClips, bClips) {
     if (aByExactClip && !consumedA.has(aByExactClip.clipId)) {
       rows.push({
         clipId: aByExactClip.clipId,
-        speed: bPc.speed,                                                // B's speed
-        pitch: aByExactClip.pitch,                                       // A's pitch (untouched)
-        colorTag: unionColorTags(aByExactClip.colorTag, bPc.colorTag),   // union
-        comment: aByExactClip.comment,                                   // A's comment unchanged
-        sectionLabel: bPc.sectionLabel,                                  // B's section label
+        speed: pick(opts.speed, aByExactClip.speed, bPc.speed),
+        pitch: pick(opts.pitch, aByExactClip.pitch, bPc.pitch),
+        colorTag: pick(opts.colorTag, aByExactClip.colorTag, bPc.colorTag, unionColorTags),
+        comment: pick(opts.comment, aByExactClip.comment, bPc.comment, combineComment),
+        sectionLabel: pick(opts.sectionLabel, aByExactClip.sectionLabel, bPc.sectionLabel),
       });
       consumedA.add(aByExactClip.clipId);
       merged++;
@@ -231,4 +262,7 @@ async function mergePlaylists(callerId, aId, bId) {
   return { id: newPlaylist.id, name: newPlaylist.name, summary };
 }
 
-module.exports = { mergePlaylists, buildMergeRows, unionColorTags, appendAnnotation };
+module.exports = {
+  mergePlaylists, buildMergeRows, unionColorTags, appendAnnotation,
+  DEFAULT_MERGE_OPTIONS, normalizeOptions, pick, combineComment,
+};

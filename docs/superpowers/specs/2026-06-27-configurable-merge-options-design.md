@@ -42,7 +42,8 @@ mergeOptions = {
 - **colorTag** — A-only, B-only, or `combine` (existing `unionColorTags`).
 - **clipCut** — Rule 2 only (same song, different `clip.id`):
   - `"A"` → keep A's clip, append `[B 中的片段不同]` (today's behavior).
-  - `"B"` → use B's clip row instead, **no flag** (user resolved deliberately).
+  - `"B"` → use B's clip row instead; append `[已采用 B 的片段]` after the
+    resolved comment (audit trail that the cut was swapped to B's).
 - **order** — emission sequence of the result (see Ordering).
 
 Validated by Zod; each field optional and enum-constrained; missing/unknown → default.
@@ -70,8 +71,9 @@ Rule-by-rule:
   - `"A"` → keep A's clip row, append `[B 中的片段不同]`; further B clips of the
     same song append `[B 中存在多个不同片段]` (once). Today's behavior.
   - `"B"` → emit a row using **B's clipId**, with speed/pitch/comment/colorTag/
-    sectionLabel resolved via options against the matched A clip; **no flag**.
-    The matched A clip is marked consumed so Rule 5 won't re-emit it.
+    sectionLabel resolved via options against the matched A clip; then append
+    `[已采用 B 的片段]` on a new line after the resolved comment. The matched A
+    clip is marked consumed so Rule 5 won't re-emit it.
 - **Rule 5 (Deleted — A clip never matched):** unchanged. Keeps A's fields,
   appends `[此歌已删]`.
 
@@ -112,7 +114,7 @@ viewable), naming (`更新版 {A}`), and new-playlist creation are untouched.
 `buildMergeRows` is pure — unit tests in the existing `backend/tests/` style:
 - **Defaults reproduce today's output** (no options, and explicit defaults) — regression guard.
 - **Each field option flips correctly** on a Rule-4 clip; comment & colorTag across A/B/combine.
-- **clipCut on Rule 2:** `"A"` keeps A + flag; `"B"` emits B's clipId, no flag, A consumed (not re-emitted by Rule 5).
+- **clipCut on Rule 2:** `"A"` keeps A + `[B 中的片段不同]`; `"B"` emits B's clipId, resolved comment + `[已采用 B 的片段]` appended, A consumed (not re-emitted by Rule 5).
 - **order A vs B:** same fixture, different emission sequence, identical summary counters.
 - **combineComment:** empties skipped, dups not doubled, A-then-B order.
 

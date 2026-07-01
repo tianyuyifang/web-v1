@@ -18,7 +18,7 @@ log would be unreadable. The log must stay organized and scannable.
 1. Store **atomic events** in a new `playlist_activity` table (one row per action),
    with denormalized snapshot labels so reads need no joins and survive deletion.
 2. **Group at read time** into *sessions*: consecutive events by the same user on the
-   same playlist within a 30-minute idle gap collapse into one expandable entry.
+   same playlist within a 60-minute idle gap collapse into one expandable entry.
 3. Render sessions as collapsible rows in a new admin page section.
 4. Prune events older than 90 days via a script.
 
@@ -152,8 +152,8 @@ Input: events ordered by createdAt DESC (fetch a page + a small look-ahead buffe
 Group key: (userId, playlistId)
 Rule: two events belong to the same session iff
       - same userId AND same playlistId, AND
-      - gap between adjacent events (by time) <= 30 minutes
-A gap > 30 min, or a change in user/playlist, starts a new session.
+      - gap between adjacent events (by time) <= 60 minutes
+A gap > 60 min, or a change in user/playlist, starts a new session.
 ```
 
 Because events are streamed newest-first, the backend walks the ordered list and
@@ -229,7 +229,7 @@ Scheduling is out of scope for this change; the script existing is sufficient.
   drag up, single drag down, no-op, multiple independent moves. `colorName(hex)` mapping
   incl. multi-tag and unknown-hex fallback. `truncate`.
 - **Session grouping** — given a synthetic ordered event list, assert correct session
-  boundaries (gap > 30 min splits; user change splits; playlist change splits).
+  boundaries (gap > 60 min splits; user change splits; playlist change splits).
 - **Integration** — perform each mutation via the service layer and assert exactly the
   expected `playlist_activity` rows appear (and that likes produce none).
 - **Manual** — exercise the admin panel: create/edit/reorder a playlist, confirm one

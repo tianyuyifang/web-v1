@@ -11,6 +11,7 @@ export default {
   navGuide: "Guide",
   navAdmin: "Admin",
   navSettings: "Settings",
+  navAccount: "Account",
   navLogout: "Logout",
 
   // Login
@@ -441,4 +442,30 @@ export default {
   mergeOpt_clipCut: "Clip (when song differs)",
   mergeOpt_order: "Clip order",
   mergeOpt_combine: "Combine",
+
+  // Account / billing
+  accountTitle: "My Account",
+  accountStatus: "Status",
+  statusActive: "Active",
+  statusExpired: "Expired",
+  expiresLabel: "Expires",
+  daysLeft: "{n} days left",
+  expiredAgo: "expired {n} days ago",
+  monthlyFeeLabel: "Monthly fee",
+  perMonth: "/ month",
+  renewalNotice: "Your subscription has expired. Please contact the admin to renew.",
+  noExpiry: "No expiration set",
+  billingSectionTitle: "Billing",
+  feeColumn: "Fee",
+  expiresColumn: "Expires",
+  paymentStatusColumn: "Payment",
+  notesColumn: "Notes",
+  extendOneMonth: "+1 Month",
+  save: "Save",
+  saved: "Saved",
+  payPaid: "Paid",
+  payUnpaid: "Unpaid",
+  payOverdue: "Overdue",
+  logout: "Log out",
+  expiredBanner: "Your subscription has expired. Please renew.",
 };

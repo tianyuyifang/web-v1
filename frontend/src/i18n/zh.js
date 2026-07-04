@@ -11,6 +11,7 @@ export default {
   navGuide: "使用指南",
   navAdmin: "管理",
   navSettings: "设置",
+  navAccount: "账户",
   navLogout: "退出登录",
 
   // Login
@@ -441,4 +442,30 @@ export default {
   mergeOpt_clipCut: "片段（同歌不同片段时）",
   mergeOpt_order: "片段顺序",
   mergeOpt_combine: "合并两者",
+
+  // 账户 / 计费
+  accountTitle: "我的账户",
+  accountStatus: "状态",
+  statusActive: "有效",
+  statusExpired: "已过期",
+  expiresLabel: "到期时间",
+  daysLeft: "剩余 {n} 天",
+  expiredAgo: "已过期 {n} 天",
+  monthlyFeeLabel: "月费",
+  perMonth: "/ 月",
+  renewalNotice: "您的订阅已过期，请联系管理员续费。",
+  noExpiry: "未设置到期时间",
+  billingSectionTitle: "计费",
+  feeColumn: "费用",
+  expiresColumn: "到期",
+  paymentStatusColumn: "付款",
+  notesColumn: "备注",
+  extendOneMonth: "+1 个月",
+  save: "保存",
+  saved: "已保存",
+  payPaid: "已付",
+  payUnpaid: "未付",
+  payOverdue: "逾期",
+  logout: "退出登录",
+  expiredBanner: "您的订阅已过期，请续费。",
 };

@@ -1,5 +1,6 @@
 const prisma = require('../db/client');
 const { NotFoundError, ForbiddenError } = require('../utils/errors');
+const { addOneMonth } = require('../utils/billing');
 
 /**
  * Returns all users ordered by creation date descending.
@@ -7,7 +8,10 @@ const { NotFoundError, ForbiddenError } = require('../utils/errors');
  */
 async function listUsers() {
   return prisma.user.findMany({
-    select: { id: true, username: true, role: true, createdAt: true },
+    select: {
+      id: true, username: true, role: true, createdAt: true,
+      expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
+    },
     orderBy: { createdAt: 'desc' },
   });
 }
@@ -165,4 +169,43 @@ async function listUserPlaylists(userId) {
   };
 }
 
-module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, listUserPlaylists };
+const BILLING_SELECT = {
+  id: true, username: true, role: true,
+  expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
+};
+
+/**
+ * Update any subset of a user's billing fields.
+ * @param {string} id
+ * @param {{ expiresAt?: Date|null, monthlyFee?: string|number|null, paymentStatus?: string|null, billingNotes?: string|null }} data
+ */
+async function updateBilling(id, data) {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new NotFoundError('User');
+
+  const patch = {};
+  if ('expiresAt' in data) patch.expiresAt = data.expiresAt;
+  if ('monthlyFee' in data) patch.monthlyFee = data.monthlyFee;
+  if ('paymentStatus' in data) patch.paymentStatus = data.paymentStatus;
+  if ('billingNotes' in data) patch.billingNotes = data.billingNotes;
+
+  return prisma.user.update({ where: { id }, data: patch, select: BILLING_SELECT });
+}
+
+/**
+ * Extend a user's subscription by one calendar month.
+ * Base = now if expiresAt is null or in the past, else current expiresAt.
+ * @param {string} id
+ */
+async function extendOneMonth(id) {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new NotFoundError('User');
+
+  const now = new Date();
+  const base = user.expiresAt && user.expiresAt.getTime() > now.getTime() ? user.expiresAt : now;
+  const expiresAt = addOneMonth(base);
+
+  return prisma.user.update({ where: { id }, data: { expiresAt }, select: BILLING_SELECT });
+}
+
+module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, listUserPlaylists, updateBilling, extendOneMonth };

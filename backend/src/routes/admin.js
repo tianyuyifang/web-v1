@@ -1,5 +1,7 @@
 const router = require('express').Router();
 const adminService = require('../services/adminService');
+const validate = require('../middleware/validate');
+const { updateBillingSchema } = require('../validators/billing');
 
 // All routes here already have authMiddleware + requireRole('ADMIN') applied in server.js
 
@@ -69,6 +71,26 @@ router.get('/bandwidth', async (req, res, next) => {
     const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 365);
     const stats = await adminService.getBandwidthStats(days);
     res.json(stats);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/users/:id/billing — update billing fields
+router.patch('/users/:id/billing', validate(updateBillingSchema), async (req, res, next) => {
+  try {
+    const user = await adminService.updateBilling(req.params.id, req.validated);
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/users/:id/extend — extend subscription by one month
+router.post('/users/:id/extend', async (req, res, next) => {
+  try {
+    const user = await adminService.extendOneMonth(req.params.id);
+    res.json({ user });
   } catch (err) {
     next(err);
   }

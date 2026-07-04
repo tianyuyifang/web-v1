@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const config = require('../config');
 const prisma = require('../db/client');
 const { UnauthorizedError, ValidationError } = require('../utils/errors');
+const { deriveStatus } = require('../utils/billing');
 
 const SALT_ROUNDS = 10;
 
@@ -95,9 +96,21 @@ async function changePassword(userId, { currentPassword, newPassword }) {
 async function getMe(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, username: true, role: true, preferences: true },
+    select: {
+      id: true, username: true, role: true, preferences: true,
+      expiresAt: true, monthlyFee: true,
+    },
   });
-  return user;
+  if (!user) return null;
+  return {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    preferences: user.preferences,
+    expiresAt: user.expiresAt,
+    monthlyFee: user.monthlyFee == null ? null : Number(user.monthlyFee),
+    status: deriveStatus(user.expiresAt),
+  };
 }
 
 async function updatePreferences(userId, preferences) {

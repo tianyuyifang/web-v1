@@ -461,7 +461,6 @@ export default {
   paymentStatusColumn: "Payment",
   notesColumn: "Notes",
   extendOneMonth: "+1 Month",
-  save: "Save",
   saved: "Saved",
   payPaid: "Paid",
   payUnpaid: "Unpaid",

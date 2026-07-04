@@ -461,7 +461,6 @@ export default {
   paymentStatusColumn: "付款",
   notesColumn: "备注",
   extendOneMonth: "+1 个月",
-  save: "保存",
   saved: "已保存",
   payPaid: "已付",
   payUnpaid: "未付",

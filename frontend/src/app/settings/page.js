@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTheme } from "@/components/layout/ThemeProvider";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { authAPI } from "@/lib/api";
 import { clearToken } from "@/lib/auth";
+import useAuth from "@/hooks/useAuth";
 
 const THEME_OPTIONS = [
   { value: "dark", labelKey: "themeDark", descKey: "themeDarkDesc" },
@@ -19,6 +21,13 @@ const LANG_OPTIONS = [
 export default function SettingsPage() {
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const { lang, setLang, t } = useLanguage();
+  const { logout } = useAuth();
+  const router = useRouter();
+
+  function handleLogout() {
+    logout();
+    router.push("/login");
+  }
 
   const [unForm, setUnForm] = useState({ newUsername: "", currentPassword: "" });
   const [unError, setUnError] = useState("");
@@ -244,6 +253,16 @@ export default function SettingsPage() {
               {pwLoading ? t("changingPassword") : t("changePassword")}
             </button>
           </form>
+        </div>
+
+        {/* Logout */}
+        <div className="rounded-xl border border-border bg-surface p-6">
+          <button
+            onClick={handleLogout}
+            className="w-full rounded-lg border border-red-500/30 px-4 py-2.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
+          >
+            {t("logout")}
+          </button>
         </div>
       </div>
     </div>

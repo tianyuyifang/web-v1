@@ -2,17 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import useAuth from "@/hooks/useAuth";
 import useAuthStore from "@/store/authStore";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
 
 export default function Navbar() {
-  const { user, isAuthenticated, isAdmin, logout } = useAuth();
+  const { user, isAuthenticated, isAdmin } = useAuth();
   const { theme } = useTheme();
   const init = useAuthStore((s) => s.init);
-  const router = useRouter();
   const pathname = usePathname();
   const { t } = useLanguage();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -25,11 +24,6 @@ export default function Navbar() {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
-
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
-  };
 
   const navLink = (href, label) => {
     const isActive = pathname?.startsWith(href);
@@ -77,12 +71,6 @@ export default function Navbar() {
               {isAdmin && navLink("/admin", t("navAdmin"))}
               {navLink("/account", t("navAccount"))}
               {navLink("/settings", t("navSettings"))}
-              <button
-                onClick={handleLogout}
-                className="ml-2 rounded-md px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
-              >
-                {t("navLogout")}
-              </button>
             </div>
 
             {/* Mobile hamburger */}
@@ -110,12 +98,6 @@ export default function Navbar() {
             {isAdmin && navLink("/admin", t("navAdmin"))}
             {navLink("/account", t("navAccount"))}
             {navLink("/settings", t("navSettings"))}
-            <button
-              onClick={handleLogout}
-              className="rounded-md px-3 py-1.5 text-left text-sm font-medium text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
-            >
-              {t("navLogout")}
-            </button>
           </div>
         </div>
       )}

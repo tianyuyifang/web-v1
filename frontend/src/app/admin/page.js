@@ -16,6 +16,7 @@ export default function AdminPage() {
   const [feedback, setFeedback] = useState([]);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("pending");
 
   const fetchUsers = useCallback(async () => {
     setFetching(true);
@@ -64,9 +65,17 @@ export default function AdminPage() {
   const members = users.filter((u) => u.role === "MEMBER");
   const admins = users.filter((u) => u.role === "ADMIN");
 
+  const tabs = [
+    { key: "pending", label: t("pendingApproval"), dot: "bg-yellow-400", count: pending.length },
+    { key: "members", label: t("members"), dot: "bg-green-400", count: members.length },
+    { key: "admins", label: t("admins"), dot: "bg-purple-400", count: admins.length },
+    { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.length },
+    { key: "bandwidth", label: t("bandwidthTitle"), dot: "bg-cyan-400", count: null },
+  ];
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold" style={{ color: "var(--text)" }}>{t("userManagement")}</h1>
         <p className="mt-1 text-sm text-muted">{users.length} {t("totalUsers")}</p>
       </div>
@@ -77,7 +86,35 @@ export default function AdminPage() {
         </div>
       )}
 
-      <div className="space-y-8">
+      {/* Section cards — click to switch which section is shown below */}
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              aria-pressed={isActive}
+              className={`flex flex-col items-start gap-2 rounded-xl border p-4 text-left transition-colors ${
+                isActive
+                  ? "border-primary bg-primary/10"
+                  : "border-border bg-surface hover:bg-surface-hover"
+              }`}
+            >
+              <span className={`inline-block h-2 w-2 rounded-full ${tab.dot}`} />
+              <span className={`text-sm font-semibold ${isActive ? "text-primary" : "text-theme"}`}>
+                {tab.label}
+              </span>
+              {tab.count !== null && (
+                <span className="text-xs text-muted">{tab.count}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Active section */}
+      {activeTab === "pending" && (
         <section className="rounded-xl border border-border bg-surface p-5">
           <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
             <span className="inline-block h-2 w-2 rounded-full bg-yellow-400" />
@@ -86,7 +123,9 @@ export default function AdminPage() {
           </h2>
           <UserTable users={pending} onRefresh={fetchUsers} />
         </section>
+      )}
 
+      {activeTab === "members" && (
         <section className="rounded-xl border border-border bg-surface p-5">
           <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
             <span className="inline-block h-2 w-2 rounded-full bg-green-400" />
@@ -95,7 +134,9 @@ export default function AdminPage() {
           </h2>
           <UserTable users={members} onRefresh={fetchUsers} />
         </section>
+      )}
 
+      {activeTab === "admins" && (
         <section className="rounded-xl border border-border bg-surface p-5">
           <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
             <span className="inline-block h-2 w-2 rounded-full bg-purple-400" />
@@ -104,8 +145,9 @@ export default function AdminPage() {
           </h2>
           <UserTable users={admins} onRefresh={fetchUsers} />
         </section>
+      )}
 
-        {/* Feedback section */}
+      {activeTab === "feedback" && (
         <section className="rounded-xl border border-border bg-surface p-5">
           <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
             <span className="inline-block h-2 w-2 rounded-full bg-blue-400" />
@@ -150,8 +192,9 @@ export default function AdminPage() {
             </div>
           )}
         </section>
-        <BandwidthPanel />
-      </div>
+      )}
+
+      {activeTab === "bandwidth" && <BandwidthPanel />}
     </div>
   );
 }

@@ -41,16 +41,30 @@ No email field — users are identified by username only. New accounts start as 
 
 ```sql
 CREATE TYPE role AS ENUM ('PENDING', 'MEMBER', 'ADMIN');
+CREATE TYPE "PaymentStatus" AS ENUM ('PAID', 'UNPAID', 'OVERDUE');
 
 CREATE TABLE users (
   id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   username      TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   role          role NOT NULL DEFAULT 'PENDING',
+
+  -- Monthly subscription billing (all nullable; added 2026-07-04, migration 20260704000000_add_user_billing)
+  expires_at     TIMESTAMPTZ,                  -- Subscription expiration; NULL = no expiry set (e.g. admins)
+  monthly_fee    DECIMAL(10,2),                -- Monthly fee amount, decimals allowed (e.g. 29.90)
+  payment_status "PaymentStatus",              -- Admin-set marker, independent of expires_at
+  billing_notes  TEXT,                         -- Freeform admin note; ADMIN-PRIVATE (never returned by GET /auth/me)
+
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
+
+**Billing / subscription fields:**
+
+- **Soft enforcement** — an expired subscription (`expires_at` in the past) shows a warning banner and an "Expired" status, but never blocks access. Derived status is computed on read (`backend/src/utils/billing.js` → `deriveStatus`): `active` when `expires_at` is NULL or in the future, `expired` when in the past.
+- **Privacy** — `GET /auth/me` returns a user's own `expires_at`, `monthly_fee`, and derived `status`, but **not** `billing_notes` or `payment_status` (admin-only). Admins see all four via `listUsers`.
+- **Managed by admins** via `PATCH /admin/users/:id/billing` (partial update) and `POST /admin/users/:id/extend` (+1 calendar month, server-computed with end-of-month clamping).
 
 ### songs
 
@@ -720,11 +734,24 @@ enum Role {
   ADMIN
 }
 
+enum PaymentStatus {
+  PAID
+  UNPAID
+  OVERDUE
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   username     String     @unique
   passwordHash String     @map("password_hash")
   role         Role       @default(PENDING)
+
+  // Monthly subscription billing (all nullable; billingNotes is admin-private, never in GET /auth/me)
+  expiresAt     DateTime?      @map("expires_at") @db.Timestamptz
+  monthlyFee    Decimal?       @map("monthly_fee") @db.Decimal(10, 2)
+  paymentStatus PaymentStatus? @map("payment_status")
+  billingNotes  String?        @map("billing_notes")
+
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 

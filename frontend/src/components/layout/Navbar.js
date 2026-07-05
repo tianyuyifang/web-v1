@@ -75,6 +75,7 @@ export default function Navbar() {
               {navLink("/guide", t("navGuide"))}
               {navLink("/feedback", t("navFeedback"))}
               {isAdmin && navLink("/admin", t("navAdmin"))}
+              {navLink("/account", t("navAccount"))}
               {navLink("/settings", t("navSettings"))}
               <button
                 onClick={handleLogout}
@@ -107,6 +108,7 @@ export default function Navbar() {
             {navLink("/guide", t("navGuide"))}
             {navLink("/feedback", t("navFeedback"))}
             {isAdmin && navLink("/admin", t("navAdmin"))}
+            {navLink("/account", t("navAccount"))}
             {navLink("/settings", t("navSettings"))}
             <button
               onClick={handleLogout}

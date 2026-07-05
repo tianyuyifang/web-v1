@@ -309,6 +309,8 @@ export default {
   revoke: "Revoke",
   deleteUserTitle: "Delete User",
   deleteUserConfirm: "This action cannot be undone. Are you sure you want to delete user",
+  revokeUserTitle: "Revoke Access",
+  revokeUserConfirm: "This will remove app access (back to Pending). Revoke access for user",
   actionFailed: "Action failed",
   viewPlaylists: "View playlists",
   userPlaylistsTitle: "playlists",

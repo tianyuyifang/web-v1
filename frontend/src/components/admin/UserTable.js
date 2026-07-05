@@ -13,6 +13,8 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
   const [loading, setLoading] = useState({});
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [revokeTarget, setRevokeTarget] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
   const [billingDraft, setBillingDraft] = useState({});
 
   function draftFor(user) {
@@ -77,6 +79,7 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
             <th className="pb-2 pr-4">{t("username")}</th>
             <th className="pb-2 pr-4">{t("role")}</th>
             <th className="pb-2 pr-4">{t("joined")}</th>
+            <th className="pb-2 pr-4">{t("expiresColumn")}</th>
             <th className="pb-2">{t("actions")}</th>
           </tr>
         </thead>
@@ -103,7 +106,21 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
               <td className="py-3 pr-4 text-muted">
                 {new Date(user.createdAt).toLocaleDateString()}
               </td>
-              <td className="flex gap-2 py-3">
+              <td className="py-3 pr-4 text-muted">
+                {user.expiresAt ? new Date(user.expiresAt).toLocaleDateString() : "—"}
+              </td>
+              <td className="flex flex-wrap gap-2 py-3">
+                <button
+                  onClick={() => setExpandedId((id) => (id === user.id ? null : user.id))}
+                  aria-expanded={expandedId === user.id}
+                  className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
+                    expandedId === user.id
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-primary hover:bg-primary/10"
+                  }`}
+                >
+                  {t("edit")}
+                </button>
                 <button
                   onClick={() => router.push(`/admin/users/${user.id}/playlists`)}
                   className="rounded-md border border-border px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
@@ -121,7 +138,7 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
                 )}
                 {user.role === "MEMBER" && (
                   <button
-                    onClick={() => perform(user.id, () => adminAPI.demoteUser(user.id))}
+                    onClick={() => setRevokeTarget(user)}
                     disabled={loading[user.id]}
                     className="rounded-md border border-yellow-500/30 px-3 py-1 text-xs font-medium text-yellow-400 transition-colors hover:bg-yellow-500/10 disabled:opacity-50"
                   >
@@ -139,8 +156,9 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
                 )}
               </td>
             </tr>
-              <tr key={user.id + "-billing"} className="border-b border-border/50 last:border-0">
-                <td colSpan={4} className="pb-3">
+              {expandedId === user.id && (
+              <tr className="border-b border-border/50 last:border-0">
+                <td colSpan={5} className="pb-3">
                   <div className="flex flex-wrap items-end gap-2 rounded-lg bg-background/60 px-3 py-2">
                     <label className="flex flex-col text-xs text-muted">
                       {t("expiresColumn")}
@@ -201,6 +219,7 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
                   </div>
                 </td>
               </tr>
+              )}
             </Fragment>
           ))}
         </tbody>
@@ -219,6 +238,21 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
             setDeleteTarget(null);
           }}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {revokeTarget && (
+        <ConfirmDialog
+          title={t("revokeUserTitle")}
+          message={`${t("revokeUserConfirm")} "${revokeTarget.username}"?`}
+          confirmLabel={t("revoke")}
+          cancelLabel={t("cancel")}
+          danger
+          onConfirm={() => {
+            perform(revokeTarget.id, () => adminAPI.demoteUser(revokeTarget.id));
+            setRevokeTarget(null);
+          }}
+          onCancel={() => setRevokeTarget(null)}
         />
       )}
     </>

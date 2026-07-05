@@ -309,6 +309,8 @@ export default {
   revoke: "撤销",
   deleteUserTitle: "删除用户",
   deleteUserConfirm: "此操作不可撤销。确定要删除用户",
+  revokeUserTitle: "撤销访问权限",
+  revokeUserConfirm: "此操作将移除应用访问权限（退回待审核）。确定要撤销该用户的访问权限",
   actionFailed: "操作失败",
   viewPlaylists: "查看歌单",
   userPlaylistsTitle: "的歌单",

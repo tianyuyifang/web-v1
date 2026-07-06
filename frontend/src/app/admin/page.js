@@ -88,8 +88,8 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Section cards — click to switch which section is shown below */}
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {/* Underline tab bar — click to switch which section is shown below */}
+      <div className="mb-8 flex flex-wrap gap-x-5 gap-y-1 border-b border-border">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key;
           return (
@@ -97,18 +97,16 @@ export default function AdminPage() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               aria-pressed={isActive}
-              className={`flex flex-col items-start gap-2 rounded-xl border p-4 text-left transition-colors ${
+              className={`-mb-px flex items-center gap-1.5 border-b-2 px-1 py-2.5 text-sm font-medium transition-colors ${
                 isActive
-                  ? "border-primary bg-primary/10"
-                  : "border-border bg-surface hover:bg-surface-hover"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted hover:text-theme"
               }`}
             >
-              <span className={`inline-block h-2 w-2 rounded-full ${tab.dot}`} />
-              <span className={`text-sm font-semibold ${isActive ? "text-primary" : "text-theme"}`}>
-                {tab.label}
-              </span>
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${tab.dot}`} />
+              {tab.label}
               {tab.count !== null && (
-                <span className="text-xs text-muted">{tab.count}</span>
+                <span className="text-xs text-muted">({tab.count})</span>
               )}
             </button>
           );

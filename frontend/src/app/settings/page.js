@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const { lang, setLang, t } = useLanguage();
   const { logout } = useAuth();
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState("appearance"); // appearance | account | logout
 
   function handleLogout() {
     logout();
@@ -101,7 +102,31 @@ export default function SettingsPage() {
         <p className="mt-1 text-sm text-muted">{t("customizeExperience")}</p>
       </div>
 
+      {/* Pill tab bar */}
+      <div className="mb-6 flex flex-wrap gap-2">
+        {[
+          { key: "appearance", label: t("appearance") },
+          { key: "account", label: t("navAccount") },
+          { key: "logout", label: t("logout") },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            aria-pressed={activeTab === tab.key}
+            className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === tab.key
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted hover:bg-surface-hover hover:text-theme"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div className="space-y-6">
+        {activeTab === "appearance" && (
+        <>
         {/* Language */}
         <div className="rounded-xl border border-border bg-surface p-6">
           <p className="mb-4 text-sm font-semibold text-theme">{t("language")}</p>
@@ -187,6 +212,11 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+        </>
+        )}
+
+        {activeTab === "account" && (
+        <>
         {/* Change Username */}
         <div className="rounded-xl border border-border bg-surface p-6">
           <p className="mb-1 text-sm font-semibold text-theme">{t("changeUsername")}</p>
@@ -254,8 +284,11 @@ export default function SettingsPage() {
             </button>
           </form>
         </div>
+        </>
+        )}
 
         {/* Logout */}
+        {activeTab === "logout" && (
         <div className="rounded-xl border border-border bg-surface p-6">
           <button
             onClick={handleLogout}
@@ -264,6 +297,7 @@ export default function SettingsPage() {
             {t("logout")}
           </button>
         </div>
+        )}
       </div>
     </div>
   );

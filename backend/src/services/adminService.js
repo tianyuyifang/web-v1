@@ -7,13 +7,20 @@ const { addOneMonth } = require('../utils/billing');
  * @returns {Promise<Array>}
  */
 async function listUsers() {
-  return prisma.user.findMany({
+  const users = await prisma.user.findMany({
     select: {
       id: true, username: true, role: true, createdAt: true,
       expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
+      _count: { select: { playlists: true, sharedPlaylists: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
+  // Flatten counts: ownedCount = playlists this user owns; sharedCount = playlists shared WITH them.
+  return users.map(({ _count, ...u }) => ({
+    ...u,
+    ownedCount: _count.playlists,
+    sharedCount: _count.sharedPlaylists,
+  }));
 }
 
 /**

@@ -6,16 +6,18 @@ import { adminAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
-export default function UserTable({ users: initialUsers, onRefresh }) {
+export default function UserTable({ users, onRefresh, controls = false }) {
   const { t } = useLanguage();
   const router = useRouter();
-  const [users, setUsers] = useState(initialUsers);
   const [loading, setLoading] = useState({});
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [revokeTarget, setRevokeTarget] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [billingDraft, setBillingDraft] = useState({});
+  const [sortKey, setSortKey] = useState("registered"); // registered | expiration | owned | shared
+  const [sortDir, setSortDir] = useState("desc"); // asc | desc
+  const [activeFilters, setActiveFilters] = useState({}); // { expired, expiringSoon, noPlaylists }
 
   function draftFor(user) {
     const d = billingDraft[user.id];
@@ -61,9 +63,58 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
     }
   }
 
+  function toggleFilter(key) {
+    setActiveFilters((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  // Filter + sort (only meaningful when controls are shown; harmless otherwise).
+  const SORT_ACCESSORS = {
+    registered: (u) => new Date(u.createdAt).getTime(),
+    expiration: (u) => (u.expiresAt ? new Date(u.expiresAt).getTime() : -Infinity),
+    owned: (u) => u.ownedCount ?? 0,
+    shared: (u) => u.sharedCount ?? 0,
+  };
+
+  function passesFilters(u) {
+    if (activeFilters.expired) {
+      if (!(u.expiresAt && new Date(u.expiresAt).getTime() < Date.now())) return false;
+    }
+    if (activeFilters.expiringSoon) {
+      if (!u.expiresAt) return false;
+      const ms = new Date(u.expiresAt).getTime() - Date.now();
+      if (!(ms >= 0 && ms <= 30 * 24 * 60 * 60 * 1000)) return false;
+    }
+    if (activeFilters.noPlaylists) {
+      if ((u.ownedCount ?? 0) !== 0) return false;
+    }
+    return true;
+  }
+
+  const displayUsers = (() => {
+    if (!controls) return users;
+    const filtered = users.filter(passesFilters);
+    const accessor = SORT_ACCESSORS[sortKey];
+    const sorted = [...filtered].sort((a, b) => accessor(a) - accessor(b));
+    if (sortDir === "desc") sorted.reverse();
+    return sorted;
+  })();
+
+  // No users at all in this group — nothing to filter/sort.
   if (users.length === 0) {
     return <p className="py-3 text-center text-sm text-muted">{t("noUsersInGroup")}</p>;
   }
+
+  const sortOptions = [
+    { key: "registered", label: t("sortRegistered") },
+    { key: "expiration", label: t("sortExpiration") },
+    { key: "owned", label: t("sortOwned") },
+    { key: "shared", label: t("sortShared") },
+  ];
+  const filterChips = [
+    { key: "expired", label: t("filterExpired") },
+    { key: "expiringSoon", label: t("filterExpiringSoon") },
+    { key: "noPlaylists", label: t("filterNoPlaylists") },
+  ];
 
   return (
     <>
@@ -72,6 +123,51 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
           {error}
         </div>
       )}
+
+      {controls && (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted">{t("sortByLabel")}</span>
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value)}
+              className="rounded border border-border bg-background px-2 py-1 text-sm text-theme"
+            >
+              {sortOptions.map((o) => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              className="rounded border border-border px-2 py-1 text-sm text-theme hover:bg-surface-hover"
+              aria-label={sortDir === "asc" ? "ascending" : "descending"}
+              title={sortDir === "asc" ? "ascending" : "descending"}
+            >
+              {sortDir === "asc" ? "↑" : "↓"}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {filterChips.map((c) => {
+              const on = !!activeFilters[c.key];
+              return (
+                <button
+                  key={c.key}
+                  onClick={() => toggleFilter(c.key)}
+                  aria-pressed={on}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    on
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted hover:bg-surface-hover"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
@@ -80,11 +176,20 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
             <th className="pb-2 pr-4">{t("role")}</th>
             <th className="pb-2 pr-4">{t("joined")}</th>
             <th className="pb-2 pr-4">{t("expiresColumn")}</th>
+            <th className="pb-2 pr-4">{t("ownedColumn")}</th>
+            <th className="pb-2 pr-4">{t("sharedColumn")}</th>
             <th className="pb-2">{t("actions")}</th>
           </tr>
         </thead>
         <tbody>
-          {users.map((user) => (
+          {displayUsers.length === 0 && (
+            <tr>
+              <td colSpan={7} className="py-4 text-center text-sm text-muted">
+                {t("noUsersInGroup")}
+              </td>
+            </tr>
+          )}
+          {displayUsers.map((user) => (
             <Fragment key={user.id}>
             <tr className="border-b border-border/50 last:border-0">
               <td className="py-3 pr-4 font-medium" style={{ color: "var(--text)" }}>
@@ -109,6 +214,8 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
               <td className="py-3 pr-4 text-muted">
                 {user.expiresAt ? new Date(user.expiresAt).toLocaleDateString() : "—"}
               </td>
+              <td className="py-3 pr-4 text-muted">{user.ownedCount ?? 0}</td>
+              <td className="py-3 pr-4 text-muted">{user.sharedCount ?? 0}</td>
               <td className="flex flex-wrap gap-2 py-3">
                 <button
                   onClick={() => setExpandedId((id) => (id === user.id ? null : user.id))}
@@ -158,7 +265,7 @@ export default function UserTable({ users: initialUsers, onRefresh }) {
             </tr>
               {expandedId === user.id && (
               <tr className="border-b border-border/50 last:border-0">
-                <td colSpan={5} className="pb-3">
+                <td colSpan={7} className="pb-3">
                   <div className="flex flex-wrap items-end gap-2 rounded-lg bg-background/60 px-3 py-2">
                     <label className="flex flex-col text-xs text-muted">
                       {t("expiresColumn")}

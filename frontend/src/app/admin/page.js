@@ -132,7 +132,7 @@ export default function AdminPage() {
             {t("members")}
             <span className="ml-1 text-sm font-normal text-muted">({members.length})</span>
           </h2>
-          <UserTable users={members} onRefresh={fetchUsers} />
+          <UserTable users={members} onRefresh={fetchUsers} controls />
         </section>
       )}
 

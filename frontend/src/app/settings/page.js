@@ -102,8 +102,8 @@ export default function SettingsPage() {
         <p className="mt-1 text-sm text-muted">{t("customizeExperience")}</p>
       </div>
 
-      {/* Pill tab bar */}
-      <div className="mb-6 flex flex-wrap gap-2">
+      {/* Underline tab bar */}
+      <div className="mb-6 flex flex-wrap gap-x-5 gap-y-1 border-b border-border">
         {[
           { key: "appearance", label: t("appearance") },
           { key: "account", label: t("navAccount") },
@@ -113,10 +113,10 @@ export default function SettingsPage() {
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             aria-pressed={activeTab === tab.key}
-            className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+            className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-medium transition-colors ${
               activeTab === tab.key
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border text-muted hover:bg-surface-hover hover:text-theme"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted hover:text-theme"
             }`}
           >
             {tab.label}

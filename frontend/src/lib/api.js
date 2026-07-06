@@ -222,9 +222,11 @@ export const feedbackAPI = {
 // --- Updates / announcements ---
 export const updatesAPI = {
   list: () => api.get("/updates"),
+  getHighlighted: () => api.get("/updates/highlighted"),
   create: (data) => api.post("/updates", data),
   edit: (id, data) => api.patch(`/updates/${id}`, data),
   remove: (id) => api.delete(`/updates/${id}`),
+  toggleHighlight: (id) => api.post(`/updates/${id}/highlight`),
 };
 
 // --- Streaming ---

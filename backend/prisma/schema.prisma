@@ -232,12 +232,13 @@ enum UpdateCategory {
 }
 
 model Update {
-  id        String         @id @default(uuid()) @db.Uuid
-  title     String
-  body      String
-  category  UpdateCategory @default(ANNOUNCEMENT)
-  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  id            String         @id @default(uuid()) @db.Uuid
+  title         String
+  body          String
+  category      UpdateCategory @default(ANNOUNCEMENT)
+  isHighlighted Boolean        @default(false) @map("is_highlighted")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
   @@index([createdAt])
   @@map("updates")

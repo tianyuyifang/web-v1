@@ -88,6 +88,16 @@ export default function UpdatesPanel() {
     }
   }
 
+  async function handleToggleHighlight(id) {
+    setError("");
+    try {
+      await updatesAPI.toggleHighlight(id);
+      await fetchUpdates();
+    } catch (err) {
+      setError(err.response?.data?.error?.message || t("actionFailed"));
+    }
+  }
+
   return (
     <div>
       {error && (
@@ -159,18 +169,34 @@ export default function UpdatesPanel() {
       ) : (
         <div className="space-y-2">
           {updates.map((u) => (
-            <div key={u.id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
+            <div
+              key={u.id}
+              className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 ${
+                u.isHighlighted ? "border-primary bg-primary/5" : "border-border bg-background"
+              }`}
+            >
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-center gap-2">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_STYLES[u.category] || CATEGORY_STYLES.ANNOUNCEMENT}`}>
                     {categoryLabel(t, u.category)}
                   </span>
+                  {u.isHighlighted && <span className="text-xs text-primary" title={t("updateHighlightedButton")}>★</span>}
                   <span className="text-xs text-muted">{new Date(u.createdAt).toLocaleDateString()}</span>
                 </div>
                 <div className="text-sm font-medium text-theme">{u.title}</div>
                 <p className="mt-1 whitespace-pre-line text-sm text-muted">{u.body}</p>
               </div>
               <div className="flex shrink-0 flex-col gap-1">
+                <button
+                  onClick={() => handleToggleHighlight(u.id)}
+                  className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
+                    u.isHighlighted
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted hover:bg-surface-hover hover:text-theme"
+                  }`}
+                >
+                  {u.isHighlighted ? `★ ${t("updateHighlightedButton")}` : `☆ ${t("updateHighlightButton")}`}
+                </button>
                 <button
                   onClick={() => startEdit(u)}
                   className="rounded-md border border-border px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"

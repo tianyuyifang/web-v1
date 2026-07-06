@@ -14,6 +14,17 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /api/updates/highlighted — the currently-highlighted update, or null (any approved user)
+// NOTE: declared before '/:id' routes so "highlighted" isn't matched as an :id.
+router.get('/highlighted', async (req, res, next) => {
+  try {
+    const update = await updateService.getHighlighted();
+    res.json({ update });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/updates — create an update (admin only)
 router.post('/', requireRole('ADMIN'), validate(createUpdateSchema), async (req, res, next) => {
   try {
@@ -39,6 +50,16 @@ router.delete('/:id', requireRole('ADMIN'), async (req, res, next) => {
   try {
     await updateService.deleteUpdate(req.params.id);
     res.json({ message: 'Update deleted' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/updates/:id/highlight — toggle highlight (admin only)
+router.post('/:id/highlight', requireRole('ADMIN'), async (req, res, next) => {
+  try {
+    const update = await updateService.toggleHighlight(req.params.id);
+    res.json({ update });
   } catch (err) {
     next(err);
   }

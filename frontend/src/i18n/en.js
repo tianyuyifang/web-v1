@@ -404,6 +404,8 @@ export default {
   updateFormSaveEdit: "Save Changes",
   updateFormCancel: "Cancel",
   updateEditButton: "Edit",
+  updateHighlightButton: "Highlight",
+  updateHighlightedButton: "Highlighted",
   updateDeleteTitle: "Delete Update",
   updateDeleteConfirm: "Are you sure you want to delete this update",
   feedbackTitle: "Submit Feedback",

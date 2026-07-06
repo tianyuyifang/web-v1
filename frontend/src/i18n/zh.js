@@ -404,6 +404,8 @@ export default {
   updateFormSaveEdit: "保存修改",
   updateFormCancel: "取消",
   updateEditButton: "编辑",
+  updateHighlightButton: "置顶",
+  updateHighlightedButton: "已置顶",
   updateDeleteTitle: "删除更新",
   updateDeleteConfirm: "确定要删除这条更新吗",
   feedbackTitle: "提交反馈",

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { playlistsAPI } from "@/lib/api";
 import PlaylistCard from "@/components/playlist/PlaylistCard";
 import SearchBar from "@/components/library/SearchBar";
+import HighlightedUpdateBanner from "@/components/playlist/HighlightedUpdateBanner";
 import BatchShareModal from "@/components/playlist/BatchShareModal";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { getPlaylistView, setPlaylistView } from "@/lib/utils";
@@ -108,6 +109,8 @@ export default function PlaylistsPage() {
           </button>
         </div>
       </div>
+
+      <HighlightedUpdateBanner />
 
       <div className="mb-6 flex items-start gap-3">
         <div className="flex-1">

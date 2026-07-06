@@ -394,6 +394,7 @@ export default {
   updateCategoryFeature: "新功能",
   updateCategoryFix: "修复",
   updateCategoryAnnouncement: "公告",
+  updateCategorySongUpdate: "曲库更新",
   updatesAdminSection: "更新",
   updateNewButton: "+ 新建更新",
   updateFormTitle: "标题",

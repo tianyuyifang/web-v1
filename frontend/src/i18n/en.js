@@ -394,6 +394,7 @@ export default {
   updateCategoryFeature: "New Feature",
   updateCategoryFix: "Fix",
   updateCategoryAnnouncement: "Announcement",
+  updateCategorySongUpdate: "Song Library Update",
   updatesAdminSection: "Updates",
   updateNewButton: "+ New Update",
   updateFormTitle: "Title",

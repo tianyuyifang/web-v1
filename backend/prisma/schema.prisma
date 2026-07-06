@@ -228,6 +228,7 @@ enum UpdateCategory {
   FEATURE
   FIX
   ANNOUNCEMENT
+  SONG_UPDATE
 }
 
 model Update {

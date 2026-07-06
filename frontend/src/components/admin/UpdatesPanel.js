@@ -9,11 +9,13 @@ const CATEGORY_STYLES = {
   FEATURE: "bg-green-500/15 text-green-400",
   FIX: "bg-blue-500/15 text-blue-400",
   ANNOUNCEMENT: "bg-yellow-500/15 text-yellow-400",
+  SONG_UPDATE: "bg-purple-500/15 text-purple-400",
 };
 
 function categoryLabel(t, category) {
   if (category === "FEATURE") return t("updateCategoryFeature");
   if (category === "FIX") return t("updateCategoryFix");
+  if (category === "SONG_UPDATE") return t("updateCategorySongUpdate");
   return t("updateCategoryAnnouncement");
 }
 
@@ -127,6 +129,7 @@ export default function UpdatesPanel() {
               <option value="FEATURE">{t("updateCategoryFeature")}</option>
               <option value="FIX">{t("updateCategoryFix")}</option>
               <option value="ANNOUNCEMENT">{t("updateCategoryAnnouncement")}</option>
+              <option value="SONG_UPDATE">{t("updateCategorySongUpdate")}</option>
             </select>
           </div>
           <button

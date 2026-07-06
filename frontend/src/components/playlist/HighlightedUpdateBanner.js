@@ -12,6 +12,21 @@ function categoryLabel(t, category) {
   return t("updateCategoryAnnouncement");
 }
 
+const DISMISS_KEY = "highlightedUpdateDismiss";
+const DISMISS_TTL_MS = 60 * 60 * 1000; // reappears after 1 hour
+
+// Returns true if this update id was dismissed less than an hour ago.
+function isDismissed(updateId) {
+  try {
+    const raw = localStorage.getItem(DISMISS_KEY);
+    if (!raw) return false;
+    const { id, at } = JSON.parse(raw);
+    return id === updateId && Date.now() - at < DISMISS_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
 export default function HighlightedUpdateBanner() {
   const { t } = useLanguage();
   const [update, setUpdate] = useState(null);
@@ -21,7 +36,11 @@ export default function HighlightedUpdateBanner() {
     updatesAPI
       .getHighlighted()
       .then((res) => {
-        if (active) setUpdate(res.data.update || null);
+        if (!active) return;
+        const u = res.data.update || null;
+        // Hide only if THIS update was dismissed within the last hour.
+        // A different (newly-highlighted) update always shows.
+        setUpdate(u && !isDismissed(u.id) ? u : null);
       })
       .catch(() => {});
     return () => {
@@ -29,10 +48,19 @@ export default function HighlightedUpdateBanner() {
     };
   }, []);
 
+  function dismiss() {
+    try {
+      localStorage.setItem(DISMISS_KEY, JSON.stringify({ id: update.id, at: Date.now() }));
+    } catch {
+      // ignore storage errors — just hide for this view
+    }
+    setUpdate(null);
+  }
+
   if (!update) return null;
 
   return (
-    <div className="mb-6 flex items-start gap-4 rounded-2xl bg-gradient-to-br from-primary to-primary-hover p-5 shadow-lg shadow-primary/30 ring-1 ring-white/10">
+    <div className="relative mb-6 flex items-start gap-4 rounded-2xl bg-gradient-to-br from-primary to-primary-hover p-5 pr-10 shadow-lg shadow-primary/30 ring-1 ring-white/10">
       {/* Announcement icon */}
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20 text-xl">
         📢
@@ -49,6 +77,13 @@ export default function HighlightedUpdateBanner() {
           <RichText text={update.body} />
         </div>
       </div>
+      <button
+        onClick={dismiss}
+        aria-label="Dismiss"
+        className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+      >
+        ✕
+      </button>
     </div>
   );
 }

@@ -149,7 +149,22 @@ async function listUserPlaylists(userId) {
   });
   if (!owner) throw new NotFoundError('User');
 
-  const playlists = await prisma.playlist.findMany({
+  const shape = (p, isShared) => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    isPublic: p.isPublic,
+    isOwner: false,
+    isShared,
+    canCopy: true,
+    ownerName: p.user.username,
+    clipCount: p._count.playlistClips,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  });
+
+  // Playlists this user owns.
+  const owned = await prisma.playlist.findMany({
     where: { userId },
     include: {
       _count: { select: { playlistClips: true } },
@@ -158,21 +173,24 @@ async function listUserPlaylists(userId) {
     orderBy: { name: 'asc' },
   });
 
+  // Playlists shared WITH this user (via playlist_shares); owned by someone else.
+  const sharedRows = await prisma.playlistShare.findMany({
+    where: { userId },
+    include: {
+      playlist: {
+        include: {
+          _count: { select: { playlistClips: true } },
+          user: { select: { username: true } },
+        },
+      },
+    },
+    orderBy: { playlist: { name: 'asc' } },
+  });
+
   return {
     owner,
-    playlists: playlists.map((p) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description,
-      isPublic: p.isPublic,
-      isOwner: false,
-      isShared: false,
-      canCopy: true,
-      ownerName: p.user.username,
-      clipCount: p._count.playlistClips,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-    })),
+    playlists: owned.map((p) => shape(p, false)),
+    sharedPlaylists: sharedRows.map((r) => shape(r.playlist, true)),
   };
 }
 

@@ -15,7 +15,7 @@ function formatBytes(bytesStr) {
 export default function BandwidthPanel() {
   const { t } = useLanguage();
   const [stats, setStats] = useState(null);
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(1);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

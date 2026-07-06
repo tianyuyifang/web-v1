@@ -387,7 +387,7 @@ export default {
 
   // Feedback
   navFeedback: "反馈",
-  navUpdates: "更新",
+  navUpdates: "日志",
   updatesTitle: "更新",
   updatesSubtitle: "最新变化与公告",
   updatesEmpty: "暂无更新。",

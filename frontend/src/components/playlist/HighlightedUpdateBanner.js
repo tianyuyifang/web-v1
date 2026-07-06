@@ -5,13 +5,6 @@ import { updatesAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import RichText from "@/components/ui/RichText";
 
-const CATEGORY_STYLES = {
-  FEATURE: "bg-green-500/15 text-green-400",
-  FIX: "bg-blue-500/15 text-blue-400",
-  ANNOUNCEMENT: "bg-yellow-500/15 text-yellow-400",
-  SONG_UPDATE: "bg-purple-500/15 text-purple-400",
-};
-
 function categoryLabel(t, category) {
   if (category === "FEATURE") return t("updateCategoryFeature");
   if (category === "FIX") return t("updateCategoryFix");
@@ -39,17 +32,22 @@ export default function HighlightedUpdateBanner() {
   if (!update) return null;
 
   return (
-    <div className="mb-6 rounded-xl border border-primary/40 bg-primary/5 p-5">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="text-primary">★</span>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${CATEGORY_STYLES[update.category] || CATEGORY_STYLES.ANNOUNCEMENT}`}>
-          {categoryLabel(t, update.category)}
-        </span>
-        <span className="text-xs text-muted">{new Date(update.createdAt).toLocaleDateString()}</span>
+    <div className="mb-6 flex items-start gap-4 rounded-2xl bg-gradient-to-br from-primary to-primary-hover p-5 shadow-lg shadow-primary/30 ring-1 ring-white/10">
+      {/* Announcement icon */}
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20 text-xl">
+        📢
       </div>
-      <h2 className="mb-1 text-base font-semibold text-theme">{update.title}</h2>
-      <div className="whitespace-pre-line text-sm text-muted">
-        <RichText text={update.body} />
+      <div className="min-w-0 flex-1">
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-white/25 px-2.5 py-0.5 text-xs font-semibold text-white">
+            {categoryLabel(t, update.category)}
+          </span>
+          <span className="text-xs text-white/70">{new Date(update.createdAt).toLocaleDateString()}</span>
+        </div>
+        <h2 className="mb-1 text-lg font-bold text-white">{update.title}</h2>
+        <div className="whitespace-pre-line text-sm text-white/90">
+          <RichText text={update.body} />
+        </div>
       </div>
     </div>
   );

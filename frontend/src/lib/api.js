@@ -219,6 +219,14 @@ export const feedbackAPI = {
   remove: (id) => api.delete(`/feedback/${id}`),
 };
 
+// --- Updates / announcements ---
+export const updatesAPI = {
+  list: () => api.get("/updates"),
+  create: (data) => api.post("/updates", data),
+  edit: (id, data) => api.patch(`/updates/${id}`, data),
+  remove: (id) => api.delete(`/updates/${id}`),
+};
+
 // --- Streaming ---
 const streamBase = () => {
   const base = "/api";

@@ -6,6 +6,7 @@ import { adminAPI, feedbackAPI } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
 import UserTable from "@/components/admin/UserTable";
 import BandwidthPanel from "@/components/admin/BandwidthPanel";
+import UpdatesPanel from "@/components/admin/UpdatesPanel";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 export default function AdminPage() {
@@ -70,6 +71,7 @@ export default function AdminPage() {
     { key: "members", label: t("members"), dot: "bg-green-400", count: members.length },
     { key: "admins", label: t("admins"), dot: "bg-purple-400", count: admins.length },
     { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.length },
+    { key: "updates", label: t("updatesAdminSection"), dot: "bg-pink-400", count: null },
     { key: "bandwidth", label: t("bandwidthTitle"), dot: "bg-cyan-400", count: null },
   ];
 
@@ -191,6 +193,16 @@ export default function AdminPage() {
               })}
             </div>
           )}
+        </section>
+      )}
+
+      {activeTab === "updates" && (
+        <section className="rounded-xl border border-border bg-surface p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
+            <span className="inline-block h-2 w-2 rounded-full bg-pink-400" />
+            {t("updatesAdminSection")}
+          </h2>
+          <UpdatesPanel />
         </section>
       )}
 

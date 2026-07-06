@@ -48,6 +48,9 @@ app.use('/api/users',     authMiddleware, requireApproved, requireActiveSession,
 // Feedback routes (submit = approved users, list/delete = admin)
 app.use('/api/feedback', authMiddleware, requireApproved, requireActiveSession, require('./routes/feedback'));
 
+// Updates routes (read = approved users, create/edit/delete = admin)
+app.use('/api/updates', authMiddleware, requireApproved, requireActiveSession, require('./routes/updates'));
+
 // Admin routes (auth + ADMIN role only)
 app.use('/api/admin', authMiddleware, requireRole('ADMIN'), requireActiveSession, require('./routes/admin'));
 

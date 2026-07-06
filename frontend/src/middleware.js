@@ -24,5 +24,5 @@ export function middleware(request) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/playlists/:path*", "/admin/:path*", "/settings/:path*", "/guide/:path*"],
+  matcher: ["/dashboard/:path*", "/playlists/:path*", "/admin/:path*", "/settings/:path*", "/help/:path*"],
 };

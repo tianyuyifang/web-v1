@@ -66,9 +66,8 @@ export default function Navbar() {
             <div className="hidden items-center gap-1 md:flex">
               {navLink("/playlists", t("navPlaylists"))}
               {navLink("/tools", t("navTools"))}
-              {navLink("/guide", t("navGuide"))}
               {navLink("/updates", t("navUpdates"))}
-              {navLink("/feedback", t("navFeedback"))}
+              {navLink("/help", t("navHelp"))}
               {isAdmin && navLink("/admin", t("navAdmin"))}
               {navLink("/account", t("navAccount"))}
               {navLink("/settings", t("navSettings"))}
@@ -94,9 +93,8 @@ export default function Navbar() {
           </div>
           <div className="flex flex-col gap-1">
             {navLink("/playlists", t("navPlaylists"))}
-            {navLink("/guide", t("navGuide"))}
             {navLink("/updates", t("navUpdates"))}
-            {navLink("/feedback", t("navFeedback"))}
+            {navLink("/help", t("navHelp"))}
             {isAdmin && navLink("/admin", t("navAdmin"))}
             {navLink("/account", t("navAccount"))}
             {navLink("/settings", t("navSettings"))}

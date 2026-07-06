@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { feedbackAPI } from "@/lib/api";
-import useAuth from "@/hooks/useAuth";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 const TYPES = [
@@ -12,10 +11,9 @@ const TYPES = [
   { key: "GENERAL", label: "feedbackTypeGeneral", desc: "feedbackTypeGeneralDesc", color: "text-yellow-400" },
 ];
 
-export default function FeedbackPage() {
+export default function FeedbackPanel() {
   const { t } = useLanguage();
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
 
   const [type, setType] = useState(null);
   const [title, setTitle] = useState("");
@@ -24,19 +22,6 @@ export default function FeedbackPage() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
-
-  if (authLoading) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    router.push("/login");
-    return null;
-  }
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -69,10 +54,7 @@ export default function FeedbackPage() {
   const canSubmit = isSongType ? title.trim() && artist.trim() : type === "GENERAL" ? message.trim() : false;
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-8">
-      <h1 className="mb-2 text-2xl font-bold" style={{ color: "var(--text)" }}>
-        {t("feedbackTitle")}
-      </h1>
+    <div>
       <p className="mb-6 text-sm text-muted">{t("feedbackDesc")}</p>
 
       {success ? (
@@ -187,18 +169,6 @@ export default function FeedbackPage() {
               {t("return")}
             </button>
           </div>
-        </div>
-      )}
-
-      {!type && !success && (
-        <div className="mt-6 flex justify-center">
-          <button
-            onClick={() => router.push("/playlists")}
-            className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
-            style={{ color: "var(--text)" }}
-          >
-            {t("return")}
-          </button>
         </div>
       )}
     </div>

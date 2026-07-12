@@ -5,6 +5,7 @@ const config = require('../config');
 const prisma = require('../db/client');
 const { UnauthorizedError, ValidationError } = require('../utils/errors');
 const { deriveStatus } = require('../utils/billing');
+const { normalizeSessions, addSession, hasSession } = require('../utils/sessions');
 
 const SALT_ROUNDS = 10;
 
@@ -46,17 +47,33 @@ async function login({ username, password }) {
   const valid = await comparePassword(password, user.passwordHash);
   if (!valid) throw new UnauthorizedError('Invalid username or password');
 
-  // Generate a new sessionId and store it — invalidates any previous session
   const sessionId = crypto.randomUUID();
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { activeSessionId: sessionId },
+  const nowIso = new Date().toISOString();
+
+  // Row-locked read-modify-write on the active-sessions list, so two logins
+  // racing on the same account can't clobber each other's array. Evicts the
+  // oldest device when the new login would exceed the user's device limit.
+  // ADMIN is unrestricted (Infinity => no trimming).
+  const updated = await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw`
+      SELECT active_sessions, role, device_limit
+      FROM users WHERE id = ${user.id}::uuid FOR UPDATE`;
+    const locked = rows[0];
+    const limit = locked.role === 'ADMIN'
+      ? Infinity
+      : (locked.device_limit != null ? locked.device_limit : config.defaultDeviceLimit);
+    const list = addSession(normalizeSessions(locked.active_sessions), sessionId, nowIso, limit);
+    return tx.user.update({
+      where: { id: user.id },
+      data: { activeSessions: list, activeSessionId: sessionId },
+      select: { id: true, username: true, role: true, preferences: true },
+    });
   });
 
-  const token = signToken(user, sessionId);
+  const token = signToken(updated, sessionId);
   return {
     token,
-    user: { id: user.id, username: user.username, role: user.role, preferences: user.preferences },
+    user: { id: updated.id, username: updated.username, role: updated.role, preferences: updated.preferences },
   };
 }
 
@@ -154,22 +171,26 @@ async function refreshToken(req) {
   // Verify user still exists and is active
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { id: true, username: true, role: true, activeSessionId: true },
+    select: { id: true, username: true, role: true, activeSessionId: true, activeSessions: true },
   });
   if (!user) throw new UnauthorizedError('User not found');
   if (user.role === 'PENDING') throw new UnauthorizedError('Account not approved');
 
-  // Check session is still the active one (if session restriction is in effect)
-  if (user.activeSessionId && payload.sid && user.activeSessionId !== payload.sid) {
-    const err = new Error('Your account was logged in on another device');
-    err.status = 403;
-    err.code = 'SESSION_REPLACED';
-    throw err;
+  // Check the token's session is still one of the active devices. ADMIN is
+  // unrestricted. If the user has no recorded sessions (pre-migration), skip.
+  // Refresh NEVER mutates the session list — only login does — so two tabs
+  // refreshing simultaneously can't evict each other.
+  if (user.role !== 'ADMIN' && payload.sid) {
+    const list = normalizeSessions(user.activeSessions);
+    if (list.length > 0 && !hasSession(list, payload.sid)) {
+      const err = new Error('Your account was logged in on another device');
+      err.status = 403;
+      err.code = 'SESSION_REPLACED';
+      throw err;
+    }
   }
 
   // Reuse the same sessionId — only login generates a new one.
-  // This avoids a race condition where two tabs refreshing simultaneously
-  // would generate different sids, causing one tab to get SESSION_REPLACED.
   // Use existing sid if available; omit from JWT if neither exists (pre-migration)
   const sid = payload.sid || user.activeSessionId || undefined;
   const newToken = signToken(user, sid);

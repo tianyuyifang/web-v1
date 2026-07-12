@@ -2,11 +2,12 @@ const jwt = require('jsonwebtoken');
 const config = require('../config');
 const prisma = require('../db/client');
 const { UnauthorizedError, ForbiddenError } = require('../utils/errors');
+const { hasSession } = require('../utils/sessions');
 
-// In-process cache for activeSessionId lookups. Avoids hammering Prisma's
+// In-process cache for active-session lookups. Avoids hammering Prisma's
 // connection pool on high-frequency authenticated routes (audio streaming).
 // Tradeoff: kicked sessions get up to SESSION_CACHE_TTL_MS of grace before
-// the next DB read picks up the new activeSessionId. Acceptable; this is a
+// the next DB read picks up the new active-sessions list. Acceptable; this is a
 // performance optimization, not a security boundary.
 const SESSION_CACHE = new Map();
 const SESSION_CACHE_TTL_MS = 30 * 1000;
@@ -30,9 +31,10 @@ function authMiddleware(req, res, next) {
 }
 
 /**
- * Middleware: verify the JWT's sessionId matches the user's active session.
- * Returns 403 SESSION_REPLACED if the session was replaced by a new login.
- * Skips the check if the user has no activeSessionId (pre-migration login).
+ * Middleware: verify the JWT's sessionId is one of the user's active sessions.
+ * Returns 403 SESSION_REPLACED if the session was evicted (device limit exceeded
+ * by a newer login). ADMIN users are unrestricted. Skips the check if the token
+ * has no sessionId (pre-migration login) or the user has no recorded sessions.
  * Should be used after authMiddleware.
  */
 async function requireActiveSession(req, res, next) {
@@ -43,31 +45,40 @@ async function requireActiveSession(req, res, next) {
   try {
     const userId = req.user.id;
     const now = Date.now();
-    let activeSessionId;
+    let role;
+    let activeSessions;
 
     const cached = SESSION_CACHE.get(userId);
     if (cached && cached.expiresAt > now) {
-      activeSessionId = cached.activeSessionId;
+      role = cached.role;
+      activeSessions = cached.activeSessions;
     } else {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { activeSessionId: true },
+        select: { role: true, activeSessions: true },
       });
       if (!user) {
         return next(new UnauthorizedError('User not found'));
       }
-      activeSessionId = user.activeSessionId;
+      role = user.role;
+      activeSessions = user.activeSessions;
       SESSION_CACHE.set(userId, {
-        activeSessionId,
+        role,
+        activeSessions,
         expiresAt: now + SESSION_CACHE_TTL_MS,
       });
     }
 
-    // If activeSessionId is null, user hasn't logged in since migration — skip check
-    if (!activeSessionId) {
+    // ADMIN is unrestricted — any number of simultaneous devices allowed.
+    if (role === 'ADMIN') {
       return next();
     }
-    if (activeSessionId !== req.user.sid) {
+    // No recorded sessions (hasn't logged in since migration) — skip check.
+    const list = Array.isArray(activeSessions) ? activeSessions : [];
+    if (list.length === 0) {
+      return next();
+    }
+    if (!hasSession(list, req.user.sid)) {
       return res.status(403).json({
         error: {
           code: 'SESSION_REPLACED',

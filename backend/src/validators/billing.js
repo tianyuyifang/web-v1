@@ -17,6 +17,9 @@ const updateBillingSchema = z.object({
     }),
   paymentStatus: z.enum(['PAID', 'UNPAID', 'OVERDUE']).nullable().optional(),
   billingNotes: z.string().max(1000).nullable().optional(),
+  // Max simultaneous devices for this user. Integer >= 1, or null to reset to
+  // the global default. Absent = unchanged.
+  deviceLimit: z.union([z.number().int().min(1), z.null()]).optional(),
 });
 
 module.exports = { updateBillingSchema };

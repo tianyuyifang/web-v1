@@ -11,6 +11,7 @@ async function listUsers() {
     select: {
       id: true, username: true, role: true, createdAt: true,
       expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
+      deviceLimit: true,
       _count: { select: { playlists: true, sharedPlaylists: true } },
     },
     orderBy: { createdAt: 'desc' },
@@ -197,6 +198,7 @@ async function listUserPlaylists(userId) {
 const BILLING_SELECT = {
   id: true, username: true, role: true,
   expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
+  deviceLimit: true,
 };
 
 /**
@@ -213,6 +215,7 @@ async function updateBilling(id, data) {
   if ('monthlyFee' in data) patch.monthlyFee = data.monthlyFee;
   if ('paymentStatus' in data) patch.paymentStatus = data.paymentStatus;
   if ('billingNotes' in data) patch.billingNotes = data.billingNotes;
+  if ('deviceLimit' in data) patch.deviceLimit = data.deviceLimit;
 
   return prisma.user.update({ where: { id }, data: patch, select: BILLING_SELECT });
 }

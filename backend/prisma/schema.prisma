@@ -26,6 +26,8 @@ model User {
   role            Role       @default(PENDING)
   preferences     Json?      @default("{}") @db.JsonB
   activeSessionId String?    @map("active_session_id") @db.Uuid
+  deviceLimit     Int?       @map("device_limit")
+  activeSessions  Json?      @default("[]") @map("active_sessions") @db.JsonB
   expiresAt       DateTime?  @map("expires_at") @db.Timestamptz
   monthlyFee      Decimal?   @map("monthly_fee") @db.Decimal(10, 2)
   paymentStatus   PaymentStatus? @map("payment_status")

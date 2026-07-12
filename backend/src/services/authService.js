@@ -59,9 +59,14 @@ async function login({ username, password }) {
       SELECT active_sessions, role, device_limit
       FROM users WHERE id = ${user.id}::uuid FOR UPDATE`;
     const locked = rows[0];
+    // Fall back to 1 if the global default is missing/invalid, so a config gap
+    // can never silently grant unlimited devices to default users.
+    const globalDefault = Number.isInteger(config.defaultDeviceLimit) && config.defaultDeviceLimit >= 1
+      ? config.defaultDeviceLimit
+      : 1;
     const limit = locked.role === 'ADMIN'
       ? Infinity
-      : (locked.device_limit != null ? locked.device_limit : config.defaultDeviceLimit);
+      : (locked.device_limit != null ? locked.device_limit : globalDefault);
     const list = addSession(normalizeSessions(locked.active_sessions), sessionId, nowIso, limit);
     return tx.user.update({
       where: { id: user.id },

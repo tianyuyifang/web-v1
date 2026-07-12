@@ -27,6 +27,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
       monthlyFee: user.monthlyFee != null ? String(user.monthlyFee) : "",
       paymentStatus: user.paymentStatus || "",
       billingNotes: user.billingNotes || "",
+      deviceLimit: user.deviceLimit != null ? String(user.deviceLimit) : "",
     };
   }
 
@@ -41,6 +42,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
       monthlyFee: d.monthlyFee === "" ? null : d.monthlyFee,
       paymentStatus: d.paymentStatus || null,
       billingNotes: d.billingNotes || null,
+      deviceLimit: d.deviceLimit === "" ? null : parseInt(d.deviceLimit, 10),
     }));
     setBillingDraft((prev) => { const n = { ...prev }; delete n[user.id]; return n; });
   }
@@ -292,6 +294,19 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         value={draftFor(user).monthlyFee}
                         onChange={(e) => setDraft(user.id, { monthlyFee: e.target.value })}
                         className="mt-0.5 w-24 rounded border border-border bg-background px-2 py-1 text-sm text-theme"
+                      />
+                    </label>
+                    <label className="flex flex-col text-xs text-muted">
+                      {t("deviceLimitLabel")}
+                      <input
+                        type="number"
+                        step="1"
+                        min="1"
+                        value={draftFor(user).deviceLimit}
+                        onChange={(e) => setDraft(user.id, { deviceLimit: e.target.value })}
+                        className="mt-0.5 w-24 rounded border border-border bg-background px-2 py-1 text-sm text-theme"
+                        placeholder="1"
+                        title={t("deviceLimitHint")}
                       />
                     </label>
                     <label className="flex flex-col text-xs text-muted">

@@ -505,6 +505,8 @@ export default {
   expiresColumn: "Expires",
   paymentStatusColumn: "Payment",
   notesColumn: "Notes",
+  deviceLimitLabel: "Device limit",
+  deviceLimitHint: "Blank = default (1). Admins unrestricted.",
   extendOneMonth: "+1 Month",
   saved: "Saved",
   payPaid: "Paid",

@@ -505,6 +505,8 @@ export default {
   expiresColumn: "到期",
   paymentStatusColumn: "付款",
   notesColumn: "备注",
+  deviceLimitLabel: "设备数量上限",
+  deviceLimitHint: "留空 = 默认（1）。管理员不受限。",
   extendOneMonth: "+1 个月",
   saved: "已保存",
   payPaid: "已付",

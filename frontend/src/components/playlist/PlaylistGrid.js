@@ -82,6 +82,7 @@ export default function PlaylistGrid({
   onClipUpdated,
   onClipSwapped,
   onReorder,
+  newlyAddedClipId,
 }) {
   const { t } = useLanguage();
   const [sectionPromptClipId, setSectionPromptClipId] = useState(null);
@@ -104,6 +105,21 @@ export default function PlaylistGrid({
     });
   }, []);
 
+  // Swapping a clip replaces its clipId with a new server-assigned one. Since
+  // expanded/collapsed state is keyed by clipId, carry it across so a card that
+  // was open stays open after the swap (instead of collapsing automatically).
+  const handleSwapCarryingExpand = useCallback(async (oldClipId, newClipId) => {
+    const resultClipId = await onClipSwapped(oldClipId, newClipId);
+    if (!resultClipId || resultClipId === oldClipId) return;
+    setExpandedClipIds((prev) => {
+      if (!prev.has(oldClipId)) return prev; // was collapsed — keep it collapsed
+      const next = new Set(prev);
+      next.delete(oldClipId);
+      next.add(resultClipId);
+      return next;
+    });
+  }, [onClipSwapped]);
+
   // Auto-expand when a clip starts playing
   useEffect(() => {
     if (playingClipId) setExpandedClipIds((prev) => {
@@ -111,6 +127,15 @@ export default function PlaylistGrid({
       return new Set(prev).add(playingClipId);
     });
   }, [playingClipId]);
+
+  // Auto-expand a freshly-added clip so its card opens (not collapsed).
+  useEffect(() => {
+    if (!newlyAddedClipId) return;
+    setExpandedClipIds((prev) => {
+      if (prev.has(newlyAddedClipId)) return prev;
+      return new Set(prev).add(newlyAddedClipId);
+    });
+  }, [newlyAddedClipId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -516,7 +541,7 @@ export default function PlaylistGrid({
               highlighted={highlightedClipId === pc.clipId}
               onUpdate={onClipUpdated}
               onRemove={setRemoveConfirmClipId}
-              onSwap={onClipSwapped}
+              onSwap={handleSwapCarryingExpand}
               position={pc.position + 1}
               totalClips={playlist.clips.length}
               onMove={handleMove}

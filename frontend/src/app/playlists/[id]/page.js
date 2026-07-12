@@ -60,6 +60,8 @@ export default function PlaylistPage() {
   const [showUnlikeAllConfirm, setShowUnlikeAllConfirm] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
   const [highlightedClipId, setHighlightedClipId] = useState(null);
+  // clipId of the most recently added clip, so its card can open expanded.
+  const [newlyAddedClipId, setNewlyAddedClipId] = useState(null);
 
   const setLikedClips = usePlayerStore((s) => s.setLikedClips);
   const triggerPlayFromStart = usePlayerStore((s) => s.triggerPlayFromStart);
@@ -119,6 +121,7 @@ export default function PlaylistPage() {
 
   const handleClipAdded = useCallback((newClip) => {
     setPlaylist((prev) => ({ ...prev, clips: [...prev.clips, newClip] }));
+    setNewlyAddedClipId(newClip.clipId);
     setShowAddClip(false);
   }, []);
 
@@ -154,15 +157,16 @@ export default function PlaylistPage() {
   const handleClipSwapped = useCallback(async (oldClipId, newClipId) => {
     try {
       const res = await playlistsAPI.swapClip(id, oldClipId, newClipId);
+      const resultClipId = res.data.clip.id;
       setPlaylist((prev) => ({
         ...prev,
         clips: prev.clips.map((c) =>
           c.clipId === oldClipId
             ? {
                 ...c,
-                clipId: res.data.clip.id,
+                clipId: resultClipId,
                 clip: {
-                  id: res.data.clip.id,
+                  id: resultClipId,
                   start: res.data.clip.start,
                   length: res.data.clip.length,
                   version: res.data.clip.version,
@@ -172,8 +176,13 @@ export default function PlaylistPage() {
             : c
         ),
       }));
+      // Return the server-assigned clip id so the grid can carry the card's
+      // expanded/collapsed state across the id change (avoids the card
+      // collapsing automatically after a swap).
+      return resultClipId;
     } catch {
       // silent
+      return undefined;
     }
   }, [id]);
 
@@ -350,6 +359,7 @@ export default function PlaylistPage() {
             onClipUpdated={handleClipUpdated}
             onClipSwapped={handleClipSwapped}
             onReorder={handleReorder}
+            newlyAddedClipId={newlyAddedClipId}
           />
           {/* Bottom spacer (~half a playing-card height) so the last clips can
               scroll up off the bottom edge instead of sitting flush against it. */}

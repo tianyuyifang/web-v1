@@ -15,20 +15,8 @@
  */
 
 require('dotenv').config();
-const path = require('path');
 const XLSX = require('xlsx');
-const prisma = require('../src/db/client');
-const { sliceLRC } = require('../src/utils/lrc');
-const { clipAudio } = require('./clip-audio');
-const { findSongInDB } = require('./lib/find-song');
-
-const CLIP_LENGTH = 20;
-
-function buildClipFilename(title, artist, start) {
-  const artists = artist.split('_').map((a) => a.trim()).join(' & ');
-  const safe = (s) => s.replace(/[<>:"/\\|?*]/g, '_');
-  return `${safe(title)} - ${safe(artists)} - ${start}.mp3`;
-}
+const { addSongsToPlaylist } = require('./lib/add-songs');
 
 /**
  * Parse an xlsx buffer or file path into an array of { title, artist }.
@@ -58,101 +46,9 @@ function parseXlsx(input) {
  * @param {string} targetPlaylistId - playlist to add clips to
  * @returns {{ added: number, skipped: number, notFound: string[] }}
  */
-async function importByFile(input, targetPlaylistId) {
+async function importByFile(input, targetPlaylistId, onProgress) {
   const entries = parseXlsx(input);
-  const mp3BasePath = process.env.MP3_BASE_PATH;
-  const clipsBasePath = process.env.CLIPS_BASE_PATH;
-
-  // Build title map of existing songs in target playlist
-  const existingSongs = await prisma.playlistClip.findMany({
-    where: { playlistId: targetPlaylistId },
-    include: { clip: { include: { song: { select: { title: true, artist: true } } } } },
-  });
-  const existingTitleMap = new Map();
-  for (const pc of existingSongs) {
-    existingTitleMap.set(pc.clip.song.title, pc.clip.song.artist);
-  }
-
-  // Get max position
-  const maxPos = await prisma.playlistClip.aggregate({
-    where: { playlistId: targetPlaylistId },
-    _max: { position: true },
-  });
-  let position = (maxPos._max.position ?? -1) + 1;
-
-  let added = 0;
-  let skipped = 0;
-  const notFound = [];
-  const titleConflict = [];
-
-  for (const entry of entries) {
-    // Match song by title + artist (shared logic: falls back to most-popular
-    // same-title song when the artist matches none of several candidates).
-    const { song } = await findSongInDB(entry.title, entry.artist);
-
-    if (!song) {
-      notFound.push(`${entry.title} - ${entry.artist}`);
-      continue;
-    }
-
-    // Check if song title already exists in target playlist
-    const existingArtist = existingTitleMap.get(song.title);
-    if (existingArtist !== undefined) {
-      const dbArtists = existingArtist.split('_').map((a) => a.trim().toLowerCase());
-      const extArtists = song.artist.split('_').map((a) => a.trim().toLowerCase());
-      const sameArtist = extArtists.some((ea) => dbArtists.some((da) => da.includes(ea) || ea.includes(da)));
-      if (sameArtist) {
-        skipped++;
-      } else {
-        titleConflict.push({ title: song.title, externalArtist: entry.artist, localArtist: existingArtist });
-      }
-      continue;
-    }
-
-    // Determine start time from song's starts field
-    const firstStart = song.starts
-      ? parseInt(song.starts.split('|')[0], 10)
-      : 0;
-
-    // Find or create clip at this start time (prefer global clips)
-    let clip = await prisma.clip.findFirst({
-      where: { songId: song.id, start: firstStart, isGlobal: true },
-    }) || await prisma.clip.findFirst({
-      where: { songId: song.id, start: firstStart },
-    });
-
-    if (!clip) {
-      const clipLyrics = sliceLRC(song.lyrics, firstStart, firstStart + CLIP_LENGTH);
-      const clipFilename = buildClipFilename(song.title, song.artist, firstStart);
-      const sourcePath = path.join(mp3BasePath, song.filePath);
-      const outputPath = path.join(clipsBasePath, clipFilename);
-
-      try {
-        clipAudio({ sourcePath, outputPath, start: firstStart, length: CLIP_LENGTH, lyrics: clipLyrics });
-      } catch (err) {
-        console.warn(`  Warning: Could not clip "${song.title}": ${err.message}`);
-      }
-
-      clip = await prisma.clip.create({
-        data: {
-          songId: song.id,
-          start: firstStart,
-          length: CLIP_LENGTH,
-          filePath: clipFilename,
-          lyrics: clipLyrics,
-        },
-      });
-    }
-
-    await prisma.playlistClip.create({
-      data: { playlistId: targetPlaylistId, clipId: clip.id, position },
-    });
-    existingTitleMap.set(song.title, song.artist);
-    position++;
-    added++;
-  }
-
-  return { added, skipped, notFound, titleConflict };
+  return addSongsToPlaylist(entries, targetPlaylistId, onProgress);
 }
 
 // CLI usage

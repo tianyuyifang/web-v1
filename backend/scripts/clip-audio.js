@@ -10,10 +10,13 @@
  *   node scripts/clip-audio.js <sourceMp3> <outputMp3> <start> <length> [lrcContent]
  */
 
-const { execFileSync } = require('child_process');
+const { execFileSync, execFile } = require('child_process');
+const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
 const ffmpegPath = require('ffmpeg-static');
+
+const execFileP = promisify(execFile);
 
 /**
  * Clip an MP3 file and save the clipped audio + lyrics.
@@ -54,6 +57,40 @@ function clipAudio({ sourcePath, outputPath, start, length, lyrics }) {
   }
 }
 
+/**
+ * Async variant of clipAudio — spawns ffmpeg via non-blocking execFile so the
+ * Node event loop is not frozen during long batch imports. Same semantics:
+ * ensure output dir, skip if the output already exists, write the .lrc alongside.
+ *
+ * @param {object} opts - same shape as clipAudio
+ * @returns {Promise<void>}
+ */
+async function clipAudioAsync({ sourcePath, outputPath, start, length, lyrics }) {
+  const outputDir = path.dirname(outputPath);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  // Skip if clip file already exists
+  if (fs.existsSync(outputPath)) {
+    return;
+  }
+
+  await execFileP(ffmpegPath, [
+    '-y',
+    '-ss', String(start),
+    '-t', String(length),
+    '-i', sourcePath,
+    '-c', 'copy',
+    outputPath,
+  ]);
+
+  if (lyrics) {
+    const lrcPath = outputPath.replace(/\.mp3$/i, '.lrc');
+    fs.writeFileSync(lrcPath, lyrics, 'utf-8');
+  }
+}
+
 // Standalone CLI usage
 if (require.main === module) {
   const [sourcePath, outputPath, start, length, lyrics] = process.argv.slice(2);
@@ -71,4 +108,4 @@ if (require.main === module) {
   console.log(`Clipped: ${outputPath}`);
 }
 
-module.exports = { clipAudio };
+module.exports = { clipAudio, clipAudioAsync };

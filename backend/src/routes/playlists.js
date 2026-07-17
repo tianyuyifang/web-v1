@@ -484,7 +484,35 @@ router.put('/:id/clips/:clipId/swap', playlistAccess, requireOwner, async (req, 
 // ========================= Import Clips =========================
 
 
-// POST /api/playlists/:id/import/by-qq — import clips from QQ Music playlist
+// Async import job helpers — imports now run in the background so large
+// playlists don't hit the reverse-proxy timeout. POST starts a job (202 jobId);
+// the client polls GET .../import/jobs/:jobId for progress + final result.
+const { startImportJob, getJob, ImportInProgressError } = require('../services/importJobService');
+
+// Wire a background import: the runner fetches then adds songs, updating job
+// progress as it goes. Responds 202 { jobId }, or 409 if one is already running.
+function startImportJobRoute(req, res, importFn) {
+  try {
+    const jobId = startImportJob(req.params.id, async (job) => {
+      job.state = 'fetching';
+      const result = await importFn(req.params.id, (processed, total) => {
+        job.state = 'importing';
+        job.progress.processed = processed;
+        job.progress.total = total;
+      });
+      job.result = result;
+      Object.assign(job.progress, result); // final added/skipped/notFound/titleConflict
+    });
+    return res.status(202).json({ jobId });
+  } catch (err) {
+    if (err instanceof ImportInProgressError) {
+      return res.status(409).json({ error: { message: err.message, code: err.code } });
+    }
+    throw err;
+  }
+}
+
+// POST /api/playlists/:id/import/by-qq — start async import from a QQ Music playlist
 router.post('/:id/import/by-qq', playlistAccess, requireOwner, async (req, res, next) => {
   try {
     const { importByQQ } = require('../../scripts/import-playlist-by-qq');
@@ -492,14 +520,26 @@ router.post('/:id/import/by-qq', playlistAccess, requireOwner, async (req, res, 
     if (!qqPlaylistId) {
       return res.status(400).json({ error: { message: 'qqPlaylistId is required' } });
     }
-    const result = await importByQQ(qqPlaylistId, req.params.id);
-    res.json(result);
+    startImportJobRoute(req, res, (playlistId, onProgress) => importByQQ(qqPlaylistId, playlistId, onProgress));
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/playlists/:id/import/by-netease — import clips from NetEase Cloud Music playlist
+// GET /api/playlists/:id/import/jobs/:jobId — poll import job status
+router.get('/:id/import/jobs/:jobId', playlistAccess, requireOwner, async (req, res, next) => {
+  try {
+    const job = getJob(req.params.jobId);
+    if (!job || job.playlistId !== req.params.id) {
+      return res.status(404).json({ error: { message: 'Import job not found' } });
+    }
+    res.json({ state: job.state, progress: job.progress, result: job.result, error: job.error });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/playlists/:id/import/by-netease — start async import from NetEase
 router.post('/:id/import/by-netease', playlistAccess, requireOwner, async (req, res, next) => {
   try {
     const { importByNetease } = require('../../scripts/import-playlist-by-netease');
@@ -507,14 +547,13 @@ router.post('/:id/import/by-netease', playlistAccess, requireOwner, async (req, 
     if (!neteasePlaylistId) {
       return res.status(400).json({ error: { message: 'neteasePlaylistId is required' } });
     }
-    const result = await importByNetease(neteasePlaylistId, req.params.id);
-    res.json(result);
+    startImportJobRoute(req, res, (playlistId, onProgress) => importByNetease(neteasePlaylistId, playlistId, onProgress));
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/playlists/:id/import/by-kugou — import clips from KuGou playlist
+// POST /api/playlists/:id/import/by-kugou — start async import from KuGou
 router.post('/:id/import/by-kugou', playlistAccess, requireOwner, async (req, res, next) => {
   try {
     const { importByKugou } = require('../../scripts/import-playlist-by-kugou');
@@ -522,28 +561,28 @@ router.post('/:id/import/by-kugou', playlistAccess, requireOwner, async (req, re
     if (!kugouPlaylistId) {
       return res.status(400).json({ error: { message: 'kugouPlaylistId is required' } });
     }
-    const result = await importByKugou(kugouPlaylistId, req.params.id);
-    res.json(result);
+    startImportJobRoute(req, res, (playlistId, onProgress) => importByKugou(kugouPlaylistId, playlistId, onProgress));
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/playlists/:id/import/by-file — import clips from xlsx file
+// POST /api/playlists/:id/import/by-file — start async import from an xlsx file
 router.post('/:id/import/by-file', playlistAccess, requireOwner, async (req, res, next) => {
   try {
     const multer = require('multer');
     const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }).single('file');
 
-    upload(req, res, async (err) => {
+    upload(req, res, (err) => {
       if (err) return next(err);
       if (!req.file) {
         return res.status(400).json({ error: { message: 'No file uploaded' } });
       }
       try {
         const { importByFile } = require('../../scripts/import-playlist-by-file');
-        const result = await importByFile(req.file.buffer, req.params.id);
-        res.json(result);
+        // Capture the buffer now — req.file may not survive the async job.
+        const buffer = req.file.buffer;
+        startImportJobRoute(req, res, (playlistId, onProgress) => importByFile(buffer, playlistId, onProgress));
       } catch (e) {
         next(e);
       }

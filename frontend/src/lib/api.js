@@ -145,6 +145,8 @@ export const playlistsAPI = {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
+  // Poll the status of an async import job (returns { state, progress, result, error }).
+  getImportJob: (id, jobId) => api.get(`/playlists/${id}/import/jobs/${jobId}`),
 
   // Clips within playlist
   addClip: (id, data) => api.post(`/playlists/${id}/clips`, data),

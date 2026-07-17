@@ -527,11 +527,18 @@ Update the handlers to pass the starter fn:
 **Files:**
 - Modify (on VM): `/etc/nginx/sites-enabled/music-app`
 
-- [ ] Add a scoped location BEFORE the general `/api/` block (nginx picks the most specific prefix, so ordering isn't strictly required, but add it as its own block):
+- [ ] Add a scoped location for the import timeout. CRITICAL: use `location
+  /api/playlists` **without** a trailing slash and `proxy_pass
+  http://localhost:4000;` **without** a URI path. A trailing-slash location +
+  trailing-slash proxy_pass (`/api/playlists/` → `.../api/playlists/`) makes
+  nginx 301-redirect `POST /api/playlists` (no slash) to `/api/playlists/`,
+  which downgrades the POST to a GET — silently breaking playlist creation.
+  The no-URI proxy_pass passes the original request URI unchanged, matching
+  both `/api/playlists` and `/api/playlists/...` with no redirect:
 
 ```
-location /api/playlists/ {
-    proxy_pass http://localhost:4000/api/playlists/;
+location /api/playlists {
+    proxy_pass http://localhost:4000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;

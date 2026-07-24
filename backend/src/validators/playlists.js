@@ -44,6 +44,7 @@ const mergeOptionsSchema = z.object({
   sectionLabel: AB.optional(),
   clipCut: AB.optional(),
   order: AB.optional(),
+  annotateDifferent: z.boolean().optional(),
 }).optional();
 
 const mergePlaylistSchema = z.object({

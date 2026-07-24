@@ -491,6 +491,7 @@ export default {
   mergeOpt_clipCut: "Clip (when song differs)",
   mergeOpt_order: "Clip order",
   mergeOpt_combine: "Combine",
+  mergeOpt_annotateDifferent: "Add a note when a clip differs",
 
   // Account / billing
   accountTitle: "My Account",

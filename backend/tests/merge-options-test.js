@@ -32,7 +32,8 @@ console.log('Test: normalizeOptions() fills defaults');
   const n = normalizeOptions({ speed: 'A' });
   check('override kept', n.speed === 'A');
   check('missing filled', n.pitch === DEFAULT_MERGE_OPTIONS.pitch);
-  check('all 7 present', ['speed','pitch','comment','colorTag','sectionLabel','clipCut','order'].every(k => k in n));
+  check('all keys present', ['speed','pitch','comment','colorTag','sectionLabel','clipCut','order','annotateDifferent'].every(k => k in n));
+  check('annotateDifferent default true', n.annotateDifferent === true);
 }
 
 console.log('Test: Rule 4 (same clip.id) honors options');
@@ -80,6 +81,41 @@ console.log('Test: Rule 2 clipCut');
   check('clipCut=B comment resolved+annotated', rows[0].comment === 'A-note\n[已采用 B 的片段]');
   check('clipCut=B no leftover A row', rows.length === 1);
   check('clipCut=B not counted as deleted', summary.markedDeleted === 0);
+}
+
+console.log('Test: annotateDifferent=false suppresses differing-clip notes');
+{
+  const a = [pc({ clipId: 'cA', songId: 's1', comment: 'A-note' })];
+  const b = [pc({ clipId: 'cB', songId: 's1', comment: 'B-note' })];
+
+  // clipCut=A, annotations off: keep A's clip + comment, no [B 中的片段不同]
+  const offA = buildMergeRows(a, b, { annotateDifferent: false }).rows[0];
+  check('off clipCut=A keeps A clip', offA.clipId === 'cA');
+  check('off clipCut=A comment unchanged', offA.comment === 'A-note');
+  check('off clipCut=A no diff note', !offA.comment.includes('[B 中的片段不同]'));
+  check('off still counts markedDifferent', buildMergeRows(a, b, { annotateDifferent: false }).summary.markedDifferent === 1);
+
+  // clipCut=B, annotations off: no [已采用 B 的片段]
+  const offB = buildMergeRows(a, b, { annotateDifferent: false, clipCut: 'B', comment: 'A' }).rows[0];
+  check('off clipCut=B uses B clip', offB.clipId === 'cB');
+  check('off clipCut=B comment unchanged', offB.comment === 'A-note');
+  check('off clipCut=B no adopted note', !offB.comment.includes('[已采用 B 的片段]'));
+
+  // multiple differing B clips of same song, annotations off: no [B 中存在多个不同片段]
+  const a2 = [pc({ clipId: 'cA', songId: 's1', comment: null })];
+  const b2 = [
+    pc({ clipId: 'cB1', songId: 's1' }),
+    pc({ clipId: 'cB2', songId: 's1' }),
+  ];
+  const offMulti = buildMergeRows(a2, b2, { annotateDifferent: false }).rows[0];
+  check('off no multiple-different note', offMulti.comment === null);
+
+  // deleted-song note ([此歌已删]) must still appear even when annotations off
+  const a3 = [pc({ clipId: 'gone', songId: 's9', comment: 'x' })];
+  const b3 = [pc({ clipId: 'nb', songId: 's8' })];
+  const offDel = buildMergeRows(a3, b3, { annotateDifferent: false });
+  const goneRow = offDel.rows.find(r => r.clipId === 'gone');
+  check('off deleted note still present', goneRow.comment.includes('[此歌已删]'));
 }
 
 console.log('Test: order option');

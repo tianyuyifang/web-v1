@@ -10,6 +10,7 @@ export const DEFAULT_MERGE_OPTIONS = {
   sectionLabel: "B",
   clipCut: "A",
   order: "B",
+  annotateDifferent: true,
 };
 
 // field key -> whether it supports "combine"
@@ -54,6 +55,15 @@ export default function MergeOptions({ value, onChange, aName, bName }) {
           </label>
         ))}
       </div>
+      <label className="flex items-center gap-2 pt-1 text-sm">
+        <input
+          type="checkbox"
+          checked={opts.annotateDifferent}
+          onChange={(e) => set("annotateDifferent", e.target.checked)}
+          className="h-4 w-4 shrink-0 accent-primary"
+        />
+        <span className="text-muted">{t("mergeOpt_annotateDifferent")}</span>
+      </label>
     </div>
   );
 }

@@ -491,6 +491,7 @@ export default {
   mergeOpt_clipCut: "片段（同歌不同片段时）",
   mergeOpt_order: "片段顺序",
   mergeOpt_combine: "合并两者",
+  mergeOpt_annotateDifferent: "片段不同时添加备注",
 
   // 账户 / 计费
   accountTitle: "我的账户",

@@ -15,6 +15,10 @@ const DEFAULT_MERGE_OPTIONS = Object.freeze({
   sectionLabel: 'B',
   clipCut: 'A',
   order: 'B',
+  // When true (default), differing clips between A and B get an annotation
+  // note appended to their comment. Set false to suppress those notes.
+  // Does NOT affect the "[此歌已删]" deleted-song note.
+  annotateDifferent: true,
 });
 
 function normalizeOptions(options) {
@@ -147,10 +151,12 @@ function buildMergeRows(aClips, bClips, options) {
     if (rule2FirstIndexBySong.has(sid)) {
       // Subsequent B clip of same song with different clip.id -> append the
       // "multiple different" annotation to the already-emitted row (only once).
-      const idx = rule2FirstIndexBySong.get(sid);
-      const row = rows[idx];
-      if (!row.comment || !row.comment.includes(ANNOTATION_MULTIPLE_DIFFERENT_CLIPS)) {
-        row.comment = appendAnnotation(row.comment, ANNOTATION_MULTIPLE_DIFFERENT_CLIPS);
+      if (opts.annotateDifferent) {
+        const idx = rule2FirstIndexBySong.get(sid);
+        const row = rows[idx];
+        if (!row.comment || !row.comment.includes(ANNOTATION_MULTIPLE_DIFFERENT_CLIPS)) {
+          row.comment = appendAnnotation(row.comment, ANNOTATION_MULTIPLE_DIFFERENT_CLIPS);
+        }
       }
       continue;
     }
@@ -164,14 +170,16 @@ function buildMergeRows(aClips, bClips, options) {
 
     if (opts.clipCut === 'B') {
       // Adopt B's clip cut; resolve fields via options against the matched A clip,
-      // then annotate that the cut was swapped to B's.
+      // then annotate that the cut was swapped to B's (unless annotations are off).
       const resolvedComment = pick(opts.comment, aPick.comment, bPc.comment, combineComment);
       rows.push({
         clipId: bPc.clipId,
         speed: pick(opts.speed, aPick.speed, bPc.speed),
         pitch: pick(opts.pitch, aPick.pitch, bPc.pitch),
         colorTag: pick(opts.colorTag, aPick.colorTag, bPc.colorTag, unionColorTags),
-        comment: appendAnnotation(resolvedComment, ANNOTATION_CLIP_FROM_B),
+        comment: opts.annotateDifferent
+          ? appendAnnotation(resolvedComment, ANNOTATION_CLIP_FROM_B)
+          : resolvedComment,
         sectionLabel: pick(opts.sectionLabel, aPick.sectionLabel, bPc.sectionLabel),
         __src: 'A',
         __aClipId: aPick.clipId,
@@ -181,8 +189,10 @@ function buildMergeRows(aClips, bClips, options) {
       continue;
     }
 
-    // clipCut === 'A' (default): keep A's clip, flag it.
-    const newComment = appendAnnotation(aPick.comment, ANNOTATION_DIFFERENT_CLIP);
+    // clipCut === 'A' (default): keep A's clip, flag it (unless annotations are off).
+    const newComment = opts.annotateDifferent
+      ? appendAnnotation(aPick.comment, ANNOTATION_DIFFERENT_CLIP)
+      : aPick.comment;
     rows.push({
       clipId: aPick.clipId,
       speed: aPick.speed,

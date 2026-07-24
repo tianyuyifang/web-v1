@@ -494,6 +494,8 @@ export default {
 
   // Account / billing
   accountTitle: "My Account",
+  accountInfo: "Account Info",
+  changeAccount: "Change Account",
   accountStatus: "Status",
   statusActive: "Active",
   statusExpired: "Expired",

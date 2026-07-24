@@ -494,6 +494,8 @@ export default {
 
   // 账户 / 计费
   accountTitle: "我的账户",
+  accountInfo: "账户信息",
+  changeAccount: "修改账户",
   accountStatus: "状态",
   statusActive: "有效",
   statusExpired: "已过期",

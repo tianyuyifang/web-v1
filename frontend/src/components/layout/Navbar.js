@@ -70,7 +70,6 @@ export default function Navbar() {
               {navLink("/help", t("navHelp"))}
               {isAdmin && navLink("/admin", t("navAdmin"))}
               {navLink("/account", t("navAccount"))}
-              {navLink("/settings", t("navSettings"))}
             </div>
 
             {/* Mobile hamburger */}
@@ -93,11 +92,11 @@ export default function Navbar() {
           </div>
           <div className="flex flex-col gap-1">
             {navLink("/playlists", t("navPlaylists"))}
+            {navLink("/tools", t("navTools"))}
             {navLink("/updates", t("navUpdates"))}
             {navLink("/help", t("navHelp"))}
             {isAdmin && navLink("/admin", t("navAdmin"))}
             {navLink("/account", t("navAccount"))}
-            {navLink("/settings", t("navSettings"))}
           </div>
         </div>
       )}

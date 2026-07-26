@@ -1,6 +1,23 @@
+const bcrypt = require('bcryptjs');
 const prisma = require('../db/client');
 const { NotFoundError, ForbiddenError } = require('../utils/errors');
 const { addOneMonth } = require('../utils/billing');
+
+const SALT_ROUNDS = 10;
+
+// Unambiguous alphabet: no 0/O/1/l/I to avoid confusion when relaying the
+// temp password out-of-band.
+const TEMP_PW_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+const TEMP_PW_LENGTH = 12;
+
+function generateTempPassword() {
+  const bytes = require('crypto').randomBytes(TEMP_PW_LENGTH);
+  let out = '';
+  for (let i = 0; i < TEMP_PW_LENGTH; i++) {
+    out += TEMP_PW_ALPHABET[bytes[i] % TEMP_PW_ALPHABET.length];
+  }
+  return out;
+}
 
 /**
  * Returns all users ordered by creation date descending.
@@ -236,4 +253,25 @@ async function extendOneMonth(id) {
   return prisma.user.update({ where: { id }, data: { expiresAt }, select: BILLING_SELECT });
 }
 
-module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, listUserPlaylists, updateBilling, extendOneMonth };
+/**
+ * Reset a user's password to a freshly generated temp password.
+ * Returns the plaintext temp password ONCE so the admin can relay it; it is
+ * never stored in plaintext. Admins cannot be reset here (recover via
+ * scripts/seed-admins.js). Existing sessions are left intact — already-issued
+ * JWTs stay valid until they expire; only new logins require the temp password.
+ * @param {string} id - User UUID
+ * @returns {Promise<{ id: string, username: string, tempPassword: string }>}
+ */
+async function resetPassword(id) {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new NotFoundError('User');
+  if (user.role === 'ADMIN') throw new ForbiddenError('Cannot reset an admin password');
+
+  const tempPassword = generateTempPassword();
+  const passwordHash = await bcrypt.hash(tempPassword, SALT_ROUNDS);
+  await prisma.user.update({ where: { id }, data: { passwordHash } });
+
+  return { id: user.id, username: user.username, tempPassword };
+}
+
+module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword };

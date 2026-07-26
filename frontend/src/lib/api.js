@@ -212,6 +212,7 @@ export const adminAPI = {
   getBandwidth: (days = 30) => api.get(`/admin/bandwidth?days=${days}`),
   updateBilling: (id, data) => api.patch(`/admin/users/${id}/billing`, data),
   extendOneMonth: (id) => api.post(`/admin/users/${id}/extend`),
+  resetPassword: (id) => api.post(`/admin/users/${id}/reset-password`),
 };
 
 // --- Feedback ---

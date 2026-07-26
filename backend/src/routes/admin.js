@@ -96,4 +96,14 @@ router.post('/users/:id/extend', async (req, res, next) => {
   }
 });
 
+// POST /api/admin/users/:id/reset-password — set a new temp password, returned once
+router.post('/users/:id/reset-password', async (req, res, next) => {
+  try {
+    const result = await adminService.resetPassword(req.params.id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

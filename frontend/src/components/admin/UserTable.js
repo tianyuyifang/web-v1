@@ -13,6 +13,9 @@ export default function UserTable({ users, onRefresh, controls = false }) {
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [revokeTarget, setRevokeTarget] = useState(null);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetResult, setResetResult] = useState(null); // { username, tempPassword }
+  const [copied, setCopied] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [billingDraft, setBillingDraft] = useState({});
   const [sortKey, setSortKey] = useState("registered"); // registered | expiration | owned | shared
@@ -50,6 +53,30 @@ export default function UserTable({ users, onRefresh, controls = false }) {
   async function extend(user) {
     await perform(user.id, () => adminAPI.extendOneMonth(user.id));
     setBillingDraft((prev) => { const n = { ...prev }; delete n[user.id]; return n; });
+  }
+
+  async function doReset(user) {
+    setLoading((prev) => ({ ...prev, [user.id]: true }));
+    setError("");
+    try {
+      const res = await adminAPI.resetPassword(user.id);
+      setResetResult({ username: res.data.username, tempPassword: res.data.tempPassword });
+      setCopied(false);
+    } catch (err) {
+      setError(err.response?.data?.error?.message || t("actionFailed"));
+    } finally {
+      setLoading((prev) => ({ ...prev, [user.id]: false }));
+    }
+  }
+
+  async function copyTempPassword() {
+    if (!resetResult) return;
+    try {
+      await navigator.clipboard.writeText(resetResult.tempPassword);
+      setCopied(true);
+    } catch {
+      // clipboard may be unavailable; the password is visible to select manually
+    }
   }
 
   async function perform(userId, action) {
@@ -256,6 +283,15 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                 )}
                 {user.role !== "ADMIN" && (
                   <button
+                    onClick={() => setResetTarget(user)}
+                    disabled={loading[user.id]}
+                    className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover hover:text-theme disabled:opacity-50"
+                  >
+                    {t("resetPassword")}
+                  </button>
+                )}
+                {user.role !== "ADMIN" && (
+                  <button
                     onClick={() => setDeleteTarget(user)}
                     disabled={loading[user.id]}
                     className="rounded-md border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
@@ -376,6 +412,53 @@ export default function UserTable({ users, onRefresh, controls = false }) {
           }}
           onCancel={() => setRevokeTarget(null)}
         />
+      )}
+
+      {resetTarget && (
+        <ConfirmDialog
+          title={t("resetPasswordTitle")}
+          message={`${t("resetPasswordConfirm")} "${resetTarget.username}"?`}
+          confirmLabel={t("resetPassword")}
+          cancelLabel={t("cancel")}
+          onConfirm={() => {
+            doReset(resetTarget);
+            setResetTarget(null);
+          }}
+          onCancel={() => setResetTarget(null)}
+        />
+      )}
+
+      {resetResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-5">
+            <h2 className="mb-1 text-lg font-semibold" style={{ color: "var(--text)" }}>
+              {t("resetPasswordDoneTitle")}
+            </h2>
+            <p className="mb-3 text-sm text-muted">
+              {t("resetPasswordDoneBody").replace("{name}", resetResult.username)}
+            </p>
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+              <code className="flex-1 select-all text-base font-semibold tracking-wide" style={{ color: "var(--text)" }}>
+                {resetResult.tempPassword}
+              </code>
+              <button
+                onClick={copyTempPassword}
+                className="shrink-0 rounded-md border border-primary/40 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+              >
+                {copied ? t("copied") : t("copy")}
+              </button>
+            </div>
+            <p className="mb-4 text-xs text-muted">{t("resetPasswordDoneHint")}</p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setResetResult(null)}
+                className="rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-white hover:bg-primary/90"
+              >
+                {t("done")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

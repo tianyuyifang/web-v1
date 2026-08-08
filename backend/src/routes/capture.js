@@ -16,6 +16,15 @@ const pairLimiter = rateLimit({
   message: { error: { message: 'Too many pairing attempts, try again later', status: 429 } },
 });
 
+// Latest shipped capture client. Bump minSupported when a change makes older
+// clients wrong rather than merely outdated — a qni control-id change, say,
+// where an old client silently captures nothing and the user assumes the tool
+// is broken.
+const CLIENT_VERSION = { latest: 1, minSupported: 1, url: 'https://qnicheatsheet.com/qni-capture.apk' };
+
+// GET /api/capture/version — checked by the client at startup.
+router.get('/version', (req, res) => res.json(CLIENT_VERSION));
+
 // POST /api/capture/pair — exchange a short code for the real token.
 // Deliberately unauthenticated: the capture client has no user credentials,
 // which is the whole reason pairing exists.

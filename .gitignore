@@ -26,3 +26,8 @@ backend/venv/
 
 # Local DB backups
 backups/
+
+# Data inputs / intermediate artifacts (regenerated each run, not source)
+/*.xlsx
+backend/scripts/chorus.b64.txt
+backend/scripts/*.b64.txt

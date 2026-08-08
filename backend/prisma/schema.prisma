@@ -272,6 +272,12 @@ model CaptureSession {
   userId     String    @map("user_id") @db.Uuid
   playlistId String    @map("playlist_id") @db.Uuid
   tokenHash  String    @unique @map("token_hash")
+  /// Short code the user types into the capture client to fetch the real
+  /// token. The website and the client live in separate worlds (browser on
+  /// the PC, APK inside the emulator) with no shared clipboard, so the long
+  /// token can never be handed over directly. Cleared once redeemed.
+  pairCode   String?   @unique @map("pair_code")
+  pairExpiresAt DateTime? @map("pair_expires_at") @db.Timestamptz
   label      String?
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   expiresAt  DateTime  @map("expires_at") @db.Timestamptz

@@ -1,7 +1,31 @@
 const router = require('express').Router();
+const rateLimit = require('express-rate-limit');
 const captureService = require('../services/captureService');
 const { authMiddleware, requireApproved, requireActiveSession } = require('../middleware/auth');
 const captureAuth = require('../middleware/captureAuth');
+
+// --- unauthenticated: pairing ---
+
+// A 6-char code over a 31-char alphabet is ~900M combinations, but it is the
+// only credential on this route, so cap guesses hard.
+const pairLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { message: 'Too many pairing attempts, try again later', status: 429 } },
+});
+
+// POST /api/capture/pair — exchange a short code for the real token.
+// Deliberately unauthenticated: the capture client has no user credentials,
+// which is the whole reason pairing exists.
+router.post('/pair', pairLimiter, async (req, res, next) => {
+  try {
+    res.json(await captureService.redeemPairCode(req.body && req.body.code));
+  } catch (err) {
+    next(err);
+  }
+});
 
 // --- capture-token authenticated (the capture client) ---
 
@@ -32,6 +56,10 @@ router.post('/sessions', ...web, async (req, res, next) => {
     });
     res.json({
       token,
+      // What the user actually types into the capture client. The long token
+      // is returned too, for adb injection during development.
+      pairCode: session.pairCode,
+      pairExpiresAt: session.pairExpiresAt,
       session: {
         id: session.id,
         playlistId: session.playlistId,

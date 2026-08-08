@@ -18,9 +18,9 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
 export default function CapturePanel({ playlistId }) {
   const { t } = useLanguage();
   const [session, setSession] = useState(null);
-  const [token, setToken] = useState(null);
-  const [showToken, setShowToken] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [pairCode, setPairCode] = useState(null);
+  const [pairExpiresAt, setPairExpiresAt] = useState(null);
+  const [pairLeft, setPairLeft] = useState(0);
   const [open, setOpen] = useState(true);
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
@@ -91,7 +91,8 @@ export default function CapturePanel({ playlistId }) {
     try {
       const res = await captureAPI.start(playlistId);
       setSession(res.data.session);
-      setToken(res.data.token);
+      setPairCode(res.data.pairCode);
+      setPairExpiresAt(res.data.pairExpiresAt);
       setEvents([]);
       setOpen(true);
     } catch (err) {
@@ -110,8 +111,8 @@ export default function CapturePanel({ playlistId }) {
       /* stopping is best-effort; the token expires on its own anyway */
     } finally {
       setSession(null);
-      setToken(null);
-      setShowToken(false);
+      setPairCode(null);
+      setPairExpiresAt(null);
       setEvents([]);
       setBusy(false);
     }
@@ -135,13 +136,19 @@ export default function CapturePanel({ playlistId }) {
     }
   }, []);
 
-  const copyToken = useCallback(() => {
-    if (!token) return;
-    navigator.clipboard?.writeText(token).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, [token]);
+  // Countdown on the pairing code — it expires in 5 minutes, and a user
+  // staring at a dead code with no indication would have no idea why.
+  useEffect(() => {
+    if (!pairExpiresAt) return;
+    const tick = () => {
+      const left = Math.max(0, Math.floor((new Date(pairExpiresAt).getTime() - Date.now()) / 1000));
+      setPairLeft(left);
+      if (left === 0) setPairCode(null);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [pairExpiresAt]);
 
   // --- not started: a single unobtrusive button ---
   if (!session) {
@@ -209,25 +216,20 @@ export default function CapturePanel({ playlistId }) {
 
         {open && (
           <>
-            {/* token — hidden until asked for; it can write to this playlist */}
-            <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
-              <span className="text-muted">{t("captureToken")}</span>
-              <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-gray-300">
-                {showToken ? token : "••••••••••••••••"}
-              </code>
-              <button
-                onClick={() => setShowToken((v) => !v)}
-                className="rounded px-1.5 py-0.5 text-muted hover:bg-surface-hover"
-              >
-                {showToken ? t("captureHideToken") : t("captureShowToken")}
-              </button>
-              <button
-                onClick={copyToken}
-                className="rounded px-1.5 py-0.5 text-muted hover:bg-surface-hover"
-              >
-                {copied ? t("captureCopied") : "📋"}
-              </button>
-            </div>
+            {/* Pairing code — only until the client connects, then it is noise */}
+            {pairCode && client !== "connected" && (
+              <div className="border-b border-border px-3 py-2">
+                <p className="mb-1 text-[11px] text-muted">{t("capturePairHint")}</p>
+                <div className="flex items-center gap-2">
+                  <code className="rounded bg-black/30 px-3 py-1 font-mono text-lg tracking-[0.3em] text-theme">
+                    {pairCode}
+                  </code>
+                  <span className="text-[11px] text-muted">
+                    {Math.floor(pairLeft / 60)}:{String(pairLeft % 60).padStart(2, "0")}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* work list */}
             <div className="max-h-[45vh] overflow-y-auto">

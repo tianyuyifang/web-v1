@@ -1,5 +1,5 @@
 const prisma = require('../db/client');
-const { generateToken, hashToken, isExpired } = require('../utils/captureToken');
+const { generateToken, generatePairCode, hashToken, isExpired } = require('../utils/captureToken');
 const { matchTitle, normTitle } = require('./captureMatchService');
 const { ensureLiked } = require('./likeService');
 const { broadcast } = require('./sseManager');
@@ -8,6 +8,8 @@ const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/err
 const DEFAULT_TTL_MINUTES = 4 * 60;
 const MAX_TEXT_LENGTH = 200;
 const MAX_CANDIDATE_SCAN = 30;
+/** Pairing codes are short and guessable, so they live only long enough to type. */
+const PAIR_TTL_MS = 5 * 60 * 1000;
 
 /** The user must be able to like in this playlist to capture into it. */
 async function assertPlaylistAccess(userId, playlistId) {
@@ -37,17 +39,64 @@ async function startSession({ userId, playlistId, label, ttlMinutes }) {
     : DEFAULT_TTL_MINUTES;
 
   const token = generateToken();
-  const session = await prisma.captureSession.create({
-    data: {
-      userId,
-      playlistId,
-      tokenHash: hashToken(token),
-      label: label || null,
-      expiresAt: new Date(Date.now() + ttl * 60 * 1000),
-    },
-  });
+
+  // pairCode is unique, so retry on the rare collision with a live code.
+  let session = null;
+  for (let attempt = 0; attempt < 5 && !session; attempt++) {
+    try {
+      session = await prisma.captureSession.create({
+        data: {
+          userId,
+          playlistId,
+          tokenHash: hashToken(token),
+          pairCode: generatePairCode(),
+          pairExpiresAt: new Date(Date.now() + PAIR_TTL_MS),
+          label: label || null,
+          expiresAt: new Date(Date.now() + ttl * 60 * 1000),
+        },
+      });
+    } catch (err) {
+      if (err.code !== 'P2002') throw err;
+    }
+  }
+  if (!session) throw new ValidationError({ pairCode: ['Could not allocate a pairing code'] });
 
   return { session, token };
+}
+
+/**
+ * Exchange a pairing code for the real token.
+ *
+ * Unauthenticated by design: the code itself is the credential, which is why
+ * it is short-lived and single-use. Redeeming clears the code so a second
+ * client cannot pair with the same session.
+ */
+async function redeemPairCode(code) {
+  const normalized = String(code == null ? '' : code).trim().toUpperCase();
+  if (!normalized) throw new ValidationError({ code: ['Pairing code is required'] });
+
+  const session = await prisma.captureSession.findUnique({ where: { pairCode: normalized } });
+  if (!session) throw new NotFoundError('Pairing code');
+  if (isExpired(session)) throw new ForbiddenError('Capture session has ended');
+  if (!session.pairExpiresAt || session.pairExpiresAt.getTime() <= Date.now()) {
+    throw new ForbiddenError('Pairing code has expired');
+  }
+
+  // The token is not recoverable from storage (only its hash is kept), so
+  // issue a fresh one and repoint the session at it. That also invalidates
+  // any token handed out earlier for this session.
+  const token = generateToken();
+  await prisma.captureSession.update({
+    where: { id: session.id },
+    data: { tokenHash: hashToken(token), pairCode: null, pairExpiresAt: null },
+  });
+
+  return {
+    token,
+    sessionId: session.id,
+    playlistId: session.playlistId,
+    expiresAt: session.expiresAt,
+  };
 }
 
 /** Stop a run. Kills the token immediately, regardless of expiresAt. */
@@ -287,6 +336,6 @@ async function getReport({ userId, sessionId }) {
 }
 
 module.exports = {
-  startSession, endSession, resolveSession,
+  startSession, endSession, resolveSession, redeemPairCode,
   ingestText, approveEvent, ignoreEvent, getReport, getStatus,
 };

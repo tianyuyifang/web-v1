@@ -39,6 +39,7 @@ export default {
   captureWaitingClient: "Waiting for the capture client",
   captureWaitingHint: "Emulator running? APK started? Token entered?",
   captureConnected: "Client connected",
+  capturePairHint: "Enter this code in the capture app:",
   captureStale: "Client may have stopped",
   navAccount: "Account",
   navLogout: "Logout",

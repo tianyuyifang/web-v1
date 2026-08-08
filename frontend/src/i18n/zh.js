@@ -39,6 +39,7 @@ export default {
   captureWaitingClient: "等待捕获端连接",
   captureWaitingHint: "模拟器开了吗？APK 启动了吗？token 填了吗？",
   captureConnected: "捕获端已连接",
+  capturePairHint: "在捕获 App 里输入这个配对码：",
   captureStale: "捕获端可能已断开",
   navAccount: "账户",
   navLogout: "退出登录",

@@ -8,6 +8,7 @@ CREATE TABLE "capture_sessions" (
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "expires_at" TIMESTAMPTZ NOT NULL,
     "ended_at" TIMESTAMPTZ,
+    "last_seen_at" TIMESTAMPTZ,
 
     CONSTRAINT "capture_sessions_pkey" PRIMARY KEY ("id")
 );

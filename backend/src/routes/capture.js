@@ -55,6 +55,18 @@ router.delete('/sessions/:id', ...web, async (req, res, next) => {
   }
 });
 
+// GET /api/capture/sessions/:id/status — is the capture client alive?
+// Cheap enough to poll; the panel uses it to explain an empty list.
+router.get('/sessions/:id/status', ...web, async (req, res, next) => {
+  try {
+    res.json(await captureService.getStatus({
+      userId: req.user.id, sessionId: req.params.id,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/capture/sessions/:id/report — events, summary, unmatched list
 router.get('/sessions/:id/report', ...web, async (req, res, next) => {
   try {

@@ -121,6 +121,14 @@ async function ingestText({ session, rawText }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
 
+  // Mark the client as alive before anything else can fail. Without this the
+  // UI cannot tell "emulator not running" from "nothing captured yet" — both
+  // show zero rows.
+  await prisma.captureSession.update({
+    where: { id: session.id },
+    data: { lastSeenAt: new Date() },
+  });
+
   // Dedupe: the same song is read ~15 times while it sits on screen and the
   // string is byte-identical each time.
   const existing = await prisma.captureEvent.findUnique({
@@ -219,6 +227,36 @@ async function ignoreEvent({ userId, eventId }) {
 }
 
 /**
+ * Lightweight liveness check for the panel to poll.
+ *
+ * Distinguishes the three states that all look like "zero rows" otherwise:
+ *   waiting      the client has never posted — emulator or APK not running,
+ *                or the token was never entered
+ *   connected    posted recently
+ *   stale        posted before, but not lately — client died or the game
+ *                left the song list
+ */
+async function getStatus({ userId, sessionId }) {
+  const session = await prisma.captureSession.findUnique({ where: { id: sessionId } });
+  if (!session) throw new NotFoundError('Capture session');
+  if (session.userId !== userId) throw new ForbiddenError('Not your capture session');
+
+  const STALE_AFTER_MS = 60 * 1000;
+  let client = 'waiting';
+  if (session.lastSeenAt) {
+    const age = Date.now() - new Date(session.lastSeenAt).getTime();
+    client = age <= STALE_AFTER_MS ? 'connected' : 'stale';
+  }
+
+  return {
+    client,
+    lastSeenAt: session.lastSeenAt,
+    ended: Boolean(session.endedAt),
+    expiresAt: session.expiresAt,
+  };
+}
+
+/**
  * Everything captured in this run, plus the unmatched list.
  * Unmatched is per session by design — it answers "what did this run miss".
  */
@@ -250,5 +288,5 @@ async function getReport({ userId, sessionId }) {
 
 module.exports = {
   startSession, endSession, resolveSession,
-  ingestText, approveEvent, ignoreEvent, getReport,
+  ingestText, approveEvent, ignoreEvent, getReport, getStatus,
 };

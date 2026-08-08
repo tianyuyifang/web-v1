@@ -25,6 +25,7 @@ export default function CapturePanel({ playlistId }) {
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [client, setClient] = useState("waiting");
   const esRef = useRef(null);
 
   const pending = events.filter((e) => e.outcome === "pending" || e.outcome === "ambiguous");
@@ -63,6 +64,26 @@ export default function CapturePanel({ playlistId }) {
       esRef.current = null;
     };
   }, [session, playlistId]);
+
+  // Poll liveness. An empty list has three very different causes — client
+  // never started, client died, or the game simply has no song list up — and
+  // the user cannot act without knowing which.
+  useEffect(() => {
+    if (!session) return;
+    let alive = true;
+    const tick = () => {
+      captureAPI
+        .status(session.id)
+        .then((res) => alive && setClient(res.data.client))
+        .catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 10000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [session]);
 
   const start = useCallback(async () => {
     setBusy(true);
@@ -168,6 +189,23 @@ export default function CapturePanel({ playlistId }) {
             </button>
           </div>
         </div>
+
+        {/* client liveness — the reason an empty list is empty */}
+        {client !== "connected" && (
+          <div className="border-b border-border bg-amber-500/10 px-3 py-1.5">
+            <p className="text-[11px] text-amber-400">
+              ⚠ {client === "waiting" ? t("captureWaitingClient") : t("captureStale")}
+            </p>
+            {client === "waiting" && (
+              <p className="text-[11px] text-muted">{t("captureWaitingHint")}</p>
+            )}
+          </div>
+        )}
+        {client === "connected" && events.length === 0 && (
+          <div className="border-b border-border px-3 py-1.5">
+            <p className="text-[11px] text-green-400">🟢 {t("captureConnected")}</p>
+          </div>
+        )}
 
         {open && (
           <>

@@ -276,6 +276,10 @@ model CaptureSession {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   expiresAt  DateTime  @map("expires_at") @db.Timestamptz
   endedAt    DateTime? @map("ended_at") @db.Timestamptz
+  /// Last time the capture client posted. Null means it has never connected —
+  /// the UI needs that to tell "emulator not running" apart from "nothing
+  /// captured yet", which otherwise look identical.
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz
 
   user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   playlist Playlist       @relation(fields: [playlistId], references: [id], onDelete: Cascade)

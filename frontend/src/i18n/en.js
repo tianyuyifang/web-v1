@@ -36,6 +36,10 @@ export default {
   captureAmbiguous: "Pick one",
   captureNotInPlaylist: "In library, not in this playlist",
   captureStartFailed: "Could not start capture",
+  captureWaitingClient: "Waiting for the capture client",
+  captureWaitingHint: "Emulator running? APK started? Token entered?",
+  captureConnected: "Client connected",
+  captureStale: "Client may have stopped",
   navAccount: "Account",
   navLogout: "Logout",
 

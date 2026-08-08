@@ -36,6 +36,10 @@ export default {
   captureAmbiguous: "选一个",
   captureNotInPlaylist: "库里有，但这个歌单没有",
   captureStartFailed: "无法开始捕获",
+  captureWaitingClient: "等待捕获端连接",
+  captureWaitingHint: "模拟器开了吗？APK 启动了吗？token 填了吗？",
+  captureConnected: "捕获端已连接",
+  captureStale: "捕获端可能已断开",
   navAccount: "账户",
   navLogout: "退出登录",
 

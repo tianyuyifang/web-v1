@@ -205,6 +205,7 @@ export const likesAPI = {
 export const captureAPI = {
   start: (playlistId, opts = {}) => api.post("/capture/sessions", { playlistId, ...opts }),
   stop: (sessionId) => api.delete(`/capture/sessions/${sessionId}`),
+  status: (sessionId) => api.get(`/capture/sessions/${sessionId}/status`),
   report: (sessionId) => api.get(`/capture/sessions/${sessionId}/report`),
   approve: (eventId, clipId) => api.post(`/capture/events/${eventId}/approve`, clipId ? { clipId } : {}),
   ignore: (eventId) => api.post(`/capture/events/${eventId}/ignore`),

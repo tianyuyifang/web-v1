@@ -201,6 +201,15 @@ export const likesAPI = {
   unlikeAll: (playlistId) => api.delete(`/likes/playlist/${playlistId}`),
 };
 
+// --- Screen capture ---
+export const captureAPI = {
+  start: (playlistId, opts = {}) => api.post("/capture/sessions", { playlistId, ...opts }),
+  stop: (sessionId) => api.delete(`/capture/sessions/${sessionId}`),
+  report: (sessionId) => api.get(`/capture/sessions/${sessionId}/report`),
+  approve: (eventId, clipId) => api.post(`/capture/events/${eventId}/approve`, clipId ? { clipId } : {}),
+  ignore: (eventId) => api.post(`/capture/events/${eventId}/ignore`),
+};
+
 // --- Admin ---
 export const adminAPI = {
   listUsers: () => api.get("/admin/users"),

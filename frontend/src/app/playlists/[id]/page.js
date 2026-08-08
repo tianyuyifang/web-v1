@@ -11,6 +11,7 @@ import { getColumnCount, setColumnCount as saveColumnCount, matchesSearch } from
 import PlaylistHeader from "@/components/playlist/PlaylistHeader";
 import PlaylistGrid from "@/components/playlist/PlaylistGrid";
 import ClipSidebar from "@/components/playlist/ClipSidebar";
+import CapturePanel from "@/components/playlist/CapturePanel";
 import FloatingClipNav from "@/components/player/FloatingClipNav";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import useLikes from "@/hooks/useLikes";
@@ -340,6 +341,7 @@ export default function PlaylistPage() {
                 {s.label}
               </button>
             ))}
+            <CapturePanel playlistId={playlist.id} />
           </div>
         </div>
 

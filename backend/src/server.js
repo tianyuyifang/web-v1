@@ -45,6 +45,11 @@ app.use('/api/stream',    authMiddleware, requireApproved, requireActiveSession,
 app.use('/api/sse',       authMiddleware, requireApproved, require('./routes/sse')); // no requireActiveSession — SSE is read-only
 app.use('/api/users',     authMiddleware, requireApproved, requireActiveSession, require('./routes/users'));
 
+// Capture routes — auth is per-route inside: JWT for management, capture token
+// for ingest. Deliberately NOT requireActiveSession at the mount: a capture
+// client must not consume a device slot and evict the user's browser login.
+app.use('/api/capture', require('./routes/capture'));
+
 // Feedback routes (submit = approved users, list/delete = admin)
 app.use('/api/feedback', authMiddleware, requireApproved, requireActiveSession, require('./routes/feedback'));
 

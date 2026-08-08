@@ -38,6 +38,7 @@ model User {
   playlists        Playlist[]
   clips            Clip[]
   likes            Like[]
+  captureSessions  CaptureSession[]
   sharedPlaylists  PlaylistShare[]
   copyPermissions  PlaylistCopyPermission[]
   feedback         Feedback[]
@@ -111,6 +112,7 @@ model Clip {
   user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   playlistClips PlaylistClip[]
   likes         Like[]
+  captureEvents CaptureEvent[]
 
   @@index([songId, userId])
   @@index([songId, start])
@@ -134,6 +136,7 @@ model Playlist {
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   playlistClips       PlaylistClip[]
   likes               Like[]
+  captureSessions     CaptureSession[]
   shares              PlaylistShare[]
   copyPermissions     PlaylistCopyPermission[]
 
@@ -259,4 +262,57 @@ model Feedback {
 
   @@index([userId])
   @@map("feedback")
+}
+
+/// A capture run: the user opens a playlist, starts capture, and closes it when done.
+/// The session carries the playlistId, so the capture client only ever sends text —
+/// it never names a playlist and cannot write to the wrong one.
+model CaptureSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  playlistId String    @map("playlist_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  label      String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  endedAt    DateTime? @map("ended_at") @db.Timestamptz
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playlist Playlist       @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  events   CaptureEvent[]
+
+  @@index([userId])
+  @@index([playlistId])
+  @@map("capture_sessions")
+}
+
+/// One captured string and what we resolved it to.
+///
+/// outcome:
+///   pending   - matched a single song, waiting for the user to approve
+///   ambiguous - several songs share this title; user picks one
+///   no_match  - title not in the library
+///   duplicate - same rawText already handled in this session
+///   approved  - user approved; the like has been applied
+///   ignored   - user dismissed it
+///
+/// Nothing is liked automatically. The user approves each match by hand.
+model CaptureEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  sessionId     String   @map("session_id") @db.Uuid
+  rawText       String   @map("raw_text")
+  matchedClipId String?  @map("matched_clip_id") @db.Uuid
+  candidates    Json?    @db.JsonB
+  outcome       String
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  resolvedAt    DateTime? @map("resolved_at") @db.Timestamptz
+
+  session CaptureSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  clip    Clip?          @relation(fields: [matchedClipId], references: [id], onDelete: SetNull)
+
+  /// Dedupe key: the same song is read ~15 times while it sits on screen,
+  /// and the string is byte-identical each time, so one row per session+text.
+  @@unique([sessionId, rawText])
+  @@index([sessionId, createdAt])
+  @@map("capture_events")
 }

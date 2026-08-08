@@ -508,6 +508,8 @@ export default {
   // Merge tool
   merge: "Merge",
   toolsMergeDescription: "Merge updates from another playlist into yours, creating a new playlist.",
+  toolsCaptureApk: "Capture App (Android)",
+  toolsCaptureApkDescription: "Reads song titles from qni running in an Android emulator and sends them here. Install it, then pair with the code shown when you start capture on a playlist.",
   mergeBaseline: "Baseline (A) — must be yours",
   mergeSource: "Source (B)",
   mergeButton: "Merge",

@@ -508,6 +508,8 @@ export default {
   // 合并工具
   merge: "合并",
   toolsMergeDescription: "把另一个列表的更新合并到我的列表，生成新列表。",
+  toolsCaptureApk: "捕获 App（安卓）",
+  toolsCaptureApkDescription: "读取安卓模拟器里 qni 的歌名并发送到本站。安装后，在歌单页点「捕获」拿配对码完成连接。",
   mergeBaseline: "我的列表 (A)",
   mergeSource: "合并来源 (B)",
   mergeButton: "合并",

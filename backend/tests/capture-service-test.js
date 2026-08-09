@@ -42,6 +42,32 @@ assert.ok(!/\btoggleLike\b/.test(src), 'captureService must not call toggleLike'
     assert.ok(live && live.id === session.id, 'token resolves');
     assert.strictEqual(await captureService.resolveSession('bogus'), null, 'bad token rejected');
 
+    // --- starting a run ends the user's previous one ---
+    // The capture client holds a single token from whenever it last paired.
+    // If an old run stayed alive it kept posting there, liking songs in a
+    // playlist the user had left while the panel reported a dead client.
+    // Checked in its own scope so the rest of this test keeps using `live`.
+    {
+      const second = await captureService.startSession({
+        userId: user.id, playlistId: playlist.id, label: 'second',
+      });
+      assert.strictEqual(
+        await captureService.resolveSession(token), null,
+        'CRITICAL: the earlier run must stop accepting posts'
+      );
+      assert.ok(
+        await captureService.resolveSession(second.token),
+        'the new run is the live one'
+      );
+      // Restore the original run so the assertions below still exercise it.
+      await captureService.endSession({ userId: user.id, sessionId: second.session.id });
+      await prisma.captureSession.update({
+        where: { id: session.id },
+        data: { endedAt: null },
+      });
+      assert.ok(await captureService.resolveSession(token), 'original run restored for the rest of the test');
+    }
+
     // --- ingest: exact title match ---
     const r1 = await captureService.ingestText({ session: live, rawText: clip.song.title });
     assert.strictEqual(r1.outcome, 'pending', 'single match awaits approval, not auto-liked');

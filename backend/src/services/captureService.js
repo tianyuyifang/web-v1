@@ -37,9 +37,21 @@ async function assertPlaylistAccess(userId, playlistId) {
 /**
  * Start a capture run. The plaintext token is returned exactly once and is
  * not recoverable — only its hash is stored.
+ *
+ * Any earlier run by this user is ended first. The capture client holds one
+ * token from whenever it last paired, so leaving old runs alive meant it kept
+ * posting to a playlist the user had moved on from: songs were liked in the
+ * wrong playlist — visible to everyone who can see it — while the panel showed
+ * a disconnected client, because the session being watched never heard from
+ * anyone. One live run per user makes that state unreachable.
  */
 async function startSession({ userId, playlistId, label, ttlMinutes }) {
   await assertPlaylistAccess(userId, playlistId);
+
+  await prisma.captureSession.updateMany({
+    where: { userId, endedAt: null, expiresAt: { gt: new Date() } },
+    data: { endedAt: new Date() },
+  });
 
   const ttl = Number(ttlMinutes) > 0
     ? Math.min(Number(ttlMinutes), 24 * 60)

@@ -424,9 +424,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
                 <FailedRow key={e.eventId} event={e} onRetry={retry} onIgnore={ignore} t={t} />
               ))}
 
-              {settled.map((e) => (
-                <AutoRow key={e.eventId} event={e} t={t} />
-              ))}
+              <SettledList events={settled} t={t} />
 
               {pending.map((e) => (
                 <CaptureRow
@@ -473,6 +471,70 @@ function cleanTitle(s) {
   return t.startsWith("《") && t.endsWith("》") && t.length >= 2
     ? t.slice(1, -1).trim()
     : t;
+}
+
+/**
+ * Auto-approved receipts, laid out the way the game shows them: the two 2v2
+ * candidate lists side by side.
+ *
+ * Falls back to one full-width list whenever no row carries a side — clients
+ * before v3 never send it, and modes other than 2v2 have only one list. Two
+ * empty columns would be worse than the plain list they replaced.
+ *
+ * Columns are independent: the teams pick at their own pace, so pairing row N
+ * of one with row N of the other would imply a relationship that is not there.
+ */
+function SettledList({ events, t }) {
+  const red = events.filter((e) => e.side === "red");
+  const blue = events.filter((e) => e.side === "blue");
+
+  if (!red.length && !blue.length) {
+    return events.map((e) => <AutoRow key={e.eventId} event={e} t={t} />);
+  }
+
+  // Anything without a side still has to appear; keep it with the reds so it
+  // cannot silently vanish.
+  const left = [...red, ...events.filter((e) => e.side !== "red" && e.side !== "blue")];
+
+  return (
+    <div className="grid grid-cols-2 gap-px border-b border-border/50 bg-border/30">
+      <div className="bg-surface">
+        <ColumnHeader label={t("captureTeamRed")} tone="text-red-400" />
+        {left.map((e) => (
+          <CompactAutoRow key={e.eventId} event={e} />
+        ))}
+      </div>
+      <div className="bg-surface">
+        <ColumnHeader label={t("captureTeamBlue")} tone="text-blue-400" />
+        {blue.map((e) => (
+          <CompactAutoRow key={e.eventId} event={e} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ColumnHeader({ label, tone }) {
+  return (
+    <p className={`px-2 pb-0.5 pt-1 text-[10px] font-medium ${tone}`}>{label}</p>
+  );
+}
+
+/**
+ * A receipt inside a column. Half the width means the ✓ and the "auto-approved"
+ * label no longer fit alongside the title, so the green tint carries that
+ * meaning instead and the title gets the whole line.
+ */
+function CompactAutoRow({ event }) {
+  const title = cleanTitle(event.rawText);
+  return (
+    <p
+      title={title}
+      className="truncate bg-green-500/5 px-2 py-1 text-[11px] leading-tight text-theme"
+    >
+      {title}
+    </p>
+  );
 }
 
 /**

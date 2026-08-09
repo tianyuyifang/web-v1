@@ -25,6 +25,8 @@ export default {
   captureUndo: "Undo",
   captureRetry: "Retry",
   captureTagged: "tagged",
+  captureTeamRed: "Red",
+  captureTeamBlue: "Blue",
   captureFailed: "failed",
   captureRunning: "Capturing",
   captureStop: "Stop",

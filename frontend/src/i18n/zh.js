@@ -36,6 +36,7 @@ export default {
   captureShowToken: "显示",
   captureHideToken: "隐藏",
   captureCopied: "已复制",
+  captureCopy: "点击复制",
   captureApprove: "确认",
   captureIgnore: "忽略",
   captureUnmatched: "匹配不到",

@@ -174,6 +174,33 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     }
   }, [playlistId, t]);
 
+  const [copied, setCopied] = useState(false);
+  const copyPairCode = useCallback(async () => {
+    if (!pairCode) return;
+    try {
+      await navigator.clipboard.writeText(pairCode);
+    } catch {
+      // navigator.clipboard is undefined outside a secure context, and can be
+      // refused even inside one; fall back so the button is never a dead end.
+      const ta = document.createElement("textarea");
+      ta.value = pairCode;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* nothing left to try */ }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+  }, [pairCode]);
+
+  // Clear the "copied" flash. Keyed on the flag so a second copy restarts it.
+  useEffect(() => {
+    if (!copied) return;
+    const id = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(id);
+  }, [copied]);
+
   const stop = useCallback(async () => {
     if (!session) return;
     setBusy(true);
@@ -402,10 +429,19 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
               <div className="border-b border-border px-3 py-2">
                 <p className="mb-1 text-[11px] text-muted">{t("capturePairHint")}</p>
                 <div className="flex items-center gap-2">
-                  <code className="rounded bg-black/30 px-3 py-1 font-mono text-lg tracking-[0.3em] text-theme">
+                  {/* The whole code is the button — a small icon beside it
+                      would be a worse target than the code itself. */}
+                  <button
+                    onClick={copyPairCode}
+                    title={t("captureCopy")}
+                    className="rounded bg-black/30 px-3 py-1 font-mono text-lg tracking-[0.3em] text-theme transition-colors hover:bg-black/50"
+                  >
                     {pairCode}
-                  </code>
-                  <span className="text-[11px] text-muted">
+                  </button>
+                  <span className={`text-[11px] ${copied ? "text-green-400" : "text-muted"}`}>
+                    {copied ? t("captureCopied") : t("captureCopy")}
+                  </span>
+                  <span className="ml-auto text-[11px] text-muted">
                     {Math.floor(pairLeft / 60)}:{String(pairLeft % 60).padStart(2, "0")}
                   </span>
                 </div>

@@ -36,6 +36,7 @@ export default {
   captureShowToken: "Show",
   captureHideToken: "Hide",
   captureCopied: "Copied",
+  captureCopy: "Tap to copy",
   captureApprove: "Approve",
   captureIgnore: "Ignore",
   captureUnmatched: "Not found",

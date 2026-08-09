@@ -129,6 +129,12 @@ async function resolveSession(token) {
  * Prefilter in SQL on a normalised prefix in either direction, then let
  * captureMatchService decide. The prefilter is deliberately loose — it only
  * has to avoid scanning 20k rows, not to be correct.
+ *
+ * The ORDER BY is not cosmetic. A short title like "一" prefix-matches 410
+ * rows, and LIMIT without ORDER BY returns whichever rows the scan reached
+ * first — so the same capture matched on some runs and not others. Ordering
+ * by closeness puts equal titles first, which makes truncation deterministic
+ * and means the rows that get cut are always the least plausible ones.
  */
 async function fetchCandidateSongs(rawText) {
   const n = normTitle(rawText);
@@ -138,6 +144,10 @@ async function fetchCandidateSongs(rawText) {
     `SELECT id, title, artist FROM songs
       WHERE ${stripped} LIKE $1 || '%'
          OR $1 LIKE ${stripped} || '%'
+      ORDER BY (${stripped} = $1) DESC,
+               abs(length(${stripped}) - length($1)),
+               ${stripped},
+               id
       LIMIT ${MAX_CANDIDATE_SCAN}`,
     n
   );

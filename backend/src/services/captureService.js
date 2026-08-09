@@ -227,6 +227,15 @@ async function clipsInPlaylist(playlistId, songIds) {
   return rows.map((r) => r.clip).filter(Boolean);
 }
 
+/** Record that the capture client is alive, without ingesting anything. */
+async function touchSession(session) {
+  await prisma.captureSession.update({
+    where: { id: session.id },
+    data: { lastSeenAt: new Date() },
+  });
+  return { ok: true };
+}
+
 /**
  * Ingest one captured string.
  *
@@ -411,7 +420,7 @@ async function getReport({ userId, sessionId }) {
 
 module.exports = {
   startSession, endSession, resolveSession, redeemPairCode,
-  ingestText, approveEvent, ignoreEvent, getReport, getStatus,
+  ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
   // Exposed for the matching regression script — the prefilter decides which
   // songs the matcher ever sees, so it needs checking against real data.
   fetchCandidateSongs,

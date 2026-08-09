@@ -20,11 +20,12 @@ const pairLimiter = rateLimit({
 // clients wrong rather than merely outdated — a qni control-id change, say,
 // where an old client silently captures nothing and the user assumes the tool
 // is broken.
-// minSupported stays at 1: v2 reworded the UI and v3 added the optional `side`
-// field, so older clients still capture correctly — they simply omit it and the
-// panel shows no team marker. Raise it only when an older client would silently
-// misbehave — e.g. after qni changes the view ids it reads.
-const CLIENT_VERSION = { latest: 3, minSupported: 1, url: 'https://qnicheatsheet.com/qni-capture.apk' };
+// minSupported stays at 1: every version so far still captures correctly. v2
+// reworded the UI, v3 added the optional `side` field, and v4 scans more often
+// and sends a heartbeat — an older client just runs with the old delay and can
+// still be reported stale during a quiet stretch. Raise it only when an older
+// client would silently misbehave, e.g. after qni changes the view ids it reads.
+const CLIENT_VERSION = { latest: 4, minSupported: 1, url: 'https://qnicheatsheet.com/qni-capture.apk' };
 
 // GET /api/capture/version — checked by the client at startup.
 router.get('/version', (req, res) => res.json(CLIENT_VERSION));
@@ -54,6 +55,17 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
       side: req.body && req.body.side,
     });
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/capture/heartbeat — "still here", for stretches with nothing to send.
+// Without it a quiet client is indistinguishable from a dead one, and the panel
+// reports a lost connection while capture is working fine.
+router.post('/heartbeat', captureAuth, async (req, res, next) => {
+  try {
+    res.json(await captureService.touchSession(req.captureSession));
   } catch (err) {
     next(err);
   }

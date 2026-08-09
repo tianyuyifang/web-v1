@@ -527,16 +527,21 @@ function cleanTitle(s) {
  * of one with row N of the other would imply a relationship that is not there.
  */
 function SettledList({ events, t }) {
-  const red = events.filter((e) => e.side === "red");
-  const blue = events.filter((e) => e.side === "blue");
+  // `events` is newest-first because arrivals are prepended, but a column that
+  // grows downward reads the other way round: newest at the bottom, where your
+  // eye already is.
+  const ordered = [...events].reverse();
+  const red = ordered.filter((e) => e.side === "red");
+  const blue = ordered.filter((e) => e.side === "blue");
 
   if (!red.length && !blue.length) {
-    return events.map((e) => <AutoRow key={e.eventId} event={e} t={t} />);
+    return ordered.map((e) => <AutoRow key={e.eventId} event={e} t={t} />);
   }
 
   // Anything without a side still has to appear; keep it with the reds so it
-  // cannot silently vanish.
-  const left = [...red, ...events.filter((e) => e.side !== "red" && e.side !== "blue")];
+  // cannot silently vanish. Selected in one pass so it stays in arrival order
+  // rather than being appended after the reds.
+  const left = ordered.filter((e) => e.side !== "blue");
 
   return (
     <div className="grid grid-cols-2 gap-px border-b border-border/50 bg-border/30">

@@ -20,7 +20,10 @@ const pairLimiter = rateLimit({
 // clients wrong rather than merely outdated — a qni control-id change, say,
 // where an old client silently captures nothing and the user assumes the tool
 // is broken.
-const CLIENT_VERSION = { latest: 1, minSupported: 1, url: 'https://qnicheatsheet.com/qni-capture.apk' };
+// minSupported stays at 1: v2 only reworded the UI, so a v1 client still
+// captures correctly. Raise it only when an older client would silently
+// misbehave — e.g. after qni changes the view ids it reads.
+const CLIENT_VERSION = { latest: 2, minSupported: 1, url: 'https://qnicheatsheet.com/qni-capture.apk' };
 
 // GET /api/capture/version — checked by the client at startup.
 router.get('/version', (req, res) => res.json(CLIENT_VERSION));

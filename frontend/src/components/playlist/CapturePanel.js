@@ -45,6 +45,8 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
 
   const pending = events.filter((e) => e.outcome === "pending" || e.outcome === "ambiguous");
   const settled = events.filter((e) => e.outcome === "auto");
+  // Failures stay until acted on — they are the one state you must not miss.
+  const failed = events.filter((e) => e.outcome === "failed");
   const unmatched = events.filter(
     (e) => e.outcome === "no_match" || e.outcome === "not_in_playlist"
   );
@@ -176,13 +178,36 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
             : x
         )
       );
-      captureAPI
-        .approve(e.eventId, clipId)
-        .catch((err) =>
-          setError(err.response?.data?.error?.message || t("captureStartFailed"))
+      captureAPI.approve(e.eventId, clipId).catch(() => {
+        // The receipt would otherwise sit there for its 10s and disappear,
+        // leaving you sure the song was tagged when nothing was liked. Mark it
+        // failed instead. It deliberately stays "done" in autoDoneRef so this
+        // effect will not pick it up again — an automatic retry on a row that
+        // keeps failing would loop.
+        setEvents((prev) =>
+          prev.map((x) =>
+            x.eventId === e.eventId ? { ...x, outcome: "failed", autoClipId: clipId } : x
+          )
         );
+      });
     }
   }, [events, t]);
+
+  /** Retry a failed auto-approve. Manual only — see the catch above. */
+  const retry = useCallback(async (eventId, clipId) => {
+    setEvents((prev) =>
+      prev.map((x) =>
+        x.eventId === eventId ? { ...x, outcome: "auto", autoAt: Date.now() } : x
+      )
+    );
+    try {
+      await captureAPI.approve(eventId, clipId);
+    } catch {
+      setEvents((prev) =>
+        prev.map((x) => (x.eventId === eventId ? { ...x, outcome: "failed" } : x))
+      );
+    }
+  }, []);
 
   // Sweep expired receipts. One interval for all of them beats a timer per row,
   // which would leak on unmount and fight React's batching.
@@ -277,6 +302,11 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
             {pending.length > 0 && (
               <> · <span className="text-amber-400">{pending.length} {t("capturePending")}</span></>
             )}
+            {/* Surfaced in the header too — a failure hidden inside a collapsed
+                panel is exactly the case this state exists to prevent. */}
+            {failed.length > 0 && (
+              <> · <span className="text-red-400">{failed.length} {t("captureFailed")}</span></>
+            )}
           </span>
           <div className="ml-auto flex items-center gap-1">
             <button
@@ -331,9 +361,15 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
 
             {/* work list */}
             <div className="max-h-[35vh] overflow-y-auto sm:max-h-[45vh]">
-              {pending.length === 0 && settled.length === 0 && unmatched.length === 0 && (
+              {pending.length === 0 && settled.length === 0 && failed.length === 0 &&
+                unmatched.length === 0 && (
                 <p className="px-3 py-4 text-center text-xs text-muted">{t("captureNothingYet")}</p>
               )}
+
+              {/* Failures first: they need action and never expire on their own. */}
+              {failed.map((e) => (
+                <FailedRow key={e.eventId} event={e} onRetry={retry} onIgnore={ignore} t={t} />
+              ))}
 
               {settled.map((e) => (
                 <AutoRow key={e.eventId} event={e} t={t} />
@@ -381,6 +417,31 @@ function cleanTitle(s) {
   return t.startsWith("《") && t.endsWith("》") && t.length >= 2
     ? t.slice(1, -1).trim()
     : t;
+}
+
+/**
+ * An auto-approve whose request failed. Unlike a receipt this does not expire:
+ * a row that quietly vanished would leave you believing the song was tagged.
+ */
+function FailedRow({ event, onRetry, onIgnore, t }) {
+  return (
+    <div className="flex items-center gap-2 border-b border-border/50 bg-red-500/10 px-3 py-2">
+      <span className="shrink-0 text-xs text-red-400">✕</span>
+      <p className="min-w-0 flex-1 truncate text-sm text-theme">{cleanTitle(event.rawText)}</p>
+      <button
+        onClick={() => onRetry(event.eventId, event.autoClipId)}
+        className="shrink-0 rounded bg-primary px-3 py-1.5 text-xs text-white hover:opacity-90 sm:px-2 sm:py-0.5"
+      >
+        {t("captureRetry")}
+      </button>
+      <button
+        onClick={() => onIgnore(event.eventId)}
+        className="shrink-0 rounded border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface-hover sm:px-2 sm:py-0.5"
+      >
+        {t("captureIgnore")}
+      </button>
+    </div>
+  );
 }
 
 /** An exact match that was liked automatically — shown briefly, then gone. */

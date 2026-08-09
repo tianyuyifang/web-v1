@@ -23,6 +23,8 @@ export default {
   captureStart: "Auto-tag",
   captureAutoApproved: "Auto-approved",
   captureUndo: "Undo",
+  captureRetry: "Retry",
+  captureFailed: "failed",
   captureRunning: "Capturing",
   captureStop: "Stop",
   captureCaught: "caught",

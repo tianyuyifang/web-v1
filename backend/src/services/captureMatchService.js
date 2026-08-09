@@ -31,6 +31,25 @@ function normTitle(s) {
 }
 
 /**
+ * normTitle without the bracket strip.
+ *
+ * The strip exists so "十年（Live）" matches "十年", but it cannot tell a
+ * version marker from a subtitle: it also collapsed "挣脱 (Break Free)" into
+ * "挣脱" and "海底 (Deep)" into "海底", which auto-approved a like for what may
+ * be a different song. Titles that match only because brackets were removed
+ * still match — they just no longer count as exact, so a human confirms them.
+ */
+function normTitleStrict(s) {
+  return String(s == null ? '' : s)
+    .normalize('NFC')
+    .trim()
+    .replace(/[《》]/g, '')
+    .replace(/\s*[-–—]\s*(live|remix|inst|伴奏|翻唱|演唱会版?|现场版?|重制版?).*$/i, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+/**
  * Fold full-width ASCII (U+FF01–U+FF5E) to its half-width twin, plus the
  * ideographic space. The game writes "暂停.开始过" where the library holds
  * "暂停．开始过" — same song, different punctuation width.
@@ -76,11 +95,12 @@ function splitEllipsis(s) {
  * Compare a captured title against a library title.
  * Returns { kind, note } or null when they are unrelated.
  *
- *   kind: 'exact'    identical after normalisation
+ *   kind: 'exact'    identical without needing brackets removed
+ *         'bracket'  identical only once bracketed text was stripped
  *         'punct'    identical once punctuation width is folded
  *         'ellipsis' captured was elided; prefix (and suffix) line up
  *         'loose'    one is a prefix of the other — extra words like
- *                    "（Live）", "演唱会版", " triangle"
+ *                    "演唱会版", " triangle"
  *
  * Only 'exact' is auto-approved by the UI. Everything else is a proposal the
  * user confirms by hand, so widening the looser kinds cannot cause a wrong
@@ -91,7 +111,16 @@ function compareTitles(captured, libraryTitle) {
   const b = normTitle(libraryTitle);
   if (!a || !b) return null;
 
-  if (a === b) return { kind: 'exact', note: null };
+  if (a === b) {
+    // Equal — but was it equal on its own, or only because the bracket strip
+    // deleted something? "挣脱 (Break Free)" and "挣脱" collapse to the same
+    // string, and auto-liking that assumes the bracket held a version marker
+    // rather than part of the name. Let a human decide.
+    if (normTitleStrict(captured) === normTitleStrict(libraryTitle)) {
+      return { kind: 'exact', note: null };
+    }
+    return { kind: 'bracket', note: `括号内容不同，库里是「${libraryTitle}」` };
+  }
 
   // Case 2 — the UI elided the middle of a long title.
   const ell = splitEllipsis(captured);
@@ -139,7 +168,7 @@ function compareTitles(captured, libraryTitle) {
 }
 
 /** Rank so the safest proposal surfaces first. */
-const KIND_RANK = { exact: 0, punct: 1, ellipsis: 2, loose: 3 };
+const KIND_RANK = { exact: 0, bracket: 1, punct: 2, ellipsis: 3, loose: 4 };
 
 /**
  * Pick candidates from a list of library songs.

@@ -16,8 +16,11 @@ assert.strictEqual(normTitle(null), '', 'tolerates null');
 // --- case 1: exact ---
 assert.deepStrictEqual(compareTitles('山海', '山海').kind, 'exact');
 assert.deepStrictEqual(compareTitles('《梦一场》', '梦一场').kind, 'exact', 'book marks ignored');
-assert.deepStrictEqual(compareTitles('十年', '十年（Live）').kind, 'exact',
-  'bracketed suffix normalises away, so this is exact not loose');
+// Deliberately NOT exact any more: the bracket strip makes these equal, and it
+// cannot distinguish "（Live）" from a subtitle like "(Break Free)". Matching is
+// preserved; only the auto-approve privilege is withdrawn.
+assert.deepStrictEqual(compareTitles('十年', '十年（Live）').kind, 'bracket',
+  'bracketed suffix still matches, but needs a human');
 
 // --- case 2: ellipsis (UI elided a long title) ---
 let c = compareTitles('三角体…triangle', '三角体 triangle');
@@ -75,6 +78,34 @@ assert.strictEqual(r.candidates[0].songId, 'y');
 r = matchTitle('库里没有这首歌', [{ id: 's1', title: '梦一场', artist: '那英' }]);
 assert.strictEqual(r.outcome, 'no_match');
 assert.strictEqual(r.candidates.length, 0);
+
+// --- bracketed subtitle: matches, but must NOT be exact ---
+// Found in real captures: 《挣脱》 auto-approved 挣脱 (Break Free), because the
+// bracket strip cannot tell a version marker from part of the name.
+c = compareTitles('挣脱', '挣脱 (Break Free)');
+assert.strictEqual(c && c.kind, 'bracket', 'bracket-only equality is not exact');
+c = compareTitles('枯', '枯（intro）');
+assert.strictEqual(c && c.kind, 'bracket');
+c = compareTitles('海底', '海底 (Deep)');
+assert.strictEqual(c && c.kind, 'bracket');
+
+// Both sides carrying the SAME bracket text is genuinely identical — still exact.
+assert.strictEqual(
+  compareTitles('挣脱 (Break Free)', '挣脱 (Break Free)').kind, 'exact',
+  'identical titles stay exact even with brackets'
+);
+assert.strictEqual(
+  compareTitles('《Intro（睡吧）》', 'Intro（睡吧）').kind, 'exact',
+  'book marks still ignored; bracket content matches'
+);
+
+// An exact candidate must still win over a bracket one.
+r = matchTitle('挣脱', [
+  { id: 'b', title: '挣脱 (Break Free)', artist: 'A' },
+  { id: 'e', title: '挣脱', artist: 'B' },
+]);
+assert.strictEqual(r.outcome, 'pending', 'the truly exact title wins outright');
+assert.strictEqual(r.candidates[0].songId, 'e');
 
 // --- punctuation width: matches, but must NOT be exact ---
 // The game writes a half-width dot where the library holds a full-width one.

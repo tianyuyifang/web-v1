@@ -21,17 +21,18 @@ const pairLimiter = rateLimit({
 // where an old client silently captures nothing and the user assumes the tool
 // is broken.
 // minSupported stays at 1: every version so far still captures correctly. v2
-// reworded the UI, v3 added the optional `side` field, and v4 scans more often
-// and sends a heartbeat — an older client just runs with the old delay and can
-// still be reported stale during a quiet stretch. Raise it only when an older
-// client would silently misbehave, e.g. after qni changes the view ids it reads.
+// reworded the UI, v3 added the optional `side` field, v4 scans more often and
+// sends a heartbeat, and v5 starts its sweep from onCreate — an older client
+// just runs with the old delay and can still be reported stale during a quiet
+// stretch. Raise it only when an older client would silently misbehave, e.g.
+// after qni changes the view ids it reads.
 const CLIENT_VERSION = {
-  latest: 4,
+  latest: 5,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '1.3',
+  latestName: '1.4',
   releasedAt: '2026-08-09',
 };
 

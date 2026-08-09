@@ -20,10 +20,11 @@ const pairLimiter = rateLimit({
 // clients wrong rather than merely outdated — a qni control-id change, say,
 // where an old client silently captures nothing and the user assumes the tool
 // is broken.
-// minSupported stays at 1: v2 only reworded the UI, so a v1 client still
-// captures correctly. Raise it only when an older client would silently
+// minSupported stays at 1: v2 reworded the UI and v3 added the optional `side`
+// field, so older clients still capture correctly — they simply omit it and the
+// panel shows no team marker. Raise it only when an older client would silently
 // misbehave — e.g. after qni changes the view ids it reads.
-const CLIENT_VERSION = { latest: 2, minSupported: 1, url: 'https://qnicheatsheet.com/qni-capture.apk' };
+const CLIENT_VERSION = { latest: 3, minSupported: 1, url: 'https://qnicheatsheet.com/qni-capture.apk' };
 
 // GET /api/capture/version — checked by the client at startup.
 router.get('/version', (req, res) => res.json(CLIENT_VERSION));
@@ -49,6 +50,8 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
     const result = await captureService.ingestText({
       session: req.captureSession,
       rawText: req.body && req.body.text,
+      // Optional: clients before v3 do not send it.
+      side: req.body && req.body.side,
     });
     res.json(result);
   } catch (err) {

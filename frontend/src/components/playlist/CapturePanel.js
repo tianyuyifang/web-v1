@@ -476,6 +476,22 @@ function cleanTitle(s) {
 }
 
 /**
+ * Which of the 2v2 candidate lists a title was read from. Absent for clients
+ * before v3 and outside 2v2, in which case nothing is shown.
+ */
+function SideDot({ side }) {
+  if (side !== "red" && side !== "blue") return null;
+  return (
+    <span
+      title={side}
+      className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+        side === "red" ? "bg-red-400" : "bg-blue-400"
+      }`}
+    />
+  );
+}
+
+/**
  * A title that matched nothing, or matched a song this playlist does not hold.
  * Nothing to approve — the ✕ just crosses it off once you have handled it.
  */
@@ -483,6 +499,7 @@ function UnmatchedRow({ event, onDismiss, t }) {
   const inLibrary = event.outcome === "not_in_playlist";
   return (
     <div className="flex items-center gap-2 border-b border-border/50 px-3 py-1.5">
+      <SideDot side={event.side} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs text-gray-500">{cleanTitle(event.rawText)}</p>
         {inLibrary && (
@@ -509,6 +526,7 @@ function FailedRow({ event, onRetry, onIgnore, t }) {
   return (
     <div className="flex items-center gap-2 border-b border-border/50 bg-red-500/10 px-3 py-2">
       <span className="shrink-0 text-xs text-red-400">✕</span>
+      <SideDot side={event.side} />
       <p className="min-w-0 flex-1 truncate text-sm text-theme">{cleanTitle(event.rawText)}</p>
       <button
         onClick={() => onRetry(event.eventId, event.autoClipId)}
@@ -531,6 +549,7 @@ function AutoRow({ event, t }) {
   return (
     <div className="flex items-center gap-2 border-b border-border/50 bg-green-500/5 px-3 py-2">
       <span className="shrink-0 text-xs text-green-400">✓</span>
+      <SideDot side={event.side} />
       <p className="min-w-0 flex-1 truncate text-sm text-theme">
         {cleanTitle(event.rawText)}
       </p>
@@ -546,7 +565,10 @@ function CaptureRow({ event, onApprove, onIgnore, t }) {
 
   return (
     <div className="border-b border-border/50 px-3 py-2">
-      <p className="truncate text-xs text-muted">{cleanTitle(event.rawText)}</p>
+      <p className="flex items-center gap-1.5 truncate text-xs text-muted">
+        <SideDot side={event.side} />
+        {cleanTitle(event.rawText)}
+      </p>
 
       {single ? (
         <div className="mt-1 flex items-center gap-2">

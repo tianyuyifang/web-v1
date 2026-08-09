@@ -233,9 +233,15 @@ async function clipsInPlaylist(playlistId, songIds) {
  * Nothing is liked here — matching only proposes. The user approves each
  * match by hand via approveEvent.
  */
-async function ingestText({ session, rawText }) {
+async function ingestText({ session, rawText, side }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
+
+  // Which of the two 2v2 candidate lists this came from. Passed straight
+  // through to the panel and not stored: it describes where a title sat on
+  // screen at the moment it was read, which is meaningless once the round is
+  // over, and persisting it would need a migration for no lasting value.
+  const team = side === 'red' || side === 'blue' ? side : null;
 
   // Mark the client as alive before anything else can fail. Without this the
   // UI cannot tell "emulator not running" from "nothing captured yet" — both
@@ -293,6 +299,7 @@ async function ingestText({ session, rawText }) {
     candidates: enriched,
     matchedClipId: event.matchedClipId,
     createdAt: event.createdAt,
+    side: team,
   };
   broadcast(session.playlistId, 'capture-event', payload);
   return payload;

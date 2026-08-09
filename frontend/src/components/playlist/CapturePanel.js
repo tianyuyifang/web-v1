@@ -16,7 +16,13 @@ import useDraggablePosition from "@/hooks/useDraggablePosition";
  * EventSource on the same endpoint — the server broadcasts capture-event
  * and capture-resolved alongside like-update.
  */
-const AUTO_LINGER_MS = 10000; // how long an auto-approved row stays visible as a receipt
+/**
+ * How many auto-approved receipts stay on screen. A rolling window rather than
+ * a timer: during a busy round the 10s expiry cleared rows while you were still
+ * reading them, and in a quiet stretch it left the panel empty. Keeping the
+ * last N means the most recent tags are always there to check.
+ */
+const AUTO_KEEP = 8;
 const POS_KEY = "capture-panel-pos";
 
 /**
@@ -195,8 +201,8 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   }, [countTagged]);
 
   // A perfect match needs no human judgement, so it is liked on arrival. It
-  // still lingers in the panel for AUTO_LINGER_MS as a receipt — you get to see
-  // what was tagged, and undo it, rather than having likes appear silently.
+  // still shows as a receipt afterwards — you get to see what was tagged,
+  // rather than having likes appear silently.
   useEffect(() => {
     const ready = events.filter(
       (e) => e.outcome === "pending" && !autoDoneRef.current.has(e.eventId) && isPerfect(e)
@@ -211,13 +217,13 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       setEvents((prev) =>
         prev.map((x) =>
           x.eventId === e.eventId
-            ? { ...x, outcome: "auto", autoClipId: clipId, autoAt: Date.now() }
+            ? { ...x, outcome: "auto", autoClipId: clipId }
             : x
         )
       );
       captureAPI.approve(e.eventId, clipId).then(() => countTagged(e.eventId)).catch(() => {
-        // The receipt would otherwise sit there for its 10s and disappear,
-        // leaving you sure the song was tagged when nothing was liked. Mark it
+        // The receipt would otherwise sit there looking successful, leaving
+        // you sure the song was tagged when nothing was liked. Mark it
         // failed instead. It deliberately stays "done" in autoDoneRef so this
         // effect will not pick it up again — an automatic retry on a row that
         // keeps failing would loop.
@@ -234,7 +240,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   const retry = useCallback(async (eventId, clipId) => {
     setEvents((prev) =>
       prev.map((x) =>
-        x.eventId === eventId ? { ...x, outcome: "auto", autoAt: Date.now() } : x
+        x.eventId === eventId ? { ...x, outcome: "auto" } : x
       )
     );
     try {
@@ -247,23 +253,20 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     }
   }, [countTagged]);
 
-  // Sweep expired receipts. One interval for all of them beats a timer per row,
-  // which would leak on unmount and fight React's batching.
-  //
-  // Runs for the whole session rather than keying on how many receipts exist:
-  // depending on the count tore the interval down and rebuilt it every time a
-  // song arrived, restarting the 500ms tick and dragging out removal.
+  // Keep only the newest AUTO_KEEP receipts; each new one rolls off the oldest.
+  // Nothing here is time-based, so no interval is needed — the list only
+  // changes when a receipt is added.
   useEffect(() => {
-    if (!session) return;
-    const id = setInterval(() => {
-      const cutoff = Date.now() - AUTO_LINGER_MS;
-      setEvents((prev) => {
-        const kept = prev.filter((x) => x.outcome !== "auto" || (x.autoAt ?? 0) > cutoff);
-        return kept.length === prev.length ? prev : kept; // no-op keeps identity
-      });
-    }, 500);
-    return () => clearInterval(id);
-  }, [session]);
+    if (settled.length <= AUTO_KEEP) return;
+    setEvents((prev) => {
+      // Recomputed from `prev` rather than closing over `settled`, which is a
+      // fresh array each render and would make this effect re-run forever.
+      const drop = new Set(
+        prev.filter((x) => x.outcome === "auto").slice(AUTO_KEEP).map((x) => x.eventId)
+      );
+      return drop.size ? prev.filter((x) => !drop.has(x.eventId)) : prev;
+    });
+  }, [settled.length]);
 
   const ignore = useCallback(async (eventId) => {
     setEvents((prev) => prev.filter((x) => x.eventId !== eventId));

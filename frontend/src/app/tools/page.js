@@ -1,10 +1,27 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { captureAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 export default function ToolsPage() {
   const { t } = useLanguage();
+
+  // Read the version from the server rather than hardcoding it here: the same
+  // value gates the client's upgrade prompt, so the page cannot advertise a
+  // build the server does not actually serve.
+  const [apk, setApk] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    captureAPI
+      .version()
+      .then((res) => alive && setApk(res.data))
+      .catch(() => {}); // the card is still useful without it
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const tools = [
     {
@@ -26,6 +43,9 @@ export default function ToolsPage() {
       description: t("toolsCaptureApkDescription"),
       // A file download, not a route — Link would try to client-navigate to it.
       download: true,
+      meta: apk && (apk.latestName || apk.latest)
+        ? `v${apk.latestName || apk.latest}${apk.releasedAt ? ` · ${apk.releasedAt}` : ""}`
+        : null,
     },
   ];
 
@@ -39,8 +59,13 @@ export default function ToolsPage() {
         {tools.map((tool) => {
           const body = (
             <>
-              <div className="text-base font-semibold" style={{ color: "var(--text)" }}>
-                {tool.title}
+              <div className="flex items-baseline gap-2">
+                <span className="text-base font-semibold" style={{ color: "var(--text)" }}>
+                  {tool.title}
+                </span>
+                {tool.meta && (
+                  <span className="shrink-0 text-[11px] text-muted">{tool.meta}</span>
+                )}
               </div>
               <p className="mt-1 text-sm text-muted">{tool.description}</p>
             </>

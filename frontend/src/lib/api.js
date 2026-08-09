@@ -209,6 +209,7 @@ export const captureAPI = {
   report: (sessionId) => api.get(`/capture/sessions/${sessionId}/report`),
   approve: (eventId, clipId) => api.post(`/capture/events/${eventId}/approve`, clipId ? { clipId } : {}),
   ignore: (eventId) => api.post(`/capture/events/${eventId}/ignore`),
+  version: () => api.get("/capture/version"),
 };
 
 // --- Admin ---

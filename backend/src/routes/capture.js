@@ -25,7 +25,15 @@ const pairLimiter = rateLimit({
 // and sends a heartbeat — an older client just runs with the old delay and can
 // still be reported stale during a quiet stretch. Raise it only when an older
 // client would silently misbehave, e.g. after qni changes the view ids it reads.
-const CLIENT_VERSION = { latest: 4, minSupported: 1, url: 'https://qnicheatsheet.com/qni-capture.apk' };
+const CLIENT_VERSION = {
+  latest: 4,
+  minSupported: 1,
+  url: 'https://qnicheatsheet.com/qni-capture.apk',
+  // Shown on the tools page. Update both when shipping a build, so the page
+  // cannot advertise a version the server does not actually serve.
+  latestName: '1.3',
+  releasedAt: '2026-08-09',
+};
 
 // GET /api/capture/version — checked by the client at startup.
 router.get('/version', (req, res) => res.json(CLIENT_VERSION));

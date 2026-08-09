@@ -50,6 +50,27 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   // look like the thing teleported.
   const drag = useDraggablePosition(POS_KEY, !hiddenOnPhone);
 
+  // Running totals for the session. Counted separately from `events`, which
+  // only holds what is on screen — receipts expire and dismissed rows are
+  // removed, so its length answers "how much is showing", not "how much has
+  // happened". `seenRef` keeps the tally idempotent if an event id repeats.
+  const [totals, setTotals] = useState({ caught: 0, tagged: 0 });
+  const seenRef = useRef(new Set());   // ids counted toward `caught`
+  const taggedRef = useRef(new Set()); // ids counted toward `tagged`
+
+  const countCaught = useCallback((eventId) => {
+    if (!eventId || seenRef.current.has(eventId)) return;
+    seenRef.current.add(eventId);
+    setTotals((p) => ({ ...p, caught: p.caught + 1 }));
+  }, []);
+
+  /** A song ended up liked — whether auto-approved or confirmed by hand. */
+  const countTagged = useCallback((eventId) => {
+    if (!eventId || taggedRef.current.has(eventId)) return;
+    taggedRef.current.add(eventId);
+    setTotals((p) => ({ ...p, tagged: p.tagged + 1 }));
+  }, []);
+
   const pending = events.filter((e) => e.outcome === "pending" || e.outcome === "ambiguous");
   const settled = events.filter((e) => e.outcome === "auto");
   // Failures stay until acted on — they are the one state you must not miss.
@@ -68,6 +89,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       try {
         const data = JSON.parse(e.data);
         if (data.outcome === "duplicate") return;
+        countCaught(data.eventId);
         // Newest first — you should not have to scroll to find new work.
         // Never resurrect a row we already auto-approved: re-inserting it as
         // "pending" would show stale buttons and re-fire the approve call.
@@ -81,7 +103,10 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
 
     es.addEventListener("capture-resolved", (e) => {
       try {
-        const { eventId } = JSON.parse(e.data);
+        const { eventId, outcome } = JSON.parse(e.data);
+        // Counts approvals made in another tab too; countTagged is idempotent,
+        // so the ones this tab did are not counted twice.
+        if (outcome === "approved") countTagged(eventId);
         // Our own auto-approve triggers this too, so skip rows we auto-took.
         //
         // Checked against autoDoneRef, not against outcome === "auto": the
@@ -100,7 +125,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       es.close();
       esRef.current = null;
     };
-  }, [session, playlistId]);
+  }, [session, playlistId, countCaught, countTagged]);
 
   // Poll liveness. An empty list has three very different causes — client
   // never started, client died, or the game simply has no song list up — and
@@ -131,6 +156,10 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       setPairCode(res.data.pairCode);
       setPairExpiresAt(res.data.pairExpiresAt);
       setEvents([]);
+      // Totals are per run, so clear the tallies along with the rows.
+      seenRef.current = new Set();
+      taggedRef.current = new Set();
+      setTotals({ caught: 0, tagged: 0 });
       setOpen(true);
     } catch (err) {
       setError(err.response?.data?.error?.message || t("captureStartFailed"));
@@ -159,10 +188,11 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     setEvents((prev) => prev.filter((x) => x.eventId !== eventId)); // optimistic
     try {
       await captureAPI.approve(eventId, clipId);
+      countTagged(eventId);
     } catch (err) {
       setError(err.response?.data?.error?.message || "Approve failed");
     }
-  }, []);
+  }, [countTagged]);
 
   // A perfect match needs no human judgement, so it is liked on arrival. It
   // still lingers in the panel for AUTO_LINGER_MS as a receipt — you get to see
@@ -185,7 +215,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
             : x
         )
       );
-      captureAPI.approve(e.eventId, clipId).catch(() => {
+      captureAPI.approve(e.eventId, clipId).then(() => countTagged(e.eventId)).catch(() => {
         // The receipt would otherwise sit there for its 10s and disappear,
         // leaving you sure the song was tagged when nothing was liked. Mark it
         // failed instead. It deliberately stays "done" in autoDoneRef so this
@@ -198,7 +228,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
         );
       });
     }
-  }, [events, t]);
+  }, [events, t, countTagged]);
 
   /** Retry a failed auto-approve. Manual only — see the catch above. */
   const retry = useCallback(async (eventId, clipId) => {
@@ -209,12 +239,13 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     );
     try {
       await captureAPI.approve(eventId, clipId);
+      countTagged(eventId);
     } catch {
       setEvents((prev) =>
         prev.map((x) => (x.eventId === eventId ? { ...x, outcome: "failed" } : x))
       );
     }
-  }, []);
+  }, [countTagged]);
 
   // Sweep expired receipts. One interval for all of them beats a timer per row,
   // which would leak on unmount and fight React's batching.
@@ -315,7 +346,9 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
           </span>
           <span className="text-xs font-medium text-theme">{t("captureRunning")}</span>
           <span className="text-xs text-muted">
-            {events.length} {t("captureCaught")}
+            {totals.caught} {t("captureCaught")}
+            {" · "}
+            <span className="text-green-400">{totals.tagged} {t("captureTagged")}</span>
             {pending.length > 0 && (
               <> · <span className="text-amber-400">{pending.length} {t("capturePending")}</span></>
             )}

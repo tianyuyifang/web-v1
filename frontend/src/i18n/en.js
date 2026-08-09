@@ -24,6 +24,7 @@ export default {
   captureAutoApproved: "Auto-approved",
   captureUndo: "Undo",
   captureRetry: "Retry",
+  captureTagged: "tagged",
   captureFailed: "failed",
   captureRunning: "Capturing",
   captureStop: "Stop",

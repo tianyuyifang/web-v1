@@ -24,6 +24,7 @@ export default {
   captureAutoApproved: "已自动确认",
   captureUndo: "撤销",
   captureRetry: "重试",
+  captureTagged: "已打标",
   captureFailed: "打标失败",
   captureRunning: "打标中",
   captureStop: "停止",

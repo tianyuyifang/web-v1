@@ -1,6 +1,8 @@
 const prisma = require('../db/client');
 const { generateToken, generatePairCode, hashToken, isExpired } = require('../utils/captureToken');
-const { matchTitle, normTitle } = require('./captureMatchService');
+const {
+  matchTitle, normTitleFolded, splitEllipsis, FOLD_FROM, FOLD_TO,
+} = require('./captureMatchService');
 const { ensureLiked } = require('./likeService');
 const { broadcast } = require('./sseManager');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
@@ -8,6 +10,11 @@ const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/err
 const DEFAULT_TTL_MINUTES = 4 * 60;
 const MAX_TEXT_LENGTH = 200;
 const MAX_CANDIDATE_SCAN = 30;
+/**
+ * Shortest ellipsis fragment worth filtering on. "一…的约定" leaves "一", which
+ * prefix-matches 410 songs and narrows nothing; below this we skip that side.
+ */
+const MIN_ELLIPSIS_SIDE = 2;
 /** Pairing codes are short and guessable, so they live only long enough to type. */
 const PAIR_TTL_MS = 5 * 60 * 1000;
 
@@ -137,19 +144,57 @@ async function resolveSession(token) {
  * and means the rows that get cut are always the least plausible ones.
  */
 async function fetchCandidateSongs(rawText) {
-  const n = normTitle(rawText);
+  const n = normTitleFolded(rawText);
   if (!n) return [];
-  const stripped = "lower(regexp_replace(title, '[[:space:]《》]', '', 'g'))";
+
+  // Must fold the same characters normTitleFolded does, or a song the matcher
+  // could pair up never reaches it. The fold table is bound as a parameter
+  // rather than interpolated — it contains both ' and \.
+  const stripped = (from, to) =>
+    `lower(translate(regexp_replace(title, '[[:space:]《》]', '', 'g'), $${from}, $${to}))`;
+
+  // An elided capture ("Rolling I...e Deep") is not a prefix of anything, so
+  // the plain query below misses it entirely. Match on the two ends instead —
+  // each side only when it is long enough to actually narrow the scan.
+  const ell = splitEllipsis(rawText);
+  if (ell) {
+    const pre = normTitleFolded(ell.prefix);
+    const suf = normTitleFolded(ell.suffix);
+    const params = [FOLD_FROM, FOLD_TO];
+    const col = stripped(1, 2);
+    const conds = [];
+    if (pre.length >= MIN_ELLIPSIS_SIDE) {
+      params.push(pre);
+      conds.push(`${col} LIKE $${params.length} || '%'`);
+    }
+    if (suf.length >= MIN_ELLIPSIS_SIDE) {
+      params.push(suf);
+      conds.push(`${col} LIKE '%' || $${params.length}`);
+    }
+    // Both ends too short to be selective — fall through rather than scan the
+    // whole table for what would be a near-useless candidate list.
+    if (conds.length) {
+      return prisma.$queryRawUnsafe(
+        `SELECT id, title, artist FROM songs
+          WHERE ${conds.join(' AND ')}
+          ORDER BY length(${col}), ${col}, id
+          LIMIT ${MAX_CANDIDATE_SCAN}`,
+        ...params
+      );
+    }
+  }
+
+  const col = stripped(1, 2);
   return prisma.$queryRawUnsafe(
     `SELECT id, title, artist FROM songs
-      WHERE ${stripped} LIKE $1 || '%'
-         OR $1 LIKE ${stripped} || '%'
-      ORDER BY (${stripped} = $1) DESC,
-               abs(length(${stripped}) - length($1)),
-               ${stripped},
+      WHERE ${col} LIKE $3 || '%'
+         OR $3 LIKE ${col} || '%'
+      ORDER BY (${col} = $3) DESC,
+               abs(length(${col}) - length($3)),
+               ${col},
                id
       LIMIT ${MAX_CANDIDATE_SCAN}`,
-    n
+    FOLD_FROM, FOLD_TO, n
   );
 }
 
@@ -348,4 +393,7 @@ async function getReport({ userId, sessionId }) {
 module.exports = {
   startSession, endSession, resolveSession, redeemPairCode,
   ingestText, approveEvent, ignoreEvent, getReport, getStatus,
+  // Exposed for the matching regression script — the prefilter decides which
+  // songs the matcher ever sees, so it needs checking against real data.
+  fetchCandidateSongs,
 };

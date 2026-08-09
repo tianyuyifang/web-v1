@@ -30,6 +30,38 @@ function normTitle(s) {
     .toLowerCase();
 }
 
+/**
+ * Fold full-width ASCII (U+FF01–U+FF5E) to its half-width twin, plus the
+ * ideographic space. The game writes "暂停.开始过" where the library holds
+ * "暂停．开始过" — same song, different punctuation width.
+ *
+ * Deliberately NOT String.normalize('NFKC'), which would also expand … into
+ * "..." — and 18 library titles genuinely contain …, which splitEllipsis()
+ * treats as "the game truncated this". NFKC would turn every one of them into
+ * a false ellipsis match.
+ */
+function foldWidth(s) {
+  return String(s == null ? '' : s)
+    .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/　/g, ' ');
+}
+
+/**
+ * The same mapping as character pairs, for the SQL prefilter's translate().
+ * Derived from foldWidth's own range so the two cannot drift apart — the
+ * prefilter must fold whatever the matcher folds, or songs the matcher would
+ * pair up never get fetched in the first place.
+ */
+const FOLD_FROM = Array.from({ length: 0xff5e - 0xff01 + 1 }, (_, i) =>
+  String.fromCharCode(0xff01 + i)).join('') + '　';
+const FOLD_TO = Array.from({ length: 0xff5e - 0xff01 + 1 }, (_, i) =>
+  String.fromCharCode(0xff01 + i - 0xfee0)).join('') + ' ';
+
+/** normTitle with punctuation width folded away. Used only for `punct` matches. */
+function normTitleFolded(s) {
+  return normTitle(foldWidth(String(s == null ? '' : s).normalize('NFC')));
+}
+
 /** Tails that mark a version of the same song rather than a different song. */
 const VERSION_TAIL = /^(live|remix|inst|acoustic|演唱会版?|现场版?|伴奏|翻唱|重制版?|粤语版?|国语版?|完整版?|前奏版?|dj.*版?)$/i;
 
@@ -45,9 +77,14 @@ function splitEllipsis(s) {
  * Returns { kind, note } or null when they are unrelated.
  *
  *   kind: 'exact'    identical after normalisation
+ *         'punct'    identical once punctuation width is folded
  *         'ellipsis' captured was elided; prefix (and suffix) line up
  *         'loose'    one is a prefix of the other — extra words like
  *                    "（Live）", "演唱会版", " triangle"
+ *
+ * Only 'exact' is auto-approved by the UI. Everything else is a proposal the
+ * user confirms by hand, so widening the looser kinds cannot cause a wrong
+ * like — and a like is shared with everyone who can see the playlist.
  */
 function compareTitles(captured, libraryTitle) {
   const a = normTitle(captured);
@@ -61,6 +98,19 @@ function compareTitles(captured, libraryTitle) {
   if (ell && ell.prefix && b.startsWith(ell.prefix) && (!ell.suffix || b.endsWith(ell.suffix))) {
     return { kind: 'ellipsis', note: `游戏里显示为省略形式，库里是「${libraryTitle}」` };
   }
+
+  // Case 2b — same title, different punctuation width ("暂停.开始过" vs
+  // "暂停．开始过"). Checked AFTER the exact test and reported as its own kind,
+  // so folding never widens what counts as exact — these still need a human.
+  if (normTitleFolded(captured) === normTitleFolded(libraryTitle)) {
+    return { kind: 'punct', note: `标点写法不同，库里是「${libraryTitle}」` };
+  }
+
+  // An elided capture must not fall through to prefix matching: "Rolling
+  // I...e Deep" starts with "roll", so the loose branch happily proposed the
+  // unrelated song "Roll". If the game truncated the title, the ellipsis
+  // branch above is the only sound way to match it.
+  if (ell) return null;
 
   // Case 3 — one side carries extra words ("（Live）", " triangle", "演唱会版").
   //
@@ -89,7 +139,7 @@ function compareTitles(captured, libraryTitle) {
 }
 
 /** Rank so the safest proposal surfaces first. */
-const KIND_RANK = { exact: 0, ellipsis: 1, loose: 2 };
+const KIND_RANK = { exact: 0, punct: 1, ellipsis: 2, loose: 3 };
 
 /**
  * Pick candidates from a list of library songs.
@@ -130,4 +180,7 @@ function matchTitle(captured, songs) {
   };
 }
 
-module.exports = { normTitle, splitEllipsis, compareTitles, matchTitle };
+module.exports = {
+  normTitle, normTitleFolded, foldWidth, splitEllipsis, compareTitles, matchTitle,
+  FOLD_FROM, FOLD_TO,
+};

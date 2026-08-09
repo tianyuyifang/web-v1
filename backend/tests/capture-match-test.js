@@ -3,7 +3,9 @@
  * Run: node tests/capture-match-test.js
  */
 const assert = require('assert');
-const { normTitle, compareTitles, matchTitle } = require('../src/services/captureMatchService');
+const {
+  normTitle, compareTitles, matchTitle, foldWidth, splitEllipsis, FOLD_FROM, FOLD_TO,
+} = require('../src/services/captureMatchService');
 
 // --- normalisation ---
 assert.strictEqual(normTitle('《山海》'), '山海', 'strips 《》');
@@ -73,5 +75,63 @@ assert.strictEqual(r.candidates[0].songId, 'y');
 r = matchTitle('库里没有这首歌', [{ id: 's1', title: '梦一场', artist: '那英' }]);
 assert.strictEqual(r.outcome, 'no_match');
 assert.strictEqual(r.candidates.length, 0);
+
+// --- punctuation width: matches, but must NOT be exact ---
+// The game writes a half-width dot where the library holds a full-width one.
+c = compareTitles('暂停.开始过', '暂停．开始过');
+assert.strictEqual(c && c.kind, 'punct', 'half/full-width punctuation still matches');
+
+// THE SAFETY GUARD. Only 'exact' is auto-approved by the UI, so a match that
+// needed punctuation folding must never be reported as exact — otherwise
+// widening the fold silently widens what gets liked without asking.
+for (const [cap, lib] of [
+  ['暂停.开始过', '暂停．开始过'],
+  ['噢!拜托', '噢！拜托'],
+  ['是我吗?', '是我吗？'],
+  ['再说一次,我爱你', '再说一次，我爱你'],
+]) {
+  const got = compareTitles(cap, lib);
+  assert.ok(got, `${cap} should match ${lib}`);
+  assert.notStrictEqual(got.kind, 'exact', `${cap} vs ${lib} must not auto-approve`);
+}
+
+// Folding must not make unrelated titles match.
+assert.strictEqual(compareTitles('你好,世界', '再见,世界'), null, 'folding does not merge unrelated');
+
+// --- ellipsis must not fall through to prefix matching ---
+// Real capture: "Rolling I...e Deep" starts with "roll", and the loose branch
+// proposed the unrelated song "Roll" while hiding the correct one.
+assert.strictEqual(
+  compareTitles('Rolling I...e Deep', 'Roll'), null,
+  'an elided capture must not prefix-match a short unrelated title'
+);
+c = compareTitles('Rolling I...e Deep', 'Rolling In The Deep');
+assert.strictEqual(c && c.kind, 'ellipsis', 'the real song still matches');
+
+// Ellipsis beats a bogus prefix candidate when both are offered.
+r = matchTitle('Rolling I...e Deep', [
+  { id: 'bad', title: 'Roll', artist: '袁娅维' },
+  { id: 'good', title: 'Rolling In The Deep', artist: 'Adele' },
+]);
+assert.strictEqual(r.outcome, 'pending', 'only the real song survives');
+assert.strictEqual(r.candidates.length, 1);
+assert.strictEqual(r.candidates[0].songId, 'good');
+
+// --- library titles containing … must survive folding ---
+// NFKC would expand … into "..." and make every one of these look elided.
+assert.strictEqual(foldWidth('嘘…'), '嘘…', 'ellipsis char is not folded');
+assert.strictEqual(foldWidth('妈妈，我…'), '妈妈,我…', 'comma folds, ellipsis does not');
+assert.strictEqual(splitEllipsis('嘘…') && splitEllipsis('嘘…').prefix, '嘘');
+
+// --- the SQL fold table must agree with foldWidth ---
+// They live in different languages; if they drift, the prefilter stops
+// fetching songs the matcher would have paired up.
+assert.strictEqual(FOLD_FROM.length, FOLD_TO.length, 'translate() needs equal-length maps');
+for (let i = 0; i < FOLD_FROM.length; i++) {
+  assert.strictEqual(
+    foldWidth(FOLD_FROM[i]), FOLD_TO[i],
+    `fold table disagrees with foldWidth at ${JSON.stringify(FOLD_FROM[i])}`
+  );
+}
 
 console.log('capture-match tests passed');

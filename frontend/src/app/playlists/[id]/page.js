@@ -341,7 +341,6 @@ export default function PlaylistPage() {
                 {s.label}
               </button>
             ))}
-            <CapturePanel playlistId={playlist.id} />
           </div>
         </div>
 
@@ -370,6 +369,8 @@ export default function PlaylistPage() {
       </div>
 
       <FloatingClipNav clips={playlist.clips} playlistId={playlist.id} />
+
+      <CapturePanel playlistId={playlist.id} />
 
       {showAddClip && (
         <AddClipModal

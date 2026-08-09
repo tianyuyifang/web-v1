@@ -20,7 +20,9 @@ export default {
   navSettings: "Settings",
 
   // Screen capture
-  captureStart: "Capture",
+  captureStart: "Auto-tag",
+  captureAutoApproved: "Auto-approved",
+  captureUndo: "Undo",
   captureRunning: "Capturing",
   captureStop: "Stop",
   captureCaught: "caught",

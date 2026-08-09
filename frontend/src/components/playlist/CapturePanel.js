@@ -15,6 +15,20 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
  * EventSource on the same endpoint — the server broadcasts capture-event
  * and capture-resolved alongside like-update.
  */
+const AUTO_LINGER_MS = 10000; // how long an auto-approved row stays visible as a receipt
+
+/**
+ * A match safe to act on without asking: exactly one song in the playlist,
+ * exactly one clip of it, and the title matched exactly. `ellipsis` and `loose`
+ * are deliberately excluded — those are guesses, and a wrong like is shared
+ * with everyone who can see the playlist.
+ */
+function isPerfect(e) {
+  if (e.outcome !== "pending") return false;
+  const cands = (e.candidates || []).filter((c) => c.inPlaylist);
+  return cands.length === 1 && cands[0].kind === "exact" && cands[0].clips.length === 1;
+}
+
 export default function CapturePanel({ playlistId }) {
   const { t } = useLanguage();
   const [session, setSession] = useState(null);
@@ -27,8 +41,10 @@ export default function CapturePanel({ playlistId }) {
   const [busy, setBusy] = useState(false);
   const [client, setClient] = useState("waiting");
   const esRef = useRef(null);
+  const autoDoneRef = useRef(new Set()); // eventIds already auto-approved, never twice
 
   const pending = events.filter((e) => e.outcome === "pending" || e.outcome === "ambiguous");
+  const settled = events.filter((e) => e.outcome === "auto");
   const unmatched = events.filter(
     (e) => e.outcome === "no_match" || e.outcome === "not_in_playlist"
   );
@@ -44,7 +60,12 @@ export default function CapturePanel({ playlistId }) {
         const data = JSON.parse(e.data);
         if (data.outcome === "duplicate") return;
         // Newest first — you should not have to scroll to find new work.
-        setEvents((prev) => [data, ...prev.filter((x) => x.eventId !== data.eventId)]);
+        setEvents((prev) => {
+          // Never resurrect a row we already auto-approved: re-inserting it as
+          // "pending" would show stale buttons and re-fire the approve call.
+          if (prev.some((x) => x.eventId === data.eventId && x.outcome === "auto")) return prev;
+          return [data, ...prev.filter((x) => x.eventId !== data.eventId)];
+        });
       } catch {
         /* ignore malformed */
       }
@@ -53,7 +74,12 @@ export default function CapturePanel({ playlistId }) {
     es.addEventListener("capture-resolved", (e) => {
       try {
         const { eventId } = JSON.parse(e.data);
-        setEvents((prev) => prev.filter((x) => x.eventId !== eventId));
+        // Our own auto-approve triggers this too. Dropping the row here would
+        // erase the receipt the instant the server confirmed it, so leave
+        // auto rows to the linger sweep and only clear ones resolved elsewhere.
+        setEvents((prev) =>
+          prev.filter((x) => x.eventId !== eventId || x.outcome === "auto")
+        );
       } catch {
         /* ignore */
       }
@@ -127,6 +153,46 @@ export default function CapturePanel({ playlistId }) {
     }
   }, []);
 
+  // A perfect match needs no human judgement, so it is liked on arrival. It
+  // still lingers in the panel for AUTO_LINGER_MS as a receipt — you get to see
+  // what was tagged, and undo it, rather than having likes appear silently.
+  useEffect(() => {
+    const ready = events.filter(
+      (e) => e.outcome === "pending" && !autoDoneRef.current.has(e.eventId) && isPerfect(e)
+    );
+    if (!ready.length) return;
+
+    for (const e of ready) {
+      autoDoneRef.current.add(e.eventId);
+      const clipId = e.candidates.filter((c) => c.inPlaylist)[0].clips[0].clipId;
+      // Flip to the "auto" receipt state first so the row never renders its
+      // manual Approve/Ignore buttons, even for one frame.
+      setEvents((prev) =>
+        prev.map((x) =>
+          x.eventId === e.eventId
+            ? { ...x, outcome: "auto", autoClipId: clipId, autoAt: Date.now() }
+            : x
+        )
+      );
+      captureAPI
+        .approve(e.eventId, clipId)
+        .catch((err) =>
+          setError(err.response?.data?.error?.message || t("captureStartFailed"))
+        );
+    }
+  }, [events, t]);
+
+  // Sweep expired receipts. One interval for all of them beats a timer per row,
+  // which would leak on unmount and fight React's batching.
+  useEffect(() => {
+    if (!settled.length) return;
+    const id = setInterval(() => {
+      const cutoff = Date.now() - AUTO_LINGER_MS;
+      setEvents((prev) => prev.filter((x) => x.outcome !== "auto" || (x.autoAt ?? 0) > cutoff));
+    }, 500);
+    return () => clearInterval(id);
+  }, [settled.length]);
+
   const ignore = useCallback(async (eventId) => {
     setEvents((prev) => prev.filter((x) => x.eventId !== eventId));
     try {
@@ -150,15 +216,29 @@ export default function CapturePanel({ playlistId }) {
     return () => clearInterval(id);
   }, [pairExpiresAt]);
 
-  // --- not started: a single unobtrusive button ---
+  // --- not started: floating pill, matching FloatingClipNav's visual language ---
   if (!session) {
     return (
       <button
         onClick={start}
         disabled={busy}
-        className="hidden rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-theme transition-colors hover:bg-surface-hover disabled:opacity-50 sm:inline-flex"
+        title={t("captureStart")}
+        className="fixed bottom-28 right-4 z-40 hidden items-center gap-2 rounded-full border border-border bg-surface/95 py-2.5 pl-3.5 pr-4 text-sm font-medium text-theme shadow-lg backdrop-blur transition-all hover:border-primary hover:text-primary hover:shadow-xl active:scale-95 disabled:opacity-50 sm:inline-flex"
       >
-        🎯 {t("captureStart")}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          className="h-4 w-4"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="12" r="4.5" />
+          <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+        </svg>
+        {t("captureStart")}
       </button>
     );
   }
@@ -233,9 +313,13 @@ export default function CapturePanel({ playlistId }) {
 
             {/* work list */}
             <div className="max-h-[45vh] overflow-y-auto">
-              {pending.length === 0 && unmatched.length === 0 && (
+              {pending.length === 0 && settled.length === 0 && unmatched.length === 0 && (
                 <p className="px-3 py-4 text-center text-xs text-muted">{t("captureNothingYet")}</p>
               )}
+
+              {settled.map((e) => (
+                <AutoRow key={e.eventId} event={e} t={t} />
+              ))}
 
               {pending.map((e) => (
                 <CaptureRow
@@ -253,7 +337,7 @@ export default function CapturePanel({ playlistId }) {
                     {t("captureUnmatched")} ({unmatched.length})
                   </p>
                   <p className="text-[11px] leading-relaxed text-gray-500">
-                    {unmatched.map((e) => e.rawText).join(" · ")}
+                    {unmatched.map((e) => cleanTitle(e.rawText)).join(" · ")}
                   </p>
                 </div>
               )}
@@ -269,6 +353,31 @@ export default function CapturePanel({ playlistId }) {
   );
 }
 
+/**
+ * The game wraps titles in 《》; they add nothing here and cost a line of width.
+ * Only the outermost pair is peeled — a title can legitimately contain 《》 of
+ * its own (《我和我的《祖国》》), and a blanket strip would mangle it.
+ */
+function cleanTitle(s) {
+  const t = (s || "").trim();
+  return t.startsWith("《") && t.endsWith("》") && t.length >= 2
+    ? t.slice(1, -1).trim()
+    : t;
+}
+
+/** An exact match that was liked automatically — shown briefly, then gone. */
+function AutoRow({ event, t }) {
+  return (
+    <div className="flex items-center gap-2 border-b border-border/50 bg-green-500/5 px-3 py-2">
+      <span className="shrink-0 text-xs text-green-400">✓</span>
+      <p className="min-w-0 flex-1 truncate text-sm text-theme">
+        {cleanTitle(event.rawText)}
+      </p>
+      <span className="shrink-0 text-[11px] text-green-400">{t("captureAutoApproved")}</span>
+    </div>
+  );
+}
+
 /** One captured title and what it resolved to. */
 function CaptureRow({ event, onApprove, onIgnore, t }) {
   const cands = (event.candidates || []).filter((c) => c.inPlaylist);
@@ -276,14 +385,12 @@ function CaptureRow({ event, onApprove, onIgnore, t }) {
 
   return (
     <div className="border-b border-border/50 px-3 py-2">
-      <p className="truncate text-xs text-muted">{event.rawText}</p>
+      <p className="truncate text-xs text-muted">{cleanTitle(event.rawText)}</p>
 
       {single ? (
         <div className="mt-1 flex items-center gap-2">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm text-theme">
-              {cands[0].title} — {cands[0].artist}
-            </p>
+            <p className="truncate text-sm text-theme">{cands[0].title}</p>
             {cands[0].kind !== "exact" && cands[0].note && (
               <p className="truncate text-[11px] text-amber-400">⚠ {cands[0].note}</p>
             )}
@@ -311,7 +418,10 @@ function CaptureRow({ event, onApprove, onIgnore, t }) {
                 onClick={() => onApprove(event.eventId, cl.clipId)}
                 className="mb-1 block w-full truncate rounded border border-border px-2 py-1 text-left text-xs text-theme hover:bg-surface-hover"
               >
-                {c.title} — {c.artist}
+                {c.title}
+                {/* Artist survives only here: with two same-titled songs it is
+                    the only thing telling the choices apart. */}
+                {cands.length > 1 && <span className="text-muted"> · {c.artist}</span>}
                 {c.clips.length > 1 && <span className="text-muted"> @{cl.start}s</span>}
               </button>
             ))

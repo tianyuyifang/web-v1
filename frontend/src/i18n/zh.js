@@ -20,7 +20,9 @@ export default {
   navSettings: "设置",
 
   // 屏幕捕获
-  captureStart: "捕获",
+  captureStart: "自动打标",
+  captureAutoApproved: "已自动确认",
+  captureUndo: "撤销",
   captureRunning: "捕获中",
   captureStop: "停止",
   captureCaught: "抓到",

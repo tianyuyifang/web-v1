@@ -16,6 +16,8 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
  * and capture-resolved alongside like-update.
  */
 const AUTO_LINGER_MS = 10000; // how long an auto-approved row stays visible as a receipt
+const POS_KEY = "capture-panel-pos";
+const DRAG_THRESHOLD = 5; // px before a press counts as a drag rather than a click
 
 /**
  * A match safe to act on without asking: exactly one song in the playlist,
@@ -42,6 +44,96 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   const [client, setClient] = useState("waiting");
   const esRef = useRef(null);
   const autoDoneRef = useRef(new Set()); // eventIds already auto-approved, never twice
+
+  // Drag position, persisted like FloatingClipNav's. null = the default corner.
+  const [pos, setPos] = useState(null);
+  const panelRef = useRef(null);
+  const dragRef = useRef(null);
+  const justDraggedRef = useRef(false); // swallow the click that ends a drag
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(POS_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p && typeof p.x === "number" && typeof p.y === "number") setPos(p);
+      }
+    } catch {
+      // ignore malformed storage
+    }
+  }, []);
+
+  const clamp = useCallback((x, y) => {
+    const el = panelRef.current;
+    const w = el?.offsetWidth ?? 0;
+    const h = el?.offsetHeight ?? 0;
+    return {
+      x: Math.min(Math.max(0, x), Math.max(0, window.innerWidth - w)),
+      y: Math.min(Math.max(0, y), Math.max(0, window.innerHeight - h)),
+    };
+  }, []);
+
+  const onPointerDown = useCallback((e) => {
+    // Only the header is a handle; buttons and the work list must stay usable.
+    if (!e.target.closest?.("[data-drag-handle]")) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      originX: rect.left, originY: rect.top,
+      pointerId: e.pointerId, moved: false,
+    };
+  }, []);
+
+  const onPointerMove = useCallback((e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    if (!d.moved) {
+      // Capture only once a real drag starts, or plain clicks get retargeted
+      // away from the inner buttons.
+      d.moved = true;
+      panelRef.current?.setPointerCapture?.(d.pointerId);
+    }
+    setPos(clamp(d.originX + dx, d.originY + dy));
+  }, [clamp]);
+
+  const onPointerUp = useCallback((e) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (!d?.moved) return;
+    panelRef.current?.releasePointerCapture?.(e.pointerId);
+    justDraggedRef.current = true;
+    setPos((p) => {
+      if (p) {
+        try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {}
+      }
+      return p;
+    });
+  }, []);
+
+  const onClickCapture = useCallback((e) => {
+    if (!justDraggedRef.current) return;
+    justDraggedRef.current = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, []);
+
+  // A saved position can fall off-screen when the window shrinks. Width is
+  // tracked in state rather than read during render, which would differ
+  // between the server and the client on first paint.
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const sync = () => {
+      setIsDesktop(window.innerWidth >= 640);
+      setPos((p) => (p ? clamp(p.x, p.y) : p));
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, [clamp]);
 
   const pending = events.filter((e) => e.outcome === "pending" || e.outcome === "ambiguous");
   const settled = events.filter((e) => e.outcome === "auto");
@@ -283,15 +375,28 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   // --- running: floating panel ---
   // Phone: spans the width just above the fixed search bar, so the work list
   // stays readable without a horizontal squeeze. Desktop: a 360px card.
+  // A dragged position only applies on desktop: on a phone the panel spans the
+  // width above the search bar, so there is nowhere useful to move it.
+  const dragged = pos && isDesktop;
+
   return (
     <div
-      className={`pointer-events-none fixed bottom-14 left-2 right-2 z-40 sm:bottom-28 sm:left-auto sm:right-4 sm:block sm:w-[360px] ${
+      ref={panelRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onClickCapture={onClickCapture}
+      style={dragged ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
+      className={`pointer-events-none fixed bottom-14 left-2 right-2 z-40 touch-none sm:bottom-28 sm:left-auto sm:right-4 sm:block sm:w-[360px] ${
         hiddenOnPhone ? "hidden" : "block"
       }`}
     >
       <div className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
-        {/* header */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-3 py-2">
+        {/* header — also the drag handle */}
+        <div
+          data-drag-handle
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-3 py-2 sm:cursor-grab sm:active:cursor-grabbing"
+        >
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
@@ -386,14 +491,17 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
               ))}
 
               {unmatched.length > 0 && (
-                <div className="border-t border-border px-3 py-2">
-                  <p className="mb-1 text-[11px] font-medium text-muted">
+                <>
+                  <p className="border-t border-border px-3 pb-1 pt-2 text-[11px] font-medium text-muted">
                     {t("captureUnmatched")} ({unmatched.length})
                   </p>
-                  <p className="text-[11px] leading-relaxed text-gray-500">
-                    {unmatched.map((e) => cleanTitle(e.rawText)).join(" · ")}
-                  </p>
-                </div>
+                  {/* One row each, dismissable — you tag these by hand in the
+                      list below, and crossing them off is how you keep track
+                      of which ones you have already dealt with. */}
+                  {unmatched.map((e) => (
+                    <UnmatchedRow key={e.eventId} event={e} onDismiss={ignore} t={t} />
+                  ))}
+                </>
               )}
             </div>
           </>
@@ -417,6 +525,32 @@ function cleanTitle(s) {
   return t.startsWith("《") && t.endsWith("》") && t.length >= 2
     ? t.slice(1, -1).trim()
     : t;
+}
+
+/**
+ * A title that matched nothing, or matched a song this playlist does not hold.
+ * Nothing to approve — the ✕ just crosses it off once you have handled it.
+ */
+function UnmatchedRow({ event, onDismiss, t }) {
+  const inLibrary = event.outcome === "not_in_playlist";
+  return (
+    <div className="flex items-center gap-2 border-b border-border/50 px-3 py-1.5">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs text-gray-500">{cleanTitle(event.rawText)}</p>
+        {inLibrary && (
+          <p className="truncate text-[11px] text-muted">{t("captureNotInPlaylist")}</p>
+        )}
+      </div>
+      <button
+        onClick={() => onDismiss(event.eventId)}
+        title={t("captureIgnore")}
+        aria-label={t("captureIgnore")}
+        className="shrink-0 rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-theme sm:px-1.5 sm:py-0.5"
+      >
+        ✕
+      </button>
+    </div>
+  );
 }
 
 /**

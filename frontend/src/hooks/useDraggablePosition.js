@@ -70,17 +70,33 @@ export default function useDraggablePosition(storageKey, enabled = true) {
       d.moved = true;
       elRef.current?.setPointerCapture?.(d.pointerId);
     }
-    setPos(clamp(d.originX + dx, d.originY + dy));
+    // Pointer events can outpace the display, and each setPos is a render.
+    // Coalescing onto the next frame means one render per painted frame
+    // instead of several that are never seen.
+    d.pendingX = d.originX + dx;
+    d.pendingY = d.originY + dy;
+    if (d.raf) return;
+    d.raf = requestAnimationFrame(() => {
+      const cur = dragRef.current;
+      if (!cur) return;
+      cur.raf = 0;
+      setPos(clamp(cur.pendingX, cur.pendingY));
+    });
   }, [clamp]);
 
   const onPointerUp = useCallback((e) => {
     const d = dragRef.current;
     dragRef.current = null;
+    // Drop a frame that has not run yet; it would read the cleared ref.
+    if (d?.raf) cancelAnimationFrame(d.raf);
     if (!d?.moved) return;
     elRef.current?.releasePointerCapture?.(e.pointerId);
     justDraggedRef.current = true;
-    setPos((p) => {
-      if (!p) return p;
+    setPos((prev) => {
+      // The last move may still be sitting in that cancelled frame, so settle
+      // on it here rather than saving a position one frame behind the cursor.
+      const p = d.pendingX != null ? clamp(d.pendingX, d.pendingY) : prev;
+      if (!p) return prev;
       // Store the distance to the *right and bottom* edges as well. Elements
       // sharing a key can be different sizes — the capture button is a pill,
       // the panel it opens is a tall card — and pinning only the top-left
@@ -95,7 +111,7 @@ export default function useDraggablePosition(storageKey, enabled = true) {
       try { localStorage.setItem(storageKey, JSON.stringify(saved)); } catch {}
       return saved;
     });
-  }, [storageKey]);
+  }, [storageKey, clamp]);
 
   const onClickCapture = useCallback((e) => {
     if (!justDraggedRef.current) return;

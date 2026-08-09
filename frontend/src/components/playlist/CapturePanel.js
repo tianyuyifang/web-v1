@@ -333,7 +333,10 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
         disabled={busy}
         title={t("captureStart")}
         style={drag.style}
-        className={`fixed bottom-20 right-4 z-40 touch-none items-center gap-2 rounded-full border border-border bg-surface/95 py-2.5 pl-3.5 pr-4 text-sm font-medium text-theme shadow-lg backdrop-blur transition-all hover:border-primary hover:text-primary hover:shadow-xl active:scale-95 disabled:opacity-50 sm:bottom-28 sm:inline-flex sm:cursor-grab sm:active:cursor-grabbing ${
+        // transition-colors, not transition-all: the latter animates left/top
+        // as well, so every drag frame started a 150ms tween and the button
+        // lagged behind the cursor instead of tracking it.
+        className={`fixed bottom-20 right-4 z-40 touch-none items-center gap-2 rounded-full border border-border bg-surface/95 py-2.5 pl-3.5 pr-4 text-sm font-medium text-theme shadow-lg backdrop-blur transition-colors hover:border-primary hover:text-primary hover:shadow-xl active:scale-95 disabled:opacity-50 sm:bottom-28 sm:inline-flex sm:cursor-grab sm:active:cursor-grabbing ${
           hiddenOnPhone ? "hidden" : "inline-flex"
         }`}
       >

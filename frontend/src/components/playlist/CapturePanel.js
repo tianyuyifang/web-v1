@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { captureAPI, getLikesSSEUrl } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import useDraggablePosition from "@/hooks/useDraggablePosition";
 
 /**
  * Floating capture panel — desktop only.
@@ -17,7 +18,6 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
  */
 const AUTO_LINGER_MS = 10000; // how long an auto-approved row stays visible as a receipt
 const POS_KEY = "capture-panel-pos";
-const DRAG_THRESHOLD = 5; // px before a press counts as a drag rather than a click
 
 /**
  * A match safe to act on without asking: exactly one song in the playlist,
@@ -45,95 +45,10 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   const esRef = useRef(null);
   const autoDoneRef = useRef(new Set()); // eventIds already auto-approved, never twice
 
-  // Drag position, persisted like FloatingClipNav's. null = the default corner.
-  const [pos, setPos] = useState(null);
-  const panelRef = useRef(null);
-  const dragRef = useRef(null);
-  const justDraggedRef = useRef(false); // swallow the click that ends a drag
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(POS_KEY);
-      if (raw) {
-        const p = JSON.parse(raw);
-        if (p && typeof p.x === "number" && typeof p.y === "number") setPos(p);
-      }
-    } catch {
-      // ignore malformed storage
-    }
-  }, []);
-
-  const clamp = useCallback((x, y) => {
-    const el = panelRef.current;
-    const w = el?.offsetWidth ?? 0;
-    const h = el?.offsetHeight ?? 0;
-    return {
-      x: Math.min(Math.max(0, x), Math.max(0, window.innerWidth - w)),
-      y: Math.min(Math.max(0, y), Math.max(0, window.innerHeight - h)),
-    };
-  }, []);
-
-  const onPointerDown = useCallback((e) => {
-    // Only the header is a handle; buttons and the work list must stay usable.
-    if (!e.target.closest?.("[data-drag-handle]")) return;
-    const rect = panelRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    dragRef.current = {
-      startX: e.clientX, startY: e.clientY,
-      originX: rect.left, originY: rect.top,
-      pointerId: e.pointerId, moved: false,
-    };
-  }, []);
-
-  const onPointerMove = useCallback((e) => {
-    const d = dragRef.current;
-    if (!d) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-    if (!d.moved) {
-      // Capture only once a real drag starts, or plain clicks get retargeted
-      // away from the inner buttons.
-      d.moved = true;
-      panelRef.current?.setPointerCapture?.(d.pointerId);
-    }
-    setPos(clamp(d.originX + dx, d.originY + dy));
-  }, [clamp]);
-
-  const onPointerUp = useCallback((e) => {
-    const d = dragRef.current;
-    dragRef.current = null;
-    if (!d?.moved) return;
-    panelRef.current?.releasePointerCapture?.(e.pointerId);
-    justDraggedRef.current = true;
-    setPos((p) => {
-      if (p) {
-        try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {}
-      }
-      return p;
-    });
-  }, []);
-
-  const onClickCapture = useCallback((e) => {
-    if (!justDraggedRef.current) return;
-    justDraggedRef.current = false;
-    e.stopPropagation();
-    e.preventDefault();
-  }, []);
-
-  // A saved position can fall off-screen when the window shrinks. Width is
-  // tracked in state rather than read during render, which would differ
-  // between the server and the client on first paint.
-  const [isDesktop, setIsDesktop] = useState(false);
-  useEffect(() => {
-    const sync = () => {
-      setIsDesktop(window.innerWidth >= 640);
-      setPos((p) => (p ? clamp(p.x, p.y) : p));
-    };
-    sync();
-    window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
-  }, [clamp]);
+  // Button and panel share one position: to the user they are the same object,
+  // so dragging either has to move both — otherwise opening the panel would
+  // look like the thing teleported.
+  const drag = useDraggablePosition(POS_KEY, !hiddenOnPhone);
 
   const pending = events.filter((e) => e.outcome === "pending" || e.outcome === "ambiguous");
   const settled = events.filter((e) => e.outcome === "auto");
@@ -347,10 +262,14 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   if (!session) {
     return (
       <button
+        ref={drag.ref}
+        {...drag.dragProps}
+        data-drag-handle
         onClick={start}
         disabled={busy}
         title={t("captureStart")}
-        className={`fixed bottom-20 right-4 z-40 items-center gap-2 rounded-full border border-border bg-surface/95 py-2.5 pl-3.5 pr-4 text-sm font-medium text-theme shadow-lg backdrop-blur transition-all hover:border-primary hover:text-primary hover:shadow-xl active:scale-95 disabled:opacity-50 sm:bottom-28 sm:inline-flex ${
+        style={drag.style}
+        className={`fixed bottom-20 right-4 z-40 touch-none items-center gap-2 rounded-full border border-border bg-surface/95 py-2.5 pl-3.5 pr-4 text-sm font-medium text-theme shadow-lg backdrop-blur transition-all hover:border-primary hover:text-primary hover:shadow-xl active:scale-95 disabled:opacity-50 sm:bottom-28 sm:inline-flex sm:cursor-grab sm:active:cursor-grabbing ${
           hiddenOnPhone ? "hidden" : "inline-flex"
         }`}
       >
@@ -375,18 +294,11 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   // --- running: floating panel ---
   // Phone: spans the width just above the fixed search bar, so the work list
   // stays readable without a horizontal squeeze. Desktop: a 360px card.
-  // A dragged position only applies on desktop: on a phone the panel spans the
-  // width above the search bar, so there is nowhere useful to move it.
-  const dragged = pos && isDesktop;
-
   return (
     <div
-      ref={panelRef}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onClickCapture={onClickCapture}
-      style={dragged ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
+      ref={drag.ref}
+      {...drag.dragProps}
+      style={drag.style}
       className={`pointer-events-none fixed bottom-14 left-2 right-2 z-40 touch-none sm:bottom-28 sm:left-auto sm:right-4 sm:block sm:w-[360px] ${
         hiddenOnPhone ? "hidden" : "block"
       }`}

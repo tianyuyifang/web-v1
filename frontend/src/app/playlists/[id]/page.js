@@ -370,7 +370,9 @@ export default function PlaylistPage() {
 
       <FloatingClipNav clips={playlist.clips} playlistId={playlist.id} />
 
-      <CapturePanel playlistId={playlist.id} />
+      {/* Hidden, not unmounted, while the phone search sheet is up: both are
+          fixed to the bottom, and unmounting would end the capture session. */}
+      <CapturePanel playlistId={playlist.id} hiddenOnPhone={!!phoneSearch} />
 
       {showAddClip && (
         <AddClipModal

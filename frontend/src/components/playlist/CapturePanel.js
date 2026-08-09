@@ -29,7 +29,7 @@ function isPerfect(e) {
   return cands.length === 1 && cands[0].kind === "exact" && cands[0].clips.length === 1;
 }
 
-export default function CapturePanel({ playlistId }) {
+export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   const { t } = useLanguage();
   const [session, setSession] = useState(null);
   const [pairCode, setPairCode] = useState(null);
@@ -217,13 +217,16 @@ export default function CapturePanel({ playlistId }) {
   }, [pairExpiresAt]);
 
   // --- not started: floating pill, matching FloatingClipNav's visual language ---
+  // On phones it sits higher, clearing the fixed search bar at the bottom.
   if (!session) {
     return (
       <button
         onClick={start}
         disabled={busy}
         title={t("captureStart")}
-        className="fixed bottom-28 right-4 z-40 hidden items-center gap-2 rounded-full border border-border bg-surface/95 py-2.5 pl-3.5 pr-4 text-sm font-medium text-theme shadow-lg backdrop-blur transition-all hover:border-primary hover:text-primary hover:shadow-xl active:scale-95 disabled:opacity-50 sm:inline-flex"
+        className={`fixed bottom-20 right-4 z-40 items-center gap-2 rounded-full border border-border bg-surface/95 py-2.5 pl-3.5 pr-4 text-sm font-medium text-theme shadow-lg backdrop-blur transition-all hover:border-primary hover:text-primary hover:shadow-xl active:scale-95 disabled:opacity-50 sm:bottom-28 sm:inline-flex ${
+          hiddenOnPhone ? "hidden" : "inline-flex"
+        }`}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -243,12 +246,18 @@ export default function CapturePanel({ playlistId }) {
     );
   }
 
-  // --- running: floating panel, desktop only ---
+  // --- running: floating panel ---
+  // Phone: spans the width just above the fixed search bar, so the work list
+  // stays readable without a horizontal squeeze. Desktop: a 360px card.
   return (
-    <div className="pointer-events-none fixed bottom-28 right-4 z-40 hidden w-[360px] sm:block">
+    <div
+      className={`pointer-events-none fixed bottom-14 left-2 right-2 z-40 sm:bottom-28 sm:left-auto sm:right-4 sm:block sm:w-[360px] ${
+        hiddenOnPhone ? "hidden" : "block"
+      }`}
+    >
       <div className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
         {/* header */}
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-3 py-2">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
@@ -263,14 +272,14 @@ export default function CapturePanel({ playlistId }) {
           <div className="ml-auto flex items-center gap-1">
             <button
               onClick={() => setOpen((v) => !v)}
-              className="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-surface-hover"
+              className="rounded px-2.5 py-1.5 text-xs text-muted hover:bg-surface-hover sm:px-1.5 sm:py-0.5"
             >
               {open ? "▼" : "▲"}
             </button>
             <button
               onClick={stop}
               disabled={busy}
-              className="rounded bg-red-600/90 px-2 py-0.5 text-xs text-white hover:bg-red-600 disabled:opacity-50"
+              className="rounded bg-red-600/90 px-3 py-1.5 text-xs text-white hover:bg-red-600 disabled:opacity-50 sm:px-2 sm:py-0.5"
             >
               {t("captureStop")}
             </button>
@@ -312,7 +321,7 @@ export default function CapturePanel({ playlistId }) {
             )}
 
             {/* work list */}
-            <div className="max-h-[45vh] overflow-y-auto">
+            <div className="max-h-[35vh] overflow-y-auto sm:max-h-[45vh]">
               {pending.length === 0 && settled.length === 0 && unmatched.length === 0 && (
                 <p className="px-3 py-4 text-center text-xs text-muted">{t("captureNothingYet")}</p>
               )}
@@ -395,15 +404,17 @@ function CaptureRow({ event, onApprove, onIgnore, t }) {
               <p className="truncate text-[11px] text-amber-400">⚠ {cands[0].note}</p>
             )}
           </div>
+          {/* Roomier hit areas on phones — py-0.5 is a ~20px target, well
+              under what a thumb can reliably land on. */}
           <button
             onClick={() => onApprove(event.eventId, cands[0].clips[0].clipId)}
-            className="shrink-0 rounded bg-primary px-2 py-0.5 text-xs text-white hover:opacity-90"
+            className="shrink-0 rounded bg-primary px-3 py-1.5 text-xs text-white hover:opacity-90 sm:px-2 sm:py-0.5"
           >
             {t("captureApprove")}
           </button>
           <button
             onClick={() => onIgnore(event.eventId)}
-            className="shrink-0 rounded border border-border px-2 py-0.5 text-xs text-muted hover:bg-surface-hover"
+            className="shrink-0 rounded border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface-hover sm:px-2 sm:py-0.5"
           >
             {t("captureIgnore")}
           </button>
@@ -416,7 +427,7 @@ function CaptureRow({ event, onApprove, onIgnore, t }) {
               <button
                 key={cl.clipId}
                 onClick={() => onApprove(event.eventId, cl.clipId)}
-                className="mb-1 block w-full truncate rounded border border-border px-2 py-1 text-left text-xs text-theme hover:bg-surface-hover"
+                className="mb-1 block w-full truncate rounded border border-border px-2 py-2 text-left text-xs text-theme hover:bg-surface-hover sm:py-1"
               >
                 {c.title}
                 {/* Artist survives only here: with two same-titled songs it is

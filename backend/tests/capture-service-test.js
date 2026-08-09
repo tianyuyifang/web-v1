@@ -60,7 +60,14 @@ assert.ok(!/\btoggleLike\b/.test(src), 'captureService must not call toggleLike'
     );
 
     // --- unmatched title ---
-    const r2 = await captureService.ingestText({ session: live, rawText: '这首歌库里绝对没有zzz' });
+    // Must not begin with anything that could be a real title: the loose
+    // branch prefix-matches, and the old value "这首歌库里绝对没有zzz" started
+    // with 萧敬腾's "这首歌", so this passed locally and failed on the
+    // production library.
+    const r2 = await captureService.ingestText({
+      session: live,
+      rawText: 'zzqqxxjjzz-no-such-song-9f3a1b',
+    });
     assert.strictEqual(r2.outcome, 'no_match');
 
     // --- approve applies the like ---

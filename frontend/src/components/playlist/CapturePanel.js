@@ -21,8 +21,11 @@ import useDraggablePosition from "@/hooks/useDraggablePosition";
  * a timer: during a busy round the 10s expiry cleared rows while you were still
  * reading them, and in a quiet stretch it left the panel empty. Keeping the
  * last N means the most recent tags are always there to check.
+ *
+ * Counted across both teams, so a lopsided round shows fewer rows per column
+ * than an even one.
  */
-const AUTO_KEEP = 8;
+const AUTO_KEEP = 10;
 const POS_KEY = "capture-panel-pos";
 
 /**

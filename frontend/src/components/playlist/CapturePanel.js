@@ -60,12 +60,11 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
         const data = JSON.parse(e.data);
         if (data.outcome === "duplicate") return;
         // Newest first — you should not have to scroll to find new work.
-        setEvents((prev) => {
-          // Never resurrect a row we already auto-approved: re-inserting it as
-          // "pending" would show stale buttons and re-fire the approve call.
-          if (prev.some((x) => x.eventId === data.eventId && x.outcome === "auto")) return prev;
-          return [data, ...prev.filter((x) => x.eventId !== data.eventId)];
-        });
+        // Never resurrect a row we already auto-approved: re-inserting it as
+        // "pending" would show stale buttons and re-fire the approve call.
+        // Same reasoning as capture-resolved — the ref is the reliable check.
+        if (autoDoneRef.current.has(data.eventId)) return;
+        setEvents((prev) => [data, ...prev.filter((x) => x.eventId !== data.eventId)]);
       } catch {
         /* ignore malformed */
       }
@@ -74,12 +73,15 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     es.addEventListener("capture-resolved", (e) => {
       try {
         const { eventId } = JSON.parse(e.data);
-        // Our own auto-approve triggers this too. Dropping the row here would
-        // erase the receipt the instant the server confirmed it, so leave
-        // auto rows to the linger sweep and only clear ones resolved elsewhere.
-        setEvents((prev) =>
-          prev.filter((x) => x.eventId !== eventId || x.outcome === "auto")
-        );
+        // Our own auto-approve triggers this too, so skip rows we auto-took.
+        //
+        // Checked against autoDoneRef, not against outcome === "auto": the
+        // flip to "auto" is a setState and may not have rendered yet when the
+        // server's confirmation arrives, in which case the row still reads
+        // "pending" here and the receipt gets deleted a moment after it
+        // appears. The ref is written synchronously, so it is already true.
+        if (autoDoneRef.current.has(eventId)) return;
+        setEvents((prev) => prev.filter((x) => x.eventId !== eventId));
       } catch {
         /* ignore */
       }
@@ -184,14 +186,21 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
 
   // Sweep expired receipts. One interval for all of them beats a timer per row,
   // which would leak on unmount and fight React's batching.
+  //
+  // Runs for the whole session rather than keying on how many receipts exist:
+  // depending on the count tore the interval down and rebuilt it every time a
+  // song arrived, restarting the 500ms tick and dragging out removal.
   useEffect(() => {
-    if (!settled.length) return;
+    if (!session) return;
     const id = setInterval(() => {
       const cutoff = Date.now() - AUTO_LINGER_MS;
-      setEvents((prev) => prev.filter((x) => x.outcome !== "auto" || (x.autoAt ?? 0) > cutoff));
+      setEvents((prev) => {
+        const kept = prev.filter((x) => x.outcome !== "auto" || (x.autoAt ?? 0) > cutoff);
+        return kept.length === prev.length ? prev : kept; // no-op keeps identity
+      });
     }, 500);
     return () => clearInterval(id);
-  }, [settled.length]);
+  }, [session]);
 
   const ignore = useCallback(async (eventId) => {
     setEvents((prev) => prev.filter((x) => x.eventId !== eventId));

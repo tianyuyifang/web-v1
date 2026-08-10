@@ -35,13 +35,18 @@ const pairLimiter = rateLimit({
 // users off mid-round is worse than the bug. The upgrade prompt covers it.
 // A pre-v9 client simply sends no row and the panel falls back to independent
 // columns.
+// v10 only sends a row for titles actually inside a candidate list: screens
+// without one returned 0 from getRowIndex() rather than -1, so nine unrelated
+// titles claimed row 0 and the panel showed one of them. The panel no longer
+// lets a repeated row overwrite anything either, so a v9 client is cosmetically
+// off at worst.
 const CLIENT_VERSION = {
-  latest: 9,
+  latest: 10,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '1.8',
+  latestName: '1.9',
   releasedAt: '2026-08-10',
 };
 

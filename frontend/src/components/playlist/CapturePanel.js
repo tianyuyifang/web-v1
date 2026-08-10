@@ -726,11 +726,22 @@ function alignRows(red, blue) {
     }));
   }
 
-  // A title with no index cannot be placed against the other team; give it its
-  // own row after the aligned ones rather than dropping it.
+  // First title to claim an index keeps it; a later one with the same index
+  // gets a row of its own further down.
+  //
+  // Two songs should never share an index — the game numbers a list once — but
+  // when it happened, overwriting silently deleted the earlier song from the
+  // panel. Nine titles once collapsed onto row 0 and eight disappeared. Losing
+  // a song is the one outcome this panel must not produce, so a collision costs
+  // alignment for that row and nothing more.
+  const placed = new Set();   // events that got an aligned row
   const byRow = (list) => {
     const m = new Map();
-    for (const e of list) if (hasRow(e)) m.set(e.row, e);
+    for (const e of list) {
+      if (!hasRow(e) || m.has(e.row)) continue;
+      m.set(e.row, e);
+      placed.add(e);
+    }
     return m;
   };
   const rMap = byRow(red);
@@ -738,8 +749,10 @@ function alignRows(red, blue) {
   const indices = [...new Set([...rMap.keys(), ...bMap.keys()])].sort((a, b) => a - b);
 
   const rows = indices.map((i) => ({ red: rMap.get(i) || null, blue: bMap.get(i) || null }));
-  for (const e of red) if (!hasRow(e)) rows.push({ red: e, blue: null });
-  for (const e of blue) if (!hasRow(e)) rows.push({ red: null, blue: e });
+  // Anything left over: no index at all, or an index already taken. Each gets
+  // its own line on its own side, in arrival order.
+  for (const e of red) if (!placed.has(e)) rows.push({ red: e, blue: null });
+  for (const e of blue) if (!placed.has(e)) rows.push({ red: null, blue: e });
   return rows;
 }
 

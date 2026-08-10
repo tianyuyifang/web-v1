@@ -29,6 +29,42 @@ const AUTO_KEEP = 10;
 const POS_KEY = "capture-panel-pos";
 
 /**
+ * Remember the running session so a page reload can pick it back up.
+ *
+ * Keyed per playlist: one key would let a run started on one playlist surface
+ * in another's panel. Only the session id and its expiry are kept — the token
+ * lives in the capture client and never reaches the browser.
+ */
+const SESSION_KEY = (playlistId) => `capture-session:${playlistId}`;
+
+function remember(playlistId, session) {
+  try {
+    localStorage.setItem(SESSION_KEY(playlistId), JSON.stringify(session));
+  } catch {
+    // private mode or a full quota; losing this only costs the restore
+  }
+}
+
+function recall(playlistId) {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY(playlistId));
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    return s && s.id ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+function forget(playlistId) {
+  try {
+    localStorage.removeItem(SESSION_KEY(playlistId));
+  } catch {
+    /* nothing to do */
+  }
+}
+
+/**
  * A match safe to act on without asking: exactly one song in the playlist,
  * exactly one clip of it, and the title matched exactly. `ellipsis` and `loose`
  * are deliberately excluded — those are guesses, and a wrong like is shared
@@ -170,12 +206,66 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       taggedRef.current = new Set();
       setTotals({ caught: 0, tagged: 0 });
       setOpen(true);
+      remember(playlistId, res.data.session);
     } catch (err) {
       setError(err.response?.data?.error?.message || t("captureStartFailed"));
     } finally {
       setBusy(false);
     }
   }, [playlistId, t]);
+
+  // Pick a run back up after a reload.
+  //
+  // The run lives on the server for hours and the capture client keeps posting
+  // to it regardless — a refresh only made the browser forget, so the panel
+  // read as disconnected while songs were still being tagged. Restore it, and
+  // refill the list from the server so it does not come back connected but
+  // blank.
+  useEffect(() => {
+    const saved = recall(playlistId);
+    if (!saved) return;
+    let alive = true;
+
+    (async () => {
+      try {
+        // Confirm it is still live before showing it: a stored id may have
+        // expired or been stopped elsewhere.
+        const status = await captureAPI.status(saved.id);
+        if (!alive) return;
+        if (status.data.ended || new Date(status.data.expiresAt) <= new Date()) {
+          forget(playlistId);
+          return;
+        }
+        setSession(saved);
+        setClient(status.data.client);
+
+        const report = await captureAPI.report(saved.id);
+        if (!alive) return;
+        const rows = (report.data.events || [])
+          .filter((e) => e.outcome === "pending" || e.outcome === "ambiguous" ||
+            e.outcome === "no_match" || e.outcome === "not_in_playlist")
+          .map((e) => ({
+            eventId: e.id,
+            rawText: e.rawText,
+            outcome: e.outcome,
+            candidates: e.candidates || [],
+            side: e.side,
+            createdAt: e.createdAt,
+          }));
+        setEvents(rows);
+
+        // Rebuild the tallies from history so the header is not reset to zero.
+        const all = report.data.events || [];
+        for (const e of all) seenRef.current.add(e.id);
+        for (const e of all) if (e.outcome === "approved") taggedRef.current.add(e.id);
+        setTotals({ caught: seenRef.current.size, tagged: taggedRef.current.size });
+      } catch {
+        forget(playlistId);   // gone, or not ours any more
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [playlistId]);
 
   const [copied, setCopied] = useState(false);
   const copyPairCode = useCallback(async () => {
@@ -217,8 +307,10 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       setPairExpiresAt(null);
       setEvents([]);
       setBusy(false);
+      // Drop the stored id too, or the next visit restores a dead run.
+      forget(playlistId);
     }
-  }, [session]);
+  }, [session, playlistId]);
 
   const approve = useCallback(async (eventId, clipId) => {
     setEvents((prev) => prev.filter((x) => x.eventId !== eventId)); // optimistic

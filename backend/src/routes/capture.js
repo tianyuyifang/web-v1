@@ -27,12 +27,12 @@ const pairLimiter = rateLimit({
 // slower. Raise it only when an older client would silently misbehave, e.g.
 // after qni changes the view ids it reads.
 const CLIENT_VERSION = {
-  latest: 6,
+  latest: 7,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '1.5',
+  latestName: '1.6',
   releasedAt: '2026-08-10',
 };
 

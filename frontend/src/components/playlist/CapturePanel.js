@@ -17,15 +17,21 @@ import useDraggablePosition from "@/hooks/useDraggablePosition";
  * and capture-resolved alongside like-update.
  */
 /**
- * How many auto-approved receipts stay on screen. A rolling window rather than
- * a timer: during a busy round the 10s expiry cleared rows while you were still
+ * How many rows of receipts stay on screen. A rolling window rather than a
+ * timer: during a busy round the 10s expiry cleared rows while you were still
  * reading them, and in a quiet stretch it left the panel empty. Keeping the
  * last N means the most recent tags are always there to check.
  *
- * Counted across both teams, so a lopsided round shows fewer rows per column
- * than an even one.
+ * Counted in rows, not songs. Counting songs let one team's half of a row be
+ * evicted while the other half stayed, which left a lone song beside a gap that
+ * looked like a bug rather than a formation — and with ten songs to a round, a
+ * ten-song window hit that on the very first song of the next round.
+ *
+ * Five because that is what a round holds. Only rows that hold something are
+ * drawn: the grid grows as the round fills and stops here, rather than opening
+ * at full height with blank rows waiting to be used.
  */
-const AUTO_KEEP = 10;
+const AUTO_KEEP_ROWS = 5;
 const POS_KEY = "capture-panel-pos";
 
 /**
@@ -123,6 +129,9 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   const unmatched = events.filter(
     (e) => e.outcome === "no_match" || e.outcome === "not_in_playlist"
   );
+  // How many rows those receipts occupy once the teams are lined up. Drives
+  // eviction, which works in rows so a pair is never half-removed.
+  const settledRowCount = settledRows(settled).length;
 
   // Listen for capture events on the playlist's SSE stream.
   useEffect(() => {
@@ -249,7 +258,12 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
             rawText: e.rawText,
             outcome: e.outcome,
             candidates: e.candidates || [],
+            // Both are undefined here: neither is stored, they only ride the
+            // live event. Restored rows are the ones still awaiting a decision,
+            // which render as a single list, so nothing depends on them —
+            // SettledList only ever holds receipts from this page's own session.
             side: e.side,
+            row: e.row,
             createdAt: e.createdAt,
           }));
         setEvents(rows);
@@ -375,20 +389,28 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     }
   }, [countTagged]);
 
-  // Keep only the newest AUTO_KEEP receipts; each new one rolls off the oldest.
-  // Nothing here is time-based, so no interval is needed — the list only
-  // changes when a receipt is added.
+  // Keep only the newest AUTO_KEEP_ROWS rows; each new row rolls off the
+  // oldest. Nothing here is time-based, so no interval is needed — the list
+  // only changes when a receipt is added.
+  //
+  // Whole rows go at once. Evicting individual songs used to break a row in
+  // half, leaving one team's title beside an empty cell that read as a missing
+  // capture rather than the formation it was meant to show.
   useEffect(() => {
-    if (settled.length <= AUTO_KEEP) return;
+    if (settledRowCount <= AUTO_KEEP_ROWS) return;
     setEvents((prev) => {
       // Recomputed from `prev` rather than closing over `settled`, which is a
       // fresh array each render and would make this effect re-run forever.
-      const drop = new Set(
-        prev.filter((x) => x.outcome === "auto").slice(AUTO_KEEP).map((x) => x.eventId)
-      );
+      const rows = settledRows(prev.filter((x) => x.outcome === "auto"));
+      if (rows.length <= AUTO_KEEP_ROWS) return prev;
+      const drop = new Set();
+      for (const r of rows.slice(0, rows.length - AUTO_KEEP_ROWS)) {
+        if (r.red) drop.add(r.red.eventId);
+        if (r.blue) drop.add(r.blue.eventId);
+      }
       return drop.size ? prev.filter((x) => !drop.has(x.eventId)) : prev;
     });
-  }, [settled.length]);
+  }, [settledRowCount]);
 
   const ignore = useCallback(async (eventId) => {
     setEvents((prev) => prev.filter((x) => x.eventId !== eventId));
@@ -615,42 +637,110 @@ function cleanTitle(s) {
  * before v3 never send it, and modes other than 2v2 have only one list. Two
  * empty columns would be worse than the plain list they replaced.
  *
- * Columns are independent: the teams pick at their own pace, so pairing row N
- * of one with row N of the other would imply a relationship that is not there.
+ * When the client reports a row index (v9 and later), the two columns are
+ * aligned on it: red row N sits beside blue row N, the same pairing qni shows.
+ * A team with nothing at that row leaves a gap rather than pulling its later
+ * songs up, so the shape on screen keeps matching the game even when one side
+ * has not picked yet, or when its song needed manual approval and never became
+ * a receipt. The cost is that the number of rows no longer equals the number of
+ * songs tagged — deliberately accepted, since the formation is what makes the
+ * panel readable against the game.
+ *
+ * Without row indices it degrades to the previous behaviour: two independent
+ * stacks, each in arrival order.
  */
 function SettledList({ events, t }) {
-  // `events` is newest-first because arrivals are prepended, but a column that
-  // grows downward reads the other way round: newest at the bottom, where your
-  // eye already is.
   const ordered = [...events].reverse();
-  const red = ordered.filter((e) => e.side === "red");
-  const blue = ordered.filter((e) => e.side === "blue");
+  const hasSide = ordered.some((e) => e.side === "red" || e.side === "blue");
 
-  if (!red.length && !blue.length) {
+  // No team information at all — clients before v3, and modes with one list.
+  // Two empty columns would be worse than the plain list they replaced.
+  if (!hasSide) {
     return ordered.map((e) => <AutoRow key={e.eventId} event={e} t={t} />);
   }
 
-  // Anything without a side still has to appear; keep it with the reds so it
-  // cannot silently vanish. Selected in one pass so it stays in arrival order
-  // rather than being appended after the reds.
-  const left = ordered.filter((e) => e.side !== "blue");
+  const rows = settledRows(events);
 
   return (
     <div className="grid grid-cols-2 gap-px border-b border-border/50 bg-border/30">
       <div className="bg-surface">
         <ColumnHeader label={t("captureTeamRed")} tone="text-red-400" />
-        {left.map((e) => (
-          <CompactAutoRow key={e.eventId} event={e} />
+        {rows.map((r, i) => (
+          <CompactAutoRow key={r.red ? r.red.eventId : `red-gap-${i}`} event={r.red} />
         ))}
       </div>
       <div className="bg-surface">
         <ColumnHeader label={t("captureTeamBlue")} tone="text-blue-400" />
-        {blue.map((e) => (
-          <CompactAutoRow key={e.eventId} event={e} />
+        {rows.map((r, i) => (
+          <CompactAutoRow key={r.blue ? r.blue.eventId : `blue-gap-${i}`} event={r.blue} />
         ))}
       </div>
     </div>
   );
+}
+
+/**
+ * Pair the two columns up into rows.
+ *
+ * With row indices, one output row per index that either team occupies, in
+ * ascending order — so a team missing that row renders an empty cell and every
+ * later song stays on its own line. Indices are the game's own, and a round
+ * that scrolled still reports absolute positions, so they can be compared
+ * directly between the teams.
+ *
+ * Without them there is nothing to align on, so the two lists are simply laid
+ * alongside each other in arrival order — which is what the panel did before.
+ */
+/**
+ * Receipts as display rows, oldest first.
+ *
+ * The single place that decides what a row is, used both to render the grid and
+ * to decide what to evict. Two implementations would eventually disagree, and
+ * the symptom — a row half-removed — is exactly what counting rows is meant to
+ * prevent.
+ *
+ * `events` arrives newest-first because arrivals are prepended; a column that
+ * grows downward reads the other way round, newest at the bottom where your eye
+ * already is.
+ */
+function settledRows(events) {
+  const ordered = [...events].reverse();
+  // Anything without a side still has to appear; keep it with the reds so it
+  // cannot silently vanish. Selected in one pass so it stays in arrival order
+  // rather than being appended after the reds.
+  return alignRows(
+    ordered.filter((e) => e.side !== "blue"),
+    ordered.filter((e) => e.side === "blue")
+  );
+}
+
+function alignRows(red, blue) {
+  const hasRow = (e) => Number.isInteger(e.row);
+  const aligned = red.some(hasRow) || blue.some(hasRow);
+
+  if (!aligned) {
+    const n = Math.max(red.length, blue.length);
+    return Array.from({ length: n }, (_, i) => ({
+      red: red[i] || null,
+      blue: blue[i] || null,
+    }));
+  }
+
+  // A title with no index cannot be placed against the other team; give it its
+  // own row after the aligned ones rather than dropping it.
+  const byRow = (list) => {
+    const m = new Map();
+    for (const e of list) if (hasRow(e)) m.set(e.row, e);
+    return m;
+  };
+  const rMap = byRow(red);
+  const bMap = byRow(blue);
+  const indices = [...new Set([...rMap.keys(), ...bMap.keys()])].sort((a, b) => a - b);
+
+  const rows = indices.map((i) => ({ red: rMap.get(i) || null, blue: bMap.get(i) || null }));
+  for (const e of red) if (!hasRow(e)) rows.push({ red: e, blue: null });
+  for (const e of blue) if (!hasRow(e)) rows.push({ red: null, blue: e });
+  return rows;
 }
 
 function ColumnHeader({ label, tone }) {
@@ -665,6 +755,18 @@ function ColumnHeader({ label, tone }) {
  * meaning instead and the title gets the whole line.
  */
 function CompactAutoRow({ event }) {
+  // A gap: this team has nothing at this row — it has not picked yet, or its
+  // song is still waiting to be approved. Holding the line keeps the other
+  // team's songs on the rows the game put them on. aria-hidden because it
+  // carries no information a screen reader could use; the height is the point.
+  if (!event) {
+    return (
+      <p aria-hidden className="px-2 py-1 text-[11px] leading-tight">
+        &nbsp;
+      </p>
+    );
+  }
+
   const title = cleanTitle(event.rawText);
   return (
     <p

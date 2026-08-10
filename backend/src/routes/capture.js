@@ -22,22 +22,26 @@ const pairLimiter = rateLimit({
 // is broken.
 // v2 reworded the UI, v3 added the optional `side` field, v4 scans more often
 // and sends a heartbeat, v5 starts its sweep from onCreate, v6 finds the
-// candidate lists by id instead of walking the tree, and v8 ties the client's
-// "already sent" set to the token instead of the process.
+// candidate lists by id instead of walking the tree, v8 ties the client's
+// "already sent" set to the token instead of the process, and v9 reports each
+// title's row in the candidate list so the panel can line the two teams up the
+// way qni does.
 //
-// v8 is the first release where an older client is actually wrong rather than
-// merely slower: up to v7 that set was never cleared, so after switching
+// v8 is the only release where an older client is actually wrong rather than
+// merely limited: up to v7 that set was never cleared, so after switching
 // playlists or re-pairing, every title captured under the previous token was
 // skipped and the song silently never appeared. minSupported stays at 1 anyway
 // — an old client still captures everything on a fresh pairing, and cutting
 // users off mid-round is worse than the bug. The upgrade prompt covers it.
+// A pre-v9 client simply sends no row and the panel falls back to independent
+// columns.
 const CLIENT_VERSION = {
-  latest: 8,
+  latest: 9,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '1.7',
+  latestName: '1.8',
   releasedAt: '2026-08-10',
 };
 
@@ -67,6 +71,8 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
       rawText: req.body && req.body.text,
       // Optional: clients before v3 do not send it.
       side: req.body && req.body.side,
+      // Optional: clients before v9 do not send it.
+      row: req.body && req.body.row,
     });
     res.json(result);
   } catch (err) {

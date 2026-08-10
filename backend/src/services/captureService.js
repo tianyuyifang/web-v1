@@ -17,6 +17,12 @@ const MAX_CANDIDATE_SCAN = 30;
 const MIN_ELLIPSIS_SIDE = 2;
 /** Pairing codes are short and guessable, so they live only long enough to type. */
 const PAIR_TTL_MS = 5 * 60 * 1000;
+/**
+ * Upper bound on a candidate-list row index. A round holds ten songs; this is
+ * loose enough for a longer mode but keeps a malformed value from making the
+ * panel render thousands of empty rows.
+ */
+const MAX_ROW_INDEX = 200;
 
 /** The user must be able to like in this playlist to capture into it. */
 async function assertPlaylistAccess(userId, playlistId) {
@@ -242,7 +248,7 @@ async function touchSession(session) {
  * Nothing is liked here — matching only proposes. The user approves each
  * match by hand via approveEvent.
  */
-async function ingestText({ session, rawText, side }) {
+async function ingestText({ session, rawText, side, row }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
 
@@ -251,6 +257,12 @@ async function ingestText({ session, rawText, side }) {
   // screen at the moment it was read, which is meaningless once the round is
   // over, and persisting it would need a migration for no lasting value.
   const team = side === 'red' || side === 'blue' ? side : null;
+
+  // Position within that list, so the panel can put red row N beside blue
+  // row N. Same treatment as `side` — transient, not stored. Clients before v9
+  // never send it, and the panel falls back to independent columns.
+  const rowIndex =
+    Number.isInteger(row) && row >= 0 && row < MAX_ROW_INDEX ? row : null;
 
   // Mark the client as alive before anything else can fail. Without this the
   // UI cannot tell "emulator not running" from "nothing captured yet" — both
@@ -309,6 +321,7 @@ async function ingestText({ session, rawText, side }) {
     matchedClipId: event.matchedClipId,
     createdAt: event.createdAt,
     side: team,
+    row: rowIndex,
   };
   broadcast(session.playlistId, 'capture-event', payload);
   return payload;

@@ -20,19 +20,24 @@ const pairLimiter = rateLimit({
 // clients wrong rather than merely outdated — a qni control-id change, say,
 // where an old client silently captures nothing and the user assumes the tool
 // is broken.
-// minSupported stays at 1: every version so far still captures correctly. v2
-// reworded the UI, v3 added the optional `side` field, v4 scans more often and
-// sends a heartbeat, v5 starts its sweep from onCreate, and v6 finds the
-// candidate lists by id instead of walking the tree — an older client just runs
-// slower. Raise it only when an older client would silently misbehave, e.g.
-// after qni changes the view ids it reads.
+// v2 reworded the UI, v3 added the optional `side` field, v4 scans more often
+// and sends a heartbeat, v5 starts its sweep from onCreate, v6 finds the
+// candidate lists by id instead of walking the tree, and v8 ties the client's
+// "already sent" set to the token instead of the process.
+//
+// v8 is the first release where an older client is actually wrong rather than
+// merely slower: up to v7 that set was never cleared, so after switching
+// playlists or re-pairing, every title captured under the previous token was
+// skipped and the song silently never appeared. minSupported stays at 1 anyway
+// — an old client still captures everything on a fresh pairing, and cutting
+// users off mid-round is worse than the bug. The upgrade prompt covers it.
 const CLIENT_VERSION = {
-  latest: 7,
+  latest: 8,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '1.6',
+  latestName: '1.7',
   releasedAt: '2026-08-10',
 };
 

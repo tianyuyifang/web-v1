@@ -42,7 +42,7 @@ export default {
   captureUnmatched: "匹配不到",
   captureNothingYet: "还没抓到内容",
   captureAmbiguous: "选一个",
-  captureNotInPlaylist: "库里有，但这个歌单没有",
+  captureNotInPlaylist: "曲库有，歌单没有",
   captureStartFailed: "无法开始自动打标",
   captureWaitingClient: "等待打标 App 连接",
   captureWaitingHint: "模拟器开了吗？APK 启动了吗？token 填了吗？",

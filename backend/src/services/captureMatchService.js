@@ -119,20 +119,20 @@ function compareTitles(captured, libraryTitle) {
     if (normTitleStrict(captured) === normTitleStrict(libraryTitle)) {
       return { kind: 'exact', note: null };
     }
-    return { kind: 'bracket', note: `括号内容不同，库里是「${libraryTitle}」` };
+    return { kind: 'bracket', note: `括号内容不同，曲库里是「${libraryTitle}」` };
   }
 
   // Case 2 — the UI elided the middle of a long title.
   const ell = splitEllipsis(captured);
   if (ell && ell.prefix && b.startsWith(ell.prefix) && (!ell.suffix || b.endsWith(ell.suffix))) {
-    return { kind: 'ellipsis', note: `游戏里显示为省略形式，库里是「${libraryTitle}」` };
+    return { kind: 'ellipsis', note: `游戏里显示为省略形式，曲库里是「${libraryTitle}」` };
   }
 
   // Case 2b — same title, different punctuation width ("暂停.开始过" vs
   // "暂停．开始过"). Checked AFTER the exact test and reported as its own kind,
   // so folding never widens what counts as exact — these still need a human.
   if (normTitleFolded(captured) === normTitleFolded(libraryTitle)) {
-    return { kind: 'punct', note: `标点写法不同，库里是「${libraryTitle}」` };
+    return { kind: 'punct', note: `标点写法不同，曲库里是「${libraryTitle}」` };
   }
 
   // An elided capture must not fall through to prefix matching: "Rolling
@@ -151,7 +151,7 @@ function compareTitles(captured, libraryTitle) {
   const [short, long] = a.length <= b.length ? [a, b] : [b, a];
   const extra = long.slice(short.length);
   const noteFor = () => (a.length <= b.length
-    ? `库里多了「${extra}」`
+    ? `曲库多了「${extra}」`
     : `游戏里多了「${extra}」`);
 
   if (long.startsWith(short) && extra.length >= 2) {

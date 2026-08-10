@@ -33,7 +33,7 @@ assert.strictEqual(c && c.kind, 'ellipsis', 'trailing ellipsis with no suffix');
 // --- case 3: loose (extra words on either side) ---
 c = compareTitles('三角体', '三角体 triangle');
 assert.strictEqual(c && c.kind, 'loose', 'library has extra words');
-assert.ok(c.note.includes('库里多了'), 'note says which side has extra: ' + c.note);
+assert.ok(c.note.includes('曲库多了'), 'note says which side has extra: ' + c.note);
 c = compareTitles('三角体 triangle', '三角体');
 assert.strictEqual(c && c.kind, 'loose', 'game has extra words');
 assert.ok(c.note.includes('游戏里多了'), 'note says which side: ' + c.note);

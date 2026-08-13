@@ -13,6 +13,7 @@ import PlaylistGrid from "@/components/playlist/PlaylistGrid";
 import ClipSidebar from "@/components/playlist/ClipSidebar";
 import CapturePanel from "@/components/playlist/CapturePanel";
 import FloatingClipNav from "@/components/player/FloatingClipNav";
+import { PRESET_COLORS } from "@/components/player/ColorTag";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import useLikes from "@/hooks/useLikes";
 import { preloadClips } from "@/lib/audioCache";
@@ -54,6 +55,8 @@ export default function PlaylistPage() {
   const [selectedClips, setSelectedClips] = useState(new Set());
   const [columns, setColumns] = useState(3);
   const [gridSearch, setGridSearch] = useState("");
+  // Single colour, ANDed with the text filter. null means no colour filter.
+  const [colorFilter, setColorFilter] = useState(null);
   const [showAddClip, setShowAddClip] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -342,6 +345,38 @@ export default function PlaylistPage() {
               </button>
             ))}
           </div>
+
+          {/* Colour filter — its own row. The buttons above jump to a section;
+              these filter the grid, and mixing the two would put identical-
+              looking controls with different effects side by side. */}
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted">{t("filterByColor")}</span>
+            {PRESET_COLORS.map((c) => {
+              const active = colorFilter === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => setColorFilter(active ? null : c)}
+                  aria-label={c}
+                  aria-pressed={active}
+                  className={`h-5 w-5 rounded-full transition-transform ${
+                    active
+                      ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[var(--background)]"
+                      : "opacity-60 hover:scale-110 hover:opacity-100"
+                  }`}
+                  style={{ background: c }}
+                />
+              );
+            })}
+            {colorFilter && (
+              <button
+                onClick={() => setColorFilter(null)}
+                className="rounded-md border border-border bg-surface px-2 py-0.5 text-xs text-muted transition-colors hover:bg-surface-hover"
+              >
+                {t("clearColorFilter")}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="pt-4 pb-16 sm:pb-0">
@@ -355,6 +390,7 @@ export default function PlaylistPage() {
             onSelectedChange={setSelectedClips}
             onBatchDone={() => { setBatchMode(false); setSelectedClips(new Set()); }}
             searchQuery={gridSearch}
+            colorFilter={colorFilter}
             highlightedClipId={highlightedClipId}
             onClipRemoved={handleClipRemoved}
             onClipUpdated={handleClipUpdated}

@@ -85,17 +85,18 @@ export default function PlaylistHeader({
       hidden: !editMode || !playlist.isOwner,
     },
     {
+      // Labelled by what the click does, not by what the playlist currently is
+      // — the red/green badge beside the title already says that.
       id: "public",
-      label: playlist.isPublic ? t("publicLabel") : t("privateLabel"),
+      label: playlist.isPublic ? t("setPlaylistPrivate") : t("setPlaylistPublic"),
       onClick: () => onTogglePublic?.(),
-      active: playlist.isPublic,
-      hidden: !editMode || !playlist.isOwner,
+      hidden: !playlist.isOwner,
     },
   ];
 
   return (
     <div className="mb-4 space-y-1.5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div className="flex flex-col gap-3 sm:relative sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0 sm:flex-1">
           {editMode ? (
             <>
@@ -138,7 +139,7 @@ export default function PlaylistHeader({
                 </span>
               </div>
               {playlist.description && (
-                <p className="mt-1 text-sm text-muted sm:truncate" title={playlist.description}>
+                <p className="mt-1 text-sm text-muted sm:line-clamp-2" title={playlist.description}>
                   <RichText text={playlist.description} />
                 </p>
               )}
@@ -146,8 +147,10 @@ export default function PlaylistHeader({
           )}
         </div>
 
-        {/* Column selector — centered, hidden on mobile */}
-        <div className="hidden shrink-0 flex-col items-center gap-1 sm:flex">
+        {/* Column selector — hidden on mobile. Absolutely centred on the header
+            itself rather than flowed between the two columns, so it stays put
+            no matter how wide the title and description grow. */}
+        <div className="hidden shrink-0 flex-col items-center gap-1 sm:absolute sm:left-1/2 sm:flex sm:-translate-x-1/2">
           <span className="text-xs text-muted">{t("columnsPerRow")}</span>
           <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
             {COLUMN_OPTIONS.map((n) => (

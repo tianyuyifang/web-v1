@@ -92,6 +92,10 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Stopping is a two-stage click. The stop button sits right beside the
+  // collapse toggle, so a slip of the mouse used to end a live run outright;
+  // arming first means a stray click costs nothing but a second of red.
+  const [stopArmed, setStopArmed] = useState(false);
   const [client, setClient] = useState("waiting");
   const esRef = useRef(null);
   const autoDoneRef = useRef(new Set()); // eventIds already auto-approved, never twice
@@ -308,6 +312,14 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     return () => clearTimeout(id);
   }, [copied]);
 
+  // Disarm the stop button if the second click never comes, so it cannot sit
+  // armed indefinitely and turn a much later stray click into a stop.
+  useEffect(() => {
+    if (!stopArmed) return;
+    const id = setTimeout(() => setStopArmed(false), 3000);
+    return () => clearTimeout(id);
+  }, [stopArmed]);
+
   const stop = useCallback(async () => {
     if (!session) return;
     setBusy(true);
@@ -515,12 +527,18 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
             >
               {open ? "▼" : "▲"}
             </button>
+            {/* Extra gap from the collapse toggle: these two sat a hair apart,
+                which is how the stop got hit by accident in the first place. */}
             <button
-              onClick={stop}
+              onClick={() => (stopArmed ? stop() : setStopArmed(true))}
               disabled={busy}
-              className="rounded bg-red-600/90 px-3 py-1.5 text-xs text-white hover:bg-red-600 disabled:opacity-50 sm:px-2 sm:py-0.5"
+              className={`ml-2 rounded px-3 py-1.5 text-xs text-white transition-colors disabled:opacity-50 sm:px-2 sm:py-0.5 ${
+                stopArmed
+                  ? "bg-red-500 ring-2 ring-red-300"
+                  : "bg-red-600/90 hover:bg-red-600"
+              }`}
             >
-              {t("captureStop")}
+              {stopArmed ? t("captureStopConfirm") : t("captureStop")}
             </button>
           </div>
         </div>

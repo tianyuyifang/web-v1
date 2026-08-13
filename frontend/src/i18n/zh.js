@@ -30,6 +30,7 @@ export default {
   captureFailed: "打标失败",
   captureRunning: "打标中",
   captureStop: "停止",
+  captureStopConfirm: "再点一次停止",
   captureCaught: "抓到",
   capturePending: "待确认",
   captureToken: "令牌",
@@ -142,9 +143,15 @@ export default {
   // Visibility
   publicLabel: "公开",
   privateLabel: "私密",
+  // Overflow-menu actions — named for what the click does, not the current
+  // state. Prefixed to stay clear of the clip-level setPrivate below.
+  setPlaylistPublic: "设为公开歌单",
+  setPlaylistPrivate: "设为私密歌单",
 
   // Playlist detail
   filterClips: "按标题、歌手或备注筛选...",
+  filterByColor: "按颜色筛选",
+  clearColorFilter: "清除",
   deletePlaylistConfirm: "此操作不可撤销。播放列表中的所有片段、分享和喜欢将被永久删除。",
   deletePlaylistTitle: "删除播放列表",
   deleteClipTitle: "删除片段",

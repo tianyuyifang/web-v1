@@ -77,6 +77,7 @@ export default function PlaylistGrid({
   onSelectedChange,
   onBatchDone,
   searchQuery,
+  colorFilter,
   highlightedClipId,
   onClipRemoved,
   onClipUpdated,
@@ -142,9 +143,15 @@ export default function PlaylistGrid({
   );
 
   const filteredClips = useMemo(() => {
-    if (!searchQuery) return playlist.clips;
-    return playlist.clips.filter((pc) =>
-      matchesSearch(
+    if (!searchQuery && !colorFilter) return playlist.clips;
+    return playlist.clips.filter((pc) => {
+      // A clip can carry several colours, stored pipe-separated, so match on
+      // membership rather than equality.
+      if (colorFilter && !(pc.colorTag || "").split("|").includes(colorFilter)) {
+        return false;
+      }
+      if (!searchQuery) return true;
+      return matchesSearch(
         searchQuery,
         pc.clip.song.title,
         pc.clip.song.artist,
@@ -153,9 +160,9 @@ export default function PlaylistGrid({
         pc.clip.song.titlePinyinInitials,
         pc.clip.song.titlePinyinConcat,
         pc.clip.song.artistPinyinConcat
-      )
-    );
-  }, [playlist.clips, searchQuery]);
+      );
+    });
+  }, [playlist.clips, searchQuery, colorFilter]);
 
   const [removeConfirmClipId, setRemoveConfirmClipId] = useState(null);
 

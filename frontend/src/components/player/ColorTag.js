@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, memo } from "react";
 
-const PRESET_COLORS = [
+export const PRESET_COLORS = [
   "#E8655A", // red
   "#E5A030", // orange/yellow
   "#4CAF50", // green

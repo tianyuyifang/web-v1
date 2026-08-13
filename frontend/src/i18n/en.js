@@ -30,6 +30,7 @@ export default {
   captureFailed: "failed",
   captureRunning: "Capturing",
   captureStop: "Stop",
+  captureStopConfirm: "Click again to stop",
   captureCaught: "caught",
   capturePending: "to review",
   captureToken: "Token",
@@ -142,9 +143,15 @@ export default {
   // Visibility
   publicLabel: "Public",
   privateLabel: "Private",
+  // Overflow-menu actions — named for what the click does, not the current
+  // state. Prefixed to stay clear of the clip-level setPrivate below.
+  setPlaylistPublic: "Make playlist public",
+  setPlaylistPrivate: "Make playlist private",
 
   // Playlist detail
   filterClips: "Filter clips by title, artist, or comment...",
+  filterByColor: "Filter by colour",
+  clearColorFilter: "Clear",
   deletePlaylistConfirm: "This action cannot be undone. All clips, shares, and likes in this playlist will be permanently removed.",
   deletePlaylistTitle: "Delete Playlist",
   deleteClipTitle: "Delete Clip",

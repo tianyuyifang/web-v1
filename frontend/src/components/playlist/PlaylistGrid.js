@@ -17,7 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { playlistsAPI } from "@/lib/api";
-import { matchesSearch } from "@/lib/utils";
+import { clipMatchesFilters } from "@/lib/utils";
 import PlayerBox from "@/components/player/PlayerBox";
 import SpeedControl from "@/components/player/SpeedControl";
 import PitchControl from "@/components/player/PitchControl";
@@ -144,24 +144,7 @@ export default function PlaylistGrid({
 
   const filteredClips = useMemo(() => {
     if (!searchQuery && !colorFilter) return playlist.clips;
-    return playlist.clips.filter((pc) => {
-      // A clip can carry several colours, stored pipe-separated, so match on
-      // membership rather than equality.
-      if (colorFilter && !(pc.colorTag || "").split("|").includes(colorFilter)) {
-        return false;
-      }
-      if (!searchQuery) return true;
-      return matchesSearch(
-        searchQuery,
-        pc.clip.song.title,
-        pc.clip.song.artist,
-        pc.comment,
-        pc.clip.song.titlePinyin,
-        pc.clip.song.titlePinyinInitials,
-        pc.clip.song.titlePinyinConcat,
-        pc.clip.song.artistPinyinConcat
-      );
-    });
+    return playlist.clips.filter((pc) => clipMatchesFilters(pc, searchQuery, colorFilter));
   }, [playlist.clips, searchQuery, colorFilter]);
 
   const [removeConfirmClipId, setRemoveConfirmClipId] = useState(null);
@@ -296,21 +279,35 @@ export default function PlaylistGrid({
     onBatchDone?.();
   }, [selectedClips, playlist.id, onClipRemoved, onBatchDone]);
 
-  // Group clips into sections
+  // Group clips into sections.
+  //
+  // The boundaries come from the full list, not the filtered one. A section is
+  // marked on a clip, so deriving the groups from what survives a filter loses
+  // the label whenever that particular clip is filtered out — and most marker
+  // clips carry no colour of their own, so nearly every colour filter used to
+  // dissolve the sections and leave one unlabelled heap. Filtering the contents
+  // of each group instead keeps the headings put; the clips shown are exactly
+  // the same either way.
+  const visibleClipIds = useMemo(
+    () => new Set(filteredClips.map((pc) => pc.clipId)),
+    [filteredClips]
+  );
+
   const sectionGroups = useMemo(() => {
     const groups = [];
     let current = { label: null, clipId: null, clips: [] };
-    for (const pc of filteredClips) {
+    for (const pc of playlist.clips) {
       if (pc.sectionLabel) {
         if (current.clips.length > 0 || current.label) groups.push(current);
-        current = { label: pc.sectionLabel, clipId: pc.clipId, clips: [pc] };
-      } else {
-        current.clips.push(pc);
+        current = { label: pc.sectionLabel, clipId: pc.clipId, clips: [] };
       }
+      if (visibleClipIds.has(pc.clipId)) current.clips.push(pc);
     }
     if (current.clips.length > 0 || current.label) groups.push(current);
-    return groups;
-  }, [filteredClips]);
+    // A section whose every clip was filtered out would render as a bare
+    // heading over nothing, so drop it.
+    return groups.filter((g) => g.clips.length > 0);
+  }, [playlist.clips, visibleClipIds]);
 
   const colCount = columns || 3;
 

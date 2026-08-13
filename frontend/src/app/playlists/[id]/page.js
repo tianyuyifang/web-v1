@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { playlistsAPI, likesAPI } from "@/lib/api";
 import usePlayerStore from "@/store/playerStore";
 import usePlaylistLikes from "@/hooks/usePlaylistLikes";
-import { getColumnCount, setColumnCount as saveColumnCount, matchesSearch } from "@/lib/utils";
+import { getColumnCount, setColumnCount as saveColumnCount, matchesSearch, clipMatchesFilters } from "@/lib/utils";
 import PlaylistHeader from "@/components/playlist/PlaylistHeader";
 import PlaylistGrid from "@/components/playlist/PlaylistGrid";
 import ClipSidebar from "@/components/playlist/ClipSidebar";
@@ -252,12 +252,24 @@ export default function PlaylistPage() {
     window.scrollBy(0, newTop - anchor.top);
   }, [editMode]);
 
+  // Only sections the grid still renders: each button scrolls to a divider that
+  // the grid drops once a filter empties its section, and a button pointing at
+  // a divider that is no longer there does nothing when clicked.
   const sections = useMemo(() => {
     if (!playlist?.clips) return [];
-    return playlist.clips
-      .filter((pc) => pc.sectionLabel)
-      .map((pc) => ({ clipId: pc.clipId, label: pc.sectionLabel }));
-  }, [playlist?.clips]);
+    const out = [];
+    let current = null;
+    for (const pc of playlist.clips) {
+      if (pc.sectionLabel) {
+        current = { clipId: pc.clipId, label: pc.sectionLabel, hasVisible: false };
+        out.push(current);
+      }
+      if (current && clipMatchesFilters(pc, gridSearch, colorFilter)) {
+        current.hasVisible = true;
+      }
+    }
+    return out.filter((s) => s.hasVisible);
+  }, [playlist?.clips, gridSearch, colorFilter]);
 
   if (loading) {
     return (

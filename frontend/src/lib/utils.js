@@ -45,6 +45,30 @@ export function matchesSearch(query, ...fields) {
 }
 
 /**
+ * Whether a playlist clip survives the grid's filters. Lives here because both
+ * the grid and the section-jump buttons above it must agree on what is visible
+ * — a jump button for a section the grid has hidden scrolls to nothing.
+ */
+export function clipMatchesFilters(pc, searchQuery, colorFilter) {
+  // A clip can carry several colours, stored pipe-separated, so match on
+  // membership rather than equality.
+  if (colorFilter && !(pc.colorTag || "").split("|").includes(colorFilter)) {
+    return false;
+  }
+  if (!searchQuery) return true;
+  return matchesSearch(
+    searchQuery,
+    pc.clip.song.title,
+    pc.clip.song.artist,
+    pc.comment,
+    pc.clip.song.titlePinyin,
+    pc.clip.song.titlePinyinInitials,
+    pc.clip.song.titlePinyinConcat,
+    pc.clip.song.artistPinyinConcat
+  );
+}
+
+/**
  * Get/set playlist view preference (grid or list).
  */
 const VIEW_KEY = "playlist-view";

@@ -38,8 +38,11 @@ export default function PlaylistCard({ playlist, listView, number }) {
           </span>
         </span>
 
-        {/* Owner — fixed column, vertically aligned across rows */}
-        <span className="hidden w-20 shrink-0 truncate text-xs text-primary sm:block">
+        {/* Owner. Shown on phones too: without it a shared playlist is
+            indistinguishable from one of your own. From sm up it is a fixed
+            column so the names line up down the list; on phones it takes only
+            the width it needs, leaving the rest to the playlist name. */}
+        <span className="shrink-0 truncate text-xs text-primary sm:block sm:w-20">
           {!playlist.isOwner && playlist.ownerName ? `@${playlist.ownerName}` : ""}
         </span>
 

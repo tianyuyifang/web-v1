@@ -80,6 +80,55 @@ export default function PlaylistHeader({
     },
   ];
 
+  // Everything the desktop header offers, including the overflow menu's
+  // contents, as one flat list for the phone grid.
+  const NEUTRAL = "border border-border bg-surface hover:bg-surface-hover";
+  const phoneActions = [
+    { id: "return", label: t("return"), onClick: onReturn,
+      className: NEUTRAL, style: { color: "var(--text)" } },
+    playlist.isOwner && {
+      id: "unlikeAll", label: t("unlikeAllShort"), onClick: onUnlikeAll,
+      className: "border border-red-500/30 text-red-400 hover:bg-red-500/10" },
+    playlist.isOwner && {
+      id: "share", label: t("share"), onClick: () => onShare?.(),
+      className: NEUTRAL, style: { color: "var(--text)" } },
+    playlist.isOwner && {
+      id: "public",
+      label: playlist.isPublic ? t("setPrivateShort") : t("setPublicShort"),
+      onClick: () => onTogglePublic?.(),
+      className: NEUTRAL, style: { color: "var(--text)" } },
+    playlist.isOwner && {
+      id: "edit", label: editMode ? t("done") : t("edit"), onClick: onToggleEditMode,
+      className: editMode ? "bg-accent text-black shadow-sm" : NEUTRAL,
+      style: editMode ? undefined : { color: "var(--text)" } },
+    // …the overflow menu's own items, flattened. Two of them are too long for
+    // a phone-width cell, so they get a shorter label here.
+    ...overflowItems
+      .filter((i) => !i.hidden)
+      .map((i) => ({
+        id: i.id,
+        label: i.id === "autoplay"
+          ? (autoPlayEnabled ? t("autoPlayOnShort") : t("autoPlayOffShort"))
+          : i.id === "copy" ? t("copyShort") : i.label,
+        onClick: i.onClick,
+        className: i.active ? "bg-primary text-white shadow-sm" : NEUTRAL,
+        style: i.active ? undefined : { color: "var(--text)" },
+      })),
+    // …and the edit toolbar, which on desktop is a row of its own inside the
+    // block phones no longer render.
+    ...(editMode && playlist.isOwner
+      ? [
+          { id: "batch", label: t("batch"), onClick: onToggleBatch,
+            className: batchMode ? "bg-purple-600 text-white shadow-sm" : NEUTRAL,
+            style: batchMode ? undefined : { color: "var(--text)" } },
+          { id: "addClip", label: t("addClip"), onClick: onAddClip,
+            className: "bg-primary text-white shadow-sm hover:bg-primary-hover" },
+          { id: "delete", label: t("delete"), onClick: onDelete,
+            className: "border border-red-500/30 text-red-400 hover:bg-red-500/10" },
+        ]
+      : []),
+  ].filter(Boolean);
+
   return (
     <div className="mb-4 space-y-1.5">
       {/* Three tracks on desktop: title | selector | actions. The outer two are
@@ -163,7 +212,28 @@ export default function PlaylistHeader({
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col items-end gap-1.5">
+        {/* Phones get their own action block. Stacked, the header gives the
+            buttons a full-width row of their own, so everything the overflow
+            menu holds on desktop is laid out flat here — no menu to open. The
+            column count is derived from how many there are so they always fill
+            exactly two rows: eleven in edit mode would overflow a fixed four. */}
+        <div
+          className="grid gap-1.5 sm:hidden"
+          style={{ gridTemplateColumns: `repeat(${Math.ceil(phoneActions.length / 2)}, minmax(0, 1fr))` }}
+        >
+          {phoneActions.map((a) => (
+            <button
+              key={a.id}
+              onClick={a.onClick}
+              className={`truncate rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors ${a.className}`}
+              style={a.style}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="hidden min-w-0 flex-col items-end gap-1.5 sm:flex">
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               onClick={onReturn}

@@ -147,6 +147,14 @@ export default {
   // state. Prefixed to stay clear of the clip-level setPrivate below.
   setPlaylistPublic: "设为公开歌单",
   setPlaylistPrivate: "设为私密歌单",
+  // Short forms for the phone action grid, where a cell is about 50px wide.
+  // Still phrased as actions, so a tap's outcome stays unambiguous.
+  setPublicShort: "转公开",
+  setPrivateShort: "转私密",
+  unlikeAllShort: "清喜欢",
+  copyShort: "复制",
+  autoPlayOnShort: "连播开",
+  autoPlayOffShort: "连播关",
 
   // Playlist detail
   filterClips: "按标题、歌手或备注筛选...",

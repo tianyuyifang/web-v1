@@ -147,6 +147,14 @@ export default {
   // state. Prefixed to stay clear of the clip-level setPrivate below.
   setPlaylistPublic: "Make playlist public",
   setPlaylistPrivate: "Make playlist private",
+  // Short forms for the phone action grid, where a cell is about 50px wide.
+  // Still phrased as actions, so a tap's outcome stays unambiguous.
+  setPublicShort: "Publish",
+  setPrivateShort: "Hide",
+  unlikeAllShort: "Unlike",
+  copyShort: "Copy",
+  autoPlayOnShort: "Auto on",
+  autoPlayOffShort: "Auto off",
 
   // Playlist detail
   filterClips: "Filter clips by title, artist, or comment...",

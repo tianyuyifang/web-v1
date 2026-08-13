@@ -96,8 +96,16 @@ export default function PlaylistHeader({
 
   return (
     <div className="mb-4 space-y-1.5">
-      <div className="flex flex-col gap-3 sm:relative sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div className="min-w-0 sm:flex-1">
+      {/* Three tracks on desktop: title | selector | actions. The outer two are
+          minmax(0,1fr), so they stay equal and the middle track lands on the
+          header's true centre however wide the actions or the title get. A flex
+          row could not do both at once — centring the selector there meant
+          taking it out of the flow, which let the description run underneath
+          it. Below lg the actions need more room than an equal share allows, so
+          the tracks size to content there and the selector sits off-centre
+          rather than the buttons wrapping. Phones stack, as before. */}
+      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-start sm:gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <div className="min-w-0">
           {editMode ? (
             <>
               <input
@@ -147,10 +155,8 @@ export default function PlaylistHeader({
           )}
         </div>
 
-        {/* Column selector — hidden on mobile. Absolutely centred on the header
-            itself rather than flowed between the two columns, so it stays put
-            no matter how wide the title and description grow. */}
-        <div className="hidden shrink-0 flex-col items-center gap-1 sm:absolute sm:left-1/2 sm:flex sm:-translate-x-1/2">
+        {/* Column selector — hidden on mobile, the auto-sized middle track. */}
+        <div className="hidden flex-col items-center gap-1 sm:flex">
           <span className="text-xs text-muted">{t("columnsPerRow")}</span>
           <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
             {COLUMN_OPTIONS.map((n) => (
@@ -170,7 +176,7 @@ export default function PlaylistHeader({
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col items-end gap-1.5 sm:shrink-0">
+        <div className="flex min-w-0 flex-col items-end gap-1.5">
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               onClick={onReturn}

@@ -87,11 +87,11 @@ export default function PlaylistHeader({
           header's true centre however wide the actions or the title get. A flex
           row could not do both at once — centring the selector there meant
           taking it out of the flow, which let the description run underneath
-          it. The actions need ~490px once share and visibility join the row,
-          which an equal share only affords from 2xl up; below that the tracks
-          size to content and the selector sits off-centre rather than the
-          buttons wrapping onto a second row. Phones stack, as before. */}
-      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(11rem,1fr)_auto_auto] sm:items-start sm:gap-4 2xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+          it. Split over two rows the actions need ~250px, which an equal share
+          affords from lg up; below that the tracks size to content and the
+          selector sits off-centre rather than squeezing the title. Phones
+          stack, as before. */}
+      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(11rem,1fr)_auto_auto] sm:items-start sm:gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <div className="min-w-0">
           {editMode ? (
             <>
@@ -183,7 +183,7 @@ export default function PlaylistHeader({
             )}
 
             {/* Out of the overflow menu and into the row: centring the column
-                selector freed the space these two now sit in. */}
+                selector freed the space this now sits in. */}
             {playlist.isOwner && (
               <button
                 onClick={() => onShare?.()}
@@ -193,7 +193,12 @@ export default function PlaylistHeader({
                 {t("share")}
               </button>
             )}
+          </div>
 
+          {/* Second row. Six buttons need about 490px, more than the header can
+              spare below the widest screens, so they are split rather than left
+              to wrap at a point that depends on the window. */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {playlist.isOwner && (
               <button
                 onClick={() => onTogglePublic?.()}
@@ -205,19 +210,17 @@ export default function PlaylistHeader({
             )}
 
             {playlist.isOwner && (
-              <>
-                <button
-                  onClick={onToggleEditMode}
-                  className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                    editMode
-                      ? "bg-accent text-black shadow-sm"
-                      : "border border-border bg-surface hover:bg-surface-hover"
-                  }`}
-                  style={editMode ? {} : { color: "var(--text)" }}
-                >
-                  {editMode ? t("done") : t("edit")}
-                </button>
-              </>
+              <button
+                onClick={onToggleEditMode}
+                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  editMode
+                    ? "bg-accent text-black shadow-sm"
+                    : "border border-border bg-surface hover:bg-surface-hover"
+                }`}
+                style={editMode ? {} : { color: "var(--text)" }}
+              >
+                {editMode ? t("done") : t("edit")}
+              </button>
             )}
 
             <OverflowMenu items={overflowItems} />

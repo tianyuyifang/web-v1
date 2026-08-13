@@ -96,7 +96,7 @@ export default function PlaylistHeader({
   return (
     <div className="mb-4 space-y-1.5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div className="min-w-0 shrink-0">
+        <div className="min-w-0 sm:flex-1">
           {editMode ? (
             <>
               <input
@@ -117,19 +117,19 @@ export default function PlaylistHeader({
             </>
           ) : (
             <>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold sm:text-2xl" style={{ color: "var(--text)" }}>
+              <div className="flex items-center gap-2 sm:min-w-0">
+                <h1 className="text-xl font-bold sm:truncate sm:text-2xl" style={{ color: "var(--text)" }}>
                   <RichText text={playlist.name} />
                 </h1>
-                <span className="rounded-full bg-surface px-2 py-0.5 text-xs text-muted">
+                <span className="shrink-0 rounded-full bg-surface px-2 py-0.5 text-xs text-muted">
                   {playlist.clips?.length || 0} {t("clips")}
                 </span>
                 {playlist.ownerName && (
-                  <span className="rounded-full bg-surface px-2 py-0.5 text-xs text-muted">
+                  <span className="shrink-0 rounded-full bg-surface px-2 py-0.5 text-xs text-muted">
                     {playlist.isOwner ? t("you") : `@${playlist.ownerName}`}
                   </span>
                 )}
-                <span className={`rounded-full px-2 py-0.5 text-xs ${
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${
                   playlist.isPublic
                     ? "bg-green-600 text-white"
                     : "bg-red-600 text-white"
@@ -138,7 +138,7 @@ export default function PlaylistHeader({
                 </span>
               </div>
               {playlist.description && (
-                <p className="mt-1 text-sm text-muted">
+                <p className="mt-1 text-sm text-muted sm:truncate" title={playlist.description}>
                   <RichText text={playlist.description} />
                 </p>
               )}
@@ -147,7 +147,7 @@ export default function PlaylistHeader({
         </div>
 
         {/* Column selector — centered, hidden on mobile */}
-        <div className="hidden flex-1 flex-col items-center gap-1 sm:flex">
+        <div className="hidden shrink-0 flex-col items-center gap-1 sm:flex">
           <span className="text-xs text-muted">{t("columnsPerRow")}</span>
           <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
             {COLUMN_OPTIONS.map((n) => (
@@ -167,7 +167,7 @@ export default function PlaylistHeader({
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col items-end gap-1.5">
+        <div className="flex min-w-0 flex-col items-end gap-1.5 sm:shrink-0">
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               onClick={onReturn}

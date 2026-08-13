@@ -53,12 +53,6 @@ export default function PlaylistHeader({
 
   const overflowItems = [
     {
-      id: "share",
-      label: t("share"),
-      onClick: () => onShare?.(),
-      hidden: !playlist.isOwner,
-    },
-    {
       id: "autoplay",
       label: autoPlayEnabled ? t("autoPlayOn") : t("autoPlayOff"),
       onClick: () => setAutoPlayEnabled(!autoPlayEnabled),
@@ -84,14 +78,6 @@ export default function PlaylistHeader({
       active: compactView,
       hidden: !editMode || !playlist.isOwner,
     },
-    {
-      // Labelled by what the click does, not by what the playlist currently is
-      // — the red/green badge beside the title already says that.
-      id: "public",
-      label: playlist.isPublic ? t("setPlaylistPrivate") : t("setPlaylistPublic"),
-      onClick: () => onTogglePublic?.(),
-      hidden: !playlist.isOwner,
-    },
   ];
 
   return (
@@ -101,10 +87,11 @@ export default function PlaylistHeader({
           header's true centre however wide the actions or the title get. A flex
           row could not do both at once — centring the selector there meant
           taking it out of the flow, which let the description run underneath
-          it. Below lg the actions need more room than an equal share allows, so
-          the tracks size to content there and the selector sits off-centre
-          rather than the buttons wrapping. Phones stack, as before. */}
-      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-start sm:gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+          it. The actions need ~490px once share and visibility join the row,
+          which an equal share only affords from 2xl up; below that the tracks
+          size to content and the selector sits off-centre rather than the
+          buttons wrapping onto a second row. Phones stack, as before. */}
+      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(11rem,1fr)_auto_auto] sm:items-start sm:gap-4 2xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <div className="min-w-0">
           {editMode ? (
             <>
@@ -192,6 +179,28 @@ export default function PlaylistHeader({
                 className="rounded-lg border border-red-500/30 px-3.5 py-1.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
               >
                 {t("unlikeAll")}
+              </button>
+            )}
+
+            {/* Out of the overflow menu and into the row: centring the column
+                selector freed the space these two now sit in. */}
+            {playlist.isOwner && (
+              <button
+                onClick={() => onShare?.()}
+                className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
+                style={{ color: "var(--text)" }}
+              >
+                {t("share")}
+              </button>
+            )}
+
+            {playlist.isOwner && (
+              <button
+                onClick={() => onTogglePublic?.()}
+                className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
+                style={{ color: "var(--text)" }}
+              >
+                {playlist.isPublic ? t("setPlaylistPrivate") : t("setPlaylistPublic")}
               </button>
             )}
 

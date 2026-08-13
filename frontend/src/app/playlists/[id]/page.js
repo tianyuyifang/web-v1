@@ -344,38 +344,32 @@ export default function PlaylistPage() {
                 {s.label}
               </button>
             ))}
-          </div>
 
-          {/* Colour filter — its own row. The buttons above jump to a section;
-              these filter the grid, and mixing the two would put identical-
-              looking controls with different effects side by side. */}
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-muted">{t("filterByColor")}</span>
-            {PRESET_COLORS.map((c) => {
-              const active = colorFilter === c;
-              return (
-                <button
-                  key={c}
-                  onClick={() => setColorFilter(active ? null : c)}
-                  aria-label={c}
-                  aria-pressed={active}
-                  className={`h-5 w-5 rounded-full transition-transform ${
-                    active
-                      ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[var(--background)]"
-                      : "opacity-60 hover:scale-110 hover:opacity-100"
-                  }`}
-                  style={{ background: c }}
-                />
-              );
-            })}
-            {colorFilter && (
-              <button
-                onClick={() => setColorFilter(null)}
-                className="rounded-md border border-border bg-surface px-2 py-0.5 text-xs text-muted transition-colors hover:bg-surface-hover"
-              >
-                {t("clearColorFilter")}
-              </button>
-            )}
+            {/* Colour filter, pushed to the right of the section jumps. The
+                round swatches read as a different kind of control than the
+                square jump buttons beside them. Clicking the active colour
+                again clears it, so there is no separate clear button. */}
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted">{t("filterByColor")}</span>
+              {PRESET_COLORS.map((c) => {
+                const active = colorFilter === c;
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setColorFilter(active ? null : c)}
+                    aria-label={c}
+                    aria-pressed={active}
+                    title={active ? t("clearColorFilter") : undefined}
+                    className={`h-5 w-5 rounded-full transition-transform ${
+                      active
+                        ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[var(--background)]"
+                        : "opacity-60 hover:scale-110 hover:opacity-100"
+                    }`}
+                    style={{ background: c }}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
 

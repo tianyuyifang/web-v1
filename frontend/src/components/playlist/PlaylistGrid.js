@@ -276,8 +276,11 @@ export default function PlaylistGrid({
     } catch {
       // silent
     }
-    onBatchDone?.();
-  }, [planShuffle, playlist.id, onReorder, onBatchDone]);
+    // Deliberately no onBatchDone(): applying and removing are terminal, but
+    // a shuffle rarely is — you look at the result and often want another go.
+    // Staying in batch mode keeps the selection, so the next shuffle, or an
+    // 应用并保存 on top of it, is one click away.
+  }, [planShuffle, playlist.id, onReorder]);
 
   const [showBatchRemoveConfirm, setShowBatchRemoveConfirm] = useState(false);
 

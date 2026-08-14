@@ -159,8 +159,6 @@ export default {
   unlikeAll: "Unlike All",
   unlikeAllTitle: "Unlike All",
   unlikeAllConfirm: "Are you sure you want to unlike all clips in this playlist?",
-  compactView: "List",
-  fullView: "Cards",
   batch: "Batch",
   unselectAll: "Unselect All",
   applyAndSave: "Apply & Save",

@@ -159,8 +159,6 @@ export default {
   unlikeAll: "取消全部喜欢",
   unlikeAllTitle: "取消全部喜欢",
   unlikeAllConfirm: "确定要取消该列表中所有片段的喜欢吗？",
-  compactView: "列表",
-  fullView: "卡片",
   batch: "批量",
   unselectAll: "取消全选",
   applyAndSave: "应用并保存",

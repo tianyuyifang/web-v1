@@ -3,19 +3,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
 
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { playlistsAPI } from "@/lib/api";
 import { clipMatchesFilters } from "@/lib/utils";
 import PlayerBox from "@/components/player/PlayerBox";
@@ -27,51 +14,10 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import usePlayerStore from "@/store/playerStore";
 
-function SortableCompactRow({ playlistClip, playlistId, onRemove }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: playlistClip.clipId });
-
-  const { clip } = playlistClip;
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
-      {...attributes}
-      {...listeners}
-      className="flex items-center gap-3 border-b border-border px-3 py-2 hover:bg-surface-hover"
-    >
-      <span className="cursor-grab text-muted">⠿</span>
-      <span className="w-6 shrink-0 text-right text-xs text-muted">{playlistClip.position + 1}.</span>
-      {playlistClip.colorTag && (
-        <div className="flex shrink-0 gap-0.5 self-stretch">
-          {playlistClip.colorTag.split("|").filter(Boolean).map((c) => (
-            <div key={c} className="w-[3px] rounded-full" style={{ background: c }} />
-          ))}
-        </div>
-      )}
-      <div className="min-w-0 flex-1">
-        <span className="text-sm font-medium text-theme">{clip.song.title}</span>
-        <span className="ml-2 text-xs text-muted">{clip.song.artist.replace(/_/g, "/")}</span>
-      </div>
-      <LikeButton playlistId={playlistId} clipId={playlistClip.clipId} />
-      {onRemove && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onRemove(playlistClip.clipId); }}
-          className="text-xs font-medium text-red-400 hover:text-red-300"
-        >
-          ✕
-        </button>
-      )}
-    </div>
-  );
-}
-
 export default function PlaylistGrid({
   playlist,
   columns,
   editMode,
-  compactView,
   batchMode,
   selectedClips,
   onSelectedChange,
@@ -138,10 +84,6 @@ export default function PlaylistGrid({
     });
   }, [newlyAddedClipId]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
-
   const filteredClips = useMemo(() => {
     if (!searchQuery && !colorFilter) return playlist.clips;
     return playlist.clips.filter((pc) => clipMatchesFilters(pc, searchQuery, colorFilter));
@@ -158,26 +100,6 @@ export default function PlaylistGrid({
     }
     setRemoveConfirmClipId(null);
   }, [playlist.id, onClipRemoved]);
-
-  const handleDragEnd = useCallback(async (event) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const clips = [...playlist.clips];
-    const oldIndex = clips.findIndex((c) => c.clipId === active.id);
-    const newIndex = clips.findIndex((c) => c.clipId === over.id);
-    const [moved] = clips.splice(oldIndex, 1);
-    clips.splice(newIndex, 0, moved);
-
-    const reordered = clips.map((c, i) => ({ ...c, position: i }));
-    onReorder(reordered);
-
-    try {
-      await playlistsAPI.reorderClips(playlist.id, { clipIds: reordered.map((c) => c.clipId) });
-    } catch {
-      // silent
-    }
-  }, [playlist, onReorder]);
 
   const handleMove = useCallback(async (clipId, fromIndex, toIndex) => {
     const clips = [...playlist.clips];
@@ -443,21 +365,6 @@ export default function PlaylistGrid({
           />
         )}
       </div>
-    );
-  }
-
-  // Compact list view
-  if (editMode && compactView) {
-    return (
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={filteredClips.map((c) => c.clipId)} strategy={verticalListSortingStrategy}>
-          <div className="rounded-xl border border-border bg-surface">
-            {filteredClips.map((pc) => (
-              <SortableCompactRow key={pc.clipId} playlistClip={pc} playlistId={playlist.id} onRemove={setRemoveConfirmClipId} />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
     );
   }
 

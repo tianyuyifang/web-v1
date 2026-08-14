@@ -49,7 +49,6 @@ export default function PlaylistPage() {
   const [playlist, setPlaylist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
-  const [compactView, setCompactView] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [selectedClips, setSelectedClips] = useState(new Set());
   const [columns, setColumns] = useState(3);
@@ -312,18 +311,15 @@ export default function PlaylistPage() {
             onCopy={handleCopy}
             onUpdatePlaylist={handleUpdatePlaylist}
             onUnlikeAll={() => setShowUnlikeAllConfirm(true)}
-            onToggleCompact={() => setCompactView((v) => !v)}
             onToggleBatch={() => {
               setBatchMode((v) => !v);
               setSelectedClips(new Set());
-              if (!batchMode) setCompactView(false);
             }}
             onTogglePublic={() => setShowPublicConfirm(true)}
             onAddClip={() => setShowAddClip(true)}
             onShare={() => setShowShare(true)}
             onDelete={() => setShowDeleteConfirm(true)}
             onCompare={() => setShowCompare(true)}
-            compactView={compactView}
             batchMode={batchMode}
           />
 
@@ -389,7 +385,6 @@ export default function PlaylistPage() {
             playlist={playlist}
             columns={columns}
             editMode={editMode}
-            compactView={compactView}
             batchMode={batchMode}
             selectedClips={selectedClips}
             onSelectedChange={setSelectedClips}

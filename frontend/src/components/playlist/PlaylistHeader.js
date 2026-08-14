@@ -28,14 +28,12 @@ export default function PlaylistHeader({
   onUpdatePlaylist,
   onUnlikeAll,
   // Edit toolbar props
-  onToggleCompact,
   onToggleBatch,
   onTogglePublic,
   onAddClip,
   onShare,
   onDelete,
   onCompare,
-  compactView,
   batchMode,
 }) {
   const { t } = useLanguage();
@@ -55,28 +53,6 @@ export default function PlaylistHeader({
       onUpdatePlaylist?.({ description: trimmed || null });
     }
   };
-
-  const overflowItems = [
-    {
-      id: "compare",
-      label: t("comparePlaylist"),
-      onClick: () => onCompare?.(),
-      hidden: editMode,
-    },
-    {
-      id: "copy",
-      label: t("copyPlaylist"),
-      onClick: () => onCopy?.(),
-      hidden: !(playlist.isOwner || playlist.canCopy),
-    },
-    {
-      id: "compact",
-      label: compactView ? t("fullView") : t("compactView"),
-      onClick: () => onToggleCompact?.(),
-      active: compactView,
-      hidden: !editMode || !playlist.isOwner,
-    },
-  ];
 
   // Every action the header offers, as one flat list. Both layouts render from
   // it, so neither can quietly gain or lose a button relative to the other;
@@ -103,16 +79,12 @@ export default function PlaylistHeader({
       id: "edit", label: editMode ? t("done") : t("edit"), onClick: onToggleEditMode,
       className: editMode ? "bg-accent text-black shadow-sm" : NEUTRAL,
       style: editMode ? undefined : { color: "var(--text)" } },
-    // …what used to sit behind the overflow menu…
-    ...overflowItems
-      .filter((i) => !i.hidden)
-      .map((i) => ({
-        id: i.id,
-        label: i.label,
-        onClick: i.onClick,
-        className: i.active ? "bg-primary text-white shadow-sm" : NEUTRAL,
-        style: i.active ? undefined : { color: "var(--text)" },
-      })),
+    !editMode && {
+      id: "compare", label: t("comparePlaylist"), onClick: () => onCompare?.(),
+      className: NEUTRAL, style: { color: "var(--text)" } },
+    (playlist.isOwner || playlist.canCopy) && {
+      id: "copy", label: t("copyShort"), onClick: () => onCopy?.(),
+      className: NEUTRAL, style: { color: "var(--text)" } },
     // …and the edit toolbar.
     ...(editMode && playlist.isOwner
       ? [
@@ -122,17 +94,12 @@ export default function PlaylistHeader({
           { id: "addClip", label: t("addClip"),
             onClick: onAddClip,
             className: "bg-primary text-white shadow-sm hover:bg-primary-hover" },
-          // Phones say just 删除 — the full wording made it the widest button
-          // in the row, weight the action does not warrant. Desktop, which has
-          // the room, keeps the explicit label.
           { id: "delete", label: t("delete"),
             onClick: onDelete,
             className: "border border-red-500/30 text-red-400 hover:bg-red-500/10" },
         ]
       : []),
   ].filter(Boolean);
-
-  const actions = actionDefs;
 
   // Phones lead with 返回 — the way back out is the one action that should sit
   // in the same place every time — then order the rest by how often they are
@@ -161,6 +128,19 @@ export default function PlaylistHeader({
         .filter((a) => !PHONE_ORDER.includes(a.id))
         .map((a) => ({ id: a.id, label: a.label, onClick: a.onClick }));
 
+  // Desktop keeps the frequently-reached actions as buttons and files the rest
+  // behind ⋯. Edit mode shows only what editing needs: 分享, 设为公开歌单 and
+  // 复制 all sit one 完成 away in normal mode, so repeating them here just
+  // crowds the row.
+  const DESKTOP_MENU = editMode ? [] : ["public", "compare"];
+  const DESKTOP_HIDDEN = editMode ? ["share", "public", "copy"] : [];
+
+  const desktopActions = actionDefs.filter(
+    (a) => !DESKTOP_MENU.includes(a.id) && !DESKTOP_HIDDEN.includes(a.id));
+  const desktopMenuItems = actionDefs
+    .filter((a) => DESKTOP_MENU.includes(a.id))
+    .map((a) => ({ id: a.id, label: a.label, onClick: a.onClick }));
+
   // Buttons are as wide as their wording, so a row holds as much text as it
   // holds — not a fixed number of cells. The budget below is in the same units
   // labelWidth() returns (one unit ≈ 5.5px of glyph), with each button also
@@ -181,16 +161,19 @@ export default function PlaylistHeader({
   }
 
   const [phoneMenuOpen, setPhoneMenuOpen] = useState(false);
+  const [desktopMenuOpen, setDesktopMenuOpen] = useState(false);
+  // Both ⋯ menus dismiss on a click that lands outside a trigger or a panel.
   useEffect(() => {
-    if (!phoneMenuOpen) return;
+    if (!phoneMenuOpen && !desktopMenuOpen) return;
     const close = (e) => {
       if (!e.target.closest?.("[aria-haspopup='menu']") && !e.target.closest?.(".z-40")) {
         setPhoneMenuOpen(false);
+        setDesktopMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
-  }, [phoneMenuOpen]);
+  }, [phoneMenuOpen, desktopMenuOpen]);
 
   return (
     <div className="mb-4 space-y-1.5">
@@ -329,28 +312,50 @@ export default function PlaylistHeader({
           })}
         </div>
 
-        {/* Desktop: the same flat list, in two rows of equal-width cells. The
-            overflow menu is gone here too — every action is its own button, so
-            nothing takes two clicks to reach. Every width shows the same full
-            wording: the abbreviations this used to swap in when cells got
-            tight (清喜欢 for 取消全部喜欢, and so on) read as different
-            actions rather than the same one, which is worse than a narrow
-            button. Long labels truncate, with the full text as the title. */}
-        <div
-          className="hidden gap-1.5 sm:grid"
-          style={{ gridTemplateColumns: `repeat(${Math.ceil(actions.length / 2)}, minmax(0, 1fr))` }}
-        >
-          {actions.map((a) => (
+        {/* Desktop: buttons sized to their wording, wrapping as needed and
+            kept flush right whether they land on one row or two. Equal-width
+            cells were what forced the old abbreviations — a cell narrower than
+            its label had to shorten it — so sizing to content lets every width
+            show the same full wording. The seldom-used actions sit behind ⋯. */}
+        <div className="hidden flex-wrap items-start justify-end gap-1.5 sm:flex">
+          {desktopActions.map((a) => (
             <button
               key={a.id}
               onClick={a.onClick}
-              title={a.label}
-              className={`truncate rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${a.className}`}
+              className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${a.className}`}
               style={a.style}
             >
               {a.label}
             </button>
           ))}
+          {desktopMenuItems.length > 0 && (
+            <div className="relative shrink-0">
+              <button
+                onClick={() => setDesktopMenuOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={desktopMenuOpen}
+                className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  desktopMenuOpen ? "bg-primary text-white shadow-sm" : NEUTRAL
+                }`}
+                style={desktopMenuOpen ? undefined : { color: "var(--text)" }}
+              >
+                ⋯
+              </button>
+              {desktopMenuOpen && (
+                <div className="absolute right-0 z-40 mt-1 min-w-[9rem] overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+                  {desktopMenuItems.map((i) => (
+                    <button
+                      key={i.id}
+                      onClick={() => { setDesktopMenuOpen(false); i.onClick?.(); }}
+                      className="block w-full whitespace-nowrap px-3 py-2 text-left text-xs text-theme hover:bg-surface-hover"
+                    >
+                      {i.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

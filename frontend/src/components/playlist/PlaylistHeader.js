@@ -140,7 +140,7 @@ export default function PlaylistHeader({
   // edit-only actions in normal mode, and vice versa — simply do not render.
   const DESKTOP_ORDER = editMode
     ? ["return", "unlikeAll", "batch", "addClip", "edit", "delete"]
-    : ["return", "unlikeAll", "edit", "share", "copy"];
+    : ["return", "unlikeAll", "share", "copy", "edit"];
   const DESKTOP_MENU = editMode ? [] : ["public", "compare"];
 
   const desktopActions = DESKTOP_ORDER

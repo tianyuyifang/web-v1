@@ -76,9 +76,14 @@ export default function PlaylistHeader({
       onClick: () => onTogglePublic?.(),
       className: NEUTRAL, style: { color: "var(--text)" } },
     playlist.isOwner && {
+      // 编辑 carries the same filled treatment as 添加片段 — it is the way into
+      // the mode, so it should read as the primary action rather than as one
+      // more neutral button. 完成, its edit-mode face, keeps the accent that
+      // marks the mode as active.
       id: "edit", label: editMode ? t("done") : t("edit"), onClick: onToggleEditMode,
-      className: editMode ? "bg-accent text-black shadow-sm" : NEUTRAL,
-      style: editMode ? undefined : { color: "var(--text)" } },
+      className: editMode
+        ? "bg-accent text-black shadow-sm"
+        : "bg-primary text-white shadow-sm hover:bg-primary-hover" },
     !editMode && {
       id: "compare", label: t("comparePlaylist"), onClick: () => onCompare?.(),
       className: NEUTRAL, style: { color: "var(--text)" } },
@@ -128,17 +133,22 @@ export default function PlaylistHeader({
         .filter((a) => !PHONE_ORDER.includes(a.id))
         .map((a) => ({ id: a.id, label: a.label, onClick: a.onClick }));
 
-  // Desktop keeps the frequently-reached actions as buttons and files the rest
-  // behind ⋯. Edit mode shows only what editing needs: 分享, 设为公开歌单 and
-  // 复制 all sit one 完成 away in normal mode, so repeating them here just
-  // crowds the row.
+  // Desktop keeps the frequently-reached actions as buttons, in this order,
+  // and files the rest behind ⋯. Edit mode shows only what editing needs:
+  // 分享, 设为公开歌单 and 复制 all sit one 完成 away in normal mode, so
+  // repeating them here just crowds the row. Ids absent from both lists — the
+  // edit-only actions in normal mode, and vice versa — simply do not render.
+  const DESKTOP_ORDER = editMode
+    ? ["return", "unlikeAll", "batch", "addClip", "edit", "delete"]
+    : ["return", "unlikeAll", "edit", "share", "copy"];
   const DESKTOP_MENU = editMode ? [] : ["public", "compare"];
-  const DESKTOP_HIDDEN = editMode ? ["share", "public", "copy"] : [];
 
-  const desktopActions = actionDefs.filter(
-    (a) => !DESKTOP_MENU.includes(a.id) && !DESKTOP_HIDDEN.includes(a.id));
-  const desktopMenuItems = actionDefs
-    .filter((a) => DESKTOP_MENU.includes(a.id))
+  const desktopActions = DESKTOP_ORDER
+    .map((id) => byId[id])
+    .filter(Boolean);
+  const desktopMenuItems = DESKTOP_MENU
+    .map((id) => byId[id])
+    .filter(Boolean)
     .map((a) => ({ id: a.id, label: a.label, onClick: a.onClick }));
 
   // Buttons are as wide as their wording, so a row holds as much text as it

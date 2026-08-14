@@ -218,11 +218,13 @@ export default function PlaylistGrid({
     slots.forEach((slotIndex, n) => {
       const landing = picked[n];
       const slotLabel = clips[slotIndex].sectionLabel ?? null;
-      const clipLabel = landing.sectionLabel ?? null;
-      // The label belongs to the slot; the clip arrives carrying its own.
-      if (clipLabel !== slotLabel) {
-        labelMoves.push({ clipId: landing.clipId, sectionLabel: slotLabel });
-      }
+      // Restate every touched slot's label rather than only the ones that
+      // changed. A diff is only as good as the local copy it is diffed
+      // against, and that copy can lag the server — one stale row and a
+      // clearing update goes unsent, leaving the same heading in two places.
+      // Sending the full picture makes the result depend on the shuffle
+      // alone, not on how fresh the client happens to be.
+      labelMoves.push({ clipId: landing.clipId, sectionLabel: slotLabel });
       next[slotIndex] = { ...landing, sectionLabel: slotLabel };
     });
 
@@ -255,6 +257,8 @@ export default function PlaylistGrid({
     setShowShuffleConfirm(false);
     if (!plan) return;
 
+    // plan.next already carries each slot's own label, so the local list is
+    // correct the moment it lands — no waiting on the round trip.
     const reordered = plan.next.map((c, i) => ({ ...c, position: i }));
     onReorder(reordered);
 
@@ -262,17 +266,18 @@ export default function PlaylistGrid({
       await playlistsAPI.reorderClips(playlist.id, {
         clipIds: reordered.map((c) => c.clipId),
       });
+      // Section headings stay put: restate the label of every touched slot,
+      // in ONE request. One call per label raced — each write carried its own
+      // copy of the row set, so a later response could resurrect a heading an
+      // earlier one had just cleared.
+      if (plan.labelMoves.length > 0) {
+        await playlistsAPI.batchUpdateClips(playlist.id, plan.labelMoves);
+      }
     } catch {
       // silent
     }
-    // Section headings stay put: re-point any label the shuffle displaced.
-    // onClipUpdated persists and updates local state, the same path the
-    // section editor uses.
-    for (const mv of plan.labelMoves) {
-      onClipUpdated(mv.clipId, { sectionLabel: mv.sectionLabel });
-    }
     onBatchDone?.();
-  }, [planShuffle, playlist.id, onReorder, onClipUpdated, onBatchDone]);
+  }, [planShuffle, playlist.id, onReorder, onBatchDone]);
 
   const [showBatchRemoveConfirm, setShowBatchRemoveConfirm] = useState(false);
 

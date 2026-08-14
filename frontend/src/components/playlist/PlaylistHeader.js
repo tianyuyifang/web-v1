@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import RichText from "@/components/ui/RichText";
 
@@ -142,21 +142,40 @@ export default function PlaylistHeader({
     .map((a) => ({ id: a.id, label: a.label, onClick: a.onClick }));
 
   // Buttons are as wide as their wording, so a row holds as much text as it
-  // holds — not a fixed number of cells. The budget below is in the same units
-  // labelWidth() returns (one unit ≈ 5.5px of glyph), with each button also
-  // charged for its padding and gap. 64 is what a ~390px phone fits, and it
-  // clears edit mode's six labels (返回 取消标记 添加片段 批量 删除 完成:
-  // 32 glyph units + 6 × 5 overhead = 62) on a single row.
-  const PHONE_ROW_BUDGET = 64;
-  // Padding and gap cost the same whatever the label, so each button carries a
-  // fixed overhead on top of its glyphs — about five units' worth. Counting it
-  // keeps a row of many short buttons from overflowing.
-  const BUTTON_OVERHEAD = 5;
+  // holds — not a fixed number of cells. Rows are packed against the block's
+  // measured width rather than a constant: a budget tuned for a 390px phone
+  // overshoots a 360px one by exactly the width that pushed 返回 off the left
+  // edge once the rows were right-aligned.
+  const phoneRef = useRef(null);
+  const [phoneWidth, setPhoneWidth] = useState(0);
+  useEffect(() => {
+    const el = phoneRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setPhoneWidth(w);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // A glyph unit is ~5.5px at text-[11px]; each button also costs 20px of
+  // padding and 6px of gap. Before the first measurement lands, assume a roomy
+  // row so the buttons render unwrapped rather than one-per-line.
+  const GLYPH_PX = 5.5;
+  const BUTTON_PX = 26;
+  // The ⋯ trigger rides along at the end of the last row, so the row it lands
+  // on has that much less to give.
+  const MENU_PX = phoneMenuItems.length > 0 ? 36 : 0;
   const phoneRows = [];
-  for (const a of phoneActions) {
+  for (const [i, a] of phoneActions.entries()) {
+    const isLastAction = i === phoneActions.length - 1;
+    const cost = a.weight * GLYPH_PX + BUTTON_PX + (isLastAction ? MENU_PX : 0);
     const row = phoneRows[phoneRows.length - 1];
-    const used = row?.reduce((n, x) => n + x.weight + BUTTON_OVERHEAD, 0) ?? 0;
-    if (row && used + a.weight + BUTTON_OVERHEAD <= PHONE_ROW_BUDGET) row.push(a);
+    const used = row?.reduce((n, x) => n + x.weight * GLYPH_PX + BUTTON_PX, 0) ?? 0;
+    if (row && (!phoneWidth || used + cost <= phoneWidth)) row.push(a);
     else phoneRows.push([a]);
   }
 
@@ -264,14 +283,15 @@ export default function PlaylistHeader({
         </div>
 
         {/* Phones get their own action block: 返回 first, then the rest by how
-            often they are reached, each button sized to its wording. Rows fill
-            up to a legible width and then wrap. In normal mode the seldom-used
-            actions stay behind a menu at the end of the last row. */}
-        <div className="sm:hidden space-y-1.5">
+            often they are reached, each button sized to its wording. Rows pack
+            up to a legible width, wrap, and sit flush right like the desktop
+            row. In normal mode the seldom-used actions stay behind a menu at
+            the end of the last row. */}
+        <div ref={phoneRef} className="sm:hidden space-y-1.5">
           {phoneRows.map((row, rowIndex) => {
             const isLast = rowIndex === phoneRows.length - 1;
             return (
-              <div key={rowIndex} className="flex gap-1.5">
+              <div key={rowIndex} className="flex justify-end gap-1.5">
                 {row.map((a) => (
                   <button
                     key={a.id}

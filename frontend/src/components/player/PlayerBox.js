@@ -20,7 +20,6 @@ import {
   enqueueHover,
   enqueueNeighborhood,
 } from "@/lib/preloadScheduler";
-import { findAdjacentUnliked } from "@/lib/clipNav";
 
 const VIEWPORT_DWELL_MS = 500;
 const NEIGHBORHOOD_COUNT = 8;
@@ -51,23 +50,7 @@ export default memo(function PlayerBox({
 
   const playFromStartClipId = usePlayerStore((s) => s.playFromStartClipId);
   const clearPlayFromStart = usePlayerStore((s) => s.clearPlayFromStart);
-  const triggerPlayFromStart = usePlayerStore((s) => s.triggerPlayFromStart);
-  const autoPlayEnabled = usePlayerStore((s) => s.autoPlayEnabled);
   const isLiked = usePlayerStore((s) => s.isClipLiked(playlistId, clipId));
-
-  const handleClipEnded = useCallback(() => {
-    if (!autoPlayEnabled) return;
-    if (!Array.isArray(allClips) || clipIndex == null) return;
-
-    // Read latest likedClips imperatively — no subscription needed,
-    // we only check at the moment a clip ends.
-    const liked = usePlayerStore.getState().likedClips;
-    const nextIdx = findAdjacentUnliked(allClips, clipIndex, 1, liked, playlistId);
-    if (nextIdx >= 0) {
-      triggerPlayFromStart(allClips[nextIdx].clipId);
-    }
-    // No eligible next clip — chain ends naturally.
-  }, [autoPlayEnabled, allClips, clipIndex, playlistId, triggerPlayFromStart]);
 
   const {
     play,
@@ -87,7 +70,6 @@ export default memo(function PlayerBox({
     clipVersion: clip.version,
     speed,
     pitch,
-    onClipEnded: handleClipEnded,
   });
 
   useEffect(() => {

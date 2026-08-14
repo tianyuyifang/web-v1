@@ -154,8 +154,6 @@ export default {
   unlikeAllShort: "清喜欢",
   copyShort: "复制",
   addClipShort: "加片段",
-  autoPlayOnShort: "连播开",
-  autoPlayOffShort: "连播关",
 
   // Playlist detail
   filterClips: "按标题、歌手或备注筛选...",
@@ -192,8 +190,6 @@ export default {
   done: "完成",
   addClip: "添加片段",
   share: "分享",
-  autoPlayOn: "自动播放：开",
-  autoPlayOff: "自动播放：关",
   delete: "删除",
   copyPlaylist: "复制列表",
 

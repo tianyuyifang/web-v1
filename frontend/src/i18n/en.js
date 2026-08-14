@@ -154,8 +154,6 @@ export default {
   unlikeAllShort: "Unlike",
   copyShort: "Copy",
   addClipShort: "Add",
-  autoPlayOnShort: "Auto on",
-  autoPlayOffShort: "Auto off",
 
   // Playlist detail
   filterClips: "Filter clips by title, artist, or comment...",
@@ -192,8 +190,6 @@ export default {
   done: "Done",
   addClip: "Add Clip",
   share: "Share",
-  autoPlayOn: "Auto-play: ON",
-  autoPlayOff: "Auto-play: OFF",
   delete: "Delete",
   copyPlaylist: "Copy Playlist",
 

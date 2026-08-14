@@ -153,6 +153,7 @@ export default {
   setPrivateShort: "Hide",
   unlikeAllShort: "Unlike",
   copyShort: "Copy",
+  addClipShort: "Add",
   autoPlayOnShort: "Auto on",
   autoPlayOffShort: "Auto off",
 

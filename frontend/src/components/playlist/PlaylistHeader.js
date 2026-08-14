@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import RichText from "@/components/ui/RichText";
-import OverflowMenu from "@/components/ui/OverflowMenu";
 import useAuth from "@/hooks/useAuth";
 import usePlayerStore from "@/store/playerStore";
 
@@ -80,54 +79,81 @@ export default function PlaylistHeader({
     },
   ];
 
-  // Everything the desktop header offers, including the overflow menu's
-  // contents, as one flat list for the phone grid.
+  // Every action the header offers, as one flat list. Both layouts render from
+  // it, so neither can quietly gain or lose a button relative to the other;
+  // they differ only in label length and cell size. `short` is what the phone
+  // shows, where a cell is about 50px wide.
   const NEUTRAL = "border border-border bg-surface hover:bg-surface-hover";
-  const phoneActions = [
+  const actionDefs = [
     { id: "return", label: t("return"), onClick: onReturn,
       className: NEUTRAL, style: { color: "var(--text)" } },
     playlist.isOwner && {
-      id: "unlikeAll", label: t("unlikeAllShort"), onClick: onUnlikeAll,
+      id: "unlikeAll", label: t("unlikeAll"), short: t("unlikeAllShort"),
+      onClick: onUnlikeAll,
       className: "border border-red-500/30 text-red-400 hover:bg-red-500/10" },
     playlist.isOwner && {
       id: "share", label: t("share"), onClick: () => onShare?.(),
       className: NEUTRAL, style: { color: "var(--text)" } },
     playlist.isOwner && {
       id: "public",
-      label: playlist.isPublic ? t("setPrivateShort") : t("setPublicShort"),
+      label: playlist.isPublic ? t("setPlaylistPrivate") : t("setPlaylistPublic"),
+      short: playlist.isPublic ? t("setPrivateShort") : t("setPublicShort"),
       onClick: () => onTogglePublic?.(),
       className: NEUTRAL, style: { color: "var(--text)" } },
     playlist.isOwner && {
       id: "edit", label: editMode ? t("done") : t("edit"), onClick: onToggleEditMode,
       className: editMode ? "bg-accent text-black shadow-sm" : NEUTRAL,
       style: editMode ? undefined : { color: "var(--text)" } },
-    // …the overflow menu's own items, flattened. Two of them are too long for
-    // a phone-width cell, so they get a shorter label here.
+    // …what used to sit behind the overflow menu…
     ...overflowItems
       .filter((i) => !i.hidden)
       .map((i) => ({
         id: i.id,
-        label: i.id === "autoplay"
+        label: i.label,
+        short: i.id === "autoplay"
           ? (autoPlayEnabled ? t("autoPlayOnShort") : t("autoPlayOffShort"))
-          : i.id === "copy" ? t("copyShort") : i.label,
+          : i.id === "copy" ? t("copyShort") : undefined,
         onClick: i.onClick,
         className: i.active ? "bg-primary text-white shadow-sm" : NEUTRAL,
         style: i.active ? undefined : { color: "var(--text)" },
       })),
-    // …and the edit toolbar, which on desktop is a row of its own inside the
-    // block phones no longer render.
+    // …and the edit toolbar.
     ...(editMode && playlist.isOwner
       ? [
           { id: "batch", label: t("batch"), onClick: onToggleBatch,
             className: batchMode ? "bg-purple-600 text-white shadow-sm" : NEUTRAL,
             style: batchMode ? undefined : { color: "var(--text)" } },
-          { id: "addClip", label: t("addClip"), onClick: onAddClip,
+          { id: "addClip", label: t("addClip"), short: t("addClipShort"),
+            onClick: onAddClip,
             className: "bg-primary text-white shadow-sm hover:bg-primary-hover" },
           { id: "delete", label: t("delete"), onClick: onDelete,
             className: "border border-red-500/30 text-red-400 hover:bg-red-500/10" },
         ]
       : []),
   ].filter(Boolean);
+
+  const actions = actionDefs;
+  const phoneActions = actionDefs.map((a) => ({ ...a, label: a.short || a.label }));
+
+  // Full labels need roughly 95px of cell. Whether they fit depends on both the
+  // header's width and how many buttons are sharing it — edit mode adds three,
+  // which alone is enough to squeeze a 1280px header past the limit — so the
+  // grid is measured rather than guessed at from a breakpoint.
+  const gridRef = useRef(null);
+  const [roomyCells, setRoomyCells] = useState(true);
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const cols = Math.ceil(actions.length / 2);
+    const measure = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setRoomyCells(w / cols >= 95);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [actions.length]);
 
   return (
     <div className="mb-4 space-y-1.5">
@@ -233,96 +259,28 @@ export default function PlaylistHeader({
           ))}
         </div>
 
-        <div className="hidden min-w-0 flex-col items-end gap-1.5 sm:flex">
-          <div className="flex flex-wrap items-center justify-end gap-2">
+        {/* Desktop: the same flat list, in two rows of equal-width cells. The
+            overflow menu is gone here too — every action is its own button, so
+            nothing takes two clicks to reach. Full labels need about 95px of
+            cell, which the header only affords from xl up; below that the
+            short forms are used instead, and the full wording stays available
+            as the title. */}
+        <div
+          ref={gridRef}
+          className="hidden gap-1.5 sm:grid"
+          style={{ gridTemplateColumns: `repeat(${Math.ceil(actions.length / 2)}, minmax(0, 1fr))` }}
+        >
+          {actions.map((a) => (
             <button
-              onClick={onReturn}
-              className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
-              style={{ color: "var(--text)" }}
+              key={a.id}
+              onClick={a.onClick}
+              title={a.label}
+              className={`truncate rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${a.className}`}
+              style={a.style}
             >
-              {t("return")}
+              {a.short && !roomyCells ? a.short : a.label}
             </button>
-
-            {playlist.isOwner && (
-              <button
-                onClick={onUnlikeAll}
-                className="rounded-lg border border-red-500/30 px-3.5 py-1.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
-              >
-                {t("unlikeAll")}
-              </button>
-            )}
-
-            {/* Out of the overflow menu and into the row: centring the column
-                selector freed the space this now sits in. */}
-            {playlist.isOwner && (
-              <button
-                onClick={() => onShare?.()}
-                className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
-                style={{ color: "var(--text)" }}
-              >
-                {t("share")}
-              </button>
-            )}
-          </div>
-
-          {/* Second row. Six buttons need about 490px, more than the header can
-              spare below the widest screens, so they are split rather than left
-              to wrap at a point that depends on the window. */}
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {playlist.isOwner && (
-              <button
-                onClick={() => onTogglePublic?.()}
-                className="rounded-lg border border-border bg-surface px-3.5 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover"
-                style={{ color: "var(--text)" }}
-              >
-                {playlist.isPublic ? t("setPlaylistPrivate") : t("setPlaylistPublic")}
-              </button>
-            )}
-
-            {playlist.isOwner && (
-              <button
-                onClick={onToggleEditMode}
-                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                  editMode
-                    ? "bg-accent text-black shadow-sm"
-                    : "border border-border bg-surface hover:bg-surface-hover"
-                }`}
-                style={editMode ? {} : { color: "var(--text)" }}
-              >
-                {editMode ? t("done") : t("edit")}
-              </button>
-            )}
-
-            <OverflowMenu items={overflowItems} />
-          </div>
-
-          {editMode && playlist.isOwner && (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <button
-                onClick={onToggleBatch}
-                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                  batchMode
-                    ? "bg-purple-600 text-white shadow-sm"
-                    : "border border-border bg-surface hover:bg-surface-hover"
-                }`}
-                style={batchMode ? {} : { color: "var(--text)" }}
-              >
-                {t("batch")}
-              </button>
-              <button
-                onClick={onAddClip}
-                className="rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-primary-hover"
-              >
-                {t("addClip")}
-              </button>
-              <button
-                onClick={onDelete}
-                className="rounded-lg border border-red-500/30 px-3.5 py-1.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
-              >
-                {t("delete")}
-              </button>
-            </div>
-          )}
+          ))}
         </div>
       </div>
     </div>

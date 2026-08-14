@@ -153,6 +153,7 @@ export default {
   setPrivateShort: "转私密",
   unlikeAllShort: "清喜欢",
   copyShort: "复制",
+  addClipShort: "加片段",
   autoPlayOnShort: "连播开",
   autoPlayOffShort: "连播关",
 

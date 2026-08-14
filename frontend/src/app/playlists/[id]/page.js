@@ -59,6 +59,7 @@ export default function PlaylistPage() {
   const [showShare, setShowShare] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPublicConfirm, setShowPublicConfirm] = useState(false);
+  const [showCopyConfirm, setShowCopyConfirm] = useState(false);
   const [showUnlikeAllConfirm, setShowUnlikeAllConfirm] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
   const [highlightedClipId, setHighlightedClipId] = useState(null);
@@ -213,6 +214,7 @@ export default function PlaylistPage() {
   }, [id]);
 
   const handleCopy = useCallback(async () => {
+    setShowCopyConfirm(false);
     const res = await playlistsAPI.copy(id);
     router.push(`/playlists/${res.data.id}`);
   }, [id, router]);
@@ -308,7 +310,7 @@ export default function PlaylistPage() {
             onToggleEditMode={toggleEditMode}
             columns={columns}
             onColumnChange={handleColumnChange}
-            onCopy={handleCopy}
+            onCopy={() => setShowCopyConfirm(true)}
             onUpdatePlaylist={handleUpdatePlaylist}
             onUnlikeAll={() => setShowUnlikeAllConfirm(true)}
             onToggleBatch={() => {
@@ -458,6 +460,17 @@ export default function PlaylistPage() {
           cancelLabel={t("cancel")}
           onConfirm={handlePublicConfirm}
           onCancel={() => setShowPublicConfirm(false)}
+        />
+      )}
+
+      {showCopyConfirm && (
+        <ConfirmDialog
+          title={t("copyPlaylistTitle")}
+          message={t("copyPlaylistMessage")}
+          confirmLabel={t("confirm")}
+          cancelLabel={t("cancel")}
+          onConfirm={handleCopy}
+          onCancel={() => setShowCopyConfirm(false)}
         />
       )}
 

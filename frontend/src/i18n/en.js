@@ -175,6 +175,8 @@ export default {
   share: "Share",
   delete: "Delete",
   copyPlaylist: "Copy Playlist",
+  copyPlaylistTitle: "Copy this playlist",
+  copyPlaylistMessage: "Creates a copy with all of the current clips and their order. The original is untouched; you will be taken to the new playlist.",
 
   // Playlist card
   shared: "Shared",

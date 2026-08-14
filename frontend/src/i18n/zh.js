@@ -175,6 +175,8 @@ export default {
   share: "分享",
   delete: "删除",
   copyPlaylist: "复制列表",
+  copyPlaylistTitle: "复制此歌单",
+  copyPlaylistMessage: "将创建一份副本，包含当前的所有片段和顺序。原歌单不受影响，复制完成后会跳转到新歌单。",
 
   // Playlist card
   shared: "已分享",

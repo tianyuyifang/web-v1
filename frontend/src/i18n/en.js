@@ -154,6 +154,10 @@ export default {
   unlikeAllShort: "Unlike",
   copyShort: "Copy",
   addClipShort: "Add",
+  // Phone wording, where the button stands alone without the surrounding
+  // context the desktop row gives it.
+  unlikeAllPhone: "Unmark",
+  deletePlaylistPhone: "Delete list",
 
   // Playlist detail
   filterClips: "Filter clips by title, artist, or comment...",

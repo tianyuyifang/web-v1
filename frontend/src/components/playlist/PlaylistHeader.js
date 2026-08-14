@@ -77,6 +77,7 @@ export default function PlaylistHeader({
       className: NEUTRAL, style: { color: "var(--text)" } },
     playlist.isOwner && {
       id: "unlikeAll", label: t("unlikeAll"), short: t("unlikeAllShort"),
+      phone: t("unlikeAllPhone"),
       onClick: onUnlikeAll,
       className: "border border-red-500/30 text-red-400 hover:bg-red-500/10" },
     playlist.isOwner && {
@@ -112,14 +113,53 @@ export default function PlaylistHeader({
           { id: "addClip", label: t("addClip"), short: t("addClipShort"),
             onClick: onAddClip,
             className: "bg-primary text-white shadow-sm hover:bg-primary-hover" },
-          { id: "delete", label: t("delete"), onClick: onDelete,
+          { id: "delete", label: t("delete"), phone: t("deletePlaylistPhone"),
+            onClick: onDelete,
             className: "border border-red-500/30 text-red-400 hover:bg-red-500/10" },
         ]
       : []),
   ].filter(Boolean);
 
   const actions = actionDefs;
-  const phoneActions = actionDefs.map((a) => ({ ...a, label: a.short || a.label }));
+
+  // Phones order the actions by how often they are reached rather than by the
+  // desktop grouping, and put the rarely-used ones back behind a menu so the
+  // rest fit without shrinking. Ids not listed here stay in the menu.
+  const PHONE_ORDER = editMode
+    ? ["unlikeAll", "addClip", "batch", "compact", "delete", "return", "edit"]
+    : playlist.isOwner
+      ? ["unlikeAll", "edit", "copy", "return"]
+      : ["copy", "compare", "return"];
+
+  const byId = Object.fromEntries(actionDefs.map((a) => [a.id, a]));
+  const phoneActions = PHONE_ORDER
+    .map((id) => byId[id])
+    .filter(Boolean)
+    // The phone wording wins where given, then the full label — the desktop
+    // short forms are for narrow desktop cells, not for here.
+    .map((a) => ({ ...a, label: a.phone || a.label }));
+
+  // Whatever the phone did not surface as a button.
+  const phoneMenuItems = actionDefs
+    .filter((a) => !PHONE_ORDER.includes(a.id))
+    .map((a) => ({ id: a.id, label: a.label, onClick: a.onClick }));
+
+  // Cells across, counting the menu trigger as one. Up to five stay on a single
+  // row; beyond that they split evenly over two.
+  const phoneCellCount = phoneActions.length + (phoneMenuItems.length > 0 ? 1 : 0);
+  const phoneCols = phoneCellCount <= 5 ? phoneCellCount : Math.ceil(phoneCellCount / 2);
+
+  const [phoneMenuOpen, setPhoneMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!phoneMenuOpen) return;
+    const close = (e) => {
+      if (!e.target.closest?.("[aria-haspopup='menu']") && !e.target.closest?.(".z-40")) {
+        setPhoneMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [phoneMenuOpen]);
 
   // Full labels need roughly 95px of cell. Whether they fit depends on both the
   // header's width and how many buttons are sharing it — edit mode adds three,
@@ -224,25 +264,53 @@ export default function PlaylistHeader({
           </div>
         </div>
 
-        {/* Phones get their own action block. Stacked, the header gives the
-            buttons a full-width row of their own, so everything the overflow
-            menu holds on desktop is laid out flat here — no menu to open. The
-            column count is derived from how many there are so they always fill
-            exactly two rows: eleven in edit mode would overflow a fixed four. */}
-        <div
-          className="grid gap-1.5 sm:hidden"
-          style={{ gridTemplateColumns: `repeat(${Math.ceil(phoneActions.length / 2)}, minmax(0, 1fr))` }}
-        >
-          {phoneActions.map((a) => (
-            <button
-              key={a.id}
-              onClick={a.onClick}
-              className={`truncate rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors ${a.className}`}
-              style={a.style}
-            >
-              {a.label}
-            </button>
-          ))}
+        {/* Phones get their own action block: their own ordering, and the
+            seldom-used actions kept behind a menu so the rest stay legible.
+            Four or fewer sit on one row; more wrap onto a second. */}
+        <div className="sm:hidden">
+          <div
+            className="grid gap-1.5"
+            style={{ gridTemplateColumns: `repeat(${phoneCols}, minmax(0, 1fr))` }}
+          >
+            {phoneActions.map((a) => (
+              <button
+                key={a.id}
+                onClick={a.onClick}
+                className={`truncate rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors ${a.className}`}
+                style={a.style}
+              >
+                {a.label}
+              </button>
+            ))}
+            {phoneMenuItems.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setPhoneMenuOpen((v) => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={phoneMenuOpen}
+                  className={`w-full rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors ${
+                    phoneMenuOpen ? "bg-primary text-white shadow-sm" : NEUTRAL
+                  }`}
+                  style={phoneMenuOpen ? undefined : { color: "var(--text)" }}
+                >
+                  ⋯
+                </button>
+                {phoneMenuOpen && (
+                  <div className="absolute right-0 z-40 mt-1 min-w-[8rem] overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+                    {phoneMenuItems.map((i) => (
+                      <button
+                        key={i.id}
+                        onClick={() => { setPhoneMenuOpen(false); i.onClick?.(); }}
+                        className="block w-full whitespace-nowrap px-3 py-2 text-left text-xs text-theme hover:bg-surface-hover"
+                      >
+                        {i.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Desktop: the same flat list, in two rows of equal-width cells. The

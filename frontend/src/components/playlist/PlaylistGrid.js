@@ -187,6 +187,93 @@ export default function PlaylistGrid({
     onBatchDone?.();
   }, [selectedClips, batchDirty, batchSpeed, batchPitch, batchColorTag, batchComment, onClipUpdated, onBatchDone]);
 
+  // Shuffling only permutes the selected clips among the positions they
+  // already occupy, so an unselected clip never moves. Returns the reordered
+  // list plus which section labels changed hands, or null if there is nothing
+  // to do.
+  //
+  // Section labels stay with the POSITION, not the clip. A label marks "a
+  // section starts here", so carrying it along with a shuffled clip would drag
+  // the section heading to a random place in the list.
+  const planShuffle = useCallback(() => {
+    const selected = selectedClips;
+    if (!selected || selected.size < 2) return null;
+
+    const clips = playlist.clips;
+    const slots = [];
+    for (let i = 0; i < clips.length; i++) {
+      if (selected.has(clips[i].clipId)) slots.push(i);
+    }
+    if (slots.length < 2) return null;
+
+    // Fisher-Yates over the selected clips.
+    const picked = slots.map((i) => clips[i]);
+    for (let i = picked.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [picked[i], picked[j]] = [picked[j], picked[i]];
+    }
+
+    const next = [...clips];
+    const labelMoves = [];
+    slots.forEach((slotIndex, n) => {
+      const landing = picked[n];
+      const slotLabel = clips[slotIndex].sectionLabel ?? null;
+      const clipLabel = landing.sectionLabel ?? null;
+      // The label belongs to the slot; the clip arrives carrying its own.
+      if (clipLabel !== slotLabel) {
+        labelMoves.push({ clipId: landing.clipId, sectionLabel: slotLabel });
+      }
+      next[slotIndex] = { ...landing, sectionLabel: slotLabel };
+    });
+
+    return { next, labelMoves };
+  }, [selectedClips, playlist.clips]);
+
+  // How many selected clips would end up under a different section heading —
+  // the warning the confirm dialog shows before anything is written.
+  const shuffleCrossings = useMemo(() => {
+    const selected = selectedClips;
+    if (!selected || selected.size < 2) return 0;
+    // Which section does each position sit in? Labels mark section starts.
+    let label = null;
+    const sectionAt = new Map();
+    for (const pc of playlist.clips) {
+      if (pc.sectionLabel) label = pc.sectionLabel;
+      sectionAt.set(pc.clipId, label);
+    }
+    const sections = new Set(
+      [...selected].map((id) => sectionAt.get(id)).filter((s) => s !== undefined)
+    );
+    if (sections.size < 2) return 0;
+    return selected.size;
+  }, [selectedClips, playlist.clips]);
+
+  const [showShuffleConfirm, setShowShuffleConfirm] = useState(false);
+
+  const applyShuffle = useCallback(async () => {
+    const plan = planShuffle();
+    setShowShuffleConfirm(false);
+    if (!plan) return;
+
+    const reordered = plan.next.map((c, i) => ({ ...c, position: i }));
+    onReorder(reordered);
+
+    try {
+      await playlistsAPI.reorderClips(playlist.id, {
+        clipIds: reordered.map((c) => c.clipId),
+      });
+    } catch {
+      // silent
+    }
+    // Section headings stay put: re-point any label the shuffle displaced.
+    // onClipUpdated persists and updates local state, the same path the
+    // section editor uses.
+    for (const mv of plan.labelMoves) {
+      onClipUpdated(mv.clipId, { sectionLabel: mv.sectionLabel });
+    }
+    onBatchDone?.();
+  }, [planShuffle, playlist.id, onReorder, onClipUpdated, onBatchDone]);
+
   const [showBatchRemoveConfirm, setShowBatchRemoveConfirm] = useState(false);
 
   const batchRemove = useCallback(async () => {
@@ -296,6 +383,18 @@ export default function PlaylistGrid({
               </button>
             )}
             <button
+              onClick={() => setShowShuffleConfirm(true)}
+              disabled={!selectedClips || selectedClips.size < 2}
+              title={
+                selectedClips && selectedClips.size < 2
+                  ? t("shuffleNeedTwo")
+                  : undefined
+              }
+              className="rounded-lg border border-border bg-background px-4 py-1.5 text-sm font-medium text-theme transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              🔀 {t("shuffleSelected")}
+            </button>
+            <button
               onClick={() => setShowBatchRemoveConfirm(true)}
               disabled={!selectedClips?.size}
               className="rounded-lg border border-red-500/30 px-4 py-1.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
@@ -351,6 +450,19 @@ export default function PlaylistGrid({
             cancelLabel={t("cancel")}
             onConfirm={applyBatch}
             onCancel={() => setShowBatchConfirm(false)}
+          />
+        )}
+        {showShuffleConfirm && (
+          <ConfirmDialog
+            title={t("shuffleConfirmTitle")}
+            message={
+              t("shuffleConfirmBody").replace("{count}", selectedClips?.size || 0) +
+              (shuffleCrossings > 0 ? `\n\n${t("shuffleCrossSectionWarning")}` : "")
+            }
+            confirmLabel={t("confirm")}
+            cancelLabel={t("cancel")}
+            onConfirm={applyShuffle}
+            onCancel={() => setShowShuffleConfirm(false)}
           />
         )}
         {showBatchRemoveConfirm && (

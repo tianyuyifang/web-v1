@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import RichText from "@/components/ui/RichText";
 
@@ -80,14 +80,14 @@ export default function PlaylistHeader({
 
   // Every action the header offers, as one flat list. Both layouts render from
   // it, so neither can quietly gain or lose a button relative to the other;
-  // they differ only in label length and cell size. `short` is what the phone
-  // shows, where a cell is about 50px wide.
+  // they differ only in wording and cell size. `phone` overrides the label on
+  // phones, where the row is tight; desktop always shows the full `label`.
   const NEUTRAL = "border border-border bg-surface hover:bg-surface-hover";
   const actionDefs = [
     { id: "return", label: t("return"), onClick: onReturn,
       className: NEUTRAL, style: { color: "var(--text)" } },
     playlist.isOwner && {
-      id: "unlikeAll", label: t("unlikeAll"), short: t("unlikeAllShort"),
+      id: "unlikeAll", label: t("unlikeAll"),
       phone: t("unlikeAllPhone"),
       onClick: onUnlikeAll,
       className: "border border-red-500/30 text-red-400 hover:bg-red-500/10" },
@@ -97,7 +97,6 @@ export default function PlaylistHeader({
     playlist.isOwner && {
       id: "public",
       label: playlist.isPublic ? t("setPlaylistPrivate") : t("setPlaylistPublic"),
-      short: playlist.isPublic ? t("setPrivateShort") : t("setPublicShort"),
       onClick: () => onTogglePublic?.(),
       className: NEUTRAL, style: { color: "var(--text)" } },
     playlist.isOwner && {
@@ -110,7 +109,6 @@ export default function PlaylistHeader({
       .map((i) => ({
         id: i.id,
         label: i.label,
-        short: i.id === "copy" ? t("copyShort") : undefined,
         onClick: i.onClick,
         className: i.active ? "bg-primary text-white shadow-sm" : NEUTRAL,
         style: i.active ? undefined : { color: "var(--text)" },
@@ -121,7 +119,7 @@ export default function PlaylistHeader({
           { id: "batch", label: t("batch"), onClick: onToggleBatch,
             className: batchMode ? "bg-purple-600 text-white shadow-sm" : NEUTRAL,
             style: batchMode ? undefined : { color: "var(--text)" } },
-          { id: "addClip", label: t("addClip"), short: t("addClipShort"),
+          { id: "addClip", label: t("addClip"),
             onClick: onAddClip,
             className: "bg-primary text-white shadow-sm hover:bg-primary-hover" },
           // Phones say just 删除 — the full wording made it the widest button
@@ -150,8 +148,7 @@ export default function PlaylistHeader({
   const phoneActions = PHONE_ORDER
     .map((id) => byId[id])
     .filter(Boolean)
-    // The phone wording wins where given, then the full label — the desktop
-    // short forms are for narrow desktop cells, not for here.
+    // The phone wording wins where given, otherwise the full label.
     .map((a) => {
       const label = a.phone || a.label;
       return { ...a, label, weight: labelWidth(label) };
@@ -194,26 +191,6 @@ export default function PlaylistHeader({
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [phoneMenuOpen]);
-
-  // Full labels need roughly 95px of cell. Whether they fit depends on both the
-  // header's width and how many buttons are sharing it — edit mode adds three,
-  // which alone is enough to squeeze a 1280px header past the limit — so the
-  // grid is measured rather than guessed at from a breakpoint.
-  const gridRef = useRef(null);
-  const [roomyCells, setRoomyCells] = useState(true);
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const cols = Math.ceil(actions.length / 2);
-    const measure = () => {
-      const w = el.getBoundingClientRect().width;
-      if (w > 0) setRoomyCells(w / cols >= 95);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [actions.length]);
 
   return (
     <div className="mb-4 space-y-1.5">
@@ -354,12 +331,12 @@ export default function PlaylistHeader({
 
         {/* Desktop: the same flat list, in two rows of equal-width cells. The
             overflow menu is gone here too — every action is its own button, so
-            nothing takes two clicks to reach. Full labels need about 95px of
-            cell, which the header only affords from xl up; below that the
-            short forms are used instead, and the full wording stays available
-            as the title. */}
+            nothing takes two clicks to reach. Every width shows the same full
+            wording: the abbreviations this used to swap in when cells got
+            tight (清喜欢 for 取消全部喜欢, and so on) read as different
+            actions rather than the same one, which is worse than a narrow
+            button. Long labels truncate, with the full text as the title. */}
         <div
-          ref={gridRef}
           className="hidden gap-1.5 sm:grid"
           style={{ gridTemplateColumns: `repeat(${Math.ceil(actions.length / 2)}, minmax(0, 1fr))` }}
         >
@@ -371,7 +348,7 @@ export default function PlaylistHeader({
               className={`truncate rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${a.className}`}
               style={a.style}
             >
-              {a.short && !roomyCells ? a.short : a.label}
+              {a.label}
             </button>
           ))}
         </div>

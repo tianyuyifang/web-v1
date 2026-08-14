@@ -322,6 +322,8 @@ export default {
   userManagement: "User Management",
   totalUsers: "total users",
   pendingApproval: "Pending Approval",
+  revoked: "Revoked",
+  revokedOn: "Revoked on",
   members: "Members",
   admins: "Admins",
   noUsersInGroup: "No users in this group.",

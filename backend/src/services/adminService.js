@@ -28,7 +28,7 @@ async function listUsers() {
     select: {
       id: true, username: true, role: true, createdAt: true,
       expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
-      deviceLimit: true,
+      deviceLimit: true, demotedAt: true,
       _count: { select: { playlists: true, sharedPlaylists: true } },
     },
     orderBy: { createdAt: 'desc' },
@@ -63,15 +63,18 @@ async function approveUser(id) {
   if (!user) throw new NotFoundError('User');
   if (user.role === 'ADMIN') throw new ForbiddenError('Cannot change admin role');
 
+  // Clearing demotedAt matters: an approved user is a member again, so a later
+  // revocation should read as new rather than as the old one still standing.
   return prisma.user.update({
     where: { id },
-    data: { role: 'MEMBER' },
+    data: { role: 'MEMBER', demotedAt: null },
     select: { id: true, username: true, role: true },
   });
 }
 
 /**
- * Demotes a MEMBER back to PENDING.
+ * Demotes a MEMBER back to PENDING, stamping when it happened so the admin
+ * page can list revoked members apart from people who have never been approved.
  * @param {string} id - User UUID
  * @returns {Promise<object>}
  */
@@ -82,7 +85,7 @@ async function demoteUser(id) {
 
   return prisma.user.update({
     where: { id },
-    data: { role: 'PENDING' },
+    data: { role: 'PENDING', demotedAt: new Date() },
     select: { id: true, username: true, role: true },
   });
 }

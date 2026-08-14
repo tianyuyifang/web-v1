@@ -29,6 +29,10 @@ model User {
   deviceLimit     Int?       @map("device_limit")
   activeSessions  Json?      @default("[]") @map("active_sessions") @db.JsonB
   expiresAt       DateTime?  @map("expires_at") @db.Timestamptz
+  // Set when an admin revokes a MEMBER back to PENDING, cleared on approval.
+  // Without it a revoked member and a brand-new signup are indistinguishable:
+  // both are simply PENDING.
+  demotedAt       DateTime?  @map("demoted_at") @db.Timestamptz
   monthlyFee      Decimal?   @map("monthly_fee") @db.Decimal(10, 2)
   paymentStatus   PaymentStatus? @map("payment_status")
   billingNotes    String?    @map("billing_notes")

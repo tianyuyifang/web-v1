@@ -322,6 +322,8 @@ export default {
   userManagement: "用户管理",
   totalUsers: "位用户",
   pendingApproval: "待审核",
+  revoked: "已撤销",
+  revokedOn: "撤销于",
   members: "成员",
   admins: "管理员",
   noUsersInGroup: "此分组暂无用户。",

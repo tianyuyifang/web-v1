@@ -239,6 +239,12 @@ export default function UserTable({ users, onRefresh, controls = false }) {
               </td>
               <td className="py-3 pr-4 text-muted">
                 {new Date(user.createdAt).toLocaleDateString()}
+                {/* Revoked members only — says why they are back in PENDING. */}
+                {user.demotedAt && (
+                  <div className="text-xs text-orange-400">
+                    {t("revokedOn")} {new Date(user.demotedAt).toLocaleDateString()}
+                  </div>
+                )}
               </td>
               <td className="py-3 pr-4 text-muted">
                 {user.expiresAt ? new Date(user.expiresAt).toLocaleDateString() : "—"}

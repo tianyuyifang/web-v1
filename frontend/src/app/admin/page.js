@@ -17,7 +17,7 @@ export default function AdminPage() {
   const [feedback, setFeedback] = useState([]);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("pending");
+  const [activeTab, setActiveTab] = useState("members");
 
   const fetchUsers = useCallback(async () => {
     setFetching(true);
@@ -62,13 +62,18 @@ export default function AdminPage() {
     );
   }
 
-  const pending = users.filter((u) => u.role === "PENDING");
+  // Both lists are PENDING; demotedAt is what separates someone an admin
+  // revoked from someone who has never been approved. Revocations from before
+  // the field existed have no stamp, so they read as new applicants.
+  const pending = users.filter((u) => u.role === "PENDING" && !u.demotedAt);
+  const revoked = users.filter((u) => u.role === "PENDING" && u.demotedAt);
   const members = users.filter((u) => u.role === "MEMBER");
   const admins = users.filter((u) => u.role === "ADMIN");
 
   const tabs = [
-    { key: "pending", label: t("pendingApproval"), dot: "bg-yellow-400", count: pending.length },
     { key: "members", label: t("members"), dot: "bg-green-400", count: members.length },
+    { key: "pending", label: t("pendingApproval"), dot: "bg-yellow-400", count: pending.length },
+    { key: "revoked", label: t("revoked"), dot: "bg-orange-400", count: revoked.length },
     { key: "admins", label: t("admins"), dot: "bg-purple-400", count: admins.length },
     { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.length },
     { key: "updates", label: t("updatesAdminSection"), dot: "bg-pink-400", count: null },
@@ -122,6 +127,17 @@ export default function AdminPage() {
             <span className="ml-1 text-sm font-normal text-muted">({pending.length})</span>
           </h2>
           <UserTable users={pending} onRefresh={fetchUsers} />
+        </section>
+      )}
+
+      {activeTab === "revoked" && (
+        <section className="rounded-xl border border-border bg-surface p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
+            <span className="inline-block h-2 w-2 rounded-full bg-orange-400" />
+            {t("revoked")}
+            <span className="ml-1 text-sm font-normal text-muted">({revoked.length})</span>
+          </h2>
+          <UserTable users={revoked} onRefresh={fetchUsers} />
         </section>
       )}
 

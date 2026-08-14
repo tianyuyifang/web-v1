@@ -178,15 +178,20 @@ export default function PlaylistHeader({
   return (
     <div className="mb-4 space-y-1.5">
       {/* Three tracks on desktop: title | selector | actions. The outer two are
-          minmax(0,1fr), so they stay equal and the middle track lands on the
-          header's true centre however wide the actions or the title get. A flex
-          row could not do both at once — centring the selector there meant
+          minmax(max-content,1fr), so they stay equal where there is room and
+          the middle track lands on the header's true centre — but never at the
+          cost of wrapping the actions, which is what an unqualified 1fr did:
+          an equal third is about 400px at 1280px, and the single row of
+          buttons needs ~420px, so the ⋯ alone dropped to a second line. A flex
+          row could not do this at all — centring the selector there meant
           taking it out of the flow, which let the description run underneath
-          it. Split over two rows the actions need ~250px, which an equal share
-          affords from lg up; below that the tracks size to content and the
-          selector sits off-centre rather than squeezing the title. Phones
-          stack, as before. */}
-      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(11rem,1fr)_auto_auto] sm:items-start sm:gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+          it. Below lg the tracks size to content and the selector sits
+          off-centre rather than squeezing the title. Phones stack, as before.
+
+          The tracks centre against each other vertically: the title block is
+          the tall one once a description is present, and top-aligning the
+          actions against it left them visibly riding high. */}
+      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(11rem,1fr)_auto_auto] sm:items-center sm:gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)]">
         <div className="min-w-0">
           {editMode ? (
             <>
@@ -322,7 +327,7 @@ export default function PlaylistHeader({
             <button
               key={a.id}
               onClick={a.onClick}
-              className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${a.className}`}
+              className={`shrink-0 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${a.className}`}
               style={a.style}
             >
               {a.label}
@@ -334,7 +339,7 @@ export default function PlaylistHeader({
                 onClick={() => setDesktopMenuOpen((v) => !v)}
                 aria-haspopup="menu"
                 aria-expanded={desktopMenuOpen}
-                className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
                   desktopMenuOpen ? "bg-primary text-white shadow-sm" : NEUTRAL
                 }`}
                 style={desktopMenuOpen ? undefined : { color: "var(--text)" }}
@@ -347,7 +352,7 @@ export default function PlaylistHeader({
                     <button
                       key={i.id}
                       onClick={() => { setDesktopMenuOpen(false); i.onClick?.(); }}
-                      className="block w-full whitespace-nowrap px-3 py-2 text-left text-xs text-theme hover:bg-surface-hover"
+                      className="block w-full whitespace-nowrap px-3 py-2 text-left text-sm text-theme hover:bg-surface-hover"
                     >
                       {i.label}
                     </button>

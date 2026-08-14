@@ -1,14 +1,10 @@
 export default {
   // App
-  appTitle: "音乐片段播放列表",
-  appDescription: "创建和管理音乐片段播放列表",
-  appName: "Q你一下",
 
   // Navbar
   welcome: "欢迎，",
   you: "我",
   navPlaylists: "播放列表",
-  navGuide: "使用指南",
   navHelp: "帮助",
   helpTitle: "帮助",
   helpTabInstruction: "使用说明",
@@ -17,12 +13,10 @@ export default {
   helpInstructionCardDesc: "在我们的文档站点查看完整的图文使用指南。",
   helpInstructionCardButton: "打开使用指南 →",
   navAdmin: "管理",
-  navSettings: "设置",
 
   // 屏幕捕获
   captureStart: "自动打标",
   captureAutoApproved: "已自动确认",
-  captureUndo: "撤销",
   captureRetry: "重试",
   captureTagged: "已打标",
   captureTeamRed: "红队",
@@ -33,9 +27,6 @@ export default {
   captureStopConfirm: "再点一次停止",
   captureCaught: "抓到",
   capturePending: "待确认",
-  captureToken: "令牌",
-  captureShowToken: "显示",
-  captureHideToken: "隐藏",
   captureCopied: "已复制",
   captureCopy: "点击复制",
   captureApprove: "确认",
@@ -51,11 +42,8 @@ export default {
   capturePairHint: "在自动打标 App 里输入这个配对码：",
   captureStale: "打标 App 可能已断开",
   navAccount: "账户",
-  navLogout: "退出登录",
 
   // Login
-  loginTitle: "欢迎回来",
-  loginSubtitle: "登录你的「Q你一下」账号",
   sessionReplacedMessage: "你的账号已在其他设备上登录，请重新登录。",
 
   // Auth notice (shown below login/register forms)
@@ -83,8 +71,6 @@ export default {
   loginFailed: "登录失败",
 
   // Register
-  registerTitle: "创建账号",
-  registerSubtitle: "加入「Q你一下」，开始创建播放列表",
   confirmPassword: "确认密码",
   usernameRequired: "请输入用户名",
   usernameMin: "用户名至少2个字符",
@@ -97,7 +83,6 @@ export default {
   usernamePlaceholder: "2-30个字符",
   passwordPlaceholder: "至少8个字符",
   confirmPlaceholder: "再次输入密码",
-  usernameExists: "用户名已存在",
   registrationFailed: "注册失败",
   accountCreated: "账号创建成功！",
   awaitingApproval: "你的账号正在等待管理员审核，审核通过后即可登录。",
@@ -111,14 +96,12 @@ export default {
   playlist: "个列表",
   playlistsPlural: "个列表",
   myPlaylists: "我的列表",
-  otherPlaylists: "共享与公开",
   sharedPlaylists: "共享给我",
   publicPlaylists: "公开",
   newPlaylist: "+ 新建列表",
   searchPlaylists: "搜索播放列表...",
   noPlaylistsMatch: "没有匹配的播放列表",
   noPlaylistsYet: "还没有播放列表",
-  noOtherPlaylists: "暂无共享或公开列表",
   createToStart: "创建一个开始使用吧。",
 
   // New Playlist
@@ -133,10 +116,7 @@ export default {
   playlistNameRequired: "请输入播放列表名称",
   creating: "创建中...",
   createPlaylist: "创建播放列表",
-  selectJsonFile: "选择从本应用导出的 JSON 文件来导入播放列表。",
   importing: "导入中...",
-  chooseFile: "选择 JSON 文件",
-  invalidJson: "无效的 JSON 文件",
   importFailed: "导入失败",
   createPlaylistFailed: "创建播放列表失败",
 
@@ -175,7 +155,6 @@ export default {
   makePrivateMessage: "仅你和你分享的用户可以查看此播放列表。",
 
   // Playlist header
-  columnsLabel: "{n} 列",
   columnsPerRow: "每行显示",
   unlikeAll: "取消全部喜欢",
   unlikeAllTitle: "取消全部喜欢",
@@ -183,15 +162,12 @@ export default {
   compactView: "列表",
   fullView: "卡片",
   batch: "批量",
-  selectAll: "全选",
   unselectAll: "取消全选",
-  applyToSelected: "应用",
   applyAndSave: "应用并保存",
   reset: "重置",
   selectedCount: "已选 {count} 项",
   return: "返回",
   edit: "编辑",
-  done: "完成",
   addClip: "添加片段",
   share: "分享",
   delete: "删除",
@@ -213,10 +189,7 @@ export default {
 
   // Add clip modal
   addClipToPlaylist: "添加片段到列表",
-  searchTab: "搜索",
-  importTab: "导入",
   searchSongs: "搜索歌曲...",
-  searching: "搜索中...",
   noSongsFound: "没有找到歌曲。",
   importClips: "导入片段",
   importByQQ: "从QQ音乐导入",
@@ -228,11 +201,9 @@ export default {
   importByKugou: "从酷狗导入",
   importByKugouDesc: "粘贴酷狗歌单 specialID（collection_3_{uid}_{listid}_0），自动匹配并导入歌曲",
   kugouPlaylistIdPlaceholder: "酷狗歌单 specialID...",
-  importByPlaylistId: "从播放列表导入",
   importByInternal: "从站内播放列表导入",
   importByInternalDesc: "搜索播放列表以导入其所有片段",
   importByFile: "从文件导入",
-  playlistIdPlaceholder: "粘贴播放列表 ID...",
   importButton: "导入",
   importingClips: "导入中...",
   importFetching: "正在获取歌单…",
@@ -240,8 +211,6 @@ export default {
   importInterrupted: "导入已中断 —— 重新运行即可完成（已添加的歌曲会自动跳过）。",
   importAlreadyRunning: "该歌单已有导入任务正在进行。",
   uploadXlsx: "选择 XLSX 文件",
-  importSuccess: "已添加 {added} 个片段，跳过 {skipped} 个",
-  importNotFound: "未找到：",
   searchSingle: "搜索单曲",
   importReportAdded: "已添加",
   importReportSkipped: "已跳过",
@@ -269,8 +238,6 @@ export default {
   comparing: "对比中...",
   compareFailed: "对比失败",
   compareReport: "对比报告",
-  compareExternal: "外部歌单",
-  compareLocal: "本地列表",
   compareTarget: "目标歌单",
   compareCurrent: "当前歌单",
   compareSongs: "首歌",
@@ -312,7 +279,6 @@ export default {
 
   // Import modal
   importPlaylist: "导入播放列表",
-  chooseFileButton: "选择文件",
 
   // Search bar
   search: "搜索...",
@@ -407,7 +373,6 @@ export default {
   newUsername: "新用户名",
   passwordConfirm: "密码（用于验证身份）",
   changingUsername: "保存中...",
-  changeUsernameSuccess: "用户名修改成功，请重新登录。",
   changeUsernameNote: "修改用户名后将自动退出登录。",
   changeUsernameFailed: "修改用户名失败",
   usernameExistsError: "用户名已存在",
@@ -426,7 +391,6 @@ export default {
 
   // Settings
   settings: "设置",
-  customizeExperience: "自定义你的使用体验",
   appearance: "外观",
   colorPalette: "配色",
   surfaceStyle: "风格",
@@ -437,16 +401,11 @@ export default {
   themeDarkDesc: "护眼深色调，适合夜间使用",
   themeLight: "浅色",
   themeLightDesc: "明亮清爽，适合日间使用",
-  themeHighContrast: "高对比度",
-  themeHighContrastDesc: "最大可读性和清晰度",
-  themeWarm: "暖色",
-  themeWarmDesc: "暖白底色，珊瑚色点缀",
   active: "当前",
   langEn: "English",
   langZh: "简体中文",
 
   // Feedback
-  navFeedback: "反馈",
   navUpdates: "日志",
   updatesTitle: "更新",
   updatesSubtitle: "最新变化与公告",
@@ -456,7 +415,6 @@ export default {
   updateCategoryAnnouncement: "公告",
   updateCategorySongUpdate: "曲库更新",
   updatesAdminSection: "更新",
-  updateNewButton: "+ 新建更新",
   updateFormTitle: "标题",
   updateFormBody: "内容",
   updateFormCategory: "类别",
@@ -468,7 +426,6 @@ export default {
   updateHighlightedButton: "已置顶",
   updateDeleteTitle: "删除更新",
   updateDeleteConfirm: "确定要删除这条更新吗",
-  feedbackTitle: "提交反馈",
   feedbackDesc: "帮助我们改进——报告问题、请求歌曲或分享建议。",
   feedbackTypeBadSong: "报告问题歌曲",
   feedbackTypeBadSongDesc: "歌词错误、音质问题或其他问题",
@@ -485,7 +442,6 @@ export default {
   feedbackBack: "返回",
   feedbackAdmin: "用户反馈",
   feedbackEmpty: "暂无反馈",
-  feedbackDeleteConfirm: "删除此反馈？",
   feedbackBadSong: "问题歌曲",
   feedbackRequestSong: "请求歌曲",
   feedbackGeneral: "一般",
@@ -497,7 +453,6 @@ export default {
   bandwidthUser: "用户",
   bandwidthTotal: "总计",
   bandwidthAvgDay: "日均",
-  bandwidthPeriod: "天",
   bandwidthDay1: "24小时",
   bandwidthDay7: "7天",
   bandwidthDay30: "30天",
@@ -565,7 +520,6 @@ export default {
   perMonth: "/ 月",
   renewalNotice: "您的订阅已过期，请联系管理员续费。",
   noExpiry: "未设置到期时间",
-  billingSectionTitle: "计费",
   feeColumn: "费用",
   expiresColumn: "到期",
   paymentStatusColumn: "付款",

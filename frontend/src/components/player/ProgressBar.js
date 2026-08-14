@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useCallback, memo } from "react";
-import { formatDuration } from "@/lib/utils";
 
 export default memo(function ProgressBar({ currentTime, duration, onSeek }) {
   const barRef = useRef(null);

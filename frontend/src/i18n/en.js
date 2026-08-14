@@ -1,14 +1,10 @@
 export default {
   // App
-  appTitle: "Q你一下",
-  appDescription: "Create and manage music clip playlists",
-  appName: "Q你一下",
 
   // Navbar
   welcome: "Welcome,",
   you: "you",
   navPlaylists: "Playlists",
-  navGuide: "Guide",
   navHelp: "Help",
   helpTitle: "Help",
   helpTabInstruction: "Instructions",
@@ -17,12 +13,10 @@ export default {
   helpInstructionCardDesc: "Read the full guide — text and pictures — on our documentation site.",
   helpInstructionCardButton: "Open the Guide →",
   navAdmin: "Admin",
-  navSettings: "Settings",
 
   // Screen capture
   captureStart: "Auto-tag",
   captureAutoApproved: "Auto-approved",
-  captureUndo: "Undo",
   captureRetry: "Retry",
   captureTagged: "tagged",
   captureTeamRed: "Red",
@@ -33,9 +27,6 @@ export default {
   captureStopConfirm: "Click again to stop",
   captureCaught: "caught",
   capturePending: "to review",
-  captureToken: "Token",
-  captureShowToken: "Show",
-  captureHideToken: "Hide",
   captureCopied: "Copied",
   captureCopy: "Tap to copy",
   captureApprove: "Approve",
@@ -51,11 +42,8 @@ export default {
   capturePairHint: "Enter this code in the auto-tag app:",
   captureStale: "Client may have stopped",
   navAccount: "Account",
-  navLogout: "Logout",
 
   // Login
-  loginTitle: "Welcome back",
-  loginSubtitle: "Sign in to your Q你一下 account",
   sessionReplacedMessage: "Your account was logged in on another device. Please log in again.",
 
   // Auth notice (shown below login/register forms)
@@ -83,8 +71,6 @@ export default {
   loginFailed: "Login failed",
 
   // Register
-  registerTitle: "Create account",
-  registerSubtitle: "Join Q你一下 to start building playlists",
   confirmPassword: "Confirm Password",
   usernameRequired: "Username is required",
   usernameMin: "Username must be at least 2 characters",
@@ -97,7 +83,6 @@ export default {
   usernamePlaceholder: "2-30 characters",
   passwordPlaceholder: "At least 8 characters",
   confirmPlaceholder: "Re-enter your password",
-  usernameExists: "Username already exists",
   registrationFailed: "Registration failed",
   accountCreated: "Account created!",
   awaitingApproval: "Your account is awaiting admin approval. You will be able to log in once an admin activates your account.",
@@ -111,14 +96,12 @@ export default {
   playlist: "playlist",
   playlistsPlural: "playlists",
   myPlaylists: "My Playlists",
-  otherPlaylists: "Shared & Public",
   sharedPlaylists: "Shared with Me",
   publicPlaylists: "Public",
   newPlaylist: "+ New Playlist",
   searchPlaylists: "Search playlists...",
   noPlaylistsMatch: "No playlists match your search",
   noPlaylistsYet: "No playlists yet",
-  noOtherPlaylists: "No shared or public playlists",
   createToStart: "Create one to get started.",
 
   // New Playlist
@@ -133,10 +116,7 @@ export default {
   playlistNameRequired: "Playlist name is required",
   creating: "Creating...",
   createPlaylist: "Create Playlist",
-  selectJsonFile: "Select a JSON file exported from this app to import a playlist.",
   importing: "Importing...",
-  chooseFile: "Choose JSON File",
-  invalidJson: "Invalid JSON file",
   importFailed: "Import failed",
   createPlaylistFailed: "Failed to create playlist",
 
@@ -175,7 +155,6 @@ export default {
   makePrivateMessage: "Only you and users you've shared with will be able to view this playlist.",
 
   // Playlist header
-  columnsLabel: "{n} columns",
   columnsPerRow: "Columns per row",
   unlikeAll: "Unlike All",
   unlikeAllTitle: "Unlike All",
@@ -183,15 +162,12 @@ export default {
   compactView: "List",
   fullView: "Cards",
   batch: "Batch",
-  selectAll: "Select All",
   unselectAll: "Unselect All",
-  applyToSelected: "Apply",
   applyAndSave: "Apply & Save",
   reset: "Reset",
   selectedCount: "{count} selected",
   return: "Return",
   edit: "Edit",
-  done: "Done",
   addClip: "Add Clip",
   share: "Share",
   delete: "Delete",
@@ -213,10 +189,7 @@ export default {
 
   // Add clip modal
   addClipToPlaylist: "Add Clip to Playlist",
-  searchTab: "Search",
-  importTab: "Import",
   searchSongs: "Search songs...",
-  searching: "Searching...",
   noSongsFound: "No songs found.",
   createClip: "Create Clip",
   newClipButton: "+ New clip",
@@ -230,11 +203,9 @@ export default {
   importByKugou: "Import from KuGou",
   importByKugouDesc: "Paste a KuGou playlist specialID (collection_3_{uid}_{listid}_0) to match and import songs",
   kugouPlaylistIdPlaceholder: "KuGou playlist specialID...",
-  importByPlaylistId: "Import from Playlist",
   importByInternal: "Import from Internal Playlist",
   importByInternalDesc: "Search for a playlist to import all its clips",
   importByFile: "Import from File",
-  playlistIdPlaceholder: "Paste playlist ID...",
   importButton: "Import",
   importingClips: "Importing...",
   importFetching: "Fetching playlist…",
@@ -242,8 +213,6 @@ export default {
   importInterrupted: "Import was interrupted — re-run to finish (already-added songs are skipped).",
   importAlreadyRunning: "An import is already running for this playlist.",
   uploadXlsx: "Choose XLSX File",
-  importSuccess: "Added {added} clips, skipped {skipped}",
-  importNotFound: "Not found:",
   searchSingle: "Search Song",
   importReportAdded: "Added",
   importReportSkipped: "Skipped",
@@ -269,8 +238,6 @@ export default {
   comparing: "Comparing...",
   compareFailed: "Comparison failed",
   compareReport: "Comparison Report",
-  compareExternal: "External",
-  compareLocal: "Local",
   compareTarget: "Target",
   compareCurrent: "Current",
   compareSongs: "songs",
@@ -312,7 +279,6 @@ export default {
 
   // Import modal
   importPlaylist: "Import Playlist",
-  chooseFileButton: "Choose File",
 
   // Search bar
   search: "Search...",
@@ -407,7 +373,6 @@ export default {
   newUsername: "New Username",
   passwordConfirm: "Password (to confirm)",
   changingUsername: "Saving...",
-  changeUsernameSuccess: "Username changed successfully. Please log in again.",
   changeUsernameNote: "You will be signed out after changing your username.",
   changeUsernameFailed: "Failed to change username",
   usernameExistsError: "Username already exists",
@@ -426,7 +391,6 @@ export default {
 
   // Settings
   settings: "Settings",
-  customizeExperience: "Customize your experience",
   appearance: "Appearance",
   colorPalette: "Color",
   surfaceStyle: "Style",
@@ -437,16 +401,11 @@ export default {
   themeDarkDesc: "Easy on the eyes, deep navy tones",
   themeLight: "Light",
   themeLightDesc: "Clean and bright for daytime use",
-  themeHighContrast: "High Contrast",
-  themeHighContrastDesc: "Maximum readability and clarity",
-  themeWarm: "Warm",
-  themeWarmDesc: "Warm off-white with coral accents",
   active: "Active",
   langEn: "English",
   langZh: "简体中文",
 
   // Feedback
-  navFeedback: "Feedback",
   navUpdates: "Updates",
   updatesTitle: "Updates",
   updatesSubtitle: "Latest changes and announcements",
@@ -456,7 +415,6 @@ export default {
   updateCategoryAnnouncement: "Announcement",
   updateCategorySongUpdate: "Song Library Update",
   updatesAdminSection: "Updates",
-  updateNewButton: "+ New Update",
   updateFormTitle: "Title",
   updateFormBody: "Body",
   updateFormCategory: "Category",
@@ -468,7 +426,6 @@ export default {
   updateHighlightedButton: "Highlighted",
   updateDeleteTitle: "Delete Update",
   updateDeleteConfirm: "Are you sure you want to delete this update",
-  feedbackTitle: "Submit Feedback",
   feedbackDesc: "Help us improve — report issues, request songs, or share suggestions.",
   feedbackTypeBadSong: "Report Bad Song",
   feedbackTypeBadSongDesc: "Wrong lyrics, bad audio quality, or other issues",
@@ -485,7 +442,6 @@ export default {
   feedbackBack: "Back",
   feedbackAdmin: "User Feedback",
   feedbackEmpty: "No feedback yet",
-  feedbackDeleteConfirm: "Delete this feedback?",
   feedbackBadSong: "Bad Song",
   feedbackRequestSong: "Request Song",
   feedbackGeneral: "General",
@@ -497,7 +453,6 @@ export default {
   bandwidthUser: "User",
   bandwidthTotal: "Total",
   bandwidthAvgDay: "Avg/day",
-  bandwidthPeriod: "days",
   bandwidthDay1: "24h",
   bandwidthDay7: "7d",
   bandwidthDay30: "30d",
@@ -565,7 +520,6 @@ export default {
   perMonth: "/ month",
   renewalNotice: "Your subscription has expired. Please contact the admin to renew.",
   noExpiry: "No expiration set",
-  billingSectionTitle: "Billing",
   feeColumn: "Fee",
   expiresColumn: "Expires",
   paymentStatusColumn: "Payment",

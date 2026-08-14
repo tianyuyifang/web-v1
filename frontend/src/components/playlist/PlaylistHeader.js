@@ -124,7 +124,10 @@ export default function PlaylistHeader({
           { id: "addClip", label: t("addClip"), short: t("addClipShort"),
             onClick: onAddClip,
             className: "bg-primary text-white shadow-sm hover:bg-primary-hover" },
-          { id: "delete", label: t("delete"), phone: t("deletePlaylistPhone"),
+          // Phones say just 删除 — the full wording made it the widest button
+          // in the row, weight the action does not warrant. Desktop, which has
+          // the room, keeps the explicit label.
+          { id: "delete", label: t("delete"),
             onClick: onDelete,
             className: "border border-red-500/30 text-red-400 hover:bg-red-500/10" },
         ]
@@ -162,15 +165,21 @@ export default function PlaylistHeader({
         .map((a) => ({ id: a.id, label: a.label, onClick: a.onClick }));
 
   // Buttons are as wide as their wording, so a row holds as much text as it
-  // holds — not a fixed number of cells. Pack greedily up to a width that
-  // stays legible on a narrow phone, keeping the order above; the menu trigger
-  // is a fixed narrow cell and rides along at the end.
-  const PHONE_ROW_WIDTH = 24;
+  // holds — not a fixed number of cells. The budget below is in the same units
+  // labelWidth() returns (one unit ≈ 5.5px of glyph), with each button also
+  // charged for its padding and gap. 64 is what a ~390px phone fits, and it
+  // clears edit mode's six labels (返回 取消标记 添加片段 批量 删除 完成:
+  // 32 glyph units + 6 × 5 overhead = 62) on a single row.
+  const PHONE_ROW_BUDGET = 64;
+  // Padding and gap cost the same whatever the label, so each button carries a
+  // fixed overhead on top of its glyphs — about five units' worth. Counting it
+  // keeps a row of many short buttons from overflowing.
+  const BUTTON_OVERHEAD = 5;
   const phoneRows = [];
   for (const a of phoneActions) {
     const row = phoneRows[phoneRows.length - 1];
-    const used = row?.reduce((n, x) => n + x.weight, 0) ?? 0;
-    if (row && used + a.weight <= PHONE_ROW_WIDTH) row.push(a);
+    const used = row?.reduce((n, x) => n + x.weight + BUTTON_OVERHEAD, 0) ?? 0;
+    if (row && used + a.weight + BUTTON_OVERHEAD <= PHONE_ROW_BUDGET) row.push(a);
     else phoneRows.push([a]);
   }
 
@@ -302,11 +311,10 @@ export default function PlaylistHeader({
                   <button
                     key={a.id}
                     onClick={a.onClick}
-                    // Each button takes a share of the row in proportion to how
-                    // much text it carries, so 取消所有喜欢 gets the room it
-                    // needs and 返回 does not sit in a half-empty cell.
-                    style={{ flex: `${a.weight} 1 0`, minWidth: 0, ...a.style }}
-                    className={`truncate rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors ${a.className}`}
+                    // Sized to the wording itself: no growing to fill the row,
+                    // so each button is its text plus padding and nothing more.
+                    style={a.style}
+                    className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors ${a.className}`}
                   >
                     {a.label}
                   </button>

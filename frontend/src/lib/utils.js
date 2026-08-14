@@ -25,13 +25,6 @@ export function setColumnCount(count) {
 }
 
 /**
- * Check if a string contains CJK characters.
- */
-export function containsCJK(str) {
-  return /[\u4e00-\u9fff\u3400-\u4dbf]/.test(str);
-}
-
-/**
  * Client-side text matching for sidebar/grid search filtering.
  * Matches if the query appears as a substring in any of the target fields.
  * Supports Chinese text, pinyin (with/without spaces), and pinyin initials.
@@ -78,12 +71,4 @@ export function getPlaylistView() {
 }
 export function setPlaylistView(view) {
   localStorage.setItem(VIEW_KEY, view);
-}
-
-/**
- * Get the earliest clip start time for a song.
- */
-export function getDefaultStart(song) {
-  if (!song.clips || song.clips.length === 0) return 0;
-  return Math.min(...song.clips.map((c) => c.start));
 }

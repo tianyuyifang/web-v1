@@ -92,4 +92,4 @@ function getJob(jobId) {
 const sweepTimer = setInterval(sweep, TTL_MS);
 if (sweepTimer.unref) sweepTimer.unref();
 
-module.exports = { startImportJob, getJob, hasActiveJob, ImportInProgressError, _jobs: jobs };
+module.exports = { startImportJob, getJob, hasActiveJob, ImportInProgressError };

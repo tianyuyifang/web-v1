@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useLayoutEffect, useRef } from "react";
-import { flushSync } from "react-dom";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { playlistsAPI, likesAPI } from "@/lib/api";

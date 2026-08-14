@@ -72,4 +72,3 @@ export default function RichText({ text, className }) {
   return <span className={className}>{parts}</span>;
 }
 
-export { COLOR_MAP };

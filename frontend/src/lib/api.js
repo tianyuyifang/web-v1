@@ -126,7 +126,6 @@ export const playlistsAPI = {
   getById: (id) => api.get(`/playlists/${id}`),
   update: (id, data) => api.put(`/playlists/${id}`, data),
   delete: (id) => api.delete(`/playlists/${id}`),
-  importPlaylist: (data) => api.post("/playlists/import", data),
   copy: (id) => api.post(`/playlists/${id}/copy`),
 
   // Import clips

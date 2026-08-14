@@ -6,7 +6,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "import": "node scripts/scan-songs-for-databasing.js",
-    "seed": "node scripts/seed.js",
+    "seed": "node scripts/seed-admins.js",
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",
     "db:studio": "npx prisma studio",
@@ -24,7 +24,6 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
     "music-metadata": "^7.14.0",
-    "nodemailer": "^8.0.2",
     "pinyin": "^3.1.0",
     "zod": "^3.23.0"
   },

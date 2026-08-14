@@ -6,6 +6,17 @@ import RichText from "@/components/ui/RichText";
 
 const COLUMN_OPTIONS = [1, 2, 3, 4, 5];
 
+// Roughly how wide a label renders, in units of one Latin character. CJK,
+// fullwidth forms and CJK punctuation occupy about two of those, so counting
+// raw string length would make 返回 and 批量 look the same width as two
+// letters. Used to share a phone row out in proportion to the wording.
+const WIDE_CHAR = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
+function labelWidth(label) {
+  let w = 0;
+  for (const ch of String(label)) w += WIDE_CHAR.test(ch) ? 2 : 1;
+  return w;
+}
+
 export default function PlaylistHeader({
   playlist,
   editMode,
@@ -122,14 +133,15 @@ export default function PlaylistHeader({
 
   const actions = actionDefs;
 
-  // Phones order the actions by how often they are reached rather than by the
-  // desktop grouping, and put the rarely-used ones back behind a menu so the
-  // rest fit without shrinking. Ids not listed here stay in the menu.
+  // Phones lead with 返回 — the way back out is the one action that should sit
+  // in the same place every time — then order the rest by how often they are
+  // reached. Ids not listed here stay in the menu. In edit mode there is no
+  // menu: everything it would hold is a button in normal mode, one 完成 away.
   const PHONE_ORDER = editMode
-    ? ["unlikeAll", "addClip", "batch", "compact", "delete", "return", "edit"]
+    ? ["return", "unlikeAll", "addClip", "batch", "delete", "edit"]
     : playlist.isOwner
-      ? ["unlikeAll", "edit", "copy", "return"]
-      : ["copy", "compare", "return"];
+      ? ["return", "unlikeAll", "edit", "copy"]
+      : ["return", "copy", "compare"];
 
   const byId = Object.fromEntries(actionDefs.map((a) => [a.id, a]));
   const phoneActions = PHONE_ORDER
@@ -137,17 +149,30 @@ export default function PlaylistHeader({
     .filter(Boolean)
     // The phone wording wins where given, then the full label — the desktop
     // short forms are for narrow desktop cells, not for here.
-    .map((a) => ({ ...a, label: a.phone || a.label }));
+    .map((a) => {
+      const label = a.phone || a.label;
+      return { ...a, label, weight: labelWidth(label) };
+    });
 
-  // Whatever the phone did not surface as a button.
-  const phoneMenuItems = actionDefs
-    .filter((a) => !PHONE_ORDER.includes(a.id))
-    .map((a) => ({ id: a.id, label: a.label, onClick: a.onClick }));
+  // Whatever the phone did not surface as a button — normal mode only.
+  const phoneMenuItems = editMode
+    ? []
+    : actionDefs
+        .filter((a) => !PHONE_ORDER.includes(a.id))
+        .map((a) => ({ id: a.id, label: a.label, onClick: a.onClick }));
 
-  // Cells across, counting the menu trigger as one. Up to five stay on a single
-  // row; beyond that they split evenly over two.
-  const phoneCellCount = phoneActions.length + (phoneMenuItems.length > 0 ? 1 : 0);
-  const phoneCols = phoneCellCount <= 5 ? phoneCellCount : Math.ceil(phoneCellCount / 2);
+  // Buttons are as wide as their wording, so a row holds as much text as it
+  // holds — not a fixed number of cells. Pack greedily up to a width that
+  // stays legible on a narrow phone, keeping the order above; the menu trigger
+  // is a fixed narrow cell and rides along at the end.
+  const PHONE_ROW_WIDTH = 24;
+  const phoneRows = [];
+  for (const a of phoneActions) {
+    const row = phoneRows[phoneRows.length - 1];
+    const used = row?.reduce((n, x) => n + x.weight, 0) ?? 0;
+    if (row && used + a.weight <= PHONE_ROW_WIDTH) row.push(a);
+    else phoneRows.push([a]);
+  }
 
   const [phoneMenuOpen, setPhoneMenuOpen] = useState(false);
   useEffect(() => {
@@ -264,53 +289,59 @@ export default function PlaylistHeader({
           </div>
         </div>
 
-        {/* Phones get their own action block: their own ordering, and the
-            seldom-used actions kept behind a menu so the rest stay legible.
-            Four or fewer sit on one row; more wrap onto a second. */}
-        <div className="sm:hidden">
-          <div
-            className="grid gap-1.5"
-            style={{ gridTemplateColumns: `repeat(${phoneCols}, minmax(0, 1fr))` }}
-          >
-            {phoneActions.map((a) => (
-              <button
-                key={a.id}
-                onClick={a.onClick}
-                className={`truncate rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors ${a.className}`}
-                style={a.style}
-              >
-                {a.label}
-              </button>
-            ))}
-            {phoneMenuItems.length > 0 && (
-              <div className="relative">
-                <button
-                  onClick={() => setPhoneMenuOpen((v) => !v)}
-                  aria-haspopup="menu"
-                  aria-expanded={phoneMenuOpen}
-                  className={`w-full rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors ${
-                    phoneMenuOpen ? "bg-primary text-white shadow-sm" : NEUTRAL
-                  }`}
-                  style={phoneMenuOpen ? undefined : { color: "var(--text)" }}
-                >
-                  ⋯
-                </button>
-                {phoneMenuOpen && (
-                  <div className="absolute right-0 z-40 mt-1 min-w-[8rem] overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
-                    {phoneMenuItems.map((i) => (
-                      <button
-                        key={i.id}
-                        onClick={() => { setPhoneMenuOpen(false); i.onClick?.(); }}
-                        className="block w-full whitespace-nowrap px-3 py-2 text-left text-xs text-theme hover:bg-surface-hover"
-                      >
-                        {i.label}
-                      </button>
-                    ))}
+        {/* Phones get their own action block: 返回 first, then the rest by how
+            often they are reached, each button sized to its wording. Rows fill
+            up to a legible width and then wrap. In normal mode the seldom-used
+            actions stay behind a menu at the end of the last row. */}
+        <div className="sm:hidden space-y-1.5">
+          {phoneRows.map((row, rowIndex) => {
+            const isLast = rowIndex === phoneRows.length - 1;
+            return (
+              <div key={rowIndex} className="flex gap-1.5">
+                {row.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={a.onClick}
+                    // Each button takes a share of the row in proportion to how
+                    // much text it carries, so 取消所有喜欢 gets the room it
+                    // needs and 返回 does not sit in a half-empty cell.
+                    style={{ flex: `${a.weight} 1 0`, minWidth: 0, ...a.style }}
+                    className={`truncate rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors ${a.className}`}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+                {isLast && phoneMenuItems.length > 0 && (
+                  <div className="relative shrink-0">
+                    <button
+                      onClick={() => setPhoneMenuOpen((v) => !v)}
+                      aria-haspopup="menu"
+                      aria-expanded={phoneMenuOpen}
+                      className={`h-full rounded-lg px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                        phoneMenuOpen ? "bg-primary text-white shadow-sm" : NEUTRAL
+                      }`}
+                      style={phoneMenuOpen ? undefined : { color: "var(--text)" }}
+                    >
+                      ⋯
+                    </button>
+                    {phoneMenuOpen && (
+                      <div className="absolute right-0 z-40 mt-1 min-w-[8rem] overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+                        {phoneMenuItems.map((i) => (
+                          <button
+                            key={i.id}
+                            onClick={() => { setPhoneMenuOpen(false); i.onClick?.(); }}
+                            className="block w-full whitespace-nowrap px-3 py-2 text-left text-xs text-theme hover:bg-surface-hover"
+                          >
+                            {i.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            );
+          })}
         </div>
 
         {/* Desktop: the same flat list, in two rows of equal-width cells. The

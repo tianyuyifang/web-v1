@@ -216,6 +216,7 @@ export const adminAPI = {
   listUsers: () => api.get("/admin/users"),
   listPending: () => api.get("/admin/users/pending"),
   approveUser: (id) => api.patch(`/admin/users/${id}/approve`),
+  makeGuest: (id) => api.patch(`/admin/users/${id}/guest`),
   demoteUser: (id) => api.patch(`/admin/users/${id}/demote`),
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
   listUserPlaylists: (id) => api.get(`/admin/users/${id}/playlists`),

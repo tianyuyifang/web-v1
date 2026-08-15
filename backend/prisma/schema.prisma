@@ -8,7 +8,13 @@ datasource db {
 }
 
 enum Role {
+  // Cannot log in. Where expired guests and lapsed members land, and where an
+  // admin can put anyone manually.
   PENDING
+  // Signs up and is in straight away, on a short leash: at most three own
+  // playlists, cannot publish them, and cannot let anyone copy them. Sharing
+  // is allowed — it lets teammates like and auto-tag without moving anything.
+  GUEST
   MEMBER
   ADMIN
 }
@@ -33,6 +39,10 @@ model User {
   // Without it a revoked member and a brand-new signup are indistinguishable:
   // both are simply PENDING.
   demotedAt       DateTime?  @map("demoted_at") @db.Timestamptz
+  // What the user was before landing in PENDING. A guest whose trial ran out
+  // and a member who stopped paying both end up PENDING but need different
+  // wording, and the role alone cannot tell them apart.
+  previousRole    Role?      @map("previous_role")
   monthlyFee      Decimal?   @map("monthly_fee") @db.Decimal(10, 2)
   paymentStatus   PaymentStatus? @map("payment_status")
   billingNotes    String?    @map("billing_notes")

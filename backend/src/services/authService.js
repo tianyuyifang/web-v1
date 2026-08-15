@@ -32,8 +32,11 @@ async function register({ username, password }) {
   }
 
   const passwordHash = await hashPassword(password);
+  // Signing up lands you in as a GUEST rather than queued for approval. Stated
+  // outright instead of leaning on the schema default, which is still PENDING
+  // — that is now where expired accounts land, not where new ones start.
   const user = await prisma.user.create({
-    data: { username, passwordHash },
+    data: { username, passwordHash, role: 'GUEST' },
     select: { id: true, username: true, role: true, preferences: true },
   });
 

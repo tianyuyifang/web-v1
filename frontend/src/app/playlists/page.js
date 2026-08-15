@@ -7,17 +7,24 @@ import PlaylistCard from "@/components/playlist/PlaylistCard";
 import SearchBar from "@/components/library/SearchBar";
 import HighlightedUpdateBanner from "@/components/playlist/HighlightedUpdateBanner";
 import BatchShareModal from "@/components/playlist/BatchShareModal";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import useAuth from "@/hooks/useAuth";
 import { getPlaylistView, setPlaylistView } from "@/lib/utils";
+
+/** Mirrors GUEST_PLAYLIST_LIMIT on the server. */
+const GUEST_PLAYLIST_LIMIT = 3;
 
 export default function PlaylistsPage() {
   const router = useRouter();
   const { t } = useLanguage();
+  const { isGuest } = useAuth();
   const [playlists, setPlaylists] = useState([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("grid");
   const [showBatchShare, setShowBatchShare] = useState(false);
+  const [showGuestLimit, setShowGuestLimit] = useState(false);
 
   useEffect(() => { setView(getPlaylistView()); }, []);
 
@@ -102,7 +109,16 @@ export default function PlaylistsPage() {
             {t("batchShare")}
           </button>
           <button
-            onClick={() => router.push("/playlists/new")}
+            onClick={() => {
+              // Only trustworthy with no search term: a filtered list is not
+              // the full count. When searching, let the server refuse and the
+              // create page surface its message.
+              if (isGuest && !query && myPlaylists.length >= GUEST_PLAYLIST_LIMIT) {
+                setShowGuestLimit(true);
+                return;
+              }
+              router.push("/playlists/new");
+            }}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-hover"
           >
             {t("newPlaylist")}
@@ -179,6 +195,15 @@ export default function PlaylistsPage() {
       )}
       {showBatchShare && (
         <BatchShareModal onClose={() => setShowBatchShare(false)} />
+      )}
+      {showGuestLimit && (
+        <ConfirmDialog
+          title={t("guestPlaylistLimitTitle")}
+          message={t("guestPlaylistLimitMessage")}
+          confirmLabel={t("confirm")}
+          onConfirm={() => setShowGuestLimit(false)}
+          onCancel={() => setShowGuestLimit(false)}
+        />
       )}
     </div>
   );

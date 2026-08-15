@@ -375,6 +375,13 @@ router.get('/:id', playlistAccess, requireView, async (req, res, next) => {
 // PUT /api/playlists/:id — update playlist
 router.put('/:id', playlistAccess, requireOwner, validate(updatePlaylistSchema), async (req, res, next) => {
   try {
+    // A public list is copyable by anyone, so letting a guest publish would
+    // undo the copy restriction in one click. Turning it back off is fine.
+    if (req.user.role === 'GUEST' && req.validated.isPublic === true) {
+      return res.status(403).json({
+        error: { message: 'Guests cannot make a playlist public' },
+      });
+    }
     const playlist = await playlistService.updatePlaylist(req.params.id, req.validated);
     res.json(playlist);
   } catch (err) {
@@ -608,6 +615,7 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
       include: {
         shares: { where: { userId: req.user.id }, select: { id: true }, take: 1 },
         copyPermissions: { where: { userId: req.user.id }, select: { id: true }, take: 1 },
+        user: { select: { role: true } },
       },
     });
     if (!source) {
@@ -618,6 +626,16 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
       || source.shares.length > 0 || source.copyPermissions.length > 0;
     if (!canView) {
       return res.status(404).json({ error: { message: 'Source playlist not found' } });
+    }
+    // Importing every clip out of a list is a copy by another name, so a
+    // guest's list is off limits here too — otherwise the copy rule is trivial
+    // to sidestep.
+    if (source.user?.role === 'GUEST'
+        && source.userId !== req.user.id
+        && req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: { message: 'This playlist belongs to a guest and cannot be imported' },
+      });
     }
 
     // Get clips from source playlist with song info
@@ -726,6 +744,13 @@ router.get('/:id/copy-permissions', playlistAccess, requireOwner, async (req, re
 // POST /api/playlists/:id/copy-permissions
 router.post('/:id/copy-permissions', playlistAccess, requireOwner, validate(shareSchema), async (req, res, next) => {
   try {
+    // Guests may share — that only lets a teammate view and like, and the list
+    // stays theirs — but they may not hand out the right to take a copy.
+    if (req.user.role === 'GUEST') {
+      return res.status(403).json({
+        error: { message: 'Guests cannot grant copy permission' },
+      });
+    }
     await shareService.addCopyPermission(req.params.id, req.validated.userId);
     res.status(201).json({ message: 'Copy permission granted' });
   } catch (err) {

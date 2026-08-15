@@ -231,6 +231,8 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                       ? "bg-purple-500/15 text-purple-400"
                       : user.role === "MEMBER"
                       ? "bg-green-500/15 text-green-400"
+                      : user.role === "GUEST"
+                      ? "bg-sky-500/15 text-sky-400"
                       : "bg-yellow-500/15 text-yellow-400"
                   }`}
                 >
@@ -269,7 +271,10 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                 >
                   {t("viewPlaylists")}
                 </button>
-                {user.role === "PENDING" && (
+                {/* Any non-admin can be moved to any of the three tiers, so an
+                    admin can promote, put someone on the limited tier, or lock
+                    them out — whatever the automatic expiry later decides. */}
+                {user.role !== "ADMIN" && user.role !== "MEMBER" && (
                   <button
                     onClick={() => perform(user.id, () => adminAPI.approveUser(user.id))}
                     disabled={loading[user.id]}
@@ -278,7 +283,16 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                     {t("approve")}
                   </button>
                 )}
-                {user.role === "MEMBER" && (
+                {user.role !== "ADMIN" && user.role !== "GUEST" && (
+                  <button
+                    onClick={() => perform(user.id, () => adminAPI.makeGuest(user.id))}
+                    disabled={loading[user.id]}
+                    className="rounded-md border border-sky-500/30 px-3 py-1 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-500/10 disabled:opacity-50"
+                  >
+                    {t("makeGuest")}
+                  </button>
+                )}
+                {user.role !== "ADMIN" && user.role !== "PENDING" && (
                   <button
                     onClick={() => setRevokeTarget(user)}
                     disabled={loading[user.id]}

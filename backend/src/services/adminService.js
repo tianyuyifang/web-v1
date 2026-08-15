@@ -28,7 +28,7 @@ async function listUsers() {
     select: {
       id: true, username: true, role: true, createdAt: true,
       expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
-      deviceLimit: true, demotedAt: true,
+      deviceLimit: true, demotedAt: true, previousRole: true,
       _count: { select: { playlists: true, sharedPlaylists: true } },
     },
     orderBy: { createdAt: 'desc' },
@@ -54,7 +54,12 @@ async function listPending() {
 }
 
 /**
- * Promotes a PENDING user to MEMBER.
+ * Promotes a user to MEMBER and starts a fresh paid month.
+ *
+ * The 30 days matter: billing is monthly, and once expiry runs automatically
+ * a promotion that left a lapsed date in place would drop the user straight
+ * back to PENDING on the next sweep.
+ *
  * @param {string} id - User UUID
  * @returns {Promise<object>}
  */
@@ -63,18 +68,44 @@ async function approveUser(id) {
   if (!user) throw new NotFoundError('User');
   if (user.role === 'ADMIN') throw new ForbiddenError('Cannot change admin role');
 
-  // Clearing demotedAt matters: an approved user is a member again, so a later
-  // revocation should read as new rather than as the old one still standing.
+  // Clearing demotedAt and previousRole matters: this account is current
+  // again, so a later demotion should read as new rather than as the old one
+  // still standing.
   return prisma.user.update({
     where: { id },
-    data: { role: 'MEMBER', demotedAt: null },
+    data: {
+      role: 'MEMBER',
+      demotedAt: null,
+      previousRole: null,
+      expiresAt: addOneMonth(new Date()),
+    },
     select: { id: true, username: true, role: true },
   });
 }
 
 /**
- * Demotes a MEMBER back to PENDING, stamping when it happened so the admin
- * page can list revoked members apart from people who have never been approved.
+ * Moves a user to GUEST — the limited tier — from either direction: an admin
+ * stepping a member down without locking them out, or letting someone in from
+ * PENDING on a short leash.
+ * @param {string} id - User UUID
+ * @returns {Promise<object>}
+ */
+async function makeGuest(id) {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new NotFoundError('User');
+  if (user.role === 'ADMIN') throw new ForbiddenError('Cannot change admin role');
+
+  return prisma.user.update({
+    where: { id },
+    data: { role: 'GUEST', demotedAt: null, previousRole: null },
+    select: { id: true, username: true, role: true },
+  });
+}
+
+/**
+ * Demotes a GUEST or MEMBER to PENDING, which cannot log in. Records both when
+ * it happened and what they were, since an expired guest and a lapsed member
+ * both land here but need different wording.
  * @param {string} id - User UUID
  * @returns {Promise<object>}
  */
@@ -85,7 +116,12 @@ async function demoteUser(id) {
 
   return prisma.user.update({
     where: { id },
-    data: { role: 'PENDING', demotedAt: new Date() },
+    data: {
+      role: 'PENDING',
+      demotedAt: new Date(),
+      // Already PENDING: keep whatever they were before, not PENDING itself.
+      previousRole: user.role === 'PENDING' ? user.previousRole : user.role,
+    },
     select: { id: true, username: true, role: true },
   });
 }
@@ -277,4 +313,4 @@ async function resetPassword(id) {
   return { id: user.id, username: user.username, tempPassword };
 }
 
-module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword };
+module.exports = { listUsers, listPending, approveUser, makeGuest, demoteUser, deleteUser, getBandwidthStats, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword };

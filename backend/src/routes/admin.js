@@ -35,6 +35,16 @@ router.patch('/users/:id/approve', async (req, res, next) => {
   }
 });
 
+// PATCH /api/admin/users/:id/guest — move to the limited GUEST tier
+router.patch('/users/:id/guest', async (req, res, next) => {
+  try {
+    const user = await adminService.makeGuest(req.params.id);
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/admin/users/:id/demote — revert to PENDING
 router.patch('/users/:id/demote', async (req, res, next) => {
   try {

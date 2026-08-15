@@ -1,6 +1,7 @@
 const prisma = require('../db/client');
 const { NotFoundError, ForbiddenError } = require('../utils/errors');
 const { toPinyin, toPinyinInitials, toPinyinAll } = require('../utils/pinyin');
+const { assertCanOwnAnotherPlaylist } = require('../utils/guestLimits');
 
 const ANNOTATION_DIFFERENT_CLIP = '[B 中的片段不同]';
 const ANNOTATION_MULTIPLE_DIFFERENT_CLIPS = '[B 中存在多个不同片段]';
@@ -270,6 +271,7 @@ async function mergePlaylists(callerId, aId, bId, options) {
       where: { id: bId },
       include: {
         copyPermissions: { where: { userId: callerId }, select: { id: true }, take: 1 },
+        user: { select: { role: true } },
       },
     }),
   ]);
@@ -278,11 +280,18 @@ async function mergePlaylists(callerId, aId, bId, options) {
   if (aPl.userId !== callerId) {
     throw new ForbiddenError('You must own the baseline playlist');
   }
+  // A merge produces a new list of the caller's own, so it counts too.
+  await assertCanOwnAnotherPlaylist(callerId);
 
   if (!bPl) throw new NotFoundError('Playlist');
   const bCanView =
     bPl.userId === callerId || bPl.isPublic || bPl.copyPermissions.length > 0;
   if (!bCanView) throw new NotFoundError('Playlist');
+  // Merging pulls B's clips into a new list, so it moves content the same way
+  // a copy does — a guest's list cannot be the source.
+  if (bPl.user?.role === 'GUEST' && bPl.userId !== callerId) {
+    throw new ForbiddenError('That playlist belongs to a guest and cannot be merged from');
+  }
 
   const [aClips, bClips] = await Promise.all([
     prisma.playlistClip.findMany({

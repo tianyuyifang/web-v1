@@ -12,12 +12,14 @@ async function playlistAccess(req, res, next) {
     const playlistId = req.params.id;
     const userId = req.user.id;
 
-    // Single query: fetch playlist + user's share/copy permissions
+    // Single query: fetch playlist + user's share/copy permissions + the
+    // owner's role, which decides whether the list can be copied at all.
     const playlist = await prisma.playlist.findUnique({
       where: { id: playlistId },
       include: {
         shares: { where: { userId }, select: { id: true }, take: 1 },
         copyPermissions: { where: { userId }, select: { id: true }, take: 1 },
+        user: { select: { role: true } },
       },
     });
 
@@ -39,10 +41,19 @@ async function playlistAccess(req, res, next) {
     // admins can copy any playlist; otherwise need explicit copy permission + view access.
     canCopy = isOwner || playlist.isPublic || isAdmin || (canCopy && canView);
 
-    // Remove shares/copyPermissions from the attached playlist object
-    const { shares, copyPermissions, ...cleanPlaylist } = playlist;
+    // …but nothing a guest owns leaves their hands. Otherwise a guest nearing
+    // the end of their run could hand a list to a fresh account and start over.
+    // The owner and admins are exempt: an owner copying their own list gains
+    // nothing, and admins need it for moderation.
+    const ownerIsGuest = playlist.user?.role === 'GUEST';
+    if (ownerIsGuest && !isOwner && !isAdmin) {
+      canCopy = false;
+    }
+
+    // Remove shares/copyPermissions/user from the attached playlist object
+    const { shares, copyPermissions, user, ...cleanPlaylist } = playlist;
     req.playlist = cleanPlaylist;
-    req.playlistAccess = { isOwner, isShared, canView, canEdit, canCopy };
+    req.playlistAccess = { isOwner, isShared, canView, canEdit, canCopy, ownerIsGuest };
 
     next();
   } catch (err) {

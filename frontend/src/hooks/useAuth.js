@@ -9,6 +9,7 @@ export default function useAuth() {
     user,
     isAuthenticated: !!user,
     isPending: user?.role === "PENDING",
+    isGuest: user?.role === "GUEST",
     isMember: user?.role === "MEMBER",
     isAdmin: user?.role === "ADMIN",
     loading,

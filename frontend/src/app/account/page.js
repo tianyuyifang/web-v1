@@ -254,9 +254,11 @@ export default function AccountPage() {
                     note={t("captureNeedsAddOn")}
                   />
                 </ul>
+                {/* text-sm to match the limits above it, and a wider gap so it
+                    reads as a way out rather than a footnote on the last row. */}
                 <Link
                   href="/pricing"
-                  className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
+                  className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
                 >
                   {t("viewPricing")}
                 </Link>
@@ -271,7 +273,7 @@ export default function AccountPage() {
                 </p>
                 <Link
                   href="/pricing"
-                  className="mt-2 inline-block text-xs font-medium text-primary hover:underline"
+                  className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
                 >
                   {t("viewPricing")}
                 </Link>
@@ -280,9 +282,11 @@ export default function AccountPage() {
 
             {isMember && canCapture && (
               <div className="border-t border-border pt-4">
+                {/* Nothing above it in this branch, so only the size matches;
+                    the section's own pt-4 already provides the gap. */}
                 <Link
                   href="/pricing"
-                  className="text-xs font-medium text-primary hover:underline"
+                  className="text-sm font-medium text-primary hover:underline"
                 >
                   {t("viewPricing")}
                 </Link>

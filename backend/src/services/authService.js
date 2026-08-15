@@ -74,14 +74,25 @@ async function login({ username, password }) {
     return tx.user.update({
       where: { id: user.id },
       data: { activeSessions: list, activeSessionId: sessionId },
-      select: { id: true, username: true, role: true, preferences: true },
+      select: {
+        id: true, username: true, role: true, preferences: true,
+        previousRole: true,
+      },
     });
   });
 
   const token = signToken(updated, sessionId);
   return {
     token,
-    user: { id: updated.id, username: updated.username, role: updated.role, preferences: updated.preferences },
+    user: {
+      id: updated.id,
+      username: updated.username,
+      role: updated.role,
+      preferences: updated.preferences,
+      // A disabled account is told why at the login screen, and that depends
+      // on what it was before.
+      previousRole: updated.previousRole,
+    },
   };
 }
 
@@ -123,7 +134,7 @@ async function getMe(userId) {
     where: { id: userId },
     select: {
       id: true, username: true, role: true, preferences: true,
-      expiresAt: true, monthlyFee: true,
+      expiresAt: true, monthlyFee: true, previousRole: true,
     },
   });
   if (!user) return null;
@@ -134,6 +145,9 @@ async function getMe(userId) {
     preferences: user.preferences,
     expiresAt: user.expiresAt,
     monthlyFee: user.monthlyFee == null ? null : Number(user.monthlyFee),
+    // Lets the disabled-account page say why: an expired guest and a lapsed
+    // member both sit in PENDING but need different wording.
+    previousRole: user.previousRole,
     status: deriveStatus(user.expiresAt),
   };
 }

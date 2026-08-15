@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useAuth from "@/hooks/useAuth";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
-import { authAPI } from "@/lib/api";
+import { authAPI, playlistsAPI } from "@/lib/api";
 import { clearToken } from "@/lib/auth";
+import ContactAdmins from "@/components/account/ContactAdmins";
+
+/** Mirrors GUEST_PLAYLIST_LIMIT on the server. */
+const GUEST_PLAYLIST_LIMIT = 3;
 
 const THEME_OPTIONS = [
   { value: "dark", labelKey: "themeDark", descKey: "themeDarkDesc" },
@@ -18,12 +22,44 @@ const LANG_OPTIONS = [
   { value: "en", labelKey: "langEn" },
 ];
 
+/** One line in the guest permission list: a tick or a cross, plus a note. */
+function PermissionRow({ allowed = false, label, note }) {
+  return (
+    <li className="flex items-center justify-between gap-3 text-sm">
+      <span className="flex items-center gap-2">
+        <span className={allowed ? "text-green-400" : "text-muted"}>
+          {allowed ? "✓" : "✗"}
+        </span>
+        <span className={allowed ? "text-theme" : "text-muted"}>{label}</span>
+      </span>
+      {note && <span className="shrink-0 text-xs text-muted">{note}</span>}
+    </li>
+  );
+}
+
 export default function AccountPage() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, isGuest } = useAuth();
   const { t, lang, setLang } = useLanguage();
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("info"); // info | change | appearance | language | logout
+
+  // How many playlists the guest already owns — the number they care about
+  // most. Only fetched for guests; nobody else has a cap to show.
+  const [ownedCount, setOwnedCount] = useState(null);
+  useEffect(() => {
+    if (!isGuest) return;
+    let alive = true;
+    playlistsAPI
+      .list()
+      .then((res) => {
+        if (!alive) return;
+        const all = res.data?.playlists || [];
+        setOwnedCount(all.filter((p) => p.isOwner).length);
+      })
+      .catch(() => {}); // the card still reads fine without the count
+    return () => { alive = false; };
+  }, [isGuest]);
 
   const daysInfo = useMemo(() => {
     if (!user?.expiresAt) return null;
@@ -117,6 +153,13 @@ export default function AccountPage() {
 
   const expired = user.status === "expired";
 
+  const roleBadge = {
+    GUEST: { label: t("roleGuest"), className: "bg-sky-500/15 text-sky-400" },
+    MEMBER: { label: t("roleMember"), className: "bg-green-500/15 text-green-400" },
+    ADMIN: { label: t("roleAdmin"), className: "bg-purple-500/15 text-purple-400" },
+    PENDING: { label: t("rolePending"), className: "bg-yellow-500/15 text-yellow-400" },
+  }[user.role] || { label: user.role, className: "bg-surface text-muted" };
+
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
       <div className="mb-8">
@@ -152,6 +195,15 @@ export default function AccountPage() {
         {activeTab === "info" && (
           <div className="rounded-xl border border-border bg-surface p-6 space-y-5">
             <div className="flex items-center justify-between">
+              <span className="text-sm text-muted">{t("roleLabel")}</span>
+              <span
+                className={`rounded-full px-3 py-0.5 text-xs font-semibold ${roleBadge.className}`}
+              >
+                {roleBadge.label}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-border pt-4">
               <span className="text-sm text-muted">{t("accountStatus")}</span>
               <span
                 className={`rounded-full px-3 py-0.5 text-xs font-semibold ${
@@ -167,7 +219,10 @@ export default function AccountPage() {
               <span className="text-sm text-theme">
                 {user.expiresAt
                   ? `${new Date(user.expiresAt).toLocaleDateString()}${daysInfo ? ` · ${daysInfo}` : ""}`
-                  : t("noExpiry")}
+                  /* Guests are told "no time limit yet" rather than "never
+                     expires" — a trial period is planned, and promising the
+                     opposite now would read as a broken promise later. */
+                  : isGuest ? t("guestNoExpiry") : t("noExpiry")}
               </span>
             </div>
 
@@ -178,6 +233,42 @@ export default function AccountPage() {
                   ¥{Number(user.monthlyFee).toFixed(2)} {t("perMonth")}
                 </span>
               </div>
+            )}
+
+            {/* Guests get the full picture: what they have, what they do not,
+                and how to lift the limits. */}
+            {isGuest && (
+              <>
+                <div className="border-t border-border pt-4">
+                  <p className="mb-3 text-sm font-semibold text-theme">
+                    {t("yourPermissions")}
+                  </p>
+                  <ul className="space-y-2">
+                    <PermissionRow
+                      allowed
+                      label={t("permCreatePlaylists")}
+                      note={
+                        ownedCount == null
+                          ? null
+                          : t("playlistUsage")
+                              .replace("{used}", ownedCount)
+                              .replace("{max}", GUEST_PLAYLIST_LIMIT)
+                      }
+                    />
+                    <PermissionRow allowed label={t("permShareForLikes")} />
+                    <PermissionRow label={t("permPublicPlaylist")} note={t("memberOnly")} />
+                    <PermissionRow label={t("permAllowCopy")} note={t("memberOnly")} />
+                  </ul>
+                </div>
+
+                <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                  <p className="text-sm font-semibold text-theme">
+                    {t("upgradePromptTitle")}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">{t("upgradePromptBody")}</p>
+                  <ContactAdmins />
+                </div>
+              </>
             )}
 
             {expired && (

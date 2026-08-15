@@ -412,14 +412,11 @@ export default {
   surfaceStyle: "风格",
   style_default: "实色",
   style_glass: "毛玻璃",
-  language: "语言",
   themeDark: "深色",
   themeDarkDesc: "护眼深色调，适合夜间使用",
   themeLight: "浅色",
   themeLightDesc: "明亮清爽，适合日间使用",
   active: "当前",
-  langEn: "English",
-  langZh: "简体中文",
 
   // Feedback
   navUpdates: "日志",

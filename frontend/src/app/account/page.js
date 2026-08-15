@@ -17,11 +17,6 @@ const THEME_OPTIONS = [
   { value: "light", labelKey: "themeLight", descKey: "themeLightDesc" },
 ];
 
-const LANG_OPTIONS = [
-  { value: "zh", labelKey: "langZh" },
-  { value: "en", labelKey: "langEn" },
-];
-
 /** One line in the guest permission list: a tick or a cross, plus a note. */
 function PermissionRow({ allowed = false, label, note }) {
   return (
@@ -39,7 +34,7 @@ function PermissionRow({ allowed = false, label, note }) {
 
 export default function AccountPage() {
   const { user, loading, logout, isGuest } = useAuth();
-  const { t, lang, setLang } = useLanguage();
+  const { t } = useLanguage();
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("info"); // info | change | appearance | language
@@ -172,7 +167,6 @@ export default function AccountPage() {
           { key: "info", label: t("accountInfo") },
           { key: "change", label: t("changeAccount") },
           { key: "appearance", label: t("appearance") },
-          { key: "language", label: t("language") },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -426,28 +420,6 @@ export default function AccountPage() {
                   </button>
                 ))}
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Language */}
-        {activeTab === "language" && (
-          <div className="rounded-xl border border-border bg-surface p-6">
-            <p className="mb-4 text-sm font-semibold text-theme">{t("language")}</p>
-            <div className="flex gap-2">
-              {LANG_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setLang(opt.value)}
-                  className={`flex-1 rounded-lg border px-4 py-3 text-center text-sm font-medium transition-colors ${
-                    lang === opt.value
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:bg-surface-hover text-theme"
-                  }`}
-                >
-                  {t(opt.labelKey)}
-                </button>
-              ))}
             </div>
           </div>
         )}

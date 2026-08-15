@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import useAuth from "@/hooks/useAuth";
 import { useLanguage } from "@/components/layout/LanguageProvider";
@@ -33,7 +34,7 @@ function PermissionRow({ allowed = false, label, note }) {
 }
 
 export default function AccountPage() {
-  const { user, loading, logout, isGuest } = useAuth();
+  const { user, loading, logout, isGuest, isMember, canCapture } = useAuth();
   const { t } = useLanguage();
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const router = useRouter();
@@ -228,40 +229,65 @@ export default function AccountPage() {
               </div>
             )}
 
-            {/* Guests get the full picture: what they have, what they do not,
-                and how to lift the limits. */}
-            {isGuest && (
-              <>
-                <div className="border-t border-border pt-4">
-                  <p className="mb-3 text-sm font-semibold text-theme">
-                    {t("yourPermissions")}
-                  </p>
-                  <ul className="space-y-2">
-                    <PermissionRow
-                      allowed
-                      label={t("permCreatePlaylists")}
-                      note={
-                        ownedCount == null
-                          ? null
-                          : t("playlistUsage")
-                              .replace("{used}", ownedCount)
-                              .replace("{max}", GUEST_PLAYLIST_LIMIT)
-                      }
-                    />
-                    <PermissionRow allowed label={t("permShareForLikes")} />
-                    <PermissionRow label={t("permPublicPlaylist")} note={t("memberOnly")} />
-                    <PermissionRow label={t("permAllowCopy")} note={t("memberOnly")} />
-                  </ul>
-                </div>
+            {/* What this account can do, per tier. Answering "what am I
+                missing, and how do I get it" beats printing the whole
+                comparison table — that lives on /pricing, one link away. */}
+            {(isGuest || isMember) && (
+              <div className="border-t border-border pt-4">
+                <p className="mb-3 text-sm font-semibold text-theme">
+                  {t("yourPermissions")}
+                </p>
+                <ul className="space-y-2">
+                  <PermissionRow
+                    allowed
+                    label={t("permCreatePlaylists")}
+                    note={
+                      isGuest
+                        ? (ownedCount == null
+                            ? null
+                            : t("playlistUsage")
+                                .replace("{used}", ownedCount)
+                                .replace("{max}", GUEST_PLAYLIST_LIMIT))
+                        : t("permUnlimited")
+                    }
+                  />
+                  <PermissionRow allowed label={t("permShareForLikes")} />
+                  <PermissionRow
+                    allowed={!isGuest}
+                    label={t("permPublicPlaylist")}
+                    note={isGuest ? t("memberOnly") : null}
+                  />
+                  <PermissionRow
+                    allowed={!isGuest}
+                    label={t("permAllowCopy")}
+                    note={isGuest ? t("memberOnly") : null}
+                  />
+                  {/* Free for guests, sold separately to members — the one
+                      row where the two tiers differ in kind, not degree. */}
+                  <PermissionRow
+                    allowed={canCapture}
+                    label={t("addOnCapture")}
+                    note={isGuest ? t("captureFreeForGuest")
+                                  : (canCapture ? null : t("captureNeedsAddOn"))}
+                  />
+                </ul>
+                <Link
+                  href="/pricing"
+                  className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
+                >
+                  {t("viewPricing")}
+                </Link>
+              </div>
+            )}
 
-                <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-                  <p className="text-sm font-semibold text-theme">
-                    {t("upgradePromptTitle")}
-                  </p>
-                  <p className="mt-1 text-xs text-muted">{t("upgradePromptBody")}</p>
-                  <ContactAdmins />
-                </div>
-              </>
+            {isGuest && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                <p className="text-sm font-semibold text-theme">
+                  {t("upgradePromptTitle")}
+                </p>
+                <p className="mt-1 text-xs text-muted">{t("upgradePromptBody")}</p>
+                <ContactAdmins />
+              </div>
             )}
 
             {expired && (

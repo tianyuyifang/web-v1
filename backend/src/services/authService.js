@@ -135,6 +135,7 @@ async function getMe(userId) {
     select: {
       id: true, username: true, role: true, preferences: true,
       expiresAt: true, monthlyFee: true, previousRole: true,
+      entitlements: true,
     },
   });
   if (!user) return null;
@@ -148,6 +149,9 @@ async function getMe(userId) {
     // Lets the disabled-account page say why: an expired guest and a lapsed
     // member both sit in PENDING but need different wording.
     previousRole: user.previousRole,
+    // Paid add-ons. Guests hold none of their own but get them all for free,
+    // so the UI asks hasAddOn() rather than reading this list directly.
+    entitlements: user.entitlements || [],
     status: deriveStatus(user.expiresAt),
   };
 }

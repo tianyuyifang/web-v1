@@ -40,7 +40,9 @@ export default function ToolsPage() {
       id: "capture-apk",
       href: "/qni-capture.apk",
       title: t("toolsCaptureApk"),
-      description: t("toolsCaptureApkDescription"),
+      // Downloading is free; running it is the paid part. Said here so the
+      // cost is known before the install, not after.
+      description: `${t("toolsCaptureApkDescription")}（${t("addOnNeedsSetup")}）`,
       // A file download, not a route — Link would try to client-navigate to it.
       download: true,
       meta: apk && (apk.latestName || apk.latest)

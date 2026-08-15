@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { captureAPI, getLikesSSEUrl } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import useAuth from "@/hooks/useAuth";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import useDraggablePosition from "@/hooks/useDraggablePosition";
 
 /**
@@ -84,6 +86,8 @@ function isPerfect(e) {
 
 export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   const { t } = useLanguage();
+  const { canCapture } = useAuth();
+  const [showAddOnNotice, setShowAddOnNotice] = useState(false);
   const [session, setSession] = useState(null);
   const [pairCode, setPairCode] = useState(null);
   const [pairExpiresAt, setPairExpiresAt] = useState(null);
@@ -206,6 +210,13 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   }, [session]);
 
   const start = useCallback(async () => {
+    // Explain the add-on rather than firing a request that will 403. The
+    // button stays live so the feature is discoverable — and so the price
+    // reaches the people who would pay it.
+    if (!canCapture) {
+      setShowAddOnNotice(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -225,7 +236,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     } finally {
       setBusy(false);
     }
-  }, [playlistId, t]);
+  }, [playlistId, t, canCapture]);
 
   // Pick a run back up after a reload.
   //
@@ -451,6 +462,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   // On phones it sits higher, clearing the fixed search bar at the bottom.
   if (!session) {
     return (
+      <>
       <button
         ref={drag.ref}
         {...drag.dragProps}
@@ -481,6 +493,19 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
         </svg>
         {t("captureStart")}
       </button>
+
+      {showAddOnNotice && (
+        <ConfirmDialog
+          title={t("addOnRequiredTitle")}
+          // ConfirmDialog renders plain text, so the contacts go inline here
+          // rather than as the shared component.
+          message={`${t("addOnCaptureBody")}\n\n${t("contactAdmin1")}\n${t("contactAdmin2")}`}
+          confirmLabel={t("confirm")}
+          onConfirm={() => setShowAddOnNotice(false)}
+          onCancel={() => setShowAddOnNotice(false)}
+        />
+      )}
+      </>
     );
   }
 

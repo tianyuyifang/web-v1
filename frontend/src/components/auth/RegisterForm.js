@@ -99,6 +99,14 @@ export default function RegisterForm() {
           <p className="mt-2 text-sm text-muted">
             {t("awaitingApproval")}
           </p>
+          {/* The moment a new user is most curious about what they have —
+              and the one place to say the free run will not last. */}
+          <Link
+            href="/pricing"
+            className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
+          >
+            {t("viewPricing")}
+          </Link>
         </div>
         <p className="text-sm text-muted">
           {t("alreadyApproved")}{" "}

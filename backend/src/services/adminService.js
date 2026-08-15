@@ -28,7 +28,7 @@ async function listUsers() {
     select: {
       id: true, username: true, role: true, createdAt: true,
       expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
-      deviceLimit: true, demotedAt: true, previousRole: true,
+      deviceLimit: true, demotedAt: true, previousRole: true, entitlements: true,
       _count: { select: { playlists: true, sharedPlaylists: true } },
     },
     orderBy: { createdAt: 'desc' },
@@ -254,13 +254,13 @@ async function listUserPlaylists(userId) {
 const BILLING_SELECT = {
   id: true, username: true, role: true,
   expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
-  deviceLimit: true,
+  deviceLimit: true, entitlements: true,
 };
 
 /**
  * Update any subset of a user's billing fields.
  * @param {string} id
- * @param {{ expiresAt?: Date|null, monthlyFee?: string|number|null, paymentStatus?: string|null, billingNotes?: string|null }} data
+ * @param {{ expiresAt?: Date|null, monthlyFee?: string|number|null, paymentStatus?: string|null, billingNotes?: string|null, entitlements?: string[] }} data
  */
 async function updateBilling(id, data) {
   const user = await prisma.user.findUnique({ where: { id } });
@@ -272,6 +272,7 @@ async function updateBilling(id, data) {
   if ('paymentStatus' in data) patch.paymentStatus = data.paymentStatus;
   if ('billingNotes' in data) patch.billingNotes = data.billingNotes;
   if ('deviceLimit' in data) patch.deviceLimit = data.deviceLimit;
+  if ('entitlements' in data) patch.entitlements = data.entitlements;
 
   return prisma.user.update({ where: { id }, data: patch, select: BILLING_SELECT });
 }

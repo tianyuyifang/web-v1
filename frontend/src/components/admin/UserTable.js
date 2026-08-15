@@ -31,6 +31,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
       paymentStatus: user.paymentStatus || "",
       billingNotes: user.billingNotes || "",
       deviceLimit: user.deviceLimit != null ? String(user.deviceLimit) : "",
+      entitlements: user.entitlements || [],
     };
   }
 
@@ -46,6 +47,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
       paymentStatus: d.paymentStatus || null,
       billingNotes: d.billingNotes || null,
       deviceLimit: d.deviceLimit === "" ? null : parseInt(d.deviceLimit, 10),
+      entitlements: d.entitlements,
     }));
     setBillingDraft((prev) => { const n = { ...prev }; delete n[user.id]; return n; });
   }
@@ -351,6 +353,26 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         onChange={(e) => setDraft(user.id, { billingNotes: e.target.value })}
                         className="mt-0.5 w-full rounded border border-border bg-background px-2 py-1 text-sm text-theme"
                       />
+                    </label>
+                    {/* Paid add-ons. Guests and admins get them regardless, so
+                        the switch is only meaningful for members — shown to
+                        everyone anyway, since it is what gets granted the
+                        moment someone upgrades. */}
+                    <label className="flex items-center gap-2 text-xs text-muted">
+                      <input
+                        type="checkbox"
+                        checked={draftFor(user).entitlements.includes("capture")}
+                        onChange={(e) => {
+                          const cur = draftFor(user).entitlements;
+                          setDraft(user.id, {
+                            entitlements: e.target.checked
+                              ? [...new Set([...cur, "capture"])]
+                              : cur.filter((x) => x !== "capture"),
+                          });
+                        }}
+                        className="h-3.5 w-3.5 rounded border-border accent-primary"
+                      />
+                      {t("addOnsLabel")}：{t("addOnCapture")}
                     </label>
                     <button
                       onClick={() => saveBilling(user)}

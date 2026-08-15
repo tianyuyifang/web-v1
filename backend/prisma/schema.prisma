@@ -43,6 +43,10 @@ model User {
   // and a member who stopped paying both end up PENDING but need different
   // wording, and the role alone cannot tell them apart.
   previousRole    Role?      @map("previous_role")
+  // Paid add-ons this user holds, e.g. ["capture"]. A list rather than a
+  // column per feature: the next add-on is a new string, not a migration.
+  // Guests get every add-on free, so this only ever gates members.
+  entitlements    String[]   @default([])
   monthlyFee      Decimal?   @map("monthly_fee") @db.Decimal(10, 2)
   paymentStatus   PaymentStatus? @map("payment_status")
   billingNotes    String?    @map("billing_notes")

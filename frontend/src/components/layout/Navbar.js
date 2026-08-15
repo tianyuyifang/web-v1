@@ -66,6 +66,10 @@ export default function Navbar() {
             <div className="hidden items-center gap-1 md:flex">
               {navLink("/playlists", t("navPlaylists"))}
               {navLink("/tools", t("navTools"))}
+              {/* Pricing sits in the nav rather than under Help: it is
+                  something to put in front of people, not something they go
+                  looking for once they have a problem. */}
+              {navLink("/pricing", t("navPricing"))}
               {navLink("/updates", t("navUpdates"))}
               {navLink("/help", t("navHelp"))}
               {isAdmin && navLink("/admin", t("navAdmin"))}
@@ -93,6 +97,7 @@ export default function Navbar() {
           <div className="flex flex-col gap-1">
             {navLink("/playlists", t("navPlaylists"))}
             {navLink("/tools", t("navTools"))}
+            {navLink("/pricing", t("navPricing"))}
             {navLink("/updates", t("navUpdates"))}
             {navLink("/help", t("navHelp"))}
             {isAdmin && navLink("/admin", t("navAdmin"))}

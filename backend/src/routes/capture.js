@@ -1,8 +1,36 @@
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
+const prisma = require('../db/client');
 const captureService = require('../services/captureService');
 const { authMiddleware, requireApproved, requireActiveSession } = require('../middleware/auth');
 const captureAuth = require('../middleware/captureAuth');
+const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
+
+/**
+ * Auto-tagging is sold separately from membership. Entitlements are not in the
+ * JWT — they change while a session is live — so read them here. Only the
+ * route that starts a run needs this; the rest act on a session that already
+ * passed through it.
+ */
+async function requireCaptureAddOn(req, res, next) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { role: true, entitlements: true },
+    });
+    if (!hasAddOn(user, ADD_ONS.CAPTURE)) {
+      return res.status(403).json({
+        error: {
+          code: 'ADD_ON_REQUIRED',
+          message: 'Auto-tagging is a paid add-on for members',
+        },
+      });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
 
 // --- unauthenticated: pairing ---
 
@@ -100,7 +128,7 @@ router.post('/heartbeat', captureAuth, async (req, res, next) => {
 const web = [authMiddleware, requireApproved, requireActiveSession];
 
 // POST /api/capture/sessions — start a run; token is shown once
-router.post('/sessions', ...web, async (req, res, next) => {
+router.post('/sessions', ...web, requireCaptureAddOn, async (req, res, next) => {
   try {
     const { playlistId, label, ttlMinutes } = req.body || {};
     const { session, token } = await captureService.startSession({

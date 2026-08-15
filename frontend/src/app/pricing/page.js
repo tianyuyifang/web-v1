@@ -115,10 +115,10 @@ export default function PricingPage() {
       </div>
 
       <div className="mt-6 rounded-xl border border-primary/20 bg-primary/5 px-5 py-4">
+        {/* No separate heading: the line itself says what this box is for. */}
         <p className="text-sm font-semibold text-theme">
-          {t("pricingContactTitle")}
+          {t("pricingContactBody")}
         </p>
-        <p className="mt-1 text-xs text-muted">{t("pricingContactBody")}</p>
         <ContactAdmins />
       </div>
     </div>

@@ -209,7 +209,6 @@ export default {
   benefitMakePublic: "歌单设为公开",
   benefitCapture: "自动打标",
   pricingPriceRow: "价格",
-  pricingContactTitle: "如何开通",
   pricingContactBody: "开通会员或升级，请联系管理员：",
   viewPricing: "查看完整权益对比 →",
 

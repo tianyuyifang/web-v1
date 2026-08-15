@@ -210,7 +210,7 @@ export default {
   pricingPriceRow: "价格",
   pricingContactBody: "开通会员或升级，请联系管理员：",
   // 账号页的入口。注册成功页用 viewPricingNew —— 刚注册的人没有可续的费。
-  viewPricing: "套餐与续费 →",
+  viewPricing: "套餐与续费",
   viewPricingNew: "查看会员权益 →",
 
   // 加订版

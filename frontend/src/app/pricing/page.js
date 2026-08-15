@@ -53,7 +53,17 @@ export default function PricingPage() {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <table className="w-full text-sm">
+        {/* table-fixed + colgroup: left to itself the table sizes columns by
+            content, and 游客 being one character shorter than 会员版 made its
+            column 58px narrower. The three tiers are being compared, so they
+            get identical widths. */}
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col />
+            <col className="w-[22%]" />
+            <col className="w-[22%]" />
+            <col className="w-[22%]" />
+          </colgroup>
           <thead>
             <tr className="border-b border-border text-left">
               <th className="px-4 py-3 font-medium text-muted">

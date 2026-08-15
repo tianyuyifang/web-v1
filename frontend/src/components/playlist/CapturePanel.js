@@ -499,7 +499,9 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
           title={t("addOnRequiredTitle")}
           // ConfirmDialog renders plain text, so the contacts go inline here
           // rather than as the shared component.
-          message={`${t("addOnCaptureBody")}\n\n${t("contactAdmin1")}\n${t("contactAdmin2")}`}
+          message={`${t("addOnCaptureBody")}\n\n${t("contactWechatLabel")}：`
+                   + `${t("contactWechat1")}　${t("contactWechat2")}\n`
+                   + `${t("contactQni")}`}
           confirmLabel={t("confirm")}
           onConfirm={() => setShowAddOnNotice(false)}
           onCancel={() => setShowAddOnNotice(false)}

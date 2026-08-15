@@ -211,7 +211,7 @@ export default {
   benefitCapture: "自动打标",
   pricingPriceRow: "价格",
   pricingContactTitle: "如何开通",
-  pricingContactBody: "本站暂未接入在线支付，开通会员或加订版请联系管理员：",
+  pricingContactBody: "开通会员或加订版，请联系管理员：",
   viewPricing: "查看完整权益对比 →",
 
   // 加订版
@@ -591,8 +591,12 @@ export default {
   memberOnly: "会员专享",
   upgradePromptTitle: "升级成会员",
   upgradePromptBody: "解锁全部功能，歌单数量不限。请联系管理员开通：",
-  contactAdmin1: "管理员 A：<待填写>",
-  contactAdmin2: "管理员 B：<待填写>",
+  // 联系方式。改这里即可，三处引用（定价页、账号页升级引导、加订功能提示）
+  // 都走同一个 ContactAdmins 组件。
+  contactWechatLabel: "微信",
+  contactWechat1: "YY：xxxx",
+  contactWechat2: "CC：xxxx",
+  contactQni: "Qni：搜索家族「Q你一下」",
   playlistUsage: "{used} / {max}",
 
   // 停用页

@@ -39,14 +39,14 @@ function useRows(t) {
 function Cell({ value }) {
   // The tick carries the whole comparison, so it gets the one colour on the
   // page: green-600 for contrast on white, lightened under the dark palette
-  // where a deep green goes muddy. The dash stays plain — it is the absence
-  // of something and should read that way — but at full text weight rather
-  // than muted, which had it fading into the row.
+  // where a deep green goes muddy. The dash stays plain and unbolded — it is
+  // the absence of something and should read that way — lifted off text-muted
+  // only so it does not fade out of the row entirely.
   if (value === true) {
     return <span className="text-base font-bold text-green-600 dark:text-green-400">✓</span>;
   }
   if (value === false) {
-    return <span className="text-base font-semibold text-theme/70">—</span>;
+    return <span className="text-base text-theme/70">—</span>;
   }
   return <span className="text-sm text-theme">{value}</span>;
 }

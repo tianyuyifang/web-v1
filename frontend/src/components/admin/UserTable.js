@@ -3,6 +3,7 @@
 import { useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { adminAPI } from "@/lib/api";
+import { ALL_ADD_ONS } from "@/lib/addOns";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
@@ -354,25 +355,22 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         className="mt-0.5 w-full rounded border border-border bg-background px-2 py-1 text-sm text-theme"
                       />
                     </label>
-                    {/* Paid add-ons. Guests and admins get them regardless, so
-                        the switch is only meaningful for members — shown to
-                        everyone anyway, since it is what gets granted the
-                        moment someone upgrades. */}
+                    {/* One switch for the whole 加订版 tier rather than a box
+                        per feature: it is sold as a bundle, so granting part
+                        of it would not match anything the user can buy. A new
+                        add-on joins ALL_ADD_ONS and needs no change here. */}
                     <label className="flex items-center gap-2 text-xs text-muted">
                       <input
                         type="checkbox"
-                        checked={draftFor(user).entitlements.includes("capture")}
-                        onChange={(e) => {
-                          const cur = draftFor(user).entitlements;
+                        checked={draftFor(user).entitlements.length > 0}
+                        onChange={(e) =>
                           setDraft(user.id, {
-                            entitlements: e.target.checked
-                              ? [...new Set([...cur, "capture"])]
-                              : cur.filter((x) => x !== "capture"),
-                          });
-                        }}
+                            entitlements: e.target.checked ? [...ALL_ADD_ONS] : [],
+                          })
+                        }
                         className="h-3.5 w-3.5 rounded border-border accent-primary"
                       />
-                      {t("addOnsLabel")}：{t("addOnCapture")}
+                      {t("addOnsLabel")}
                     </label>
                     <button
                       onClick={() => saveBilling(user)}

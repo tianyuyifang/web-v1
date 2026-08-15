@@ -13,12 +13,14 @@ export default function useAuth() {
     isMember: user?.role === "MEMBER",
     isAdmin: user?.role === "ADMIN",
     entitlements: user?.entitlements || [],
-    // Mirrors hasAddOn() on the server: admins and guests get every add-on
-    // without holding it, so never test the list on its own.
+    // Mirrors hasAddOn() on the server: admins hold every add-on without it
+    // being recorded, so never test the list on its own.
     canCapture:
       user?.role === "ADMIN" ||
-      user?.role === "GUEST" ||
       (user?.entitlements || []).includes("capture"),
+    // Holding any add-on means holding 加订版 — they are sold as one bundle.
+    hasAddOnTier:
+      user?.role === "ADMIN" || (user?.entitlements || []).length > 0,
     loading,
     login,
     logout,

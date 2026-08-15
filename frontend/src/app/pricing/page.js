@@ -4,29 +4,33 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
 import ContactAdmins from "@/components/account/ContactAdmins";
 
 /**
- * What each tier includes, in the order the table renders. `guest` and
- * `member` are either true (a tick), false (a dash), or a string shown as-is
- * when the answer is more than yes or no.
+ * What each tier includes, in the order the table renders. Each cell is
+ * either true (a tick), false (a dash), or a string shown as-is when the
+ * answer is more than yes or no.
+ *
+ * A new paid feature is one row with `plus: true` — the tier bundles
+ * everything, so nothing about the prices below has to change.
  */
 function useRows(t) {
   return [
-    { label: t("benefitCreatePlaylist"), guest: true, member: true },
-    { label: t("benefitSpeedPitch"), guest: true, member: true },
-    { label: t("benefitTagsNotes"), guest: true, member: true },
-    { label: t("benefitCompare"), guest: true, member: true },
-    { label: t("benefitMerge"), guest: true, member: true },
+    { label: t("benefitCreatePlaylist"), guest: true, member: true, plus: true },
+    { label: t("benefitSpeedPitch"), guest: true, member: true, plus: true },
+    { label: t("benefitTagsNotes"), guest: true, member: true, plus: true },
+    { label: t("benefitCompare"), guest: true, member: true, plus: true },
+    { label: t("benefitMerge"), guest: true, member: true, plus: true },
     {
       label: t("benefitPlaylistCount"),
       guest: t("benefitPlaylistCountGuest"),
       member: t("benefitPlaylistCountMember"),
+      plus: t("benefitPlaylistCountMember"),
     },
-    { label: t("benefitGrantShare"), guest: true, member: true },
-    { label: t("benefitGrantCopy"), guest: false, member: true },
-    { label: t("benefitMakePublic"), guest: false, member: true },
+    { label: t("benefitGrantShare"), guest: true, member: true, plus: true },
+    { label: t("benefitGrantCopy"), guest: false, member: true, plus: true },
+    { label: t("benefitMakePublic"), guest: false, member: true, plus: true },
+    // Add-on features: only the third column ticks. Add the next one here.
     {
       label: t("benefitCapture"),
-      guest: t("benefitCaptureGuest"),
-      member: t("benefitCaptureMember"),
+      guest: false, member: false, plus: true,
       highlight: true,
     },
   ];
@@ -62,6 +66,9 @@ export default function PricingPage() {
               <th className="px-4 py-3 text-center font-medium text-green-400">
                 {t("pricingMember")}
               </th>
+              <th className="px-4 py-3 text-center font-medium text-primary">
+                {t("pricingPlus")}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -79,6 +86,9 @@ export default function PricingPage() {
                 <td className="px-4 py-3 text-center">
                   <Cell value={r.member} />
                 </td>
+                <td className="px-4 py-3 text-center">
+                  <Cell value={r.plus} />
+                </td>
               </tr>
             ))}
             {/* Price sits inside the same table so the columns line up with
@@ -92,6 +102,9 @@ export default function PricingPage() {
               </td>
               <td className="px-4 py-3 text-center font-semibold text-green-400">
                 25 {t("pricingPerMonth")}
+              </td>
+              <td className="px-4 py-3 text-center font-semibold text-primary">
+                35 {t("pricingPerMonth")}
               </td>
             </tr>
           </tbody>

@@ -262,13 +262,14 @@ export default function AccountPage() {
                     label={t("permAllowCopy")}
                     note={isGuest ? t("memberOnly") : null}
                   />
-                  {/* Free for guests, sold separately to members — the one
-                      row where the two tiers differ in kind, not degree. */}
+                  {/* Belongs to 加订版, the tier above a membership. Shown to
+                      everyone so the feature is discoverable by the people
+                      who would pay for it. */}
                   <PermissionRow
                     allowed={canCapture}
                     label={t("addOnCapture")}
-                    note={isGuest ? t("captureFreeForGuest")
-                                  : (canCapture ? null : t("captureNeedsAddOn"))}
+                    note={canCapture ? t("addOnTierGranted")
+                                     : t("captureNeedsAddOn")}
                   />
                 </ul>
                 <Link

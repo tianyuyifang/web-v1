@@ -588,8 +588,8 @@ export default {
   permAllowCopy: "允许他人复制你的歌单",
   permUnlimitedPlaylists: "歌单数量不限",
   memberOnly: "会员专享",
-  upgradePromptTitle: "升级成会员",
-  upgradePromptBody: "解锁全部功能，歌单数量不限。请联系管理员开通：",
+  upgradePromptTitle: "升级权益",
+  upgradePromptBody: "请联系管理员：",
   // 联系方式。改这里即可，三处引用（定价页、账号页升级引导、加订功能提示）
   // 都走同一个 ContactAdmins 组件。
   contactWechatLabel: "微信",

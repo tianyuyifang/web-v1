@@ -37,7 +37,7 @@ function useRows(t) {
 }
 
 function Cell({ value }) {
-  if (value === true) return <span className="text-green-400">✓</span>;
+  if (value === true) return <span className="text-theme">✓</span>;
   if (value === false) return <span className="text-muted">—</span>;
   return <span className="text-sm text-theme">{value}</span>;
 }
@@ -59,13 +59,17 @@ export default function PricingPage() {
               <th className="px-4 py-3 font-medium text-muted">
                 {t("pricingBenefit")}
               </th>
-              <th className="px-4 py-3 text-center font-medium text-sky-400">
+              {/* One colour across the table: three tinted columns read as a
+                  ranking of their own, competing with the ticks that carry
+                  the actual comparison. text-theme, not a literal black, so
+                  the dark palette still gets legible text. */}
+              <th className="px-4 py-3 text-center font-medium text-theme">
                 {t("pricingGuest")}
               </th>
-              <th className="px-4 py-3 text-center font-medium text-green-400">
+              <th className="px-4 py-3 text-center font-medium text-theme">
                 {t("pricingMember")}
               </th>
-              <th className="px-4 py-3 text-center font-medium text-primary">
+              <th className="px-4 py-3 text-center font-medium text-theme">
                 {t("pricingPlus")}
               </th>
             </tr>
@@ -96,13 +100,13 @@ export default function PricingPage() {
               <td className="px-4 py-3 font-semibold text-theme">
                 {t("pricingPriceRow")}
               </td>
-              <td className="px-4 py-3 text-center font-semibold text-sky-400">
+              <td className="px-4 py-3 text-center font-semibold text-theme">
                 {t("pricingFree")}
               </td>
-              <td className="px-4 py-3 text-center font-semibold text-green-400">
+              <td className="px-4 py-3 text-center font-semibold text-theme">
                 25 {t("pricingPerMonth")}
               </td>
-              <td className="px-4 py-3 text-center font-semibold text-primary">
+              <td className="px-4 py-3 text-center font-semibold text-theme">
                 35 {t("pricingPerMonth")}
               </td>
             </tr>

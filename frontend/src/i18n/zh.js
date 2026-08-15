@@ -202,7 +202,7 @@ export default {
   benefitCompare: "歌单对比",
   benefitMerge: "合并工具",
   benefitPlaylistCount: "歌单数量",
-  benefitPlaylistCountGuest: "≤ 3 个",
+  benefitPlaylistCountGuest: "≤ 3",
   benefitPlaylistCountMember: "无限制",
   benefitGrantShare: "授予分享权限",
   benefitGrantCopy: "授予复制权限",
@@ -593,8 +593,8 @@ export default {
   // 联系方式。改这里即可，三处引用（定价页、账号页升级引导、加订功能提示）
   // 都走同一个 ContactAdmins 组件。
   contactWechatLabel: "微信",
-  contactWechat1: "YY：xxxx",
-  contactWechat2: "CC：xxxx",
+  contactWechat1: "YY：wyy693087070",
+  contactWechat2: "CC：yinyuemeirendong",
   contactQni: "Qni：搜索家族「Q你一下」",
   playlistUsage: "{used} / {max}",
 

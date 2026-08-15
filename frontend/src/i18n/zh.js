@@ -190,7 +190,6 @@ export default {
   // 定价与权益
   navPricing: "定价",
   pricingTitle: "会员与定价",
-  pricingSubtitle: "游客免费使用，随时可升级。",
   pricingBenefit: "权益",
   pricingGuest: "游客",
   pricingMember: "会员版",

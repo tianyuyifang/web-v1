@@ -50,7 +50,6 @@ export default function PricingPage() {
     <div className="mx-auto max-w-2xl px-4 py-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-theme">{t("pricingTitle")}</h1>
-        <p className="mt-1 text-sm text-muted">{t("pricingSubtitle")}</p>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-surface">

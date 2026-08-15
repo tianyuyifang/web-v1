@@ -187,8 +187,7 @@ export default {
   guestPlaylistLimitMessage: "游客最多可拥有 3 个歌单。你可以删除一个不用的歌单再新建，或升级成会员后不受数量限制。",
   guestBadge: "游客",
 
-  // 定价与权益
-  navPricing: "定价",
+  // 定价与权益。/pricing 不再挂在导航栏上，只从账号页和注册成功页进入。
   pricingTitle: "会员与定价",
   pricingBenefit: "权益",
   pricingGuest: "游客",
@@ -210,7 +209,9 @@ export default {
   benefitCapture: "自动打标",
   pricingPriceRow: "价格",
   pricingContactBody: "开通会员或升级，请联系管理员：",
-  viewPricing: "查看完整权益对比 →",
+  // 账号页的入口。注册成功页用 viewPricingNew —— 刚注册的人没有可续的费。
+  viewPricing: "套餐与续费 →",
+  viewPricingNew: "查看会员权益 →",
 
   // 加订版
   addOnRequiredTitle: "此功能属于加订版",

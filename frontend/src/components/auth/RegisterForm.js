@@ -105,7 +105,7 @@ export default function RegisterForm() {
             href="/pricing"
             className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
           >
-            {t("viewPricing")}
+            {t("viewPricingNew")}
           </Link>
         </div>
         <p className="text-sm text-muted">

@@ -66,10 +66,10 @@ export default function Navbar() {
             <div className="hidden items-center gap-1 md:flex">
               {navLink("/playlists", t("navPlaylists"))}
               {navLink("/tools", t("navTools"))}
-              {/* Pricing sits in the nav rather than under Help: it is
-                  something to put in front of people, not something they go
-                  looking for once they have a problem. */}
-              {navLink("/pricing", t("navPricing"))}
+              {/* No /pricing here on purpose — it is reached from the account
+                  page (套餐与续费) and the register-success screen, so it is
+                  something you find when you go looking at your own account
+                  rather than a permanent ad in the nav. */}
               {navLink("/updates", t("navUpdates"))}
               {navLink("/help", t("navHelp"))}
               {isAdmin && navLink("/admin", t("navAdmin"))}
@@ -97,7 +97,6 @@ export default function Navbar() {
           <div className="flex flex-col gap-1">
             {navLink("/playlists", t("navPlaylists"))}
             {navLink("/tools", t("navTools"))}
-            {navLink("/pricing", t("navPricing"))}
             {navLink("/updates", t("navUpdates"))}
             {navLink("/help", t("navHelp"))}
             {isAdmin && navLink("/admin", t("navAdmin"))}

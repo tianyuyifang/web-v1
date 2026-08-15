@@ -42,7 +42,7 @@ export default function AccountPage() {
   const { t, lang, setLang } = useLanguage();
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("info"); // info | change | appearance | language | logout
+  const [activeTab, setActiveTab] = useState("info"); // info | change | appearance | language
 
   // How many playlists the guest already owns — the number they care about
   // most. Only fetched for guests; nobody else has a cap to show.
@@ -173,7 +173,6 @@ export default function AccountPage() {
           { key: "change", label: t("changeAccount") },
           { key: "appearance", label: t("appearance") },
           { key: "language", label: t("language") },
-          { key: "logout", label: t("logout") },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -276,6 +275,17 @@ export default function AccountPage() {
                 {t("renewalNotice")}
               </div>
             )}
+
+            {/* Signing out sits at the foot of the account details rather than
+                behind a tab of its own — a tab that held one button. */}
+            <div className="border-t border-border pt-4">
+              <button
+                onClick={handleLogout}
+                className="w-full rounded-lg border border-red-500/30 px-4 py-2.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
+              >
+                {t("logout")}
+              </button>
+            </div>
           </div>
         )}
 
@@ -442,17 +452,6 @@ export default function AccountPage() {
           </div>
         )}
 
-        {/* Logout */}
-        {activeTab === "logout" && (
-          <div className="rounded-xl border border-border bg-surface p-6">
-            <button
-              onClick={handleLogout}
-              className="w-full rounded-lg border border-red-500/30 px-4 py-2.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
-            >
-              {t("logout")}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

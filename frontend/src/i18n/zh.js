@@ -160,6 +160,10 @@ export default {
   unlikeAllTitle: "取消全部喜欢",
   unlikeAllConfirm: "确定要取消该列表中所有片段的喜欢吗？",
   batch: "批量",
+  // 批量控件的标签。t() 找不到 key 时返回 key 本身，所以
+  // `t("speed") || "Speed"` 里的兜底永远轮不到 —— 这两条必须存在。
+  speed: "变速",
+  pitch: "变调",
   shuffleSelected: "随机打乱",
   shuffleConfirmTitle: "随机打乱选中片段",
   shuffleConfirmBody: "将随机打乱选中的 {count} 个片段的顺序，未选中的片段位置不变。",

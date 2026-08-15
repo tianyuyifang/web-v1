@@ -229,52 +229,60 @@ export default function AccountPage() {
               </div>
             )}
 
-            {/* What this account can do, per tier. Answering "what am I
-                missing, and how do I get it" beats printing the whole
-                comparison table — that lives on /pricing, one link away. */}
-            {(isGuest || isMember) && (
+            {/* Only what is withheld. A list of everything a member can do
+                reads as "you can do everything", which is not information —
+                and the side-by-side comparison already lives on /pricing. */}
+            {isGuest && (
               <div className="border-t border-border pt-4">
                 <p className="mb-3 text-sm font-semibold text-theme">
-                  {t("yourPermissions")}
+                  {t("yourLimits")}
                 </p>
                 <ul className="space-y-2">
                   <PermissionRow
                     allowed
-                    label={t("permCreatePlaylists")}
+                    label={t("permOwnPlaylistCount")}
                     note={
-                      isGuest
-                        ? (ownedCount == null
-                            ? null
-                            : t("playlistUsage")
-                                .replace("{used}", ownedCount)
-                                .replace("{max}", GUEST_PLAYLIST_LIMIT))
-                        : t("permUnlimited")
+                      ownedCount == null
+                        ? null
+                        : t("playlistUsage")
+                            .replace("{used}", ownedCount)
+                            .replace("{max}", GUEST_PLAYLIST_LIMIT)
                     }
                   />
-                  <PermissionRow allowed label={t("permShareForLikes")} />
                   <PermissionRow
-                    allowed={!isGuest}
-                    label={t("permPublicPlaylist")}
-                    note={isGuest ? t("memberOnly") : null}
-                  />
-                  <PermissionRow
-                    allowed={!isGuest}
-                    label={t("permAllowCopy")}
-                    note={isGuest ? t("memberOnly") : null}
-                  />
-                  {/* Belongs to 加订版, the tier above a membership. Shown to
-                      everyone so the feature is discoverable by the people
-                      who would pay for it. */}
-                  <PermissionRow
-                    allowed={canCapture}
                     label={t("addOnCapture")}
-                    note={canCapture ? t("addOnTierGranted")
-                                     : t("captureNeedsAddOn")}
+                    note={t("captureNeedsAddOn")}
                   />
                 </ul>
                 <Link
                   href="/pricing"
                   className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
+                >
+                  {t("viewPricing")}
+                </Link>
+              </div>
+            )}
+
+            {/* Members see one line, and only while something is unbought. */}
+            {isMember && !canCapture && (
+              <div className="border-t border-border pt-4">
+                <p className="text-sm text-muted">
+                  {t("addOnCapture")} · {t("captureNeedsAddOn")}
+                </p>
+                <Link
+                  href="/pricing"
+                  className="mt-2 inline-block text-xs font-medium text-primary hover:underline"
+                >
+                  {t("viewPricing")}
+                </Link>
+              </div>
+            )}
+
+            {isMember && canCapture && (
+              <div className="border-t border-border pt-4">
+                <Link
+                  href="/pricing"
+                  className="text-xs font-medium text-primary hover:underline"
                 >
                   {t("viewPricing")}
                 </Link>

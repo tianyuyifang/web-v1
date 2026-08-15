@@ -218,9 +218,7 @@ export default {
   addOnNeedsSetup: "加订版功能",
   addOnsLabel: "加订版",
   addOnCapture: "自动打标",
-  addOnTierGranted: "已开通",
   captureNeedsAddOn: "加订版 35 元 / 月",
-  permUnlimited: "无限制",
   copyPlaylistTitle: "复制此歌单",
   copyPlaylistMessage: "将创建一份副本，包含当前的所有片段和顺序。原歌单不受影响，复制完成后会跳转到新歌单。",
 
@@ -580,13 +578,10 @@ export default {
   roleAdmin: "管理员",
   rolePending: "已停用",
   guestNoExpiry: "暂无期限",
-  yourPermissions: "你的权限",
-  permCreatePlaylists: "创建歌单",
-  permShareForLikes: "分享给队友帮忙点赞、自动打标",
-  permPublicPlaylist: "公开歌单",
-  permAllowCopy: "允许他人复制你的歌单",
-  permUnlimitedPlaylists: "歌单数量不限",
-  memberOnly: "会员专享",
+  // 游客只看「缺什么」。列出他已有的权限等于告诉他「你什么都能做」，
+  // 那不构成信息；完整对比在 /pricing。
+  yourLimits: "权益限制",
+  permOwnPlaylistCount: "自建歌单数量",
   upgradePromptTitle: "升级权益",
   upgradePromptBody: "请联系管理员：",
   // 联系方式。改这里即可，三处引用（定价页、账号页升级引导、加订功能提示）

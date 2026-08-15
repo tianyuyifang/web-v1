@@ -59,7 +59,7 @@ export default function ConfirmDialog({ title, message, confirmLabel, cancelLabe
             onClick={onCancel}
             className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-theme transition-colors hover:bg-surface-hover"
           >
-            {cancelLabel || t("cancel") || "Cancel"}
+            {cancelLabel || t("cancel")}
           </button>
           <button
             onClick={() => input ? onConfirm(inputValue.trim()) : onConfirm()}
@@ -70,7 +70,7 @@ export default function ConfirmDialog({ title, message, confirmLabel, cancelLabe
                 : "bg-primary hover:bg-primary-hover"
             }`}
           >
-            {confirmLabel || t("confirm") || "Confirm"}
+            {confirmLabel || t("confirm")}
           </button>
         </div>
       </div>

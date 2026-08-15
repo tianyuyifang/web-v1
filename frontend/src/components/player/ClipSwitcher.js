@@ -147,9 +147,9 @@ export default function ClipSwitcher({ songId, currentClipId, onSwap, onNewClip 
       )}
       {deleteConfirmClipId && (
         <ConfirmDialog
-          title={t("deleteClipTitle") || "Delete Clip"}
-          message={t("deleteClipConfirm") || "Permanently delete this clip from the database?"}
-          confirmLabel={t("delete") || "Delete"}
+          title={t("deleteClipTitle")}
+          message={t("deleteClipConfirm")}
+          confirmLabel={t("delete")}
           cancelLabel={t("cancel")}
           danger
           onConfirm={() => handleDeleteClip(deleteConfirmClipId)}

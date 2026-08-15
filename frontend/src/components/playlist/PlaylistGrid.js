@@ -166,10 +166,10 @@ export default function PlaylistGrid({
 
   const batchSummary = useMemo(() => {
     const parts = [];
-    if (batchDirty.has("speed")) parts.push(`${t("speed") || "Speed"}: ${batchSpeed}x`);
-    if (batchDirty.has("pitch")) parts.push(`${t("pitch") || "Pitch"}: ${batchPitch > 0 ? "+" : ""}${batchPitch}`);
-    if (batchDirty.has("colorTag")) parts.push(`${t("clear") || "Color"}: ${batchColorTag || "—"}`);
-    if (batchDirty.has("comment")) parts.push(`${t("addComment") || "Comment"}: ${batchComment || "—"}`);
+    if (batchDirty.has("speed")) parts.push(`${t("speed")}: ${batchSpeed}x`);
+    if (batchDirty.has("pitch")) parts.push(`${t("pitch")}: ${batchPitch > 0 ? "+" : ""}${batchPitch}`);
+    if (batchDirty.has("colorTag")) parts.push(`${t("clear")}: ${batchColorTag || "—"}`);
+    if (batchDirty.has("comment")) parts.push(`${t("addComment")}: ${batchComment || "—"}`);
     return parts.join("\n");
   }, [batchDirty, batchSpeed, batchPitch, batchColorTag, batchComment, t]);
 
@@ -355,11 +355,11 @@ export default function PlaylistGrid({
           </div>
           <div className="flex flex-wrap items-end gap-4">
             <div>
-              <label className="mb-1 block text-xs text-muted">{t("speed") || "Speed"}</label>
+              <label className="mb-1 block text-xs text-muted">{t("speed")}</label>
               <SpeedControl speed={batchSpeed} onChange={(v) => { setBatchSpeed(v); setBatchDirty(d => new Set(d).add("speed")); }} />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted">{t("pitch") || "Pitch"}</label>
+              <label className="mb-1 block text-xs text-muted">{t("pitch")}</label>
               <PitchControl pitch={batchPitch} onChange={(v) => { setBatchPitch(v); setBatchDirty(d => new Set(d).add("pitch")); }} />
             </div>
             <div>
@@ -372,7 +372,7 @@ export default function PlaylistGrid({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted">{t("clear") || "Color"}</label>
+              <label className="mb-1 block text-xs text-muted">{t("clear")}</label>
               <ColorTag color={batchColorTag} editable onChange={(v) => { setBatchColorTag(v); setBatchDirty(d => new Set(d).add("colorTag")); }} />
             </div>
             <button
@@ -387,7 +387,7 @@ export default function PlaylistGrid({
                 onClick={() => { setBatchSpeed(1.0); setBatchPitch(0); setBatchColorTag(undefined); setBatchComment(""); setBatchDirty(new Set()); }}
                 className="rounded-lg border border-border px-4 py-1.5 text-sm font-medium text-muted hover:bg-surface-hover"
               >
-                {t("reset") || "Reset"}
+                {t("reset")}
               </button>
             )}
             <button
@@ -616,7 +616,7 @@ export default function PlaylistGrid({
       {removeConfirmClipId && (
         <ConfirmDialog
           title={t("remove")}
-          message={t("removeClipConfirm") || "Remove this clip?"}
+          message={t("removeClipConfirm")}
           confirmLabel={t("remove")}
           cancelLabel={t("cancel")}
           danger

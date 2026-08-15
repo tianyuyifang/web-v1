@@ -75,20 +75,23 @@ export default function PricingPage() {
           </colgroup>
           <thead>
             <tr className="border-b border-border text-left">
-              <th className="px-4 py-3 font-medium text-muted">
+              {/* Same weight and colour as the three tier names: the header is
+                  read as one row, so a muted 权益 left it looking like a stray
+                  caption rather than the start of that row. */}
+              <th className="px-4 py-3 font-bold text-theme">
                 {t("pricingBenefit")}
               </th>
               {/* One colour across the table: three tinted columns read as a
                   ranking of their own, competing with the ticks that carry
                   the actual comparison. text-theme, not a literal black, so
                   the dark palette still gets legible text. */}
-              <th className="px-4 py-3 text-center font-medium text-theme">
+              <th className="px-4 py-3 text-center font-bold text-theme">
                 {t("pricingGuest")}
               </th>
-              <th className="px-4 py-3 text-center font-medium text-theme">
+              <th className="px-4 py-3 text-center font-bold text-theme">
                 {t("pricingMember")}
               </th>
-              <th className="px-4 py-3 text-center font-medium text-theme">
+              <th className="px-4 py-3 text-center font-bold text-theme">
                 {t("pricingPlus")}
               </th>
             </tr>

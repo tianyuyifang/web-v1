@@ -271,9 +271,10 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                 >
                   {t("viewPlaylists")}
                 </button>
-                {/* Any non-admin can be moved to any of the three tiers, so an
-                    admin can promote, put someone on the limited tier, or lock
-                    them out — whatever the automatic expiry later decides. */}
+                {/* Promoting stays on the row — it is the one action wanted at
+                    a glance. The rest live in the edit panel, where a click is
+                    a deliberate step rather than something to hit by mistake
+                    while scanning a list. */}
                 {user.role !== "ADMIN" && user.role !== "MEMBER" && (
                   <button
                     onClick={() => perform(user.id, () => adminAPI.approveUser(user.id))}
@@ -281,42 +282,6 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                     className="rounded-md bg-green-600 px-3 py-1 text-xs font-medium text-white shadow-sm transition-colors hover:bg-green-500 disabled:opacity-50"
                   >
                     {t("approve")}
-                  </button>
-                )}
-                {user.role !== "ADMIN" && user.role !== "GUEST" && (
-                  <button
-                    onClick={() => perform(user.id, () => adminAPI.makeGuest(user.id))}
-                    disabled={loading[user.id]}
-                    className="rounded-md border border-sky-500/30 px-3 py-1 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-500/10 disabled:opacity-50"
-                  >
-                    {t("makeGuest")}
-                  </button>
-                )}
-                {user.role !== "ADMIN" && user.role !== "PENDING" && (
-                  <button
-                    onClick={() => setRevokeTarget(user)}
-                    disabled={loading[user.id]}
-                    className="rounded-md border border-yellow-500/30 px-3 py-1 text-xs font-medium text-yellow-400 transition-colors hover:bg-yellow-500/10 disabled:opacity-50"
-                  >
-                    {t("revoke")}
-                  </button>
-                )}
-                {user.role !== "ADMIN" && (
-                  <button
-                    onClick={() => setResetTarget(user)}
-                    disabled={loading[user.id]}
-                    className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover hover:text-theme disabled:opacity-50"
-                  >
-                    {t("resetPassword")}
-                  </button>
-                )}
-                {user.role !== "ADMIN" && (
-                  <button
-                    onClick={() => setDeleteTarget(user)}
-                    disabled={loading[user.id]}
-                    className="rounded-md border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
-                  >
-                    {t("delete")}
                   </button>
                 )}
               </td>
@@ -394,6 +359,47 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                     >
                       {t("save")}
                     </button>
+
+                    {/* The account actions, kept off the row: each one changes
+                        what someone can do or wipes their data, so they belong
+                        behind a deliberate click rather than next to the
+                        billing fields you skim. */}
+                    {user.role !== "ADMIN" && (
+                      <div className="flex w-full flex-wrap items-center gap-2 border-t border-border pt-2">
+                        {user.role !== "GUEST" && (
+                          <button
+                            onClick={() => perform(user.id, () => adminAPI.makeGuest(user.id))}
+                            disabled={loading[user.id]}
+                            className="rounded-md border border-sky-500/30 px-3 py-1 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-500/10 disabled:opacity-50"
+                          >
+                            {t("makeGuest")}
+                          </button>
+                        )}
+                        {user.role !== "PENDING" && (
+                          <button
+                            onClick={() => setRevokeTarget(user)}
+                            disabled={loading[user.id]}
+                            className="rounded-md border border-yellow-500/30 px-3 py-1 text-xs font-medium text-yellow-400 transition-colors hover:bg-yellow-500/10 disabled:opacity-50"
+                          >
+                            {t("revoke")}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setResetTarget(user)}
+                          disabled={loading[user.id]}
+                          className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover hover:text-theme disabled:opacity-50"
+                        >
+                          {t("resetPassword")}
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(user)}
+                          disabled={loading[user.id]}
+                          className="rounded-md border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                          {t("delete")}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </td>
               </tr>

@@ -85,7 +85,7 @@ export default {
   confirmPlaceholder: "再次输入密码",
   registrationFailed: "注册失败",
   accountCreated: "账号创建成功！",
-  awaitingApproval: "你现在可以直接登录使用。游客最多可创建 3 个歌单，升级成会员后不受限制。",
+  awaitingApproval: "你现在可以直接登录使用。体验版最多可创建 3 个歌单，升级成会员后不受限制。",
   alreadyApproved: "现在就",
   creatingAccount: "创建中...",
   createAccount: "创建账号",
@@ -179,13 +179,13 @@ export default {
   share: "分享",
   delete: "删除",
   copyPlaylist: "复制列表",
-  // 游客限制
-  guestLimitTitle: "游客功能受限",
-  guestNoPublic: "游客不能将歌单设为公开。升级成会员后即可开放歌单给所有人。",
-  guestNoCopyPermission: "游客不能授予他人复制权限。你仍然可以把歌单分享给队友，让他们帮你点赞和自动打标。升级成会员后即可开放复制。",
-  guestPlaylistLimitTitle: "已达游客歌单上限",
-  guestPlaylistLimitMessage: "游客最多可拥有 3 个歌单。你可以删除一个不用的歌单再新建，或升级成会员后不受数量限制。",
-  guestBadge: "游客",
+  // 体验版限制
+  guestLimitTitle: "体验版功能受限",
+  guestNoPublic: "体验版不能将歌单设为公开。升级成会员后即可开放歌单给所有人。",
+  guestNoCopyPermission: "体验版不能授予他人复制权限。你仍然可以把歌单分享给队友，让他们帮你点赞和自动打标。升级成会员后即可开放复制。",
+  guestPlaylistLimitTitle: "已达体验版歌单上限",
+  guestPlaylistLimitMessage: "体验版最多可拥有 3 个歌单。你可以删除一个不用的歌单再新建，或升级成会员后不受数量限制。",
+  guestBadge: "体验版",
   copyPlaylistTitle: "复制此歌单",
   copyPlaylistMessage: "将创建一份副本，包含当前的所有片段和顺序。原歌单不受影响，复制完成后会跳转到新歌单。",
 
@@ -340,8 +340,8 @@ export default {
   userManagement: "用户管理",
   totalUsers: "位用户",
   pendingApproval: "待审核",
-  guests: "游客",
-  makeGuest: "转为游客",
+  guests: "体验版",
+  makeGuest: "转为体验版",
   revoked: "已过期",
   revokedOn: "过期于",
   members: "成员",
@@ -540,7 +540,7 @@ export default {
 
   // 身份与权限
   roleLabel: "身份",
-  roleGuest: "游客",
+  roleGuest: "体验版",
   roleMember: "会员",
   roleAdmin: "管理员",
   rolePending: "已停用",
@@ -560,7 +560,7 @@ export default {
 
   // 停用页
   pendingGuestExpiredTitle: "试用已结束",
-  pendingGuestExpiredBody: "你的游客试用期已结束。成为会员即可继续使用，并解锁全部功能。请联系管理员开通：",
+  pendingGuestExpiredBody: "你的体验版已到期。成为会员即可继续使用，并解锁全部功能。请联系管理员开通：",
   pendingMemberExpiredTitle: "会员已到期",
   pendingMemberExpiredBody: "你的会员已到期。请联系管理员续费后继续使用：",
   pendingDefaultTitle: "账号待审核",

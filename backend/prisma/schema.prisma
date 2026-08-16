@@ -47,6 +47,11 @@ model User {
   // column per feature: the next add-on is a new string, not a migration.
   // Guests get every add-on free, so this only ever gates members.
   entitlements    String[]   @default([])
+  /// Lets this user approve song mappings. A flag rather than a role because
+  /// it cuts across the existing ladder: it is granted to a couple of trusted
+  /// people, and every ADMIN has it implicitly. One wrong approval is
+  /// site-wide, so it stays narrow by default.
+  canEditMapping  Boolean    @default(false) @map("can_edit_mapping")
   monthlyFee      Decimal?   @map("monthly_fee") @db.Decimal(10, 2)
   paymentStatus   PaymentStatus? @map("payment_status")
   billingNotes    String?    @map("billing_notes")
@@ -61,6 +66,7 @@ model User {
   copyPermissions  PlaylistCopyPermission[]
   feedback         Feedback[]
   bandwidthLogs    BandwidthLog[]
+  approvedMappings SongMapping[] @relation("MappingApprover")
 
   @@map("users")
 }
@@ -343,4 +349,126 @@ model CaptureEvent {
   @@unique([sessionId, rawText])
   @@index([sessionId, createdAt])
   @@map("capture_events")
+}
+
+/// Where a song's audio comes from. The local library is NOT a shortcut that
+/// wins by default — it is one source among three, chosen per song when the
+/// mapping is approved. Local costs our bandwidth (3-5 MB a play) while the
+/// platforms cost none, so external is preferred and local is reserved for
+/// songs the platforms cannot serve.
+enum SongSource {
+  LOCAL
+  QQ
+  NETEASE
+}
+
+/// Game title+artist → one playable id. The heart of the live-cards feature.
+///
+/// Keyed on what the GAME shows, which is not always what the platform shows:
+/// the game says 奢香夫人/凤凰传奇 where QQ says 奢香夫人/玲花_曾毅. Once the
+/// mapping exists the platform's own artist string is irrelevant to playback —
+/// it is kept only so a human reviewing the row can eyeball it.
+///
+/// The artist is part of the key, never an attribute: 致青春/王菲 and
+/// 致青春/李宇春 are different songs that must not collide. Nothing may look a
+/// mapping up by title alone.
+///
+/// Exactly one source per song, and no automatic fallback: whatever is
+/// approved is what plays. A failure surfaces as an explicit reason (needs
+/// VIP, cookie expired, delisted) rather than silently sliding to another
+/// platform, which would make "why did this play the wrong version" unanswerable.
+model SongMapping {
+  id           String     @id @default(uuid()) @db.Uuid
+
+  /// Normalised game-side key. Both are lowercased/width-folded; artists are
+  /// split, sorted and rejoined so 汪苏泷/赵露思 and 赵露思/汪苏泷 are one key.
+  /// The raw forms are kept beside them for display and for re-normalising if
+  /// the rules ever change.
+  titleKey     String     @map("title_key")
+  artistKey    String     @map("artist_key")
+  rawTitle     String     @map("raw_title")
+  rawArtist    String     @map("raw_artist")
+
+  source       SongSource
+  /// Song UUID when source is LOCAL, else the platform's own id (QQ songmid,
+  /// NetEase numeric id). Deliberately a plain string: the three id spaces have
+  /// nothing in common and a foreign key would only fit one of them.
+  externalId   String     @map("external_id")
+
+  /// What the platform calls this song. Display-only — see the note above.
+  platformTitle  String?  @map("platform_title")
+  platformArtist String?  @map("platform_artist")
+  /// Seconds. The cheapest way to tell same-titled versions apart (studio vs
+  /// live vs cover), so it is worth storing even though playback ignores it.
+  durationSec  Int?       @map("duration_sec")
+
+  /// Approved rows are frozen: automatic search will neither overwrite nor
+  /// re-search them. That freeze is the whole point — it is what makes lookups
+  /// stop hitting the platforms, which is what keeps us out of rate limiting.
+  approved     Boolean    @default(false)
+  /// import | search — how the row first appeared. Shown as a tag in review;
+  /// once approved it stops mattering, so it is not a separate review bucket.
+  origin       String     @default("search")
+  /// exact | title-only | fuzzy. Why the importer believed this match. Drives
+  /// review ordering: exact self-approves, the rest queue up for a human.
+  matchKind    String?    @map("match_kind")
+  /// Rejected alternatives, kept so review can offer them without searching
+  /// again: [{ source, externalId, title, artist, durationSec }]
+  candidates   Json?      @db.JsonB
+  note         String?
+
+  approvedById String?    @map("approved_by_id") @db.Uuid
+  approvedAt   DateTime?  @map("approved_at") @db.Timestamptz
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  approvedBy   User?      @relation("MappingApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  /// One mapping per game song. Title alone is never unique — see the header.
+  @@unique([titleKey, artistKey])
+  /// Review queue: "unapproved first, newest first".
+  @@index([approved, createdAt])
+  /// Lets the importer find every row it could fill from one platform.
+  @@index([source])
+  @@map("song_mappings")
+}
+
+/// Tracks pulled from a QQ/NetEase playlist the admin trusts, waiting to be
+/// claimed by a game song.
+///
+/// Kept apart from SongMapping because the two are different populations: an
+/// imported track has a platform-side title/artist and no game key yet, and
+/// plenty of them will never be seen in a game at all. Merging them would mean
+/// half-populated mapping rows that no lookup can use. A row here graduates
+/// into a SongMapping the moment a game song matches it.
+model ImportedTrack {
+  id           String     @id @default(uuid()) @db.Uuid
+  source       SongSource
+  externalId   String     @map("external_id")
+
+  title        String
+  artist       String
+  /// Same normalisation as SongMapping, so matching is an indexed lookup
+  /// rather than a scan over every imported row.
+  titleKey     String     @map("title_key")
+  artistKey    String     @map("artist_key")
+  durationSec  Int?       @map("duration_sec")
+  album        String?
+  /// True when the platform marks this as VIP-only (QQ pay_play=1, NetEase
+  /// fee=1). Lets review predict "this will not play" before anyone tries.
+  vipOnly      Boolean    @default(false) @map("vip_only")
+
+  /// Which playlist it came from, for tracing a bad batch back to its source.
+  playlistRef  String?    @map("playlist_ref")
+  /// Set once a game song claims this track — the "seen in play" flag that
+  /// makes the review page's coverage counter meaningful.
+  matchedAt    DateTime?  @map("matched_at") @db.Timestamptz
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  /// Re-importing the same playlist updates rows instead of duplicating them.
+  @@unique([source, externalId])
+  /// The importer's hot path: given a game song, find candidates.
+  @@index([titleKey, artistKey])
+  @@index([titleKey])
+  @@map("imported_tracks")
 }

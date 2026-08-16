@@ -120,6 +120,8 @@ export default {
   unlikeAllShort: "清喜欢",
   copyShort: "复制",
   addClipShort: "加片段",
+  // 歌单页专用，不能直接改 edit —— 那个键管理页的用户编辑也在用。
+  editPlaylist: "编辑歌单",
   // Phone wording, where the button stands alone without the surrounding
   // context the desktop row gives it.
   unlikeAllPhone: "取消标记",

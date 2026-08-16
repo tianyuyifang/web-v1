@@ -80,7 +80,9 @@ export default function PlaylistHeader({
       // the mode, so it should read as the primary action rather than as one
       // more neutral button. 完成, its edit-mode face, keeps the accent that
       // marks the mode as active.
-      id: "edit", label: editMode ? t("done") : t("edit"), onClick: onToggleEditMode,
+      id: "edit", label: editMode ? t("done") : t("editPlaylist"),
+      phone: editMode ? t("done") : t("edit"),
+      onClick: onToggleEditMode,
       className: editMode
         ? "bg-accent text-black shadow-sm"
         : "bg-primary text-white shadow-sm hover:bg-primary-hover" },
@@ -113,7 +115,8 @@ export default function PlaylistHeader({
   const PHONE_ORDER = editMode
     ? ["return", "unlikeAll", "addClip", "batch", "delete", "edit"]
     : playlist.isOwner
-      ? ["return", "unlikeAll", "edit", "copy"]
+      // 复制 drops to the menu here too — same reasoning as desktop.
+      ? ["return", "unlikeAll", "edit"]
       : ["return", "copy", "compare"];
 
   const byId = Object.fromEntries(actionDefs.map((a) => [a.id, a]));
@@ -138,10 +141,19 @@ export default function PlaylistHeader({
   // 分享, 设为公开歌单 and 复制 all sit one 完成 away in normal mode, so
   // repeating them here just crowds the row. Ids absent from both lists — the
   // edit-only actions in normal mode, and vice versa — simply do not render.
+  // 复制 stays a button only for visitors, for whom copying is the whole point
+  // of the page; an owner rarely copies their own playlist, so it moves behind
+  // ⋯ for them.
   const DESKTOP_ORDER = editMode
     ? ["return", "unlikeAll", "batch", "addClip", "edit", "delete"]
-    : ["return", "unlikeAll", "share", "edit", "copy"];
-  const DESKTOP_MENU = editMode ? [] : ["public", "compare"];
+    : playlist.isOwner
+      ? ["return", "unlikeAll", "share", "edit"]
+      : ["return", "unlikeAll", "share", "edit", "copy"];
+  const DESKTOP_MENU = editMode
+    ? []
+    : playlist.isOwner
+      ? ["public", "compare", "copy"]
+      : ["public", "compare"];
 
   const desktopActions = DESKTOP_ORDER
     .map((id) => byId[id])

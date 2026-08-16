@@ -8,7 +8,6 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
 import { authAPI, playlistsAPI } from "@/lib/api";
 import { clearToken } from "@/lib/auth";
-import ContactAdmins from "@/components/account/ContactAdmins";
 
 /** Mirrors GUEST_PLAYLIST_LIMIT on the server. */
 const GUEST_PLAYLIST_LIMIT = 3;
@@ -17,6 +16,20 @@ const THEME_OPTIONS = [
   { value: "dark", labelKey: "themeDark", descKey: "themeDarkDesc" },
   { value: "light", labelKey: "themeLight", descKey: "themeLightDesc" },
 ];
+
+/**
+ * The way to /pricing, styled as a button rather than coloured text — it is
+ * now the only route to the prices and the contact details, so it has to look
+ * pressable.
+ *
+ * Solid fill, not a tinted outline: --primary is a hex variable, so Tailwind's
+ * /40 and /10 opacity syntax silently computes nothing and the button renders
+ * borderless and grey with a dead hover. bg-primary + hover:bg-primary-hover is
+ * what the rest of the app uses for the same reason.
+ */
+const PRICING_LINK =
+  "inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium " +
+  "text-white transition-colors hover:bg-primary-hover";
 
 /** One line in the guest permission list: a tick or a cross, plus a note. */
 function PermissionRow({ allowed = false, label, note }) {
@@ -34,7 +47,7 @@ function PermissionRow({ allowed = false, label, note }) {
 }
 
 export default function AccountPage() {
-  const { user, loading, logout, isGuest, isMember, canCapture } = useAuth();
+  const { user, loading, logout, isGuest, isMember } = useAuth();
   const { t } = useLanguage();
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const router = useRouter();
@@ -249,59 +262,27 @@ export default function AccountPage() {
                             .replace("{max}", GUEST_PLAYLIST_LIMIT)
                     }
                   />
-                  <PermissionRow
-                    label={t("addOnCapture")}
-                    note={t("captureNeedsAddOn")}
-                  />
+                  {/* 自动打标 is not listed here — what a guest is missing and
+                      what it costs are both on /pricing, in one table. */}
                 </ul>
-                {/* text-sm to match the limits above it, and a wider gap so it
-                    reads as a way out rather than a footnote on the last row. */}
-                <Link
-                  href="/pricing"
-                  className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
-                >
+                <Link href="/pricing" className={`mt-4 ${PRICING_LINK}`}>
                   {t("viewPricing")}
                 </Link>
               </div>
             )}
 
-            {/* Members see one line, and only while something is unbought. */}
-            {isMember && !canCapture && (
+            {/* One branch for every member: with the add-on line gone, what a
+                member sees no longer depends on what they have bought. */}
+            {isMember && (
               <div className="border-t border-border pt-4">
-                <p className="text-sm text-muted">
-                  {t("addOnCapture")} · {t("captureNeedsAddOn")}
-                </p>
-                <Link
-                  href="/pricing"
-                  className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
-                >
+                <Link href="/pricing" className={PRICING_LINK}>
                   {t("viewPricing")}
                 </Link>
               </div>
             )}
 
-            {isMember && canCapture && (
-              <div className="border-t border-border pt-4">
-                {/* Nothing above it in this branch, so only the size matches;
-                    the section's own pt-4 already provides the gap. */}
-                <Link
-                  href="/pricing"
-                  className="text-sm font-medium text-primary hover:underline"
-                >
-                  {t("viewPricing")}
-                </Link>
-              </div>
-            )}
-
-            {isGuest && (
-              <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-                <p className="text-sm font-semibold text-theme">
-                  {t("upgradePromptTitle")}
-                </p>
-                <p className="mt-1 text-xs text-muted">{t("upgradePromptBody")}</p>
-                <ContactAdmins />
-              </div>
-            )}
+            {/* No upgrade box here: the contact details it carried are on
+                /pricing, one click away, next to the prices they belong to. */}
 
             {expired && (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">

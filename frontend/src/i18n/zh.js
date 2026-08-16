@@ -583,9 +583,7 @@ export default {
   // 那不构成信息；完整对比在 /pricing。
   yourLimits: "权益限制",
   permOwnPlaylistCount: "自建歌单数量",
-  upgradePromptTitle: "升级权益",
-  upgradePromptBody: "请联系管理员：",
-  // 联系方式。改这里即可，三处引用（定价页、账号页升级引导、加订功能提示）
+  // 联系方式。改这里即可，三处引用（定价页、登录页、加订功能提示）
   // 都走同一个 ContactAdmins 组件。
   contactWechatLabel: "微信",
   contactWechat1: "YY：wyy693087070",

@@ -215,7 +215,10 @@ export default {
 
   // 加订版
   addOnRequiredTitle: "此功能属于加订版",
-  addOnCaptureBody: "自动打标属于加订版功能（35 元 / 月，含全部加订功能）。请联系管理员开通：",
+  // 指到账号页，不再直接给联系方式 —— 价格和联系方式都在定价页，
+  // 一处维护，弹窗里不必再抄一份。
+  addOnCaptureBody:
+    "自动打标属于加订版功能（35 元 / 月，含全部加订功能）。请点击 账户 → 套餐与续费 查看详情。",
   addOnNeedsSetup: "加订版功能",
   addOnsLabel: "加订版",
   addOnCapture: "自动打标",

@@ -497,11 +497,10 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       {showAddOnNotice && (
         <ConfirmDialog
           title={t("addOnRequiredTitle")}
-          // ConfirmDialog renders plain text, so the contacts go inline here
-          // rather than as the shared component.
-          message={`${t("addOnCaptureBody")}\n\n${t("contactWechatLabel")}：`
-                   + `${t("contactWechat1")}　${t("contactWechat2")}\n`
-                   + `${t("contactQni")}`}
+          // No contact details here any more: the body sends the user to
+          // 账户 → 套餐与续费, and repeating the handles would give two
+          // different instructions in one dialog.
+          message={t("addOnCaptureBody")}
           confirmLabel={t("confirm")}
           onConfirm={() => setShowAddOnNotice(false)}
           onCancel={() => setShowAddOnNotice(false)}

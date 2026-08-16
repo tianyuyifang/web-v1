@@ -588,7 +588,8 @@ export default {
   contactWechatLabel: "微信",
   contactWechat1: "YY：wyy693087070",
   contactWechat2: "CC：yinyuemeirendong",
-  contactQni: "Qni：搜索家族「Q你一下」",
+  // 图标已经表明是哪个 app，所以正文不再重复「Qni：」前缀。
+  contactQni: "搜索家族「Q你一下」",
   playlistUsage: "{used} / {max}",
 
   // 停用页

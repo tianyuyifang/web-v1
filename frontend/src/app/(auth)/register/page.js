@@ -1,7 +1,6 @@
 "use client";
 
 import RegisterForm from "@/components/auth/RegisterForm";
-import AuthNotice from "@/components/auth/AuthNotice";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
 
@@ -22,10 +21,6 @@ export default function RegisterPage() {
         </div>
         <div className="rounded-xl border border-border bg-surface p-6 shadow-lg shadow-black/5">
           <RegisterForm />
-        </div>
-
-        <div className="mt-4">
-          <AuthNotice />
         </div>
       </div>
     </div>

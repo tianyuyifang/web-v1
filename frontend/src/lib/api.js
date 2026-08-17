@@ -224,6 +224,8 @@ export const adminAPI = {
   updateBilling: (id, data) => api.patch(`/admin/users/${id}/billing`, data),
   extendOneMonth: (id) => api.post(`/admin/users/${id}/extend`),
   resetPassword: (id) => api.post(`/admin/users/${id}/reset-password`),
+  getSignupPromo: () => api.get("/admin/signup-promo"),
+  setSignupPromo: (data) => api.put("/admin/signup-promo", data),
 };
 
 // --- Feedback ---
@@ -270,8 +272,13 @@ export const musicSourcesAPI = {
   clear: (platform) => api.delete(`/music-sources/${platform}`),
   // QR login. Polling is a long poll: "waiting" is the normal answer and the
   // caller simply asks again.
-  createQr: () => api.post("/music-sources/qq/qrcode"),
-  pollQr: (uuid) => api.get(`/music-sources/qq/qrcode/${uuid}`),
+  // provider picks which QR to show: "wechat" or "qq". It must stay the same
+  // across create and poll, because the identifier is issued by that provider
+  // and means nothing to the other.
+  createQr: (provider = "wechat") =>
+    api.post(`/music-sources/qq/qrcode?provider=${provider}`),
+  pollQr: (uuid, provider = "wechat") =>
+    api.get(`/music-sources/qq/qrcode/${encodeURIComponent(uuid)}?provider=${provider}`),
   // Only works for a scanned connection; a pasted one has no refresh key and
   // is answered with a 400 that says so.
   refresh: () => api.post("/music-sources/qq/refresh"),

@@ -71,6 +71,19 @@ model User {
   @@map("users")
 }
 
+/// Site-wide settings an admin changes at runtime, one row per key. A table
+/// rather than env vars because these are toggled during normal operation:
+/// an env change needs a deploy and a restart, which makes the site owner
+/// depend on a developer to both start and stop a campaign.
+model Setting {
+  key       String   @id
+  /// Shape depends on the key — see the SETTINGS map in settingsService.
+  value     Json     @db.JsonB
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("settings")
+}
+
 model Song {
   id                   String   @id @default(uuid()) @db.Uuid
   title                String

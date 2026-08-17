@@ -6,6 +6,7 @@ const prisma = require('../db/client');
 const { UnauthorizedError, ValidationError } = require('../utils/errors');
 const { deriveStatus } = require('../utils/billing');
 const { normalizeSessions, addSession, hasSession } = require('../utils/sessions');
+const { resolveSignupPromo } = require('./settingsService');
 
 const SALT_ROUNDS = 10;
 
@@ -32,11 +33,29 @@ async function register({ username, password }) {
   }
 
   const passwordHash = await hashPassword(password);
+
   // Signing up lands you in as a GUEST rather than queued for approval. Stated
   // outright instead of leaning on the schema default, which is still PENDING
   // — that is now where expired accounts land, not where new ones start.
+  //
+  // …unless a signup promotion is running, which makes new accounts MEMBER
+  // with an expiry, the same shape an admin-approved member has. If reading
+  // the promotion fails, registration still succeeds as a guest: a broken
+  // campaign should not stop people signing up.
+  let promo = { active: false, expiresAt: null };
+  try {
+    promo = await resolveSignupPromo();
+  } catch (err) {
+    console.error('Signup promo lookup failed, defaulting to GUEST:', err.message);
+  }
+
   const user = await prisma.user.create({
-    data: { username, passwordHash, role: 'GUEST' },
+    data: {
+      username,
+      passwordHash,
+      role: promo.active ? 'MEMBER' : 'GUEST',
+      expiresAt: promo.active ? promo.expiresAt : null,
+    },
     select: { id: true, username: true, role: true, preferences: true },
   });
 

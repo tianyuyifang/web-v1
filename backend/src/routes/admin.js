@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const adminService = require('../services/adminService');
+const settingsService = require('../services/settingsService');
 const validate = require('../middleware/validate');
 const { updateBillingSchema } = require('../validators/billing');
 
@@ -111,6 +112,30 @@ router.post('/users/:id/reset-password', async (req, res, next) => {
   try {
     const result = await adminService.resetPassword(req.params.id);
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/signup-promo — the campaign as configured, plus whether it is
+// live right now. The two differ once the end date passes, and the admin page
+// needs to show both: what was set, and what it is actually doing.
+router.get('/signup-promo', async (req, res, next) => {
+  try {
+    const promo = await settingsService.getSignupPromo();
+    const resolved = await settingsService.resolveSignupPromo();
+    res.json({ promo, active: resolved.active });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/signup-promo — start, stop, or reconfigure the campaign
+router.put('/signup-promo', async (req, res, next) => {
+  try {
+    const promo = await settingsService.setSignupPromo(req.body || {});
+    const resolved = await settingsService.resolveSignupPromo();
+    res.json({ promo, active: resolved.active });
   } catch (err) {
     next(err);
   }

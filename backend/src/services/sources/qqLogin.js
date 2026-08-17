@@ -237,7 +237,19 @@ async function exchangeCode(code) {
  * worst time to find out.
  */
 function shapeCredential(data) {
-  const uin = String(data.musicid || data.str_musicid || '');
+  /**
+   * str_musicid first, and not as a matter of taste.
+   *
+   * These accounts run past 2^53, so `musicid` — a JSON number — loses its last
+   * few digits the moment JSON.parse touches it: 1152921505356665533 comes back
+   * as 1152921505356665600. The platform then cannot recognise the account and
+   * answers 104003 for every track, which reads exactly like an expired login
+   * and cost a long detour through request shapes and expiry fields.
+   *
+   * str_musicid carries the same value as a string, which is presumably why it
+   * exists at all.
+   */
+  const uin = String(data.str_musicid || data.musicid || '');
   return {
     uin,
     musicKey: data.musickey,

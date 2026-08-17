@@ -1,0 +1,306 @@
+"use client";
+
+/**
+ * Connect a QQ Music / NetEase account.
+ *
+ * Two ways in, and both are needed.
+ *
+ * Scanning is the good one: it is the only path that yields a renewal key, so
+ * a scanned connection keeps itself alive while a pasted cookie dies after a
+ * few days. But it leans on an endpoint QQ Music's own web player uses rather
+ * than a documented one, and endpoints like that disappear without notice — so
+ * pasting stays available underneath, and every scan failure points at it.
+ *
+ * The credential never comes back to this page. The server reports whether an
+ * account is connected and what it is worth (VIP or not); the cookie itself
+ * stays server-side, because anyone holding it can act as that user on the
+ * platform.
+ */
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { musicSourcesAPI } from "@/lib/api";
+
+const PLATFORMS = [
+  {
+    key: "qq",
+    name: "QQ 音乐",
+    supportsQr: true,
+    // Written out because "open devtools and copy a header" is not something
+    // most people can do from memory.
+    pasteHint: "登录 y.qq.com 后按 F12 → Network → 任意请求 → 复制 Cookie 整行",
+  },
+  {
+    key: "netease",
+    name: "网易云音乐",
+    supportsQr: false,
+    pasteHint: "登录 music.163.com 后按 F12 → Application → Cookies → 复制 MUSIC_U",
+  },
+];
+
+function StatusLine({ source }) {
+  if (!source?.connected) {
+    return <span className="text-sm text-muted">未连接</span>;
+  }
+
+  // vipType is null until the platform has actually been asked. Saying
+  // "connected" without that would imply it works, and a non-VIP account
+  // signs in perfectly then fails on most songs.
+  const vip = source.vipType == null
+    ? { text: "已连接（尚未验证会员状态）", tone: "text-muted" }
+    : source.vipType > 0
+      ? { text: "已连接 · 会员", tone: "text-emerald-400" }
+      : { text: "已连接 · 非会员（多数歌曲无法播放）", tone: "text-amber-400" };
+
+  return (
+    <span className={`text-sm ${vip.tone}`}>
+      {vip.text}
+      {source.nickname ? ` · ${source.nickname}` : ""}
+    </span>
+  );
+}
+
+export default function MusicSourcesPanel() {
+  const [sources, setSources] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState("");
+
+  const [pasteFor, setPasteFor] = useState(null);
+  const [cookie, setCookie] = useState("");
+
+  const [qr, setQr] = useState(null); // { uuid, image }
+  const [qrStatus, setQrStatus] = useState("");
+  const pollingRef = useRef(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await musicSourcesAPI.list();
+      const map = {};
+      res.data.sources.forEach((s) => { map[s.platform] = s; });
+      setSources(map);
+    } catch {
+      // A failure here is not worth an error banner: the panel simply shows
+      // "not connected", which is also what an unconfigured account looks like.
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  // Stop polling if the panel goes away, or the loop keeps running against a
+  // QR code nobody can see.
+  useEffect(() => () => { pollingRef.current = false; }, []);
+
+  const startQr = useCallback(async () => {
+    setError("");
+    setBusy("qr");
+    setQrStatus("");
+    try {
+      const res = await musicSourcesAPI.createQr();
+      setQr({ uuid: res.data.uuid, image: res.data.image });
+      setQrStatus("waiting");
+      pollingRef.current = true;
+
+      // Poll immediately and keep going: the code expires in a few minutes,
+      // and a gap between generating and polling is enough to miss it.
+      (async () => {
+        while (pollingRef.current) {
+          let res2;
+          try {
+            res2 = await musicSourcesAPI.pollQr(res.data.uuid);
+          } catch (err) {
+            if (!pollingRef.current) return;
+            setError(err.response?.data?.error?.message || "扫码登录失败，可改用手动粘贴");
+            setQr(null);
+            return;
+          }
+          if (!pollingRef.current) return;
+
+          const { status, source } = res2.data;
+          setQrStatus(status);
+
+          if (status === "done") {
+            setSources((prev) => ({ ...prev, qq: source }));
+            setQr(null);
+            pollingRef.current = false;
+            refresh();
+            return;
+          }
+          if (status === "expired" || status === "refused") {
+            pollingRef.current = false;
+            return;
+          }
+        }
+      })();
+    } catch (err) {
+      const code = err.response?.data?.error?.code;
+      setError(code === "QR_SHAPE_CHANGED"
+        ? "微信扫码暂时不可用，请使用下方的手动粘贴"
+        : err.response?.data?.error?.message || "无法获取二维码");
+    } finally {
+      setBusy(null);
+    }
+  }, [refresh]);
+
+  const cancelQr = useCallback(() => {
+    pollingRef.current = false;
+    setQr(null);
+    setQrStatus("");
+  }, []);
+
+  const savePaste = useCallback(async (platform) => {
+    setError("");
+    setBusy(platform);
+    try {
+      const res = await musicSourcesAPI.save(platform, cookie.trim());
+      setSources((prev) => ({ ...prev, [platform]: res.data.source }));
+      setCookie("");
+      setPasteFor(null);
+    } catch (err) {
+      setError(err.response?.data?.error?.message || "保存失败");
+    } finally {
+      setBusy(null);
+    }
+  }, [cookie]);
+
+  const disconnect = useCallback(async (platform) => {
+    setBusy(platform);
+    try {
+      const res = await musicSourcesAPI.clear(platform);
+      setSources((prev) => ({ ...prev, [platform]: res.data.source }));
+    } catch (err) {
+      setError(err.response?.data?.error?.message || "断开失败");
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  if (loading) return null;
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-6">
+      <h2 className="text-base font-semibold">音乐账号</h2>
+      <p className="mt-1 text-sm text-muted">
+        连接后可以播放曲库以外的歌曲。凭证加密保存，任何页面都不会显示它。
+      </p>
+
+      {error && (
+        <div className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
+      <div className="mt-4 space-y-3">
+        {PLATFORMS.map((p) => {
+          const source = sources[p.key];
+          const connected = source?.connected;
+          return (
+            <div key={p.key} className="rounded-lg border border-border/70 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium">{p.name}</div>
+                  <div className="mt-0.5"><StatusLine source={source} /></div>
+                  {connected && source.method === "paste" && (
+                    <div className="mt-1 text-xs text-amber-400/80">
+                      手动粘贴的凭证约 3 天后失效，届时需要重新连接
+                    </div>
+                  )}
+                  {connected && source.method === "qr" && (
+                    <div className="mt-1 text-xs text-muted">扫码连接，可自动续期</div>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  {p.supportsQr && !qr && (
+                    <button
+                      type="button"
+                      onClick={startQr}
+                      disabled={busy === "qr"}
+                      className="rounded-lg border border-primary bg-primary px-3 py-1.5 text-sm text-white hover:bg-primary-hover disabled:opacity-50"
+                    >
+                      {busy === "qr" ? "生成中…" : connected ? "重新扫码" : "扫码连接"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setPasteFor(pasteFor === p.key ? null : p.key); setCookie(""); }}
+                    className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-fg"
+                  >
+                    {p.supportsQr ? "手动粘贴" : connected ? "重新连接" : "连接"}
+                  </button>
+                  {connected && (
+                    <button
+                      type="button"
+                      onClick={() => disconnect(p.key)}
+                      disabled={busy === p.key}
+                      className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-red-300 disabled:opacity-50"
+                    >
+                      断开
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {p.supportsQr && qr && (
+                <div className="mt-4 flex flex-col items-center gap-3 rounded-lg border border-border/60 bg-bg/50 p-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qr.image} alt="微信扫码登录" className="h-48 w-48 rounded bg-white p-2" />
+                  <p className="text-sm text-muted">
+                    {qrStatus === "scanned"
+                      ? "已扫描，请在手机上确认"
+                      : qrStatus === "expired"
+                        ? "二维码已过期，请重新生成"
+                        : qrStatus === "refused"
+                          ? "已取消授权"
+                          : "请用微信扫描二维码"}
+                  </p>
+                  <div className="flex gap-2">
+                    {(qrStatus === "expired" || qrStatus === "refused") && (
+                      <button type="button" onClick={startQr} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:border-primary">
+                        重新生成
+                      </button>
+                    )}
+                    <button type="button" onClick={cancelQr} className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-fg">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {pasteFor === p.key && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs text-muted">{p.pasteHint}</p>
+                  <textarea
+                    value={cookie}
+                    onChange={(e) => setCookie(e.target.value)}
+                    rows={3}
+                    placeholder="粘贴 Cookie…"
+                    className="w-full rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-primary"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setPasteFor(null); setCookie(""); }}
+                      className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-fg"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => savePaste(p.key)}
+                      disabled={!cookie.trim() || busy === p.key}
+                      className="rounded-lg border border-primary bg-primary px-4 py-1.5 text-sm text-white hover:bg-primary-hover disabled:opacity-40"
+                    >
+                      {busy === p.key ? "保存中…" : "保存"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

@@ -8,6 +8,7 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
 import { authAPI, playlistsAPI } from "@/lib/api";
 import { clearToken } from "@/lib/auth";
+import MusicSourcesPanel from "@/components/account/MusicSourcesPanel";
 
 /** Mirrors GUEST_PLAYLIST_LIMIT on the server. */
 const GUEST_PLAYLIST_LIMIT = 3;
@@ -180,6 +181,7 @@ export default function AccountPage() {
         {[
           { key: "info", label: t("accountInfo") },
           { key: "change", label: t("changeAccount") },
+          { key: "music", label: "音乐账号" },
           { key: "appearance", label: t("appearance") },
         ].map((tab) => (
           <button
@@ -375,6 +377,9 @@ export default function AccountPage() {
             </div>
           </>
         )}
+
+        {/* Connected music accounts */}
+        {activeTab === "music" && <MusicSourcesPanel />}
 
         {/* Appearance */}
         {activeTab === "appearance" && (

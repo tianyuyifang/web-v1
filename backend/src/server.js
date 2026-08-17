@@ -76,6 +76,23 @@ const server = app.listen(config.port, () => {
   console.log(`Server running on port ${config.port}`);
 });
 
+/**
+ * A promise rejected with nobody listening takes the whole process down by
+ * default, so one bad outbound call can log every user out. Logged loudly and
+ * survived instead: the request that caused it has already failed, and killing
+ * the server on top of that helps nobody.
+ *
+ * This is a net, not a licence — anything showing up here is a bug worth
+ * chasing, which is why the stack is printed in full.
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down...');

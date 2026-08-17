@@ -261,6 +261,19 @@ export const getClipStreamUrl = (clipId, version) => {
   return `${base}/stream/clip/${clipId}${params ? `?${params}` : ""}`;
 };
 
+// A user's own QQ / NetEase credentials. Reads report connection state only —
+// a stored cookie is never sent back to the browser.
+export const musicSourcesAPI = {
+  list: () => api.get("/music-sources"),
+  get: (platform) => api.get(`/music-sources/${platform}`),
+  save: (platform, cookie) => api.put(`/music-sources/${platform}`, { cookie }),
+  clear: (platform) => api.delete(`/music-sources/${platform}`),
+  // QR login. Polling is a long poll: "waiting" is the normal answer and the
+  // caller simply asks again.
+  createQr: () => api.post("/music-sources/qq/qrcode"),
+  pollQr: (uuid) => api.get(`/music-sources/qq/qrcode/${uuid}`),
+};
+
 // Song-mapping review. Admin-only on the server, so a non-editor calling any
 // of these gets a 403 rather than an empty list.
 export const mappingAPI = {

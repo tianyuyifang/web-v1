@@ -114,11 +114,20 @@ async function setCredential(userId, platform, cookie, extra = {}) {
 
   sources[platform] = {
     cookie: vault.encrypt(raw),
-    uin: parsed.uin ?? null,
-    // Not a credential — just how the account page explains that a WeChat
-    // login has to be repasted every few days while a QQ login does not.
-    refreshable: Boolean(parsed.refreshable),
+    uin: parsed.uin ?? extra.uin ?? null,
+    // How the credential was obtained. It decides whether renewal is possible
+    // at all: only a QR login yields refresh_key, so a pasted cookie has to be
+    // replaced by hand every few days.
+    method: extra.method || 'paste',
+    // Encrypted like the cookie — it is a credential in its own right, enough
+    // to mint fresh keys for this account.
+    refreshKey: extra.refreshKey ? vault.encrypt(extra.refreshKey) : null,
+    refreshable: Boolean(extra.refreshKey) || Boolean(parsed.refreshable),
     savedAt: new Date().toISOString(),
+    // The platform states both of these outright on a QR login, so they beat
+    // anything inferred from a cookie's own expiry attribute.
+    expiresAt: extra.expiresAt ?? null,
+    needRefreshInSec: extra.needRefreshInSec ?? null,
     // Filled in by recordCheck() once the platform has actually been asked.
     // Saving a cookie proves it parsed, not that it works.
     vipType: extra.vipType ?? null,
@@ -172,9 +181,11 @@ async function getStatus(userId, platform = null) {
       nickname: entry.nickname ?? null,
       checkedAt: entry.checkedAt ?? null,
       savedAt: entry.savedAt ?? null,
-      // WeChat logins cannot be renewed automatically; the page uses this to
-      // warn that the cookie needs repasting every few days.
+      // How it was obtained, and whether that means it can renew itself. A
+      // pasted cookie cannot, so the page tells the user to expect to redo it.
+      method: entry.method || 'paste',
       refreshable: Boolean(entry.refreshable),
+      expiresAt: entry.expiresAt ?? null,
       lastError: entry.lastError ?? null,
     };
   };

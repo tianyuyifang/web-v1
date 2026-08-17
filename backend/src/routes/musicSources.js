@@ -3,6 +3,7 @@ const { z } = require('zod');
 const rateLimit = require('express-rate-limit');
 const validate = require('../middleware/validate');
 const svc = require('../services/musicCredentialService');
+const qqLogin = require('../services/sources/qqLogin');
 
 /**
  * The user's own QQ / NetEase credentials.
@@ -61,6 +62,75 @@ router.put('/:platform', writeLimiter, validate(setSchema), async (req, res, nex
     res.json({ source });
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * QR login, the preferred way to connect QQ Music.
+ *
+ * Worth the extra routes because only this path yields refresh_key, the field
+ * that lets a credential renew itself. A pasted cookie never carries it, so
+ * that route alone would mean re-pasting every few days.
+ *
+ * It leans on an endpoint QQ Music's web player uses rather than a documented
+ * one, so it can break without warning — which is why pasting stays supported
+ * and every failure here names itself clearly enough for the page to offer it.
+ */
+
+// Generating a QR costs an outbound request, so it is limited more tightly
+// than polling. A user needs one every few minutes at most.
+const qrLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { message: '请求过于频繁，请稍后再试' } },
+});
+
+// POST /api/music-sources/qq/qrcode — start a QR login
+router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
+  try {
+    res.json(await qqLogin.createQrCode());
+  } catch (err) {
+    if (err.code === 'QR_SHAPE_CHANGED' || err.code === 'QR_UNAVAILABLE') {
+      return res.status(503).json({ error: { message: err.message, code: err.code } });
+    }
+    return next(err);
+  }
+});
+
+/**
+ * GET /api/music-sources/qq/qrcode/:uuid — has it been scanned?
+ *
+ * One long poll per call: WeChat holds the connection until something happens
+ * or roughly thirty seconds pass, so "waiting" is the normal answer and the
+ * browser simply calls again. On success the credential is stored here, server
+ * side, and the browser is told only that it worked.
+ */
+router.get('/qq/qrcode/:uuid', async (req, res, next) => {
+  try {
+    const uuid = z.string().min(1).max(200).parse(req.params.uuid);
+    const result = await qqLogin.pollQrCode(uuid);
+
+    if (result.status !== 'done') {
+      return res.json({ status: result.status });
+    }
+
+    const cred = await qqLogin.exchangeCode(result.code);
+    const source = await svc.setCredential(req.user.id, 'qq', cred.cookie, {
+      method: 'qr',
+      uin: cred.uin,
+      refreshKey: cred.refreshKey,
+      nickname: cred.nickname,
+      expiresAt: cred.expiresAt,
+      needRefreshInSec: cred.needRefreshInSec,
+    });
+    return res.json({ status: 'done', source });
+  } catch (err) {
+    if (err.code === 'QR_LOGIN_FAILED' || err.code === 'QR_BAD_RESPONSE') {
+      return res.status(502).json({ error: { message: err.message, code: err.code } });
+    }
+    return next(err);
   }
 });
 

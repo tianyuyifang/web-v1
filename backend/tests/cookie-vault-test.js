@@ -13,6 +13,8 @@ const crypto = require('crypto');
 process.env.MUSIC_VAULT_KEY = crypto.randomBytes(32).toString('hex');
 const vault = require('../src/utils/cookieVault');
 
+// Shaped like a real cookie but entirely invented. Test fixtures end up in a
+// public repository, and a platform uin identifies an account permanently.
 const SECRET = 'qm_keyst=W_X_TESTVALUE_not_a_real_key_0000000000; uin=1000000000000000000';
 
 // --- round trip -------------------------------------------------------------

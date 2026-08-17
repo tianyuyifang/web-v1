@@ -16,6 +16,8 @@ const prisma = require('../src/db/client');
 const svc = require('../src/services/musicCredentialService');
 
 const KEY = 'SECRETKEY123';
+// Invented, not a real account. A uin identifies a platform account for good,
+// and these fixtures live in a public repository.
 const UIN = '1000000000000000000';
 const QQ_COOKIE = `qm_keyst=${KEY}; qqmusic_key=${KEY}; uin=${UIN}; wxuin=${UIN}; login_type=2`;
 

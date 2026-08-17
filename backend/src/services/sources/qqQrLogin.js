@@ -345,24 +345,28 @@ async function pollQrCode(qrsig) {
     throw fail('扫码成功但未能取得登录参数', 'QR_BAD_RESPONSE', { detail: redirect.slice(0, 160) });
   }
 
-  // qrsig travels on so the exchange can pick this login's jar back up.
+  // qrsig travels on so the exchange can pick this login's jar back up. The
+  // URL itself is no longer requested — only uin and ptsigx are taken from it —
+  // but it is carried for the log, since its ptredirect value is the one piece
+  // of this flow that is still not understood.
   return { status: 'done', redirect, uin, sigx, qrsig };
 }
 
 /**
  * Steps 3 and 4 — turn a confirmed scan into an OAuth code.
  *
- * Neither hop may follow its redirect: step 3's p_skey is set on a response
- * that immediately redirects away, and step 4's code exists only in a Location
- * header. Following either loses the value entirely.
+ * Redirects are followed by hand rather than by the HTTP client, because the
+ * code is carried in a Location header and would be consumed by an automatic
+ * redirect. Cookies accumulate along the way.
  */
+
 /**
- * The check_sig URL the reference client builds, with ptredirect=100.
+ * The check_sig URL, rebuilt rather than taken as given.
  *
- * The value the server hands back is ptredirect=0, inherited from the poll
- * call. Only the 100 form is known to answer with p_skey — the 0 form redirects
- * to a JavaScript bridge page that sets no cookies at all, which is where this
- * flow was ending up.
+ * The URL the poll hands back carries ptredirect=0, inherited from the poll
+ * call itself; this uses 100, matching the reference client. Measured against
+ * a rejected sigx the two behave identically, so this is kept for consistency
+ * with the client known to work, not because the difference is understood.
  */
 function rebuiltSigUrl(uin, sigx) {
   return 'https://ssl.ptlogin2.graph.qq.com/check_sig?' + new URLSearchParams({
@@ -387,15 +391,27 @@ function rebuiltSigUrl(uin, sigx) {
   });
 }
 
+/** One hop, recorded. Cookie names only — never their values. */
+function note(trail, label, url, res, fresh) {
+  const location = res.headers.location || '';
+  const u = new URL(url);
+  trail.push(`${label} ${u.hostname}${u.pathname} ${res.status}`
+    + ` cookies[${fresh.join(',') || '-'}]`
+    + (location ? ` ->${new URL(location, url).hostname}` : '')
+    + (/[?&]code=/.test(location) ? ' HAS_CODE' : ''));
+  return location;
+}
+
 /**
- * Walk one candidate URL until p_skey appears or the chain ends.
+ * Walk the redirect chain after a confirmed scan, collecting cookies.
  *
- * Records every hop — status, the Set-Cookie names (never values), and whether
- * a Location carried an OAuth code. That last one matters: if the third-party
- * flow returns a code directly instead of issuing p_skey, this is what will
- * show it, and no amount of reading someone else's client would.
+ * It no longer stops when p_skey fails to appear. A live scan showed check_sig
+ * answering 302 with pt_oauth_token and pt_login_type but no p_skey, and the
+ * old code treated that as a refusal — even though redirecting to s_url rather
+ * than www.qq.com is what acceptance looks like. So the chain is walked to its
+ * end and the caller decides, rather than a missing cookie deciding for it.
  */
-async function walkForPskey(startUrl, startJar, trail, label) {
+async function walkChain(startUrl, startJar, trail, label) {
   let url = startUrl;
   let jar = startJar;
 
@@ -403,91 +419,76 @@ async function walkForPskey(startUrl, startJar, trail, label) {
     const res = await request(url, { headers: { Cookie: serialiseCookies(jar) } });
     const before = new Set(Object.keys(jar));
     jar = mergeCookies(jar, res);
-    const fresh = Object.keys(jar).filter((k) => !before.has(k));
-    const location = res.headers.location || '';
-    const hasCode = /[?&]code=/.test(location);
+    const location = note(trail, `${label}#${hop + 1}`, url, res,
+      Object.keys(jar).filter((k) => !before.has(k)));
 
-    trail.push(`${label}#${hop + 1} ${new URL(url).hostname}${new URL(url).pathname}`
-      + ` ${res.status}`
-      + ` cookies[${fresh.join(',') || '-'}]`
-      + (hasCode ? ' HAS_CODE' : ''));
-
-    // A code in the Location means this flow never needed p_skey at all.
-    if (hasCode) {
-      return { jar, code: (location.match(/[?&]code=([^&]+)/) || [])[1] };
-    }
-    if (jar.p_skey) return { jar };
-    if (!res.headers.location) return { jar };
-    url = new URL(res.headers.location, url).toString();
+    // A code anywhere in the chain ends it: that is the thing being sought.
+    const code = (location.match(/[?&]code=([^&]+)/) || [])[1];
+    if (code) return { jar, code };
+    if (!location) return { jar };
+    url = new URL(location, url).toString();
   }
   return { jar };
 }
 
-async function exchangeCode({ redirect, uin, sigx, qrsig }) {
+async function exchangeCode({ uin, sigx, qrsig }) {
   const session = sessions.get(qrsig);
   if (!session) throw fail('登录会话已失效，请重新扫码', 'QR_SESSION_LOST');
 
   const trail = [];
 
-  // The rebuilt URL first — it is the form the working client uses. The
-  // server's own URL is tried only if that yields nothing, so a change at
-  // their end cannot leave this with no path at all.
-  let { jar, code } = await walkForPskey(rebuiltSigUrl(uin, sigx), session.jar, trail, 'rebuilt');
-  if (!code && !jar.p_skey) {
-    ({ jar, code } = await walkForPskey(redirect, jar, trail, 'asgiven'));
-  }
-
-  // Some third-party flows hand back the code directly and never issue p_skey.
+  /**
+   * One attempt only, deliberately.
+   *
+   * ptsigx is single-use: a second check_sig with the same one returns no
+   * cookies at all, which was measured — repeating an identical request with a
+   * *rejected* sigx returns its cookies every time, so repetition alone does
+   * not explain the empty result. An earlier version tried a second URL form as
+   * a fallback and so spent the only chance the scan gets, then reported the
+   * failure of the retry rather than the success of the first attempt.
+   */
+  const { jar, code } = await walkChain(rebuiltSigUrl(uin, sigx), session.jar, trail, 'check_sig');
   if (code) {
-    console.info('[qq-qr] code obtained without p_skey | %s', trail.join(' | '));
     sessions.delete(qrsig);
+    console.info('[qq-qr] ok (code from redirect chain) | %s', trail.join(' | '));
     return code;
   }
 
-  if (!jar.p_skey) {
-    // The trail names which hops were walked and what they answered, so a
-    // failure here can be diagnosed from the log instead of re-derived.
-    throw fail('QQ 授权失败，请重新扫码', 'QR_LOGIN_FAILED', { trail: trail.join(' | ') });
-  }
-
-  const authRes = await request('https://graph.qq.com/oauth2.0/authorize', {
-    method: 'POST',
-    headers: { Cookie: serialiseCookies(jar) },
-    form: {
-      response_type: 'code',
-      client_id: PT_3RD_AID,
-      redirect_uri: 'https://y.qq.com/portal/wx_redirect.html?login_type=1&surl=https://y.qq.com/',
-      scope: 'get_user_info,get_app_friends',
-      state: 'state',
-      switch: '',
-      from_ptlogin: '1',
-      src: '1',
-      update_auth: '1',
-      openapi: '1010_1030',
-      g_tk: String(hash33(jar.p_skey, 5381)),
-      auth_time: String(Date.now()),
-      // Any uuid; the endpoint only checks that one is present.
-      ui: require('crypto').randomUUID(),
-    },
+  /**
+   * Ask the authorization endpoint outright.
+   *
+   * This is the step the flow never reached before: it gave up when p_skey was
+   * absent, so authorize was never called at all. In a browser this request is
+   * made by the page after login_jump signals success, carrying whatever login
+   * cookies were just set. For an account that has already authorized this
+   * application, the documented behaviour is a redirect straight back to
+   * redirect_uri with the code.
+   *
+   * GET, per QQ Connect's own documentation, and without g_tk — that parameter
+   * is derived from p_skey, which this flow does not receive. If the endpoint
+   * turns out to require it, the trail will say so by redirecting to the login
+   * page instead of to redirect_uri.
+   */
+  const authUrl = 'https://graph.qq.com/oauth2.0/authorize?' + new URLSearchParams({
+    response_type: 'code',
+    client_id: PT_3RD_AID,
+    redirect_uri: 'https://y.qq.com/portal/wx_redirect.html?login_type=1&surl=https://y.qq.com/',
+    scope: 'get_user_info,get_app_friends',
+    state: 'state',
   });
 
-  const location = authRes.headers.location || '';
-  const authCode = (location.match(/[?&]code=([^&]+)/) || [])[1];
-  // The jar is spent either way: on success the code supersedes it, on failure
-  // it cannot be retried. Dropping it here keeps live QQ session cookies in
-  // memory for no longer than the login actually needs them.
+  const authWalk = await walkChain(authUrl, jar, trail, 'authorize');
   sessions.delete(qrsig);
-  if (!authCode) {
-    throw fail('QQ 授权失败，请重新扫码', 'QR_LOGIN_FAILED', {
-      trail: `${trail.join(' | ')} | authorize->${authRes.status}`,
-    });
+
+  if (authWalk.code) {
+    console.info('[qq-qr] ok (code from authorize) | %s', trail.join(' | '));
+    return authWalk.code;
   }
 
-  // Logged on success as well as failure: which of the two URL forms produced
-  // p_skey is the open question this flow exists to answer, and a success that
-  // says nothing would leave it open.
-  console.info('[qq-qr] ok | %s', trail.join(' | '));
-  return authCode;
+  // Everything known about this attempt, so the next one does not start from
+  // scratch. Each scan is one shot, so a failure that explains nothing is
+  // expensive.
+  throw fail('QQ 授权失败，请重新扫码', 'QR_LOGIN_FAILED', { trail: trail.join(' | ') });
 }
 
 module.exports = { createQrCode, pollQrCode, exchangeCode, hash33 };

@@ -19,6 +19,22 @@
 const credentials = require('./musicCredentialService');
 const qqLogin = require('./sources/qqLogin');
 
+/** Store a renewed credential, keeping every field renewal itself needs. */
+async function save(userId, fresh) {
+  await credentials.setCredential(userId, 'qq', fresh.cookie, {
+    method: 'qr',
+    uin: fresh.uin,
+    refreshKey: fresh.refreshKey,
+    refreshToken: fresh.refreshToken,
+    openid: fresh.openid,
+    unionid: fresh.unionid,
+    strMusicId: fresh.strMusicId,
+    nickname: fresh.nickname,
+    expiresAt: fresh.expiresAt,
+    needRefreshInSec: fresh.needRefreshInSec,
+  });
+}
+
 async function getFreshCredential(userId, platform) {
   if (platform !== 'qq') return credentials.getCredential(userId, platform);
 
@@ -27,19 +43,7 @@ async function getFreshCredential(userId, platform) {
     if (await credentials.needsRefresh(userId, 'qq')) {
       const saved = await credentials.getRefreshable(userId, 'qq');
       if (saved) {
-        const fresh = await qqLogin.refreshCredential(saved);
-        await credentials.setCredential(userId, 'qq', fresh.cookie, {
-          method: 'qr',
-          uin: fresh.uin,
-          refreshKey: fresh.refreshKey,
-          refreshToken: fresh.refreshToken,
-          openid: fresh.openid,
-          unionid: fresh.unionid,
-          strMusicId: fresh.strMusicId,
-          nickname: fresh.nickname,
-          expiresAt: fresh.expiresAt,
-          needRefreshInSec: fresh.needRefreshInSec,
-        });
+        await save(userId, await qqLogin.refreshCredential(saved));
         renewed = true;
       }
     }
@@ -53,4 +57,28 @@ async function getFreshCredential(userId, platform) {
   return cred ? { ...cred, renewed } : null;
 }
 
-module.exports = { getFreshCredential };
+/**
+ * Renew once after the platform has already refused, then hand back the new
+ * credential so the caller can retry.
+ *
+ * Scheduled renewal covers the expected case; this covers the unexpected one,
+ * where a key dies earlier than the platform said it would. Deliberately a
+ * single attempt with no loop: if the refresh key is dead too, the chain is
+ * broken and only a fresh scan can fix it, so retrying would just be noise
+ * against a platform that already said no.
+ */
+async function renewAfterRejection(userId) {
+  const saved = await credentials.getRefreshable(userId, 'qq');
+  if (!saved) return null;
+  try {
+    const fresh = await qqLogin.refreshCredential(saved);
+    await save(userId, fresh);
+    return credentials.getCredential(userId, 'qq');
+  } catch (err) {
+    await credentials.recordCheck(userId, 'qq', { ok: false, error: err.message })
+      .catch(() => { /* bookkeeping only */ });
+    return null;
+  }
+}
+
+module.exports = { getFreshCredential, renewAfterRejection };

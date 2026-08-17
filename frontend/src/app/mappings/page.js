@@ -178,9 +178,11 @@ export default function MappingsPage() {
       if (!url) {
         // A track the platform will not serve is a permissions answer, not a
         // fault, and the fix is different — so it is worded differently.
-        setPlayError(reason === "unavailable"
-          ? "这首歌当前拿不到播放地址（可能需要会员或已下架）"
-          : "无法试听");
+        setPlayError(reason === "credential-expired"
+          ? "QQ 音乐连接已失效，请到账号页重新扫码"
+          : reason === "unavailable"
+            ? "这首歌当前拿不到播放地址（可能需要会员或已下架）"
+            : "无法试听");
         return;
       }
       el.src = url;

@@ -284,6 +284,15 @@ async function needsRefresh(userId, platform) {
   const preferences = await readPreferences(userId);
   const entry = (preferences[NAMESPACE] || {})[platform];
   if (!entry?.refreshKey) return false;
+
+  // The platform states when it wants to see a renewal. That beats a margin of
+  // our own, which cannot know the real schedule — and got this wrong once
+  // already by reading the access token's lifetime instead of the key's.
+  if (entry.needRefreshInSec != null && entry.savedAt) {
+    const due = new Date(entry.savedAt).getTime() + entry.needRefreshInSec * 1000;
+    if (!Number.isNaN(due)) return Date.now() >= due;
+  }
+
   if (!entry.expiresAt) return false;
   const left = new Date(entry.expiresAt).getTime() - Date.now();
   if (Number.isNaN(left)) return false;

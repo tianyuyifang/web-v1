@@ -4,7 +4,7 @@ const validate = require('../middleware/validate');
 const { ValidationError, NotFoundError } = require('../utils/errors');
 const svc = require('../services/mappingReviewService');
 const qq = require('../services/sources/qqSource');
-const { getFreshCredential } = require('../services/musicCredentialAccess');
+const { getFreshCredential, renewAfterRejection } = require('../services/musicCredentialAccess');
 const credentials = require('../services/musicCredentialService');
 
 /**
@@ -130,6 +130,33 @@ async function resolvePreview(userId, source, externalId, res) {
     const result = await qq.resolveUrl(externalId, {
       cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey,
     });
+
+    // The platform refusing every track, free ones included, means the key is
+    // dead rather than the song being restricted. Renew once and try again —
+    // a key can die earlier than the platform said it would, and the user
+    // should not have to rescan for something we can fix silently.
+    if (result.reason === 'credential-expired') {
+      const renewed = await renewAfterRejection(userId);
+      if (renewed) {
+        const retry = await qq.resolveUrl(externalId, {
+          cookie: renewed.cookie, uin: renewed.uin, musicKey: renewed.musicKey,
+        });
+        if (retry.url) {
+          return res.json({ kind: 'external', url: retry.url, reason: retry.reason });
+        }
+      }
+      // Renewal did not help, so the chain really is broken.
+      await credentials.recordCheck(userId, 'qq', { ok: false, error: 'musickey expired' })
+        .catch(() => { /* bookkeeping only */ });
+      return res.status(400).json({
+        error: {
+          message: 'QQ 音乐连接已失效，请到账号页重新扫码连接',
+          code: 'CREDENTIAL_EXPIRED',
+          platform: 'qq',
+        },
+      });
+    }
+
     return res.json({ kind: 'external', url: result.url, reason: result.reason });
   } catch (err) {
     // A dead credential is the likeliest cause of a refusal here, and the user

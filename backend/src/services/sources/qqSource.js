@@ -468,7 +468,11 @@ async function resolveUrl(mid, { cookie, uin, musicKey, tier = 'mp3_128' } = {})
 
   const info = json?.req_1?.data?.midurlinfo?.[0];
   if (!info?.purl) {
-    return { url: null, reason: 'unavailable', platformResult: info?.result ?? null, meta };
+    // 104003 comes back for every track, free ones included, once the music
+    // key has died. Reporting that as "needs VIP or delisted" sends the user
+    // looking for a subscription problem when the fix is to reconnect.
+    const reason = info?.result === 104003 ? 'credential-expired' : 'unavailable';
+    return { url: null, reason, platformResult: info?.result ?? null, meta };
   }
 
   // fromtag is not part of purl but the CDN requires it; without it every

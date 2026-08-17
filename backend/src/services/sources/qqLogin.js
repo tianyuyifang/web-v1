@@ -251,9 +251,25 @@ function shapeCredential(data) {
     nickname: data.nick || null,
     // The platform states both outright, so neither is inferred from a
     // cookie's own expiry attribute.
-    expiresAt: data.expired_at ? new Date(data.expired_at * 1000).toISOString() : null,
+    /**
+     * When the music key itself dies.
+     *
+     * Deliberately NOT expired_at: that is the OAuth access_token's lifetime,
+     * which came back as two hours and made a freshly scanned login look
+     * nearly dead on arrival. The key is what playback uses, and the reference
+     * client judges it as `musickeyCreateTime + keyExpiresIn` — so that is
+     * what is stored here.
+     */
+    expiresAt: (data.musickeyCreateTime && data.keyExpiresIn)
+      ? new Date((data.musickeyCreateTime + data.keyExpiresIn) * 1000).toISOString()
+      : (data.expired_at ? new Date(data.expired_at * 1000).toISOString() : null),
     keyExpiresInSec: data.keyExpiresIn ?? null,
+    musicKeyCreatedAt: data.musickeyCreateTime ?? null,
+    // The platform's own advice on when to renew. Preferred over a margin of
+    // our choosing, since only it knows the real schedule.
     needRefreshInSec: data.needRefreshKeyIn ?? null,
+    // access_token expiry, kept only because the renewal call echoes it back.
+    accessTokenExpiresAt: data.expired_at ?? null,
     // Assembled so the credential store keeps its existing shape: everything
     // downstream already expects a cookie string.
     cookie: [

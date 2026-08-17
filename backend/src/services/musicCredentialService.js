@@ -14,16 +14,16 @@
  */
 const prisma = require('../db/client');
 const vault = require('../utils/cookieVault');
+// The handler reads statusCode and isOperational; a bare Error with .status
+// becomes a 500 with its message replaced by 'Internal server error'.
+const { NotFoundError, ValidationError } = require('../utils/errors');
 
 const PLATFORMS = ['qq', 'netease'];
 const NAMESPACE = 'musicSources';
 
 function assertPlatform(platform) {
   if (!PLATFORMS.includes(platform)) {
-    const err = new Error(`Unknown music platform: ${platform}`);
-    err.code = 'UNKNOWN_PLATFORM';
-    err.status = 400;
-    throw err;
+    throw new ValidationError({ platform: [`未知的音乐平台: ${platform}`] });
   }
 }
 
@@ -33,10 +33,7 @@ async function readPreferences(userId) {
     select: { preferences: true },
   });
   if (!user) {
-    const err = new Error('User not found');
-    err.code = 'USER_NOT_FOUND';
-    err.status = 404;
-    throw err;
+    throw new NotFoundError('User');
   }
   // preferences can be null on old rows.
   return user.preferences && typeof user.preferences === 'object' ? user.preferences : {};
@@ -89,24 +86,15 @@ async function setCredential(userId, platform, cookie, extra = {}) {
 
   const raw = String(cookie || '').trim();
   if (!raw) {
-    const err = new Error('Cookie is empty');
-    err.code = 'EMPTY_COOKIE';
-    err.status = 400;
-    throw err;
+    throw new ValidationError({ cookie: ['Cookie 不能为空'] });
   }
 
   const parsed = platform === 'qq' ? parseQqCookie(raw) : parseNeteaseCookie(raw);
   if (platform === 'qq' && (!parsed.uin || !parsed.musicKey)) {
-    const err = new Error('这份 cookie 里没有找到 uin 和 qm_keyst，请确认复制完整');
-    err.code = 'INCOMPLETE_COOKIE';
-    err.status = 400;
-    throw err;
+    throw new ValidationError({ cookie: ['这份 cookie 里没有找到 uin 和 qm_keyst，请确认复制完整'] });
   }
   if (platform === 'netease' && !parsed.musicU) {
-    const err = new Error('这份 cookie 里没有找到 MUSIC_U，请确认复制完整');
-    err.code = 'INCOMPLETE_COOKIE';
-    err.status = 400;
-    throw err;
+    throw new ValidationError({ cookie: ['这份 cookie 里没有找到 MUSIC_U，请确认复制完整'] });
   }
 
   const preferences = await readPreferences(userId);

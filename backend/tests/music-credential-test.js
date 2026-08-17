@@ -106,20 +106,19 @@ assert.strictEqual(svc.parseNeteaseCookie('os=pc').musicU, null);
     assert.strictEqual(checked.vipType, 11, 'known VIP survives a failed check');
 
     // --- refusals ----------------------------------------------------------
-    for (const [cookie, code] of [
-      ['nothing=here', 'INCOMPLETE_COOKIE'],
-      [`uin=${UIN}`, 'INCOMPLETE_COOKIE'],
-      ['qm_keyst=abc', 'INCOMPLETE_COOKIE'],
-      ['', 'EMPTY_COOKIE'],
-      ['   ', 'EMPTY_COOKIE'],
-    ]) {
+    // These raise the project's ValidationError so the error handler answers
+    // 400 with the message intact. A bare Error carrying .status became a 500
+    // with the message replaced by "Internal server error", which told the
+    // user their cookie was fine and the server was broken.
+    const isBadRequest = (e) => e.statusCode === 400 && Boolean(e.isOperational);
+    for (const cookie of ['nothing=here', `uin=${UIN}`, 'qm_keyst=abc', '', '   ']) {
       await assert.rejects(() => svc.setCredential(user.id, 'qq', cookie),
-        (e) => e.code === code, `rejects ${JSON.stringify(cookie)}`);
+        isBadRequest, `rejects ${JSON.stringify(cookie)} as a bad request`);
     }
     await assert.rejects(() => svc.setCredential(user.id, 'netease', 'os=pc'),
-      (e) => e.code === 'INCOMPLETE_COOKIE', 'NetEase needs MUSIC_U');
+      isBadRequest, 'NetEase needs MUSIC_U');
     await assert.rejects(() => svc.setCredential(user.id, 'spotify', 'x=1'),
-      (e) => e.code === 'UNKNOWN_PLATFORM');
+      isBadRequest, 'an unknown platform is a bad request, not a crash');
 
     // --- platforms are independent ----------------------------------------
     await svc.setCredential(user.id, 'netease', 'MUSIC_U=abc123');

@@ -6,6 +6,50 @@
 
 ---
 
+## 🚀 部署清单（2026-08-17 审计确认，顺序不能错）
+
+```bash
+git pull
+cd backend
+npx prisma migrate deploy      # ← 必须在重启之前
+npx prisma generate
+pm2 restart <backend>
+```
+
+### ⛔ 为什么顺序是硬性的（实测验证，不是推测）
+
+`users` 表加了 `can_edit_mapping` 列。**Prisma 会在 SQL 里点名每一列**，实测：
+
+| 查询 | SQL 里是否点名新列 |
+|---|---|
+| `authService.login()` 的 `findUnique`（**无 select**）| ✅ **会** |
+| `middleware/auth.js` 的 session 检查（有 select）| ❌ 不会 |
+| `authService.getMe()`（有 select）| ❌ 不会 |
+
+→ **先重启后迁移 = 登录直接挂掉**（`login()` 走的正是无 select 那条）。
+→ 已登录用户的普通请求反而不受影响（那些都用了显式 select），
+   所以故障会表现为「老用户还能用，但没人能登录」——很容易误判成别的问题。
+
+### VM 上还要做两件事
+
+1. **手动加 `MUSIC_VAULT_KEY`**（`.env` 不跟 git 走）
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+   **不加不会导致网站挂**（实测：服务器照常启动），只是存不了音乐账号凭证。
+2. **重新导入曲目池** —— 3103 条只在本地库里，VM 上是空的：
+   ```bash
+   QQ_COOKIE='...' node scripts/import-mapping.js --playlist 9669986815 --apply
+   ```
+
+### 已知但与本功能无关
+
+`npm audit` 报 13 个漏洞（1 critical / 6 high），全部是 **multer / music-metadata /
+path-to-regexp / tar** 等既有依赖。**本功能新增依赖数为 0**，`package.json` 三天没动过。
+要不要修是独立决定，不该阻塞这次部署。
+
+---
+
 ## ⛔ 零、最高优先级：绝不能碰风控
 
 风控是**唯一会让整个功能不可用**的风险，而且开发当天已亲手触发**两次**。

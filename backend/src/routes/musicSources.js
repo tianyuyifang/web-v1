@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { z } = require('zod');
 const rateLimit = require('express-rate-limit');
 const validate = require('../middleware/validate');
+const { ValidationError } = require('../utils/errors');
 const svc = require('../services/musicCredentialService');
 const qqLogin = require('../services/sources/qqLogin');
 
@@ -29,6 +30,16 @@ const writeLimiter = rateLimit({
 
 const platformParam = z.enum(['qq', 'netease']);
 
+/**
+ * Reject an unknown platform as a bad request rather than letting a raw
+ * ZodError escape as a 500 — the caller sent a wrong value, the server is fine.
+ */
+function readPlatform(req) {
+  const parsed = platformParam.safeParse(req.params.platform);
+  if (!parsed.success) throw new ValidationError({ platform: ['未知的音乐平台'] });
+  return parsed.data;
+}
+
 const setSchema = z.object({
   // Generous, because the user pastes a whole cookie header: a NetEase
   // MUSIC_U alone runs several hundred characters.
@@ -47,7 +58,7 @@ router.get('/', async (req, res, next) => {
 // GET /api/music-sources/:platform
 router.get('/:platform', async (req, res, next) => {
   try {
-    const platform = platformParam.parse(req.params.platform);
+    const platform = readPlatform(req);
     res.json({ source: await svc.getStatus(req.user.id, platform) });
   } catch (err) {
     next(err);
@@ -57,7 +68,7 @@ router.get('/:platform', async (req, res, next) => {
 // PUT /api/music-sources/:platform — store or replace a credential
 router.put('/:platform', writeLimiter, validate(setSchema), async (req, res, next) => {
   try {
-    const platform = platformParam.parse(req.params.platform);
+    const platform = readPlatform(req);
     const source = await svc.setCredential(req.user.id, platform, req.validated.cookie);
     res.json({ source });
   } catch (err) {
@@ -109,8 +120,11 @@ router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
  */
 router.get('/qq/qrcode/:uuid', async (req, res, next) => {
   try {
-    const uuid = z.string().min(1).max(200).parse(req.params.uuid);
-    const result = await qqLogin.pollQrCode(uuid);
+    // safeParse, not parse: a raw ZodError escapes as a 500, which reads as a
+    // server fault when the caller merely sent a malformed id.
+    const parsed = z.string().min(1).max(200).safeParse(req.params.uuid);
+    if (!parsed.success) throw new ValidationError({ uuid: ['二维码标识无效'] });
+    const result = await qqLogin.pollQrCode(parsed.data);
 
     if (result.status !== 'done') {
       return res.json({ status: result.status });
@@ -187,7 +201,7 @@ router.post('/qq/refresh', writeLimiter, async (req, res, next) => {
 // DELETE /api/music-sources/:platform
 router.delete('/:platform', async (req, res, next) => {
   try {
-    const platform = platformParam.parse(req.params.platform);
+    const platform = readPlatform(req);
     res.json({ source: await svc.clearCredential(req.user.id, platform) });
   } catch (err) {
     next(err);

@@ -261,6 +261,27 @@ export const getClipStreamUrl = (clipId, version) => {
   return `${base}/stream/clip/${clipId}${params ? `?${params}` : ""}`;
 };
 
+// Song-mapping review. Admin-only on the server, so a non-editor calling any
+// of these gets a 403 rather than an empty list.
+export const mappingAPI = {
+  counts: () => api.get("/mappings/counts"),
+  list: ({ bucket = "pending", q = "", cursor = null, take = 50 } = {}) => {
+    const params = new URLSearchParams({ bucket, take: String(take) });
+    if (q) params.set("q", q);
+    if (cursor) params.set("cursor", cursor);
+    return api.get(`/mappings?${params}`);
+  },
+  get: (id) => api.get(`/mappings/${id}`),
+  candidates: (id) => api.get(`/mappings/${id}/candidates`),
+  // Resolves through the reviewer's own credential; the browser then fetches
+  // the audio from the CDN directly.
+  preview: (id) => api.get(`/mappings/${id}/preview`),
+  create: (body) => api.post("/mappings", body),
+  approve: (id, body = {}) => api.post(`/mappings/${id}/approve`, body),
+  unapprove: (id) => api.post(`/mappings/${id}/unapprove`),
+  remove: (id) => api.delete(`/mappings/${id}`),
+};
+
 export const getLikesSSEUrl = (playlistId) => {
   const { base, token } = streamBase();
   return `${base}/sse/playlists/${playlistId}/likes${token ? `?token=${token}` : ""}`;

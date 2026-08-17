@@ -4,7 +4,9 @@ const compression = require('compression');
 const config = require('./config');
 const prisma = require('./db/client');
 const errorHandler = require('./middleware/errorHandler');
-const { authMiddleware, requireRole, requireApproved, requireActiveSession } = require('./middleware/auth');
+const {
+  authMiddleware, requireRole, requireApproved, requireActiveSession, requireMappingEditor,
+} = require('./middleware/auth');
 const trackBandwidth = require('./middleware/bandwidth');
 
 const app = express();
@@ -59,6 +61,10 @@ app.use('/api/updates', authMiddleware, requireApproved, requireActiveSession, r
 // A user's own QQ / NetEase credentials. Every route acts on the caller's own
 // account; none of them ever returns a stored cookie.
 app.use('/api/music-sources', authMiddleware, requireApproved, requireActiveSession, require('./routes/musicSources'));
+
+// Song-mapping review. A mapping decides what plays for everyone, so this is
+// limited to admins and the few users given the canEditMapping flag.
+app.use('/api/mappings', authMiddleware, requireApproved, requireActiveSession, requireMappingEditor, require('./routes/mappings'));
 
 // Admin routes (auth + ADMIN role only)
 app.use('/api/admin', authMiddleware, requireRole('ADMIN'), requireActiveSession, require('./routes/admin'));

@@ -118,4 +118,33 @@ function requireApproved(req, res, next) {
   next();
 }
 
-module.exports = { authMiddleware, requireRole, requireApproved, requireActiveSession };
+/**
+ * Middleware: may this user approve song mappings?
+ *
+ * ADMINs always may. Anyone else needs the canEditMapping flag, which is read
+ * from the database rather than the token: the flag is granted and revoked by
+ * hand, and a token issued before a revocation would otherwise keep working
+ * for a week. One wrong approval changes what plays for everybody, so this
+ * checks the current truth even though it costs a query.
+ */
+async function requireMappingEditor(req, res, next) {
+  try {
+    if (!req.user) return next(new ForbiddenError('Insufficient permissions'));
+    if (req.user.role === 'ADMIN') return next();
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { canEditMapping: true },
+    });
+    if (!user || !user.canEditMapping) {
+      return next(new ForbiddenError('Insufficient permissions'));
+    }
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = {
+  authMiddleware, requireRole, requireApproved, requireActiveSession, requireMappingEditor,
+};

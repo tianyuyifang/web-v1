@@ -24,5 +24,12 @@ export function middleware(request) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/playlists/:path*", "/admin/:path*", "/settings/:path*", "/help/:path*"],
+  // /mappings is included so a signed-out visitor is sent to login rather than
+  // to a page shell that then fails its own requests. The real gate is on the
+  // server, which limits the API to admins and holders of canEditMapping —
+  // this only saves a pointless round trip.
+  matcher: [
+    "/dashboard/:path*", "/playlists/:path*", "/admin/:path*",
+    "/settings/:path*", "/help/:path*", "/mappings/:path*",
+  ],
 };

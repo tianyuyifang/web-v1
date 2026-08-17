@@ -388,6 +388,21 @@ export default function MappingsPage() {
                   <span className="rounded bg-black/20 px-1.5 py-0.5">
                     {SOURCE_LABEL[row.source] || row.source}
                   </span>
+                  {/* The platform id is what a mapping actually resolves to.
+                      Two rows can look identical in title, artist and duration
+                      and still be different recordings, so this is often the
+                      only thing that distinguishes them — and it is what you
+                      paste elsewhere to look a track up. Click to copy. */}
+                  {row.externalId && (
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard?.writeText(row.externalId)}
+                      title="点击复制 ID"
+                      className="rounded bg-black/20 px-1.5 py-0.5 font-mono hover:text-fg"
+                    >
+                      {row.externalId}
+                    </button>
+                  )}
                   <span>{formatDuration(row.durationSec)}</span>
                   {row.vipOnly && <span className="text-amber-400">需会员</span>}
                   {/* The platform regularly names the artist differently from
@@ -519,6 +534,9 @@ export default function MappingsPage() {
                       >
                         <span className="min-w-0 flex-1 truncate">
                           {c.title} — {c.artist}
+                          {/* Candidates are usually the same song twice, so the
+                              id and the duration are what tell them apart. */}
+                          <span className="ml-2 font-mono text-muted/70">{c.externalId}</span>
                           <span className="ml-2 text-muted">{formatDuration(c.durationSec)}</span>
                           {c.artistMatches && <span className="ml-2 text-emerald-400">歌手吻合</span>}
                           {c.durationMatches && <span className="ml-2 text-emerald-400">时长吻合</span>}

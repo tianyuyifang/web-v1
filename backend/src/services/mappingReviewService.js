@@ -57,6 +57,10 @@ async function list({ bucket = 'pending', query = '', cursor = null, take = PAGE
           { title: { contains: q, mode: 'insensitive' } },
           { artist: { contains: q, mode: 'insensitive' } },
           { titleKey: { contains: titleKey(q) } },
+          // Pasting a platform id should find its row: it is the one value
+          // that is unambiguous, and the natural thing to paste when checking
+          // a track against the platform itself.
+          { externalId: q },
         ],
       }
       : { matchedAt: null };
@@ -95,6 +99,7 @@ async function list({ bucket = 'pending', query = '', cursor = null, take = PAGE
         { rawArtist: { contains: q, mode: 'insensitive' } },
         { platformTitle: { contains: q, mode: 'insensitive' } },
         { titleKey: { contains: titleKey(q) } },
+        { externalId: q },
       ],
     }
     : { approved };

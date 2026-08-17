@@ -200,6 +200,12 @@ router.get('/qq/qrcode/:uuid', async (req, res, next) => {
     return res.json({ status: 'done', source: (await access.verifyCredential(req.user.id, 'qq')) ?? source });
   } catch (err) {
     if (err.code === 'QR_LOGIN_FAILED' || err.code === 'QR_BAD_RESPONSE') {
+      // The redirect trail is the only record of which hop refused, and it is
+      // gone once the response is sent. Logged, not returned: it describes the
+      // user's own login attempt and the page has no use for it.
+      if (err.trail || err.detail) {
+        console.warn('[qq-qr] %s: %s', err.code, err.trail || err.detail);
+      }
       return res.status(502).json({ error: { message: err.message, code: err.code } });
     }
     return next(err);

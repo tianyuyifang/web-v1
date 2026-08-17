@@ -321,15 +321,23 @@ async function pollQrCode(qrsig) {
   if (!status) throw fail('无法解析扫码状态', 'QR_BAD_RESPONSE');
   if (status !== 'done') return { status };
 
-  // On success the third argument is a URL carrying the two values step 3
-  // needs. Both must be present; half of them is not a usable state.
+  /**
+   * On success the third argument is the URL to visit next, already carrying
+   * every parameter the server wants.
+   *
+   * It is used verbatim rather than picked apart and rebuilt. Reconstructing it
+   * means guessing at parameter names and ordering that only the server knows,
+   * and any drift there fails as a refusal rather than as a parse error — which
+   * is indistinguishable from a rejected login and was the likely reason this
+   * flow kept answering "QQ 授权失败".
+   */
   const redirect = args[2] || '';
-  const sigx = (redirect.match(/[?&]ptsigx=(.+?)&s_url/) || [])[1];
-  const uin = (redirect.match(/[?&]uin=(.+?)&service/) || [])[1];
-  if (!sigx || !uin) throw fail('扫码成功但未能取得登录参数', 'QR_BAD_RESPONSE');
+  if (!/^https?:\/\//.test(redirect)) {
+    throw fail('扫码成功但未能取得登录地址', 'QR_BAD_RESPONSE', { detail: redirect.slice(0, 120) });
+  }
 
   // qrsig travels on so the exchange can pick this login's jar back up.
-  return { status: 'done', uin, sigx, qrsig };
+  return { status: 'done', redirect, qrsig };
 }
 
 /**
@@ -339,38 +347,42 @@ async function pollQrCode(qrsig) {
  * that immediately redirects away, and step 4's code exists only in a Location
  * header. Following either loses the value entirely.
  */
-async function exchangeCode({ uin, sigx, qrsig }) {
+async function exchangeCode({ redirect, qrsig }) {
   const session = sessions.get(qrsig);
   if (!session) throw fail('登录会话已失效，请重新扫码', 'QR_SESSION_LOST');
 
-  const sigParams = new URLSearchParams({
-    uin,
-    pttype: '1',
-    service: 'ptqrlogin',
-    nodirect: '0',
-    ptsigx: sigx,
-    s_url: 'https://graph.qq.com/oauth2.0/login_jump',
-    ptlang: '2052',
-    ptredirect: '100',
-    aid: APPID,
-    daid: DAID,
-    j_later: '0',
-    low_login_hour: '0',
-    regmaster: '0',
-    pt_login_type: '3',
-    pt_aid: '0',
-    pt_aaid: '16',
-    pt_light: '0',
-    pt_3rd_aid: PT_3RD_AID,
-  });
+  /**
+   * Follow the chain the server described, rather than one URL we assumed.
+   *
+   * check_sig answers 302 and the login cookies can be set on any hop along the
+   * way, so each redirect is walked in turn, accumulating cookies, until p_skey
+   * appears. The cap is a safety net against a redirect loop, not an expected
+   * depth — the chain is normally one or two hops.
+   */
+  let url = redirect;
+  let jar = session.jar;
+  let hops = 0;
+  const trail = [];
 
-  // Carries the cookies ptqrshow and ptqrlogin set — check_sig validates the
-  // scan against them, and answers without p_skey if they are missing.
-  const sigRes = await request(`https://ssl.ptlogin2.graph.qq.com/check_sig?${sigParams}`, {
-    headers: { Cookie: serialiseCookies(session.jar) },
-  });
-  const jar = mergeCookies(session.jar, sigRes);
-  if (!jar.p_skey) throw fail('QQ 授权失败，请重新扫码', 'QR_LOGIN_FAILED');
+  while (hops < 6) {
+    hops += 1;
+    const res = await request(url, { headers: { Cookie: serialiseCookies(jar) } });
+    jar = mergeCookies(jar, res);
+    trail.push(`${new URL(url).hostname}${new URL(url).pathname}->${res.status}`);
+    if (jar.p_skey) break;
+
+    const next = res.headers.location;
+    // A response that neither sets p_skey nor points anywhere else is the end
+    // of the line, and the login was refused.
+    if (!next) break;
+    url = new URL(next, url).toString();
+  }
+
+  if (!jar.p_skey) {
+    // The trail names which hops were walked and what they answered, so a
+    // failure here can be diagnosed from the log instead of re-derived.
+    throw fail('QQ 授权失败，请重新扫码', 'QR_LOGIN_FAILED', { trail: trail.join(' | ') });
+  }
 
   const authRes = await request('https://graph.qq.com/oauth2.0/authorize', {
     method: 'POST',

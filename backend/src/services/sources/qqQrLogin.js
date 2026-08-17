@@ -26,7 +26,36 @@
 const https = require('https');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const REFERER = 'https://xui.ptlogin2.qq.com/';
+
+/**
+ * The login page every later step is judged against.
+ *
+ * Fetching it is not optional and not a formality: it mints the session the
+ * whole flow runs inside — pt_login_sig, pt_guid_sig, ptui_identifier and
+ * others. Starting at ptqrshow instead produces a QR that scans fine and then
+ * fails at check_sig, because there is no session for the scan to be validated
+ * against. That is precisely the "QQ 授权失败" this flow hit.
+ *
+ * It doubles as the Referer for every subsequent request. The bare host is not
+ * enough; these endpoints check the full URL, which is how they know which
+ * application is asking.
+ */
+const XLOGIN_URL = 'https://xui.ptlogin2.qq.com/cgi-bin/xlogin?' + new URLSearchParams({
+  proxy_url: 'https://y.qq.com/portal/proxy.html',
+  daid: '383',
+  hide_title_bar: '1',
+  low_login: '0',
+  qlogin_auto_login: '1',
+  no_verifyimg: '1',
+  link_target: 'blank',
+  appid: '716027609',
+  style: '22',
+  target: 'self',
+  s_url: 'https://graph.qq.com/oauth2.0/login_jump',
+  pt_3rd_aid: '100497308',
+  pt_no_auth: '1',
+});
+const REFERER = XLOGIN_URL;
 
 /** QQ Music's own OAuth identity. All three must agree across every step. */
 const APPID = '716027609';
@@ -193,6 +222,14 @@ function sweepSessions() {
  * returned to the caller as the identifier so polling can send it back.
  */
 async function createQrCode() {
+  // Step 0 — open the login page and keep everything it sets. Without this the
+  // QR is issued against no session and the scan cannot be verified later.
+  const pageRes = await request(XLOGIN_URL);
+  const jar = mergeCookies({}, pageRes);
+  if (!jar.pt_login_sig) {
+    throw fail('QQ 登录页面结构已变化，请改用微信扫码或手动输入 Cookie', 'QR_SHAPE_CHANGED');
+  }
+
   const params = new URLSearchParams({
     appid: APPID,
     e: '2',
@@ -206,12 +243,14 @@ async function createQrCode() {
     pt_3rd_aid: PT_3RD_AID,
   });
 
-  const res = await request(`https://ssl.ptlogin2.qq.com/ptqrshow?${params}`);
+  const res = await request(`https://ssl.ptlogin2.qq.com/ptqrshow?${params}`, {
+    headers: { Cookie: serialiseCookies(jar) },
+  });
   if (res.status !== 200 || !res.buf.length) {
     throw fail('QQ 扫码暂时不可用', 'QR_UNAVAILABLE');
   }
 
-  const jar = mergeCookies({}, res);
+  mergeCookies(jar, res);
   const qrsig = jar.qrsig;
   if (!qrsig) {
     // No qrsig means the flow cannot proceed at all, and the shape has

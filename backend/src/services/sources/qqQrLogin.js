@@ -68,13 +68,30 @@ function hash33(str, seed = 0) {
   return h;
 }
 
-/** Collect Set-Cookie into a plain map; these steps pass state via cookies. */
-function readCookies(res) {
-  const jar = {};
+/**
+ * Merge this response's Set-Cookie headers into a jar, and return it.
+ *
+ * The whole flow is one login session, not four independent calls: ptqrlogin
+ * sets cookies that check_sig needs, and check_sig sets p_skey that authorize
+ * needs. The reference client gets this for free because it runs every request
+ * through one persistent session; here the jar has to be carried by hand.
+ *
+ * Sending each step only the cookies it was explicitly given is exactly the
+ * bug that made a scanned code fail at "QQ 授权失败" — the scan succeeded, but
+ * the next hop arrived with no session behind it.
+ *
+ * Deletions are honoured (`EXPIRED`, empty values) so a cookie the server
+ * clears does not linger and get replayed.
+ */
+function mergeCookies(jar, res) {
   for (const line of res.headers['set-cookie'] || []) {
     const [pair] = line.split(';');
     const eq = pair.indexOf('=');
-    if (eq > 0) jar[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+    if (eq <= 0) continue;
+    const name = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    if (!value || value === 'EXPIRED') delete jar[name];
+    else jar[name] = value;
   }
   return jar;
 }
@@ -148,6 +165,28 @@ function fail(message, code, extra = {}) {
 }
 
 /**
+ * Cookie jars for logins currently in progress, keyed by qrsig.
+ *
+ * Held server-side rather than handed to the browser: these are live login
+ * cookies for the user's QQ account, and the same rule applies to them as to a
+ * stored credential — anything that reaches the page can be read out of it.
+ * The browser only ever sees the qrsig, which is useless without the jar.
+ *
+ * Entries are dropped once the login finishes, and swept on age so an
+ * abandoned scan cannot pin memory. A QR is only valid for a couple of
+ * minutes, so five is well past the point where an entry could still be used.
+ */
+const sessions = new Map();
+const SESSION_TTL_MS = 5 * 60 * 1000;
+
+function sweepSessions() {
+  const cutoff = Date.now() - SESSION_TTL_MS;
+  for (const [key, entry] of sessions) {
+    if (entry.at < cutoff) sessions.delete(key);
+  }
+}
+
+/**
  * Step 1 — fetch the QR image.
  *
  * `qrsig` arrives as a cookie and is the only handle on this attempt; it is
@@ -172,12 +211,18 @@ async function createQrCode() {
     throw fail('QQ 扫码暂时不可用', 'QR_UNAVAILABLE');
   }
 
-  const qrsig = readCookies(res).qrsig;
+  const jar = mergeCookies({}, res);
+  const qrsig = jar.qrsig;
   if (!qrsig) {
     // No qrsig means the flow cannot proceed at all, and the shape has
     // presumably changed — callers fall back to WeChat or manual entry.
     throw fail('QQ 登录页面结构已变化，请改用微信扫码或手动输入 Cookie', 'QR_SHAPE_CHANGED');
   }
+
+  // The jar, not just the qrsig, is what the later steps need. Kept here so
+  // the browser never has to hold login cookies.
+  sweepSessions();
+  sessions.set(qrsig, { jar, at: Date.now() });
 
   return {
     uuid: qrsig,
@@ -213,9 +258,19 @@ async function pollQrCode(qrsig) {
     has_onekey: '1',
   });
 
+  // Resume this login's jar. A qrsig with no session behind it means the
+  // attempt expired or was never started here.
+  const session = sessions.get(qrsig);
+  if (!session) throw fail('二维码已失效，请重新生成', 'QR_SESSION_LOST');
+
   const res = await request(`https://ssl.ptlogin2.qq.com/ptqrlogin?${params}`, {
-    headers: { Cookie: `qrsig=${qrsig}` },
+    headers: { Cookie: serialiseCookies(session.jar) },
   });
+
+  // ptqrlogin sets cookies that check_sig then requires; without carrying them
+  // forward the next step arrives with no login session and is refused.
+  mergeCookies(session.jar, res);
+  session.at = Date.now();
 
   const text = res.buf.toString('utf8');
   const call = text.match(/ptuiCB\((.*?)\)/);
@@ -234,7 +289,8 @@ async function pollQrCode(qrsig) {
   const uin = (redirect.match(/[?&]uin=(.+?)&service/) || [])[1];
   if (!sigx || !uin) throw fail('扫码成功但未能取得登录参数', 'QR_BAD_RESPONSE');
 
-  return { status: 'done', uin, sigx };
+  // qrsig travels on so the exchange can pick this login's jar back up.
+  return { status: 'done', uin, sigx, qrsig };
 }
 
 /**
@@ -244,7 +300,10 @@ async function pollQrCode(qrsig) {
  * that immediately redirects away, and step 4's code exists only in a Location
  * header. Following either loses the value entirely.
  */
-async function exchangeCode({ uin, sigx }) {
+async function exchangeCode({ uin, sigx, qrsig }) {
+  const session = sessions.get(qrsig);
+  if (!session) throw fail('登录会话已失效，请重新扫码', 'QR_SESSION_LOST');
+
   const sigParams = new URLSearchParams({
     uin,
     pttype: '1',
@@ -266,8 +325,12 @@ async function exchangeCode({ uin, sigx }) {
     pt_3rd_aid: PT_3RD_AID,
   });
 
-  const sigRes = await request(`https://ssl.ptlogin2.graph.qq.com/check_sig?${sigParams}`);
-  const jar = readCookies(sigRes);
+  // Carries the cookies ptqrshow and ptqrlogin set — check_sig validates the
+  // scan against them, and answers without p_skey if they are missing.
+  const sigRes = await request(`https://ssl.ptlogin2.graph.qq.com/check_sig?${sigParams}`, {
+    headers: { Cookie: serialiseCookies(session.jar) },
+  });
+  const jar = mergeCookies(session.jar, sigRes);
   if (!jar.p_skey) throw fail('QQ 授权失败，请重新扫码', 'QR_LOGIN_FAILED');
 
   const authRes = await request('https://graph.qq.com/oauth2.0/authorize', {
@@ -293,6 +356,10 @@ async function exchangeCode({ uin, sigx }) {
 
   const location = authRes.headers.location || '';
   const code = (location.match(/[?&]code=([^&]+)/) || [])[1];
+  // The jar is spent either way: on success the code supersedes it, on failure
+  // it cannot be retried. Dropping it here keeps live QQ session cookies in
+  // memory for no longer than the login actually needs them.
+  sessions.delete(qrsig);
   if (!code) throw fail('QQ 授权失败，请重新扫码', 'QR_LOGIN_FAILED');
 
   return code;

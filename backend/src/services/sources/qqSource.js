@@ -44,6 +44,32 @@ const TIMEOUT_MS = 12000;
 const CLIENT = { ct: 11, cv: 13020508, v: 13020508, tmeAppID: 'qqmusic' };
 
 /**
+ * QQ's hash33, the function g_tk is derived with.
+ *
+ * Straight from the reference client: shift-add over the code points, masked
+ * to 31 bits.
+ */
+function hash33(s, h = 0) {
+  let acc = h;
+  for (const ch of String(s)) {
+    acc = ((acc << 5) + acc + ch.codePointAt(0)) | 0;
+  }
+  return 2147483647 & acc;
+}
+
+/**
+ * The token the desktop endpoints authenticate a credential with.
+ *
+ * This is the piece that was missing. A hard-coded 5381 is what you get from
+ * an *empty* key, so every request was effectively presenting no credential at
+ * all — the platform answered 104003 for every track, free ones included, and
+ * that looked exactly like an expired login.
+ */
+function gTk(musicKey) {
+  return musicKey ? hash33(musicKey, 5381) : 5381;
+}
+
+/**
  * Smallest gap between two calls to this platform.
  *
  * QQ publishes no rate-limit documentation and sends none of the standard
@@ -355,15 +381,32 @@ async function getPlaylist(disstid, { cookie, pageSize = 1000, maxSongs = 5000 }
   return { title, total, tracks };
 }
 
-/** The `comm` block every call carries. */
+/**
+ * The `comm` block every call carries.
+ *
+ * Shaped for the desktop endpoints, which is what these calls are: uin plus
+ * g_tk. `authst` belongs to the Android flow, where it travels with a device
+ * fingerprint (QIMEI) that we do not have and cannot fake — sending it here
+ * did nothing, and without g_tk the request presented no usable credential at
+ * all.
+ */
 function comm(uin, musicKey) {
+  const tk = gTk(musicKey);
   return {
     ...CLIENT,
     uin: String(uin),
+    g_tk: tk,
+    // The web player sends the same value twice under an older name; harmless
+    // to include and it matches what the platform expects from that client.
+    g_tk_new_20200303: tk,
     authst: musicKey,
+    tmeLoginType: 1,
     format: 'json',
     inCharset: 'utf-8',
     outCharset: 'utf-8',
+    notice: 0,
+    platform: 'yqq.json',
+    needNewCode: 1,
   };
 }
 

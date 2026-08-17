@@ -58,13 +58,19 @@ function StatusLine({ source }) {
   const vip = source.vipType == null
     ? { text: "已连接（尚未验证会员状态）", tone: "text-muted" }
     : source.vipType > 0
-      ? { text: "已连接 · 会员", tone: "text-emerald-400" }
+      ? { text: source.vipType > 1 ? "已连接 · 超级会员" : "已连接 · 会员", tone: "text-emerald-400" }
       : { text: "已连接 · 非会员（多数歌曲无法播放）", tone: "text-amber-400" };
 
   return (
     <span className={`text-sm ${vip.tone}`}>
       {vip.text}
       {source.nickname ? ` · ${source.nickname}` : ""}
+      {/* The membership's own expiry, which is months away and unrelated to the
+          login credential's — those are separate clocks and conflating them
+          would have the page announce an expiry that is not the one at risk. */}
+      {source.vipType > 0 && source.vipExpiresOn ? (
+        <span className="text-muted">{` · 会员至 ${source.vipExpiresOn}`}</span>
+      ) : null}
     </span>
   );
 }
@@ -79,7 +85,20 @@ function StatusLine({ source }) {
 function ExpiryNotice({ source, onRefresh, busy }) {
   if (!source?.connected) return null;
   const { level, expiresInMs, refreshable } = source;
-  if (level === "ok") return null;
+
+  // A healthy connection still says how long it has left. Silence here is what
+  // made the earlier version confusing: the page looked identical whether the
+  // credential had three days left or three minutes, so there was no way to
+  // tell a working connection from one about to stop working.
+  if (level === "ok") {
+    if (expiresInMs == null) return null;
+    return (
+      <div className="mt-2 text-xs text-muted">
+        {`连接${formatRemaining(expiresInMs)}过期`}
+        {refreshable ? "，届时自动续期" : "，到期后需重新连接"}
+      </div>
+    );
+  }
 
   const tone = level === "expired" || level === "urgent"
     ? "border-red-500/40 bg-red-500/10 text-red-300"

@@ -494,6 +494,50 @@ function resetCdnCache() {
   cdnInflight = null;
 }
 
+/**
+ * Membership status, and whether the credential still works.
+ *
+ * One call answers both questions, which is why it is worth making as soon as
+ * a credential is stored. Saying "connected" without it would imply playback
+ * works, and an account without a subscription signs in perfectly then fails
+ * on most songs — 77% of the target playlist is VIP-only.
+ *
+ * Field names are from the reference client's VipIdentity model, confirmed
+ * against a live response: `identity.vip` is the green-diamond flag, `send` is
+ * the expiry date, and a non-zero `code` means the credential is no longer
+ * accepted.
+ */
+async function getVipInfo({ cookie, uin, musicKey } = {}) {
+  const { json, meta } = await callCgi({
+    cookie,
+    codeOf: (j) => j?.req_1?.code,
+    url: `https://${HOST}/cgi-bin/musicu.fcg`,
+    body: {
+      comm: comm(uin, musicKey),
+      req_1: { module: 'VipLogin.VipLoginInter', method: 'vip_login_base', param: {} },
+    },
+  });
+
+  if (json?.req_1?.code !== 0) {
+    return { ok: false, vipType: null, expiresOn: null, meta };
+  }
+
+  const data = json.req_1.data || {};
+  const identity = data.identity || {};
+  // Luxury green diamond outranks the plain one; either counts as "can play".
+  const vipType = identity.HugeVip ? 2 : (identity.vip ? 1 : 0);
+  return {
+    ok: true,
+    vipType,
+    level: identity.level ?? null,
+    // A plain YYYY-MM-DD string. Kept as given rather than parsed into a
+    // timestamp — it is a calendar date, and turning it into an instant would
+    // invent a timezone the platform never stated.
+    expiresOn: identity.HugeVipEnd || data.send || null,
+    meta,
+  };
+}
+
 /** Lyrics. No cookie needed. */
 async function getLyric(mid) {
   breaker.acquire(PLATFORM);
@@ -536,6 +580,7 @@ module.exports = {
   search,
   getPlaylist,
   resolveUrl,
+  getVipInfo,
   getLyric,
   toTrack,
   resetCdnCache,

@@ -5,6 +5,7 @@ const validate = require('../middleware/validate');
 const { ValidationError } = require('../utils/errors');
 const svc = require('../services/musicCredentialService');
 const qqLogin = require('../services/sources/qqLogin');
+const access = require('../services/musicCredentialAccess');
 
 /**
  * The user's own QQ / NetEase credentials.
@@ -69,8 +70,11 @@ router.get('/:platform', async (req, res, next) => {
 router.put('/:platform', writeLimiter, validate(setSchema), async (req, res, next) => {
   try {
     const platform = readPlatform(req);
-    const source = await svc.setCredential(req.user.id, platform, req.validated.cookie);
-    res.json({ source });
+    await svc.setCredential(req.user.id, platform, req.validated.cookie);
+    // Ask the platform whether the credential actually works before answering.
+    // A cookie that parses can still be dead, and finding that out here costs
+    // one request but saves the user pasting again after playback fails.
+    res.json({ source: (await access.verifyCredential(req.user.id, platform)) ?? await svc.getStatus(req.user.id, platform) });
   } catch (err) {
     next(err);
   }
@@ -146,7 +150,9 @@ router.get('/qq/qrcode/:uuid', async (req, res, next) => {
       expiresAt: cred.expiresAt,
       needRefreshInSec: cred.needRefreshInSec,
     });
-    return res.json({ status: 'done', source });
+    // Verified right away so the page can say whether this account has a
+    // subscription — the difference between most songs playing and most not.
+    return res.json({ status: 'done', source: (await access.verifyCredential(req.user.id, 'qq')) ?? source });
   } catch (err) {
     if (err.code === 'QR_LOGIN_FAILED' || err.code === 'QR_BAD_RESPONSE') {
       return res.status(502).json({ error: { message: err.message, code: err.code } });
@@ -187,7 +193,7 @@ router.post('/qq/refresh', writeLimiter, async (req, res, next) => {
       expiresAt: fresh.expiresAt,
       needRefreshInSec: fresh.needRefreshInSec,
     });
-    return res.json({ source });
+    return res.json({ source: (await access.verifyCredential(req.user.id, 'qq')) ?? source });
   } catch (err) {
     if (err.code === 'QR_REFRESH_FAILED' || err.code === 'QR_NOT_REFRESHABLE') {
       await svc.recordCheck(req.user.id, 'qq', { ok: false, error: err.message })

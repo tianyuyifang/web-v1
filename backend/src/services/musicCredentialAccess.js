@@ -18,6 +18,7 @@
  */
 const credentials = require('./musicCredentialService');
 const qqLogin = require('./sources/qqLogin');
+const qqSource = require('./sources/qqSource');
 
 /** Store a renewed credential, keeping every field renewal itself needs. */
 async function save(userId, fresh) {
@@ -81,4 +82,39 @@ async function renewAfterRejection(userId) {
   }
 }
 
-module.exports = { getFreshCredential, renewAfterRejection };
+/**
+ * Ask the platform who this credential belongs to and what it is worth.
+ *
+ * Called right after a credential is stored, because saving one only proves it
+ * parsed. Whether it works, and whether the account has a subscription, are
+ * things only the platform can answer — and the answer matters: 77% of the
+ * imported playlist is VIP-only, so an account without one signs in perfectly
+ * and then fails on most songs, which reads as a broken feature.
+ *
+ * Never throws. A failed check leaves the status unverified rather than
+ * blocking the save, since the credential may well be fine and the page says
+ * "not verified yet" either way.
+ */
+async function verifyCredential(userId, platform = 'qq') {
+  if (platform !== 'qq') return null;
+  try {
+    const cred = await credentials.getCredential(userId, 'qq');
+    if (!cred) return null;
+
+    const info = await qqSource.getVipInfo({
+      cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey,
+    });
+    if (!info.ok) {
+      return credentials.recordCheck(userId, 'qq', { ok: false, error: '凭证已失效' });
+    }
+    return credentials.recordCheck(userId, 'qq', {
+      ok: true,
+      vipType: info.vipType,
+      vipExpiresOn: info.expiresOn,
+    });
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { getFreshCredential, renewAfterRejection, verifyCredential };

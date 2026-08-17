@@ -197,6 +197,7 @@ async function getStatus(userId, platform = null) {
       // null until a real call has been made, so the page can say "not
       // verified yet" instead of implying it works.
       vipType: entry.vipType ?? null,
+      vipExpiresOn: entry.vipExpiresOn ?? null,
       nickname: entry.nickname ?? null,
       checkedAt: entry.checkedAt ?? null,
       savedAt: entry.savedAt ?? null,
@@ -308,17 +309,28 @@ async function needsRefresh(userId, platform) {
  * most songs, which looks like a broken feature rather than a missing
  * subscription.
  */
-async function recordCheck(userId, platform, { ok, vipType, nickname, error } = {}) {
+async function recordCheck(userId, platform, { ok, vipType, nickname, vipExpiresOn, error } = {}) {
   assertPlatform(platform);
   const preferences = await readPreferences(userId);
   const sources = { ...(preferences[NAMESPACE] || {}) };
   if (!sources[platform]) return getStatus(userId, platform);
 
+  const prev = sources[platform];
+
+  // On a successful check the platform's answer replaces what was stored,
+  // including when it answers null. Falling back to the previous value would
+  // mean a lapsed subscription keeps reporting 会员 forever, since "no VIP" and
+  // "no answer" arrive as the same null — and a stale yes is worse than an
+  // honest unknown. A failed check changes nothing: it says the credential is
+  // dead, not that the subscription ended.
   sources[platform] = {
-    ...sources[platform],
+    ...prev,
     checkedAt: new Date().toISOString(),
-    vipType: ok ? (vipType ?? sources[platform].vipType ?? null) : sources[platform].vipType ?? null,
-    nickname: ok ? (nickname ?? sources[platform].nickname ?? null) : sources[platform].nickname ?? null,
+    vipType: ok ? (vipType ?? null) : prev.vipType ?? null,
+    nickname: ok ? (nickname ?? prev.nickname ?? null) : prev.nickname ?? null,
+    // A calendar date from the platform, e.g. 2026-12-12. Kept verbatim: it is
+    // the platform's own rendering and no timezone of ours applies to it.
+    vipExpiresOn: ok ? (vipExpiresOn ?? null) : prev.vipExpiresOn ?? null,
     lastError: ok ? null : (error || 'unknown'),
   };
 

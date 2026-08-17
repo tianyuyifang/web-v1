@@ -260,7 +260,7 @@ export default function MappingsPage() {
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
       <header className="mb-5">
-        <h1 className="text-xl font-semibold">歌曲映射审核</h1>
+        <h1 className="text-xl font-semibold">唱卡映射审核</h1>
         <p className="mt-1 text-sm text-muted">
           一条映射决定「游戏里显示这个名字时，播放哪一首」。批准后全站生效，
           并且不再被自动搜索覆盖。

@@ -81,6 +81,22 @@ export default function AdminPage() {
     { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.length },
     { key: "updates", label: t("updatesAdminSection"), dot: "bg-pink-400", count: null },
     { key: "bandwidth", label: t("bandwidthTitle"), dot: "bg-cyan-400", count: null },
+    { key: "tools", label: "管理员工具", dot: "bg-teal-400", count: null },
+  ];
+
+  /**
+   * Admin-only pages that are too big to live inside a tab.
+   *
+   * Each of these holds a lot of rows or runs for a long sitting, so they get
+   * their own route; this tab is just the way in. Collected in one list so the
+   * next one is a line here rather than another block of markup.
+   */
+  const ADMIN_TOOLS = [
+    {
+      href: "/mappings",
+      name: "唱卡映射审核",
+      desc: "把游戏里显示的歌名歌手对应到具体的音源。批准后全站生效，并且不再被自动搜索覆盖。",
+    },
   ];
 
   return (
@@ -236,26 +252,33 @@ export default function AdminPage() {
 
       {activeTab === "bandwidth" && <BandwidthPanel />}
 
-      {/* The mapping review page lives on its own route rather than in a tab:
-          it holds thousands of rows, plays audio, and is used for long
-          stretches. Linking to it from here means an admin does not have to
-          remember the URL, which was the only way in until now. */}
-      <section className="mt-6 rounded-xl border border-border bg-surface p-5">
-        <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
-          <span className="inline-block h-2 w-2 rounded-full bg-teal-400" />
-          歌曲映射审核
-        </h2>
-        <p className="mb-4 text-sm text-muted">
-          把游戏里显示的歌名歌手对应到具体的音源。批准后全站生效，
-          并且不再被自动搜索覆盖。
-        </p>
-        <Link
-          href="/mappings"
-          className="inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
-        >
-          打开审核页面
-        </Link>
-      </section>
+      {activeTab === "tools" && (
+        <section className="rounded-xl border border-border bg-surface p-5">
+          <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
+            <span className="inline-block h-2 w-2 rounded-full bg-teal-400" />
+            管理员工具
+          </h2>
+          <p className="mb-4 text-sm text-muted">
+            这些页面只有管理员和被授权的账号能打开，且不在导航栏里。
+          </p>
+          <ul className="space-y-2">
+            {ADMIN_TOOLS.map((tool) => (
+              <li key={tool.href}>
+                <Link
+                  href={tool.href}
+                  className="block rounded-lg border border-border p-4 transition-colors hover:border-primary hover:bg-surface-hover"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-theme">{tool.name}</span>
+                    <span className="shrink-0 text-xs text-muted">{tool.href}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">{tool.desc}</p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

@@ -4,7 +4,7 @@ const validate = require('../middleware/validate');
 const { ValidationError, NotFoundError } = require('../utils/errors');
 const svc = require('../services/mappingReviewService');
 const qq = require('../services/sources/qqSource');
-const credentials = require('../services/musicCredentialService');
+const { getFreshCredential } = require('../services/musicCredentialAccess');
 
 /**
  * Song-mapping review.
@@ -116,7 +116,9 @@ router.get('/:id/preview', async (req, res, next) => {
       return res.json({ kind: 'unsupported', url: null, reason: `${mapping.source} preview not implemented` });
     }
 
-    const cred = await credentials.getCredential(req.user.id, 'qq');
+    // Renews first if the key is close to dying, so a review session does not
+    // stop working halfway through.
+    const cred = await getFreshCredential(req.user.id, 'qq');
     if (!cred) {
       return res.status(400).json({
         error: { message: '需要先在账号页连接 QQ 音乐才能试听' },

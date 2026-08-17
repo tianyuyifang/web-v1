@@ -225,16 +225,32 @@ async function exchangeCode(code) {
     throw err;
   }
 
+  return shapeCredential(data);
+}
+
+/**
+ * Normalise a login/refresh response into what the credential store keeps.
+ *
+ * Every field the renewal call needs is carried through, not just the ones
+ * playback uses: a renewal that is missing openid or unionid is rejected, and
+ * discovering that three days later — when the key has already died — is the
+ * worst time to find out.
+ */
+function shapeCredential(data) {
   const uin = String(data.musicid || data.str_musicid || '');
   return {
     uin,
     musicKey: data.musickey,
+    // The renewal payload, kept together because it is only ever used as a set.
     refreshKey: data.refresh_key || null,
     refreshToken: data.refresh_token || null,
+    accessToken: data.access_token || null,
     openid: data.openid || null,
+    unionid: data.unionid || null,
+    strMusicId: data.str_musicid || uin || null,
     nickname: data.nick || null,
-    // The platform says when the key dies and when to renew, so neither has to
-    // be guessed from a cookie's expiry attribute.
+    // The platform states both outright, so neither is inferred from a
+    // cookie's own expiry attribute.
     expiresAt: data.expired_at ? new Date(data.expired_at * 1000).toISOString() : null,
     keyExpiresInSec: data.keyExpiresIn ?? null,
     needRefreshInSec: data.needRefreshKeyIn ?? null,
@@ -251,10 +267,77 @@ async function exchangeCode(code) {
   };
 }
 
+/**
+ * Renew a credential before it expires.
+ *
+ * This is the entire reason QR login exists: only a scanned credential carries
+ * refresh_key, and only refresh_key makes this call possible. Without it a
+ * connection dies after roughly three days and the user has to reconnect by
+ * hand.
+ *
+ * The parameter set is the one a WeChat login (tmeLoginType 1) requires. It is
+ * not interchangeable with the QQ-login shape, which sends access_token and
+ * musicid where this sends unionid and str_musicid.
+ */
+async function refreshCredential(saved) {
+  if (!saved?.refreshKey || !saved?.musicKey) {
+    const err = new Error('这份凭证不支持自动续期，请重新扫码');
+    err.code = 'QR_NOT_REFRESHABLE';
+    throw err;
+  }
+
+  const res = await request('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+    method: 'POST',
+    headers: { Referer: 'https://y.qq.com/' },
+    body: {
+      comm: {
+        ct: 11, cv: 13020508, v: 13020508, tmeAppID: 'qqmusic',
+        format: 'json', inCharset: 'utf-8', outCharset: 'utf-8', tmeLoginType: 1,
+      },
+      req_1: {
+        module: 'music.login.LoginServer',
+        method: 'Login',
+        param: {
+          openid: saved.openid,
+          refresh_token: saved.refreshToken,
+          str_musicid: saved.strMusicId || saved.uin,
+          musickey: saved.musicKey,
+          unionid: saved.unionid,
+          refresh_key: saved.refreshKey,
+          loginMode: 2,
+        },
+      },
+    },
+  });
+
+  let json;
+  try {
+    json = JSON.parse(res.buf.toString('utf8'));
+  } catch {
+    const err = new Error('续期响应无法解析');
+    err.code = 'QR_BAD_RESPONSE';
+    throw err;
+  }
+
+  const data = json?.req_1?.data;
+  if (json?.req_1?.code !== 0 || !data?.musickey) {
+    // A refusal here means the chain is broken for good — the stored key can
+    // no longer mint a new one — so callers stop trying and ask for a rescan
+    // rather than retrying on a schedule.
+    const err = new Error(data?.errMsg || '续期失败，请重新扫码连接');
+    err.code = 'QR_REFRESH_FAILED';
+    err.platformCode = json?.req_1?.code;
+    throw err;
+  }
+
+  return shapeCredential(data);
+}
+
 module.exports = {
   createQrCode,
   pollQrCode,
   exchangeCode,
+  refreshCredential,
   APPID,
   WX_STATUS,
 };

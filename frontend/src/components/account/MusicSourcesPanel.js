@@ -37,6 +37,16 @@ const PLATFORMS = [
   },
 ];
 
+/** "还有 2 天" / "还有 5 小时" — precise enough to act on, no more. */
+function formatRemaining(ms) {
+  if (ms == null) return null;
+  if (ms <= 0) return "已过期";
+  const hours = Math.floor(ms / 3600000);
+  if (hours >= 24) return `还有 ${Math.floor(hours / 24)} 天`;
+  if (hours >= 1) return `还有 ${hours} 小时`;
+  return `不到 1 小时`;
+}
+
 function StatusLine({ source }) {
   if (!source?.connected) {
     return <span className="text-sm text-muted">未连接</span>;
@@ -56,6 +66,47 @@ function StatusLine({ source }) {
       {vip.text}
       {source.nickname ? ` · ${source.nickname}` : ""}
     </span>
+  );
+}
+
+/**
+ * Say something before playback starts failing, not after.
+ *
+ * Without this the only symptom of a dead credential is a song that will not
+ * play, with nothing on screen connecting the two. Kept quiet until there is
+ * genuinely something to do — a connection with days left says nothing at all.
+ */
+function ExpiryNotice({ source, onRefresh, busy }) {
+  if (!source?.connected) return null;
+  const { level, expiresInMs, refreshable } = source;
+  if (level === "ok") return null;
+
+  const tone = level === "expired" || level === "urgent"
+    ? "border-red-500/40 bg-red-500/10 text-red-300"
+    : "border-amber-500/40 bg-amber-500/10 text-amber-300";
+
+  const headline = level === "expired"
+    ? "连接已过期，无法播放"
+    : `连接${formatRemaining(expiresInMs)}过期`;
+
+  return (
+    <div className={`mt-2 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs ${tone}`}>
+      <span>{headline}</span>
+      {refreshable ? (
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={busy}
+          className="rounded border border-current px-2 py-0.5 hover:opacity-80 disabled:opacity-50"
+        >
+          {busy ? "续期中…" : "立即续期"}
+        </button>
+      ) : (
+        // A pasted credential has no refresh key, so renewal is not on offer —
+        // saying "renew" and then failing would be worse than saying nothing.
+        <span className="opacity-80">手动粘贴的连接无法续期，请重新扫码</span>
+      )}
+    </div>
   );
 }
 
@@ -164,6 +215,19 @@ export default function MusicSourcesPanel() {
     }
   }, [cookie]);
 
+  const renew = useCallback(async () => {
+    setError('');
+    setBusy('refresh');
+    try {
+      const res = await musicSourcesAPI.refresh();
+      setSources((prev) => ({ ...prev, qq: res.data.source }));
+    } catch (err) {
+      setError(err.response?.data?.error?.message || '续期失败，请重新扫码连接');
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
   const disconnect = useCallback(async (platform) => {
     setBusy(platform);
     try {
@@ -201,6 +265,7 @@ export default function MusicSourcesPanel() {
                 <div>
                   <div className="text-sm font-medium">{p.name}</div>
                   <div className="mt-0.5"><StatusLine source={source} /></div>
+                  <ExpiryNotice source={source} busy={busy === 'refresh'} onRefresh={renew} />
                   {connected && source.method === "paste" && (
                     <div className="mt-1 text-xs text-amber-400/80">
                       手动粘贴的凭证约 3 天后失效，届时需要重新连接

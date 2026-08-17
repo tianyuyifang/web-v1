@@ -122,6 +122,12 @@ async function setCredential(userId, platform, cookie, extra = {}) {
     // Encrypted like the cookie — it is a credential in its own right, enough
     // to mint fresh keys for this account.
     refreshKey: extra.refreshKey ? vault.encrypt(extra.refreshKey) : null,
+    refreshToken: extra.refreshToken ? vault.encrypt(extra.refreshToken) : null,
+    // Not secret on their own, but the renewal call is rejected without them,
+    // so they are stored alongside rather than rediscovered later.
+    openid: extra.openid ?? null,
+    unionid: extra.unionid ?? null,
+    strMusicId: extra.strMusicId ?? null,
     refreshable: Boolean(extra.refreshKey) || Boolean(parsed.refreshable),
     savedAt: new Date().toISOString(),
     // The platform states both of these outright on a QR login, so they beat
@@ -160,6 +166,31 @@ async function clearCredential(userId, platform) {
 }
 
 /**
+ * How close a credential is to being useless.
+ *
+ * Returned to the browser so a page can warn before playback starts failing.
+ * The alternative is what happens today: everything looks connected until a
+ * song will not play, with nothing on screen explaining why.
+ *
+ *   ok        plenty of time left, or nothing to warn about
+ *   soon      inside a day — mention it, do not interrupt
+ *   urgent    inside six hours — say it loudly
+ *   expired   already dead
+ */
+const SOON_MS = 24 * 60 * 60 * 1000;
+const URGENT_MS = 6 * 60 * 60 * 1000;
+
+function expiryState(entry) {
+  if (!entry?.expiresAt) return { level: 'ok', expiresInMs: null };
+  const left = new Date(entry.expiresAt).getTime() - Date.now();
+  if (Number.isNaN(left)) return { level: 'ok', expiresInMs: null };
+  if (left <= 0) return { level: 'expired', expiresInMs: 0 };
+  if (left <= URGENT_MS) return { level: 'urgent', expiresInMs: left };
+  if (left <= SOON_MS) return { level: 'soon', expiresInMs: left };
+  return { level: 'ok', expiresInMs: left };
+}
+
+/**
  * What the browser is allowed to know.
  *
  * Never includes the cookie, and deliberately not the raw uin either — it
@@ -186,6 +217,8 @@ async function getStatus(userId, platform = null) {
       method: entry.method || 'paste',
       refreshable: Boolean(entry.refreshable),
       expiresAt: entry.expiresAt ?? null,
+      // So a page can warn before playback starts failing rather than after.
+      ...expiryState(entry),
       lastError: entry.lastError ?? null,
     };
   };
@@ -218,6 +251,55 @@ async function getCredential(userId, platform) {
     return { cookie, uin: entry.uin || parsed.uin, musicKey: parsed.musicKey };
   }
   return { cookie, ...parseNeteaseCookie(cookie) };
+}
+
+/**
+ * Everything the renewal call needs, decrypted. Server-side only.
+ *
+ * Separate from getCredential() because renewal wants the whole chain — the
+ * refresh key, the tokens, the ids — while playback only wants a cookie.
+ * Returns null when this credential cannot be renewed at all, which is the
+ * normal case for a pasted one.
+ */
+async function getRefreshable(userId, platform) {
+  assertPlatform(platform);
+  const preferences = await readPreferences(userId);
+  const entry = (preferences[NAMESPACE] || {})[platform];
+  if (!entry?.refreshKey || !entry?.cookie) return null;
+
+  const cookie = vault.decrypt(entry.cookie);
+  const parsed = platform === 'qq' ? parseQqCookie(cookie) : {};
+  return {
+    uin: entry.uin || parsed.uin || null,
+    musicKey: parsed.musicKey || null,
+    refreshKey: vault.decrypt(entry.refreshKey),
+    refreshToken: entry.refreshToken ? vault.decrypt(entry.refreshToken) : null,
+    openid: entry.openid ?? null,
+    unionid: entry.unionid ?? null,
+    strMusicId: entry.strMusicId ?? null,
+    expiresAt: entry.expiresAt ?? null,
+    needRefreshInSec: entry.needRefreshInSec ?? null,
+  };
+}
+
+/**
+ * Is it time to renew this credential?
+ *
+ * The platform states how long the key lasts and when it wants to see a
+ * renewal, so this leans on that rather than a schedule of our own. The margin
+ * exists because renewing slightly early is free while renewing late is not:
+ * once the key dies the refresh chain dies with it and the user has to rescan.
+ */
+const REFRESH_MARGIN_MS = 12 * 60 * 60 * 1000;
+
+async function needsRefresh(userId, platform) {
+  const preferences = await readPreferences(userId);
+  const entry = (preferences[NAMESPACE] || {})[platform];
+  if (!entry?.refreshKey) return false;
+  if (!entry.expiresAt) return false;
+  const left = new Date(entry.expiresAt).getTime() - Date.now();
+  if (Number.isNaN(left)) return false;
+  return left <= REFRESH_MARGIN_MS;
 }
 
 /**
@@ -254,6 +336,9 @@ module.exports = {
   PLATFORMS,
   NAMESPACE,
   setCredential,
+  getRefreshable,
+  needsRefresh,
+  expiryState,
   clearCredential,
   getStatus,
   getCredential,

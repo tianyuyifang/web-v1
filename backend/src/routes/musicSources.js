@@ -117,10 +117,17 @@ router.get('/qq/qrcode/:uuid', async (req, res, next) => {
     }
 
     const cred = await qqLogin.exchangeCode(result.code);
+    // Every field the renewal call needs is stored now. Storing only what
+    // playback uses would leave the first renewal to fail three days later,
+    // when the key is already dying and there is no way to recover it.
     const source = await svc.setCredential(req.user.id, 'qq', cred.cookie, {
       method: 'qr',
       uin: cred.uin,
       refreshKey: cred.refreshKey,
+      refreshToken: cred.refreshToken,
+      openid: cred.openid,
+      unionid: cred.unionid,
+      strMusicId: cred.strMusicId,
       nickname: cred.nickname,
       expiresAt: cred.expiresAt,
       needRefreshInSec: cred.needRefreshInSec,
@@ -129,6 +136,49 @@ router.get('/qq/qrcode/:uuid', async (req, res, next) => {
   } catch (err) {
     if (err.code === 'QR_LOGIN_FAILED' || err.code === 'QR_BAD_RESPONSE') {
       return res.status(502).json({ error: { message: err.message, code: err.code } });
+    }
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/music-sources/qq/refresh — renew before the key dies.
+ *
+ * Only a scanned credential can do this; a pasted one has no refresh key and
+ * is told so plainly, because the fix is different (reconnect by scanning).
+ *
+ * A refusal from the platform means the chain is broken for good — the stored
+ * key can no longer mint a new one — so the failure is recorded and the user
+ * is asked to rescan rather than being retried on a schedule.
+ */
+router.post('/qq/refresh', writeLimiter, async (req, res, next) => {
+  try {
+    const saved = await svc.getRefreshable(req.user.id, 'qq');
+    if (!saved) {
+      return res.status(400).json({
+        error: { message: '这份连接不支持自动续期，请改用扫码连接', code: 'NOT_REFRESHABLE' },
+      });
+    }
+
+    const fresh = await qqLogin.refreshCredential(saved);
+    const source = await svc.setCredential(req.user.id, 'qq', fresh.cookie, {
+      method: 'qr',
+      uin: fresh.uin,
+      refreshKey: fresh.refreshKey,
+      refreshToken: fresh.refreshToken,
+      openid: fresh.openid,
+      unionid: fresh.unionid,
+      strMusicId: fresh.strMusicId,
+      nickname: fresh.nickname,
+      expiresAt: fresh.expiresAt,
+      needRefreshInSec: fresh.needRefreshInSec,
+    });
+    return res.json({ source });
+  } catch (err) {
+    if (err.code === 'QR_REFRESH_FAILED' || err.code === 'QR_NOT_REFRESHABLE') {
+      await svc.recordCheck(req.user.id, 'qq', { ok: false, error: err.message })
+        .catch(() => { /* the response matters more than the bookkeeping */ });
+      return res.status(400).json({ error: { message: err.message, code: err.code } });
     }
     return next(err);
   }

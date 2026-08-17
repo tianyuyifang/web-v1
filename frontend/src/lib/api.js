@@ -272,6 +272,9 @@ export const musicSourcesAPI = {
   // caller simply asks again.
   createQr: () => api.post("/music-sources/qq/qrcode"),
   pollQr: (uuid) => api.get(`/music-sources/qq/qrcode/${uuid}`),
+  // Only works for a scanned connection; a pasted one has no refresh key and
+  // is answered with a 400 that says so.
+  refresh: () => api.post("/music-sources/qq/refresh"),
 };
 
 // Song-mapping review. Admin-only on the server, so a non-editor calling any

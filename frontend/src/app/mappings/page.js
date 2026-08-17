@@ -20,7 +20,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { mappingAPI } from "@/lib/api";
+import { mappingAPI, musicSourcesAPI } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
 
 const BUCKETS = [
@@ -64,6 +64,10 @@ export default function MappingsPage() {
   const [loadedFor, setLoadedFor] = useState(null);
   const [progress, setProgress] = useState({ current: 0, duration: 0 });
   const [playError, setPlayError] = useState("");
+  // Reviewing depends on a working QQ connection, so its health belongs on
+  // this page too — otherwise a dying credential shows up only as playback
+  // that silently stops working.
+  const [credential, setCredential] = useState(null);
   const audioRef = useRef(null);
 
   const load = useCallback(async ({ append = false, cursor = null } = {}) => {
@@ -87,6 +91,7 @@ export default function MappingsPage() {
   useEffect(() => {
     if (authLoading || !user) return;
     load();
+    musicSourcesAPI.get('qq').then((r) => setCredential(r.data.source)).catch(() => {});
   }, [authLoading, user, load]);
 
   useEffect(() => {
@@ -307,6 +312,32 @@ export default function MappingsPage() {
           搜索
         </button>
       </form>
+
+      {/* Reviewing means listening, and listening needs a live connection.
+          Surfaced here so a dying credential is visible before playback stops
+          working, rather than after. */}
+      {credential && credential.connected && credential.level !== "ok" && (
+        <div
+          className={`mb-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+            credential.level === "soon"
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+              : "border-red-500/40 bg-red-500/10 text-red-300"
+          }`}
+        >
+          <span>
+            {credential.level === 'expired'
+              ? 'QQ 音乐连接已过期，试听将会失败'
+              : 'QQ 音乐连接即将过期'}
+          </span>
+          <a href="/account" className="underline underline-offset-2 hover:opacity-80">去账号页处理</a>
+        </div>
+      )}
+      {credential && !credential.connected && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-muted">
+          <span>尚未连接 QQ 音乐，无法试听。</span>
+          <a href="/account" className="underline underline-offset-2 hover:text-fg">去连接</a>
+        </div>
+      )}
 
       {error && (
         <div className="mb-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">

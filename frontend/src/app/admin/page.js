@@ -82,7 +82,6 @@ export default function AdminPage() {
     { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.length },
     { key: "updates", label: t("updatesAdminSection"), dot: "bg-pink-400", count: null },
     { key: "bandwidth", label: t("bandwidthTitle"), dot: "bg-cyan-400", count: null },
-    { key: "promo", label: "推广活动", dot: "bg-amber-400", count: null },
     { key: "tools", label: "管理员工具", dot: "bg-teal-400", count: null },
   ];
 
@@ -254,9 +253,8 @@ export default function AdminPage() {
 
       {activeTab === "bandwidth" && <BandwidthPanel />}
 
-      {activeTab === "promo" && <SignupPromoPanel />}
-
       {activeTab === "tools" && (
+        <div className="space-y-6">
         <section className="rounded-xl border border-border bg-surface p-5">
           <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
             <span className="inline-block h-2 w-2 rounded-full bg-teal-400" />
@@ -282,6 +280,11 @@ export default function AdminPage() {
             ))}
           </ul>
         </section>
+
+        {/* Not a link like the ones above — the campaign is a short form, so it
+            renders here rather than earning a route of its own. */}
+        <SignupPromoPanel />
+        </div>
       )}
     </div>
   );

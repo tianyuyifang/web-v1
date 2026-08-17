@@ -166,7 +166,9 @@ export default function MappingsPage() {
 
     setBusy(`play:${row.id}`);
     try {
-      const res = await mappingAPI.preview(row.id);
+      const res = row.kind === "imported"
+        ? await mappingAPI.previewTrack(row.id)
+        : await mappingAPI.preview(row.id);
       const { url, reason, kind } = res.data;
 
       if (kind === "unsupported") {
@@ -372,8 +374,8 @@ export default function MappingsPage() {
               <button
                 type="button"
                 onClick={() => play(row)}
-                disabled={busy === `play:${row.id}` || row.kind === "imported"}
-                title={row.kind === "imported" ? "先认领后才能试听" : "试听"}
+                disabled={busy === `play:${row.id}`}
+                title="试听"
                 className="h-9 w-9 shrink-0 rounded-full border border-border text-sm disabled:opacity-30 hover:border-accent"
               >
                 {busy === `play:${row.id}` ? "…" : playing === row.id ? "❚❚" : "▶"}

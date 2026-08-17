@@ -99,51 +99,78 @@ router.get('/:id/candidates', async (req, res, next) => {
 });
 
 /**
- * GET /api/mappings/:id/preview — a URL to hear the track.
+ * Turn a (source, id) pair into something the browser can play.
  *
- * Review is mostly listening: two seconds tells you whether the pairing is
- * right. The reviewer's own credential is used, and the URL goes to the
- * browser, which fetches the audio from the CDN directly — the audio never
- * passes through this server.
+ * Shared by both preview routes so an unclaimed track and an approved mapping
+ * behave identically — the audio does not care whether anyone has vouched for
+ * the pairing yet.
+ *
+ * The reviewer's own credential is used and the URL goes to the browser, which
+ * fetches from the CDN directly; the audio never passes through this server.
  */
+async function resolvePreview(userId, source, externalId, res) {
+  if (source === 'LOCAL') {
+    // Local songs already have a streaming route; no external call needed.
+    return res.json({ kind: 'local', songId: externalId, url: null });
+  }
+  if (source !== 'QQ') {
+    return res.json({ kind: 'unsupported', url: null, reason: `${source} preview not implemented` });
+  }
+
+  // Renews first if the key is close to dying, so a review session does not
+  // stop working halfway through.
+  const cred = await getFreshCredential(userId, 'qq');
+  if (!cred) {
+    return res.status(400).json({
+      error: { message: '这首歌来自 QQ 音乐，需要先在账号页连接 QQ 音乐才能试听', code: 'NO_CREDENTIAL', platform: 'qq' },
+    });
+  }
+
+  try {
+    const result = await qq.resolveUrl(externalId, {
+      cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey,
+    });
+    return res.json({ kind: 'external', url: result.url, reason: result.reason });
+  } catch (err) {
+    // A dead credential is the likeliest cause of a refusal here, and the user
+    // can act on that — so it is reported as its own thing rather than as a
+    // generic failure. Recorded too, so the account page agrees.
+    if (err.code === 'SOURCE_RATE_LIMITED' || err.code === 'SOURCE_HTTP_ERROR') {
+      await credentials.recordCheck(userId, 'qq', { ok: false, error: err.message })
+        .catch(() => { /* bookkeeping only */ });
+      return res.status(502).json({
+        error: { message: 'QQ 音乐拒绝了这次请求，连接可能已失效，请去账号页重新连接', code: 'CREDENTIAL_REJECTED', platform: 'qq' },
+      });
+    }
+    throw err;
+  }
+}
+
+/**
+ * GET /api/mappings/track/:trackId/preview — hear a track before claiming it.
+ *
+ * Listening is how you decide, so it has to come before the decision.
+ * Requiring a claim first meant vouching for a pairing you had not heard,
+ * which is backwards; every track in the pool came from a trusted playlist and
+ * carries a real platform id, so there was never a reason to withhold it.
+ */
+router.get('/track/:trackId/preview', async (req, res, next) => {
+  try {
+    const parsed = z.string().uuid().safeParse(req.params.trackId);
+    if (!parsed.success) throw new NotFoundError('Track');
+
+    const track = await svc.getTrack(parsed.data);
+    return await resolvePreview(req.user.id, track.source, track.externalId, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** GET /api/mappings/:id/preview — hear what a mapping resolves to. */
 router.get('/:id/preview', async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
-    if (mapping.source === 'LOCAL') {
-      // Local songs already have a streaming route; no external call needed.
-      return res.json({ kind: 'local', songId: mapping.externalId, url: null });
-    }
-    if (mapping.source !== 'QQ') {
-      return res.json({ kind: 'unsupported', url: null, reason: `${mapping.source} preview not implemented` });
-    }
-
-    // Renews first if the key is close to dying, so a review session does not
-    // stop working halfway through.
-    const cred = await getFreshCredential(req.user.id, 'qq');
-    if (!cred) {
-      return res.status(400).json({
-        error: { message: '这首歌来自 QQ 音乐，需要先在账号页连接 QQ 音乐才能试听', code: 'NO_CREDENTIAL', platform: 'qq' },
-      });
-    }
-
-    try {
-      const result = await qq.resolveUrl(mapping.externalId, {
-        cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey,
-      });
-      return res.json({ kind: 'external', url: result.url, reason: result.reason });
-    } catch (err) {
-      // A dead credential is the likeliest cause of a refusal here, and the
-      // user can act on that — so it is reported as its own thing rather than
-      // as a generic failure. Recorded too, so the account page agrees.
-      if (err.code === 'SOURCE_RATE_LIMITED' || err.code === 'SOURCE_HTTP_ERROR') {
-        await credentials.recordCheck(req.user.id, 'qq', { ok: false, error: err.message })
-          .catch(() => { /* bookkeeping only */ });
-        return res.status(502).json({
-          error: { message: 'QQ 音乐拒绝了这次请求，连接可能已失效，请去账号页重新连接', code: 'CREDENTIAL_REJECTED', platform: 'qq' },
-        });
-      }
-      throw err;
-    }
+    return await resolvePreview(req.user.id, mapping.source, mapping.externalId, res);
   } catch (err) {
     next(err);
   }

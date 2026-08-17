@@ -292,6 +292,9 @@ export const mappingAPI = {
   // Resolves through the reviewer's own credential; the browser then fetches
   // the audio from the CDN directly.
   preview: (id) => api.get(`/mappings/${id}/preview`),
+  // Same thing for a pool track nobody has claimed yet — you have to hear it
+  // before you can say it is the right one.
+  previewTrack: (trackId) => api.get(`/mappings/track/${trackId}/preview`),
   create: (body) => api.post("/mappings", body),
   approve: (id, body = {}) => api.post(`/mappings/${id}/approve`, body),
   unapprove: (id) => api.post(`/mappings/${id}/unapprove`),

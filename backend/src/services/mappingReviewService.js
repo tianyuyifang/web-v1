@@ -157,6 +157,13 @@ async function get(id) {
   return shapeMapping(m);
 }
 
+/** One imported track, so it can be previewed before anyone claims it. */
+async function getTrack(id) {
+  const t = await prisma.importedTrack.findUnique({ where: { id } });
+  if (!t) throw new NotFoundError('Track');
+  return t;
+}
+
 /**
  * Alternatives for a mapping, drawn from the imported pool.
  *
@@ -320,6 +327,7 @@ module.exports = {
   getCounts,
   list,
   get,
+  getTrack,
   candidatesFor,
   approve,
   unapprove,

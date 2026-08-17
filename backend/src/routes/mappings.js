@@ -5,6 +5,7 @@ const { ValidationError, NotFoundError } = require('../utils/errors');
 const svc = require('../services/mappingReviewService');
 const qq = require('../services/sources/qqSource');
 const { getFreshCredential } = require('../services/musicCredentialAccess');
+const credentials = require('../services/musicCredentialService');
 
 /**
  * Song-mapping review.
@@ -121,14 +122,28 @@ router.get('/:id/preview', async (req, res, next) => {
     const cred = await getFreshCredential(req.user.id, 'qq');
     if (!cred) {
       return res.status(400).json({
-        error: { message: '需要先在账号页连接 QQ 音乐才能试听' },
+        error: { message: '这首歌来自 QQ 音乐，需要先在账号页连接 QQ 音乐才能试听', code: 'NO_CREDENTIAL', platform: 'qq' },
       });
     }
 
-    const result = await qq.resolveUrl(mapping.externalId, {
-      cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey,
-    });
-    return res.json({ kind: 'external', url: result.url, reason: result.reason });
+    try {
+      const result = await qq.resolveUrl(mapping.externalId, {
+        cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey,
+      });
+      return res.json({ kind: 'external', url: result.url, reason: result.reason });
+    } catch (err) {
+      // A dead credential is the likeliest cause of a refusal here, and the
+      // user can act on that — so it is reported as its own thing rather than
+      // as a generic failure. Recorded too, so the account page agrees.
+      if (err.code === 'SOURCE_RATE_LIMITED' || err.code === 'SOURCE_HTTP_ERROR') {
+        await credentials.recordCheck(req.user.id, 'qq', { ok: false, error: err.message })
+          .catch(() => { /* bookkeeping only */ });
+        return res.status(502).json({
+          error: { message: 'QQ 音乐拒绝了这次请求，连接可能已失效，请去账号页重新连接', code: 'CREDENTIAL_REJECTED', platform: 'qq' },
+        });
+      }
+      throw err;
+    }
   } catch (err) {
     next(err);
   }

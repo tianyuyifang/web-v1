@@ -167,7 +167,12 @@ export default function MappingsPage() {
     setBusy(`play:${row.id}`);
     try {
       const res = await mappingAPI.preview(row.id);
-      const { url, reason } = res.data;
+      const { url, reason, kind } = res.data;
+
+      if (kind === "unsupported") {
+        setPlayError(`${SOURCE_LABEL[row.source] || row.source} 的试听还没做，暂时无法播放`);
+        return;
+      }
       if (!url) {
         // A track the platform will not serve is a permissions answer, not a
         // fault, and the fix is different — so it is worded differently.
@@ -181,8 +186,23 @@ export default function MappingsPage() {
       setLoadedFor(row.id);
       await el.play();
       setPlaying(row.id);
+
+      // Playing proves the credential is alive, so refresh what the page
+      // believes about it. A row that plays should not leave a stale "expiring
+      // soon" notice on screen.
+      if (row.source === "QQ") {
+        musicSourcesAPI.get("qq").then((r) => setCredential(r.data.source)).catch(() => {});
+      }
     } catch (err) {
-      setPlayError(err.response?.data?.error?.message || "试听失败");
+      // The server knows which credential was missing or dead for this
+      // particular track; it says so, and that beats anything guessed here.
+      const message = err.response?.data?.error?.message;
+      setPlayError(message || "试听失败");
+      // A failure is the moment the credential state is most likely stale, so
+      // re-read it rather than leaving the page showing yesterday's answer.
+      if (row.source === "QQ") {
+        musicSourcesAPI.get("qq").then((r) => setCredential(r.data.source)).catch(() => {});
+      }
     } finally {
       setBusy(null);
     }
@@ -313,29 +333,16 @@ export default function MappingsPage() {
         </button>
       </form>
 
-      {/* Reviewing means listening, and listening needs a live connection.
-          Surfaced here so a dying credential is visible before playback stops
-          working, rather than after. */}
-      {credential && credential.connected && credential.level !== "ok" && (
-        <div
-          className={`mb-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-            credential.level === "soon"
-              ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-              : "border-red-500/40 bg-red-500/10 text-red-300"
-          }`}
-        >
-          <span>
-            {credential.level === 'expired'
-              ? 'QQ 音乐连接已过期，试听将会失败'
-              : 'QQ 音乐连接即将过期'}
-          </span>
-          <a href="/account" className="underline underline-offset-2 hover:opacity-80">去账号页处理</a>
-        </div>
-      )}
-      {credential && !credential.connected && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-muted">
-          <span>尚未连接 QQ 音乐，无法试听。</span>
-          <a href="/account" className="underline underline-offset-2 hover:text-fg">去连接</a>
+      {/* Only warned about while it is still worth acting on. A banner about
+          the QQ connection sat here before, which was wrong twice over: most
+          of the page does not need it — library tracks need no credential and
+          NetEase ones need a different one — and it shouted at someone who
+          might only be reading. The credential is now checked when a specific
+          row is played, against that row's own source. */}
+      {credential && credential.connected && credential.level === "soon" && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+          <span>QQ 音乐连接即将过期</span>
+          <a href="/account" className="underline underline-offset-2 hover:opacity-80">去账号页续期</a>
         </div>
       )}
 

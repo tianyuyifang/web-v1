@@ -21,6 +21,10 @@
  */
 const prisma = require('../db/client');
 const { titleKey, artistKey, artistsOverlap } = require('./songKeyService');
+// The project's error classes set statusCode and isOperational, which the error
+// handler reads. A bare Error with .status ends up as a 500 with the message
+// swallowed — the caller is told 'internal server error' for a missing row.
+const { NotFoundError, ValidationError } = require('../utils/errors');
 
 const PAGE_SIZE = 50;
 
@@ -144,11 +148,7 @@ async function get(id) {
     where: { id },
     include: { approvedBy: { select: { username: true } } },
   });
-  if (!m) {
-    const err = new Error('Mapping not found');
-    err.status = 404;
-    throw err;
-  }
+  if (!m) throw new NotFoundError('Mapping');
   return shapeMapping(m);
 }
 
@@ -160,11 +160,7 @@ async function get(id) {
  */
 async function candidatesFor(id) {
   const m = await prisma.songMapping.findUnique({ where: { id } });
-  if (!m) {
-    const err = new Error('Mapping not found');
-    err.status = 404;
-    throw err;
-  }
+  if (!m) throw new NotFoundError('Mapping');
 
   const sameTitle = await prisma.importedTrack.findMany({
     where: { titleKey: m.titleKey },
@@ -200,11 +196,7 @@ async function candidatesFor(id) {
  */
 async function approve(id, { userId, source, externalId, note } = {}) {
   const m = await prisma.songMapping.findUnique({ where: { id } });
-  if (!m) {
-    const err = new Error('Mapping not found');
-    err.status = 404;
-    throw err;
-  }
+  if (!m) throw new NotFoundError('Mapping');
 
   const nextSource = source || m.source;
   const nextExternalId = externalId || m.externalId;
@@ -253,19 +245,13 @@ async function unapprove(id) {
     data: { approved: false, approvedById: null, approvedAt: null },
     include: { approvedBy: { select: { username: true } } },
   }).catch(() => null);
-  if (!updated) {
-    const err = new Error('Mapping not found');
-    err.status = 404;
-    throw err;
-  }
+  if (!updated) throw new NotFoundError('Mapping');
   return shapeMapping(updated);
 }
 
 async function remove(id) {
   await prisma.songMapping.delete({ where: { id } }).catch(() => {
-    const err = new Error('Mapping not found');
-    err.status = 404;
-    throw err;
+    throw new NotFoundError('Mapping');
   });
   return { id, deleted: true };
 }
@@ -289,11 +275,7 @@ async function createFromTrack({
 }) {
   const tk = titleKey(gameTitle);
   const ak = artistKey(gameArtist);
-  if (!tk) {
-    const err = new Error('游戏侧歌名不能为空');
-    err.status = 400;
-    throw err;
-  }
+  if (!tk) throw new ValidationError({ gameTitle: ['游戏侧歌名不能为空'] });
 
   const track = await prisma.importedTrack.findUnique({
     where: { source_externalId: { source, externalId } },

@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { z } = require('zod');
 const validate = require('../middleware/validate');
+const { ValidationError, NotFoundError } = require('../utils/errors');
 const svc = require('../services/mappingReviewService');
 const qq = require('../services/sources/qqSource');
 const credentials = require('../services/musicCredentialService');
@@ -50,10 +51,27 @@ router.get('/counts', async (req, res, next) => {
   }
 });
 
+/**
+ * Reject a malformed :id before it reaches Prisma.
+ *
+ * Prisma raises an internal error on a non-uuid, which surfaces as a 500 —
+ * the wrong answer for what is simply a bad request, and noise in the logs.
+ */
+function mappingId(req) {
+  const parsed = z.string().uuid().safeParse(req.params.id);
+  if (!parsed.success) throw new NotFoundError('Mapping');
+  return parsed.data;
+}
+
 // GET /api/mappings?bucket=pending&q=…&cursor=…
 router.get('/', async (req, res, next) => {
   try {
-    const { bucket, q, cursor, take } = listQuery.parse(req.query);
+    // safeParse, not parse: a raw ZodError escapes as a 500, so a mistyped
+    // query string would read as a server fault rather than a bad request.
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) throw new ValidationError(parsed.error.flatten().fieldErrors);
+
+    const { bucket, q, cursor, take } = parsed.data;
     const page = await svc.list({ bucket, query: q, cursor, take });
     res.json({ ...page, counts: await svc.getCounts() });
   } catch (err) {
@@ -64,7 +82,7 @@ router.get('/', async (req, res, next) => {
 // GET /api/mappings/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    res.json({ mapping: await svc.get(req.params.id) });
+    res.json({ mapping: await svc.get(mappingId(req)) });
   } catch (err) {
     next(err);
   }
@@ -73,7 +91,7 @@ router.get('/:id', async (req, res, next) => {
 // GET /api/mappings/:id/candidates — alternatives from the local pool
 router.get('/:id/candidates', async (req, res, next) => {
   try {
-    res.json({ candidates: await svc.candidatesFor(req.params.id) });
+    res.json({ candidates: await svc.candidatesFor(mappingId(req)) });
   } catch (err) {
     next(err);
   }
@@ -89,7 +107,7 @@ router.get('/:id/candidates', async (req, res, next) => {
  */
 router.get('/:id/preview', async (req, res, next) => {
   try {
-    const mapping = await svc.get(req.params.id);
+    const mapping = await svc.get(mappingId(req));
     if (mapping.source === 'LOCAL') {
       // Local songs already have a streaming route; no external call needed.
       return res.json({ kind: 'local', songId: mapping.externalId, url: null });
@@ -127,7 +145,7 @@ router.post('/', validate(createBody), async (req, res, next) => {
 // POST /api/mappings/:id/approve
 router.post('/:id/approve', validate(approveBody), async (req, res, next) => {
   try {
-    const mapping = await svc.approve(req.params.id, { ...req.validated, userId: req.user.id });
+    const mapping = await svc.approve(mappingId(req), { ...req.validated, userId: req.user.id });
     res.json({ mapping, counts: await svc.getCounts() });
   } catch (err) {
     next(err);
@@ -137,7 +155,7 @@ router.post('/:id/approve', validate(approveBody), async (req, res, next) => {
 // POST /api/mappings/:id/unapprove — put it back in the queue
 router.post('/:id/unapprove', async (req, res, next) => {
   try {
-    const mapping = await svc.unapprove(req.params.id);
+    const mapping = await svc.unapprove(mappingId(req));
     res.json({ mapping, counts: await svc.getCounts() });
   } catch (err) {
     next(err);
@@ -147,7 +165,7 @@ router.post('/:id/unapprove', async (req, res, next) => {
 // DELETE /api/mappings/:id
 router.delete('/:id', async (req, res, next) => {
   try {
-    const result = await svc.remove(req.params.id);
+    const result = await svc.remove(mappingId(req));
     res.json({ ...result, counts: await svc.getCounts() });
   } catch (err) {
     next(err);

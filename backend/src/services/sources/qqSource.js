@@ -3,26 +3,73 @@
  *
  * Only the URL is resolved here. The audio itself is fetched by the listener's
  * browser straight from the CDN, which is what keeps this feature off our
- * bandwidth bill — roughly 2 KB of traffic per song instead of 3-5 MB. The CDN
- * sends permissive CORS headers and honours range requests, so the browser can
- * seek and decode normally.
+ * bandwidth bill — measured at ~6 KB of traffic per song against 4 MB for the
+ * audio. The CDN sends `access-control-allow-origin: *` and honours range
+ * requests, so the browser can seek and decode normally.
  *
- * Every request goes through the circuit breaker. These endpoints rate-limit by
- * IP, all users share this server's address, and a retry loop takes the feature
- * down for everyone at once — see musicSourceBreaker.
+ * Request shapes are copied from a client that currently works
+ * (L-1124/QQMusicApi, `qqmusic_api/modules/song.py`) rather than
+ * reconstructed. That matters more than it sounds: the older, widely-copied
+ * `vkey.GetVkeyServer` / `CgiGetVkey` endpoint has been retired and now
+ * answers `104009` for everyone, from any address, logged in or not. It is
+ * easy to mistake that for a block on your own IP — a whole afternoon went
+ * into diagnosing "rate limiting" that was really a dead endpoint.
  *
- * Request shapes here are copied from a working client (jsososo/QQMusicApi,
- * L-1124/QQMusicApi) rather than reconstructed. Two URL-level fields, loginUin
- * and g_tk, are what the vkey service actually authenticates on; without them
- * it answers 104009 no matter how correct the JSON body is.
+ * Resolving one song takes two calls, which can run in parallel:
+ *   music.audioCdnDispatch.cdnDispatch  -> which CDN hosts to use
+ *   music.vkey.GetVkey / UrlGetVkey     -> the signed path for this track
+ * Both must carry the SAME guid, and the finished URL needs `&fromtag=3`
+ * appended; get either wrong and the CDN answers 403. When the pieces do not
+ * line up, the dispatch response carries a `testfile2g` sample URL that is
+ * known to work — diffing its query string against ours is what found the
+ * missing `fromtag`.
+ *
+ * Every request goes through the circuit breaker: all users' lookups leave
+ * from one server address, so a retry loop would not degrade one person's
+ * playback but take the feature down for everyone. See musicSourceBreaker.
  */
 const https = require('https');
+const crypto = require('crypto');
 const breaker = require('../musicSourceBreaker');
 
 const PLATFORM = 'qq';
 const HOST = 'u.y.qq.com';
 const LYRIC_HOST = 'c.y.qq.com';
 const TIMEOUT_MS = 12000;
+
+/**
+ * Client identity sent with every call. The version numbers are what a current
+ * desktop client reports; the endpoint rejects requests that look too old.
+ */
+const CLIENT = { ct: 11, cv: 13020508, v: 13020508, tmeAppID: 'qqmusic' };
+
+/**
+ * Smallest gap between two calls to this platform.
+ *
+ * QQ publishes no rate-limit documentation and sends none of the standard
+ * signals — no Retry-After, no RateLimit-* headers (checked). With nothing to
+ * read, the guidance for that case is to keep concurrency low and spread
+ * requests out, so bursts get flattened into a queue instead of arriving all
+ * at once. 200 ms is invisible to someone pressing play and still allows five
+ * songs a second, far above what this feature needs.
+ */
+const MIN_GAP_MS = 200;
+let lastCallAt = 0;
+
+/**
+ * CDN hosts, cached.
+ *
+ * The dispatch response is about which edge servers to use, not about any
+ * particular song, so asking once per song doubles our request count for no
+ * benefit. Caching it halves outbound traffic — and the cheapest request is
+ * the one never sent, which beats any amount of careful throttling.
+ *
+ * The guid is cached alongside, because the CDN checks that the guid in the
+ * URL matches the one the vkey was signed for.
+ */
+let cdnCache = null; // { hosts: string[], guid: string, at: number }
+let cdnInflight = null; // promise, shared by everyone waiting on a cold lookup
+const CDN_TTL_MS = 10 * 60 * 1000;
 /** A 3,000-song playlist is ~2 MB; 16 MB is far above anything legitimate. */
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
@@ -56,24 +103,33 @@ const TIERS = {
   flac: { prefix: 'F000', ext: '.flac' },
 };
 
-function request(url, { headers = {}, host } = {}) {
+/** Wait out the minimum gap, so bursts queue instead of arriving together. */
+async function pace() {
+  const wait = lastCallAt + MIN_GAP_MS - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastCallAt = Date.now();
+}
+
+function request(url, { headers = {}, host, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const startedAt = Date.now();
+    const payload = body ? Buffer.from(JSON.stringify(body), 'utf8') : null;
     const req = https.request({
       hostname: host || u.hostname,
       path: u.pathname + u.search,
-      method: 'GET',
+      method: payload ? 'POST' : 'GET',
       agent,
       headers: {
         // The vkey service checks Referer; a bare request is refused.
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Referer: 'https://y.qq.com/',
         Origin: 'https://y.qq.com',
+        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {}),
         ...headers,
       },
     }, (res) => {
-      let body = '';
+      let text = '';
       let size = 0;
       res.on('data', (c) => {
         size += c.length;
@@ -86,13 +142,14 @@ function request(url, { headers = {}, host } = {}) {
           reject(new Error(`QQ response exceeded ${MAX_BODY_BYTES} bytes`));
           return;
         }
-        body += c;
+        text += c;
       });
       res.on('end', () => resolve({
         status: res.statusCode,
-        body,
+        body: text,
+        headers: res.headers,
         ms: Date.now() - startedAt,
-        bytes: Buffer.byteLength(body),
+        bytes: Buffer.byteLength(text),
       }));
       // A socket that dies mid-body emits here, not on the request. Without
       // this the promise never settles and the caller hangs forever holding
@@ -104,8 +161,26 @@ function request(url, { headers = {}, host } = {}) {
       req.destroy();
       reject(new Error(`QQ request timed out after ${TIMEOUT_MS}ms`));
     });
+    if (payload) req.write(payload);
     req.end();
   });
+}
+
+/**
+ * Seconds to wait, per the server's own Retry-After header.
+ *
+ * QQ does not currently send it, but it is the most reliable signal there is
+ * and gateways in front of an origin do send it under load, so honouring it
+ * costs nothing and beats guessing whenever it does appear. Accepts both forms
+ * the spec allows: a delay in seconds, or an HTTP date.
+ */
+function retryAfterMs(headers) {
+  const raw = headers && headers['retry-after'];
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? 0 : Math.max(0, at - Date.now());
 }
 
 /**
@@ -116,7 +191,7 @@ function request(url, { headers = {}, host } = {}) {
  * former should ever stop traffic; tripping on the latter would disable
  * playback over ordinary missing songs.
  */
-async function callCgi({ url, cookie, codeOf }) {
+async function callCgi({ url, cookie, codeOf, body = null }) {
   // Claims an in-flight slot as well as checking the breaker, so a burst of
   // simultaneous callers cannot all reach the platform before the first
   // failure is recorded.
@@ -124,7 +199,11 @@ async function callCgi({ url, cookie, codeOf }) {
 
   let res;
   try {
-    res = await request(url, cookie ? { headers: { Cookie: cookie } } : {});
+    await pace();
+    res = await request(url, {
+      body,
+      ...(cookie ? { headers: { Cookie: cookie } } : {}),
+    });
   } catch (err) {
     // Network-level failures are not rate limiting; leave the breaker alone.
     err.platform = PLATFORM;
@@ -142,6 +221,9 @@ async function callCgi({ url, cookie, codeOf }) {
     err.code = 'SOURCE_HTTP_ERROR';
     err.httpStatus = res.status;
     err.platform = PLATFORM;
+    // If the server said when to come back, that beats any guess we could make.
+    const wait = retryAfterMs(res.headers);
+    if (wait) err.retryAfterMs = wait;
     // 429/403 are the shapes a proxy or gateway uses to say "slow down", so
     // they count toward the breaker even though they carry no platform code.
     if (res.status === 429 || res.status === 403) {
@@ -273,73 +355,132 @@ async function getPlaylist(disstid, { cookie, pageSize = 1000, maxSongs = 5000 }
   return { title, total, tracks };
 }
 
+/** The `comm` block every call carries. */
+function comm(uin, musicKey) {
+  return {
+    ...CLIENT,
+    uin: String(uin),
+    authst: musicKey,
+    format: 'json',
+    inCharset: 'utf-8',
+    outCharset: 'utf-8',
+  };
+}
+
+/**
+ * Which CDN hosts to use, and the guid they are tied to.
+ *
+ * Cached, because the answer is about edge servers rather than about any
+ * particular song — fetching it per track would double our request count for
+ * nothing. The guid is cached with it since the CDN checks that the guid in
+ * the URL is the one the vkey was signed for.
+ */
+async function getCdnHosts({ cookie, uin, musicKey, now = Date.now() } = {}) {
+  if (cdnCache && now - cdnCache.at < CDN_TTL_MS) return cdnCache;
+  // Several songs opened at once would otherwise each start their own lookup
+  // on a cold cache, sending the very burst the cache exists to avoid. The
+  // first caller does the work; the rest await the same promise.
+  if (cdnInflight) return cdnInflight;
+
+  cdnInflight = (async () => {
+    const guid = crypto.randomUUID().replace(/-/g, '');
+    const { json } = await callCgi({
+      cookie,
+      codeOf: (j) => j?.req_1?.code,
+      url: `https://${HOST}/cgi-bin/musicu.fcg`,
+      body: {
+        comm: comm(uin, musicKey),
+        req_1: {
+          module: 'music.audioCdnDispatch.cdnDispatch',
+          method: 'GetCdnDispatch',
+          param: { guid, uid: '0', use_new_domain: 1, use_ipv6: 1 },
+        },
+      },
+    });
+
+    // Hosts beginning http://ws are websocket-style and do not serve plain
+    // range requests, which the browser needs in order to seek.
+    const all = json?.req_1?.data?.sip || [];
+    const hosts = all.filter((s) => !s.startsWith('http://ws'));
+    if (!hosts.length) {
+      const err = new Error('QQ 没有返回可用的 CDN 地址');
+      err.code = 'SOURCE_NO_CDN';
+      err.platform = PLATFORM;
+      throw err;
+    }
+
+    cdnCache = { hosts, guid, at: Date.now() };
+    return cdnCache;
+  })();
+
+  try {
+    return await cdnInflight;
+  } finally {
+    // Cleared on success and on failure alike: a failed lookup must not leave
+    // a rejected promise behind that every later caller keeps re-awaiting.
+    cdnInflight = null;
+  }
+}
+
 /**
  * Resolve a playable URL for one song.
  *
- * loginUin and g_tk sit in the query string, not the JSON body. They are what
- * the vkey service authenticates on, and leaving them out produces 104009 with
- * an empty sip list — the same response an IP block gives, which makes this
- * easy to misdiagnose. The echoed data.uin being blank is normal and does not
- * mean the request failed.
+ * Two calls, run in parallel: one for the CDN hosts and one for the signed
+ * path. They must share a guid, and the result needs `&fromtag=3` appended —
+ * miss either and the CDN answers 403 rather than saying what is wrong.
  *
- * Returns null when the platform simply will not serve this track (no VIP, or
- * delisted). That is a permission answer, not an error, and callers show it
- * differently from a failure.
+ * Returns `{ url: null, reason: 'unavailable' }` when the platform will not
+ * serve the track (no VIP, or delisted). That is a permission answer rather
+ * than a failure, and callers present it differently.
  */
-async function resolveUrl(mid, { cookie, uin, musicKey, tier = 'm4a' } = {}) {
+async function resolveUrl(mid, { cookie, uin, musicKey, tier = 'mp3_128' } = {}) {
   if (!uin || !musicKey) {
     const err = new Error('QQ 需要登录凭证才能解析播放地址');
     err.code = 'SOURCE_NEEDS_CREDENTIAL';
     err.platform = PLATFORM;
     throw err;
   }
-  const t = TIERS[tier] || TIERS.m4a;
-  // Any stable 10-digit value works; it only has to match across the session.
-  const guid = '1234567890';
+  const t = TIERS[tier] || TIERS.mp3_128;
+
+  // The CDN lookup is usually a cache hit, so this is normally a single call.
+  const cdn = await getCdnHosts({ cookie, uin, musicKey });
 
   const { json, meta } = await callCgi({
     cookie,
-    codeOf: (j) => j?.req_0?.code,
-    url: cgiUrl(
-      {
-        req_0: {
-          module: 'vkey.GetVkeyServer',
-          method: 'CgiGetVkey',
-          param: {
-            filename: [`${t.prefix}${mid}${mid}${t.ext}`],
-            guid,
-            songmid: [mid],
-            songtype: [0],
-            uin: String(uin),
-            loginflag: 1,
-            platform: '20',
-          },
+    codeOf: (j) => j?.req_1?.code,
+    url: `https://${HOST}/cgi-bin/musicu.fcg`,
+    body: {
+      comm: comm(uin, musicKey),
+      req_1: {
+        module: 'music.vkey.GetVkey',
+        method: 'UrlGetVkey',
+        param: {
+          uin: String(uin),
+          filename: [`${t.prefix}${mid}${mid}${t.ext}`],
+          guid: cdn.guid,
+          songmid: [mid],
+          songtype: [0],
+          ctx: 0,
         },
-        comm: { uin: String(uin), format: 'json', ct: 19, cv: 0, authst: musicKey },
       },
-      { '-': 'getplaysongvkey', g_tk: '5381', loginUin: String(uin), hostUin: '0', platform: 'yqq.json', needNewCode: '0' },
-    ),
+    },
   });
 
-  const data = json?.req_0?.data;
-  const info = data?.midurlinfo?.[0];
+  const info = json?.req_1?.data?.midurlinfo?.[0];
   if (!info?.purl) {
     return { url: null, reason: 'unavailable', platformResult: info?.result ?? null, meta };
   }
 
-  // sip entries starting with http://ws are websocket-style hosts that do not
-  // serve plain range requests; pick a normal CDN host instead.
-  const sip = (data.sip || []).find((s) => !s.startsWith('http://ws')) || data.sip?.[0] || '';
-  // An empty sip list alongside a usable purl is the signature of a throttled
-  // IP. Returning purl on its own would hand the browser a path with no host,
-  // so treat it as unavailable rather than emitting a broken URL.
-  if (!sip) {
-    return { url: null, reason: 'unavailable', platformResult: info?.result ?? null, meta };
-  }
-  // Pages are served over https, so a http:// audio URL would be blocked as
-  // mixed content. The CDN serves the same object over https.
-  const url = `${sip}${info.purl}`.replace(/^http:\/\//, 'https://');
+  // fromtag is not part of purl but the CDN requires it; without it every
+  // request comes back 403.
+  const url = `${cdn.hosts[0]}${info.purl}&fromtag=3`.replace(/^http:\/\//, 'https://');
   return { url, reason: null, meta };
+}
+
+/** Drop the cached CDN dispatch. For tests, and for recovering from a bad host. */
+function resetCdnCache() {
+  cdnCache = null;
+  cdnInflight = null;
 }
 
 /** Lyrics. No cookie needed. */
@@ -386,5 +527,6 @@ module.exports = {
   resolveUrl,
   getLyric,
   toTrack,
+  resetCdnCache,
   TIERS,
 };

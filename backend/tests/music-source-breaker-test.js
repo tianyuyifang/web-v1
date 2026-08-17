@@ -13,9 +13,13 @@ const b = require('../src/services/musicSourceBreaker');
 const T0 = 1_700_000_000_000; // fixed clock; never Date.now() in assertions
 
 // --- only rate-limit signals count -----------------------------------------
-assert.strictEqual(b.isRateLimit(104009), true, 'QQ IP-block signature');
-assert.strictEqual(b.isRateLimit(104604), true, 'QQ "too frequent"');
-assert.strictEqual(b.isRateLimit({ platformCode: 104009 }), true, 'reads platformCode off an error');
+assert.strictEqual(b.isRateLimit(104604), true, 'QQ \"操作过于频繁\"');
+// 104009 was in this set on the belief that it meant an IP block. It does not:
+// it is what the retired vkey.GetVkeyServer endpoint returns for everyone, from
+// any address. Treating it as throttling let a dead endpoint shut the feature
+// down for fifteen minutes at a time.
+assert.strictEqual(b.isRateLimit(104009), false, 'a dead endpoint is not a rate limit');
+assert.strictEqual(b.isRateLimit({ platformCode: 104604 }), true, 'reads platformCode off an error');
 assert.strictEqual(b.isRateLimit(0), false, 'success is not a rate limit');
 assert.strictEqual(b.isRateLimit(null), false);
 assert.strictEqual(b.isRateLimit(undefined), false);
@@ -31,9 +35,9 @@ assert.doesNotThrow(() => b.assertClosed('qq', T0));
 
 // --- three consecutive rate limits open it ---------------------------------
 b.reset();
-assert.strictEqual(b.recordFailure('qq', 104009, T0), false, '1st does not open');
-assert.strictEqual(b.recordFailure('qq', 104009, T0 + 1000), false, '2nd does not open');
-assert.strictEqual(b.recordFailure('qq', 104009, T0 + 2000), true, '3rd opens it');
+assert.strictEqual(b.recordFailure('qq', 104604, T0), false, '1st does not open');
+assert.strictEqual(b.recordFailure('qq', 104604, T0 + 1000), false, '2nd does not open');
+assert.strictEqual(b.recordFailure('qq', 104604, T0 + 2000), true, '3rd opens it');
 assert.strictEqual(b.status('qq', T0 + 2000).open, true);
 
 // Open means calls stop, and the caller is told for how long.
@@ -51,10 +55,10 @@ assert.doesNotThrow(() => b.assertClosed('netease', T0 + 2000), 'netease unaffec
 
 // --- success clears a partial streak ---------------------------------------
 b.reset();
-b.recordFailure('qq', 104009, T0);
-b.recordFailure('qq', 104009, T0 + 100);
+b.recordFailure('qq', 104604, T0);
+b.recordFailure('qq', 104604, T0 + 100);
 b.recordSuccess('qq');
-assert.strictEqual(b.recordFailure('qq', 104009, T0 + 200), false,
+assert.strictEqual(b.recordFailure('qq', 104604, T0 + 200), false,
   'streak restarted, so this is a 1st failure and not a 3rd');
 assert.strictEqual(b.status('qq', T0 + 200).open, false);
 
@@ -62,9 +66,9 @@ assert.strictEqual(b.status('qq', T0 + 200).open, false);
 // A failure this morning and two tonight is not a pattern.
 b.reset();
 const beyondWindow = b.DEFAULTS.windowMs + 1000;
-b.recordFailure('qq', 104009, T0);
-b.recordFailure('qq', 104009, T0 + beyondWindow);
-b.recordFailure('qq', 104009, T0 + beyondWindow + 100);
+b.recordFailure('qq', 104604, T0);
+b.recordFailure('qq', 104604, T0 + beyondWindow);
+b.recordFailure('qq', 104604, T0 + beyondWindow + 100);
 assert.strictEqual(b.status('qq', T0 + beyondWindow + 100).open, false,
   'the first failure aged out, so only two are current');
 
@@ -72,10 +76,10 @@ assert.strictEqual(b.status('qq', T0 + beyondWindow + 100).open, false,
 // The cooldown runs from the moment it opened — the third failure — not from
 // the first one in the streak.
 b.reset();
-b.recordFailure('qq', 104009, T0);
-b.recordFailure('qq', 104009, T0 + 1);
+b.recordFailure('qq', 104604, T0);
+b.recordFailure('qq', 104604, T0 + 1);
 const openedAt = T0 + 2;
-b.recordFailure('qq', 104009, openedAt);
+b.recordFailure('qq', 104604, openedAt);
 
 const justBefore = openedAt + b.DEFAULTS.cooldownMs - 1;
 assert.throws(() => b.assertClosed('qq', justBefore), 'still open one ms early');
@@ -88,15 +92,15 @@ assert.doesNotThrow(() => b.assertClosed('qq', justAfter), 'stops blocking once 
 // fresh count of three. We already know the platform is refusing us; making
 // two more requests to confirm is exactly the traffic we are avoiding.
 assert.strictEqual(b.status('qq', justAfter).halfOpen, true, 'cooldown leads to half-open');
-assert.strictEqual(b.recordFailure('qq', 104009, justAfter + 1), true,
+assert.strictEqual(b.recordFailure('qq', 104604, justAfter + 1), true,
   'a failed probe reopens on the spot');
 
 // --- an open breaker does not re-arm itself --------------------------------
 b.reset();
-b.recordFailure('qq', 104009, T0);
-b.recordFailure('qq', 104009, T0 + 1);
-assert.strictEqual(b.recordFailure('qq', 104009, T0 + 2), true, 'opens');
-assert.strictEqual(b.recordFailure('qq', 104009, T0 + 3), false,
+b.recordFailure('qq', 104604, T0);
+b.recordFailure('qq', 104604, T0 + 1);
+assert.strictEqual(b.recordFailure('qq', 104604, T0 + 2), true, 'opens');
+assert.strictEqual(b.recordFailure('qq', 104604, T0 + 3), false,
   'further failures while open do not extend or re-trip it');
 
 // --- in-flight cap ----------------------------------------------------------
@@ -126,7 +130,7 @@ assert.strictEqual(b.status('qq', T0).inFlight, 0, 'release floors at zero');
 // An open breaker rejects before any slot is handed out — otherwise slots
 // would leak on a path that never reaches a release().
 b.reset();
-for (let i = 0; i < 3; i += 1) b.recordFailure('qq', 104009, T0 + i);
+for (let i = 0; i < 3; i += 1) b.recordFailure('qq', 104604, T0 + i);
 let blocked = null;
 try { b.acquire('qq', T0 + 3); } catch (e) { blocked = e; }
 assert.strictEqual(blocked && blocked.code, 'SOURCE_UNAVAILABLE', 'open breaker wins over the slot check');
@@ -143,7 +147,7 @@ assert.doesNotThrow(() => b.acquire('netease', T0), 'slot pools are per platform
 // caused the block. So one request goes first to find out.
 const tripped = () => {
   b.reset();
-  for (let i = 0; i < 3; i += 1) b.recordFailure('qq', 104009, T0 + i);
+  for (let i = 0; i < 3; i += 1) b.recordFailure('qq', 104604, T0 + i);
   return T0 + 2 + b.DEFAULTS.cooldownMs + 1;
 };
 
@@ -172,7 +176,7 @@ assert.strictEqual(resumed, b.DEFAULTS.maxInFlight, 'full concurrency restored')
 after = tripped();
 b.acquire('qq', after);
 b.release('qq');
-assert.strictEqual(b.recordFailure('qq', 104009, after), true, 'probe failure reopens');
+assert.strictEqual(b.recordFailure('qq', 104604, after), true, 'probe failure reopens');
 const reopened = b.status('qq', after);
 assert.strictEqual(reopened.open, true);
 assert.strictEqual(reopened.halfOpen, false);

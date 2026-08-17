@@ -16,9 +16,17 @@
  * window is minutes and a restart is not how you get rate limited.
  */
 
-/** Platform said "too many requests" outright, or stopped serving playback. */
+/**
+ * Codes that mean "you are being throttled" and nothing else.
+ *
+ * Kept deliberately narrow. `104009` used to be in here on the belief that it
+ * signalled an IP block; it does not — it is what the retired
+ * `vkey.GetVkeyServer` endpoint returns for everyone, from any address, and
+ * treating it as throttling meant a dead endpoint could shut the feature down
+ * for fifteen minutes at a time. A code earns a place here only once it is
+ * confirmed to be about rate, not about the request being wrong.
+ */
 const RATE_LIMIT_CODES = new Set([
-  104009, // QQ: vkey refused, sip[] comes back empty. The IP-block signature.
   104604, // QQ: "操作过于频繁" — the platform's own rate-limit code.
 ]);
 

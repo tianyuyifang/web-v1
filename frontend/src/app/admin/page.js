@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { adminAPI, feedbackAPI } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
@@ -234,6 +235,27 @@ export default function AdminPage() {
       )}
 
       {activeTab === "bandwidth" && <BandwidthPanel />}
+
+      {/* The mapping review page lives on its own route rather than in a tab:
+          it holds thousands of rows, plays audio, and is used for long
+          stretches. Linking to it from here means an admin does not have to
+          remember the URL, which was the only way in until now. */}
+      <section className="mt-6 rounded-xl border border-border bg-surface p-5">
+        <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
+          <span className="inline-block h-2 w-2 rounded-full bg-teal-400" />
+          歌曲映射审核
+        </h2>
+        <p className="mb-4 text-sm text-muted">
+          把游戏里显示的歌名歌手对应到具体的音源。批准后全站生效，
+          并且不再被自动搜索覆盖。
+        </p>
+        <Link
+          href="/mappings"
+          className="inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+        >
+          打开审核页面
+        </Link>
+      </section>
     </div>
   );
 }

@@ -128,7 +128,7 @@ async function createQrCode() {
   if (!uuid) {
     // The page shape changed — the flow needs re-deriving, and callers should
     // fall back to pasting a cookie rather than showing a broken dialog.
-    const err = new Error('微信登录页面结构已变化，请改用手动粘贴');
+    const err = new Error('微信登录页面结构已变化，请改用手动输入 Cookie');
     err.code = 'QR_SHAPE_CHANGED';
     throw err;
   }
@@ -192,19 +192,33 @@ async function pollQrCode(uuid) {
  * cannot provide.
  */
 async function exchangeCode(code) {
+  return exchangeAuthCode({
+    tmeLoginType: 1,
+    module: 'music.login.LoginServer',
+    method: 'Login',
+    param: { code, strAppid: APPID },
+  });
+}
+
+/**
+ * Trade an OAuth code for a QQ Music credential.
+ *
+ * Shared by both QR flows, which differ only in which module answers and what
+ * login type they announce — WeChat goes to music.login.LoginServer as type 1,
+ * QQ to QQConnectLogin.LoginServer as type 2. The response shape, the error
+ * handling, and everything downstream are identical, so they are not worth two
+ * copies that can drift apart.
+ */
+async function exchangeAuthCode({ tmeLoginType, module: mod, method, param }) {
   const res = await request('https://u.y.qq.com/cgi-bin/musicu.fcg', {
     method: 'POST',
     headers: { Referer: 'https://y.qq.com/' },
     body: {
       comm: {
         ct: 11, cv: 13020508, v: 13020508, tmeAppID: 'qqmusic',
-        format: 'json', inCharset: 'utf-8', outCharset: 'utf-8', tmeLoginType: 1,
+        format: 'json', inCharset: 'utf-8', outCharset: 'utf-8', tmeLoginType,
       },
-      req_1: {
-        module: 'music.login.LoginServer',
-        method: 'Login',
-        param: { code, strAppid: APPID },
-      },
+      req_1: { module: mod, method, param },
     },
   });
 
@@ -229,6 +243,22 @@ async function exchangeCode(code) {
 }
 
 /**
+ * The QQ-account counterpart of exchangeCode.
+ *
+ * A different module answers for QQ logins, and it announces itself as login
+ * type 2 — which then decides the cookie key names and the renewal parameter
+ * shape further downstream. See shapeCredential.
+ */
+async function exchangeQqCode(code) {
+  return exchangeAuthCode({
+    tmeLoginType: 2,
+    module: 'QQConnectLogin.LoginServer',
+    method: 'QQLogin',
+    param: { code },
+  });
+}
+
+/**
  * Normalise a login/refresh response into what the credential store keeps.
  *
  * Every field the renewal call needs is carried through, not just the ones
@@ -250,8 +280,24 @@ function shapeCredential(data) {
    * exists at all.
    */
   const uin = String(data.str_musicid || data.musicid || '');
+
+  /**
+   * Which kind of account this is: 1 = WeChat, 2 = QQ.
+   *
+   * It decides two things that are not interchangeable — the cookie key names
+   * below, and the parameter set the renewal call demands — so it is resolved
+   * once here rather than assumed at each use.
+   *
+   * The platform states it as `loginType`, but not on every response shape, so
+   * the key itself is the fallback: a WeChat-issued musickey begins with `W_X`
+   * and a QQ-issued one does not. That is how the reference client infers it,
+   * and it matches the live credential in production.
+   */
+  const loginType = data.loginType || (String(data.musickey || '').startsWith('W_X') ? 1 : 2);
+
   return {
     uin,
+    loginType,
     musicKey: data.musickey,
     // The renewal payload, kept together because it is only ever used as a set.
     refreshKey: data.refresh_key || null,
@@ -284,13 +330,27 @@ function shapeCredential(data) {
     accessTokenExpiresAt: data.expired_at ?? null,
     // Assembled so the credential store keeps its existing shape: everything
     // downstream already expects a cookie string.
+    /**
+     * Assembled so the credential store keeps its existing shape: everything
+     * downstream already expects a cookie string.
+     *
+     * The uin key and login_type differ by account kind — a WeChat login is
+     * `wxuin` / `login_type=2`, a QQ login is `uin` / `login_type=1`. Sending
+     * the WeChat pair for a QQ account is not a cosmetic mismatch: the vkey
+     * service reads these to decide which account it is being asked about, and
+     * gets the answer wrong.
+     *
+     * `uin` is set either way because the resolver reads it directly, and
+     * `qqmusic_uin` alongside it for the same reason.
+     */
     cookie: [
       `qm_keyst=${data.musickey}`,
       `qqmusic_key=${data.musickey}`,
       `uin=${uin}`,
-      `wxuin=${uin}`,
-      'login_type=2',
-      'tmeLoginType=1',
+      `qqmusic_uin=${uin}`,
+      ...(loginType === 1 ? [`wxuin=${uin}`] : []),
+      `login_type=${loginType === 1 ? 2 : 1}`,
+      `tmeLoginType=${loginType}`,
     ].join('; '),
   };
 }
@@ -303,10 +363,42 @@ function shapeCredential(data) {
  * connection dies after roughly three days and the user has to reconnect by
  * hand.
  *
- * The parameter set is the one a WeChat login (tmeLoginType 1) requires. It is
- * not interchangeable with the QQ-login shape, which sends access_token and
- * musicid where this sends unionid and str_musicid.
+ * The parameter set is NOT interchangeable between account kinds. A WeChat
+ * login sends unionid and str_musicid; a QQ login sends access_token and a
+ * numeric musicid instead, and neither is accepted in the other's place — so
+ * the shape is chosen from the stored login type rather than fixed.
  */
+function refreshParams(saved) {
+  const loginType = saved.loginType || (String(saved.musicKey || '').startsWith('W_X') ? 1 : 2);
+
+  const common = {
+    openid: saved.openid,
+    refresh_token: saved.refreshToken,
+    musickey: saved.musicKey,
+    refresh_key: saved.refreshKey,
+    loginMode: 2,
+  };
+
+  const param = loginType === 1
+    ? { ...common, str_musicid: saved.strMusicId || saved.uin, unionid: saved.unionid }
+    /**
+     * A QQ login wants `musicid` as a number. That is the field which loses its
+     * last digits past 2^53 — the bug that made every track answer 104003 — so
+     * it is rebuilt from the string we kept, and `str_musicid` is sent
+     * alongside so the platform has an exact copy even if the number is
+     * rounded in transit.
+     */
+    : {
+      ...common,
+      musicid: Number(saved.strMusicId || saved.uin),
+      str_musicid: saved.strMusicId || saved.uin,
+      access_token: saved.accessToken,
+      expired_in: saved.accessTokenExpiresAt || 0,
+    };
+
+  return { loginType, param };
+}
+
 async function refreshCredential(saved) {
   if (!saved?.refreshKey || !saved?.musicKey) {
     const err = new Error('这份凭证不支持自动续期，请重新扫码');
@@ -314,27 +406,17 @@ async function refreshCredential(saved) {
     throw err;
   }
 
+  const { loginType, param } = refreshParams(saved);
+
   const res = await request('https://u.y.qq.com/cgi-bin/musicu.fcg', {
     method: 'POST',
     headers: { Referer: 'https://y.qq.com/' },
     body: {
       comm: {
         ct: 11, cv: 13020508, v: 13020508, tmeAppID: 'qqmusic',
-        format: 'json', inCharset: 'utf-8', outCharset: 'utf-8', tmeLoginType: 1,
+        format: 'json', inCharset: 'utf-8', outCharset: 'utf-8', tmeLoginType: loginType,
       },
-      req_1: {
-        module: 'music.login.LoginServer',
-        method: 'Login',
-        param: {
-          openid: saved.openid,
-          refresh_token: saved.refreshToken,
-          str_musicid: saved.strMusicId || saved.uin,
-          musickey: saved.musicKey,
-          unionid: saved.unionid,
-          refresh_key: saved.refreshKey,
-          loginMode: 2,
-        },
-      },
+      req_1: { module: 'music.login.LoginServer', method: 'Login', param },
     },
   });
 
@@ -365,6 +447,7 @@ module.exports = {
   createQrCode,
   pollQrCode,
   exchangeCode,
+  exchangeQqCode,
   refreshCredential,
   APPID,
   WX_STATUS,

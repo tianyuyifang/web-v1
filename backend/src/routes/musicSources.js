@@ -5,6 +5,7 @@ const validate = require('../middleware/validate');
 const { ValidationError } = require('../utils/errors');
 const svc = require('../services/musicCredentialService');
 const qqLogin = require('../services/sources/qqLogin');
+const qqQrLogin = require('../services/sources/qqQrLogin');
 const access = require('../services/musicCredentialAccess');
 
 /**
@@ -102,10 +103,46 @@ const qrLimiter = rateLimit({
   message: { error: { message: '请求过于频繁，请稍后再试' } },
 });
 
-// POST /api/music-sources/qq/qrcode — start a QR login
+/**
+ * Which QR flow to run.
+ *
+ * A QQ Music account is bound to either WeChat or QQ, and scanning with the
+ * wrong one does not fail — it quietly signs the user into a different, empty
+ * account. So this is a real choice the user has to make, not a convenience.
+ *
+ * Both providers are reduced to the same three steps here; everything that
+ * differs between them (endpoints, status codes, how many hops the exchange
+ * takes) stays inside the two modules.
+ */
+const PROVIDERS = {
+  wechat: {
+    createQrCode: () => qqLogin.createQrCode(),
+    pollQrCode: (id) => qqLogin.pollQrCode(id),
+    // WeChat's poll returns the OAuth code directly.
+    exchange: (result) => qqLogin.exchangeCode(result.code),
+  },
+  qq: {
+    createQrCode: () => qqQrLogin.createQrCode(),
+    pollQrCode: (id) => qqQrLogin.pollQrCode(id),
+    // QQ's poll returns uin+sigx, which take two further hops to become a code.
+    exchange: async (result) => qqLogin.exchangeQqCode(await qqQrLogin.exchangeCode(result)),
+  },
+};
+
+/**
+ * Default to WeChat when unspecified, so the URLs that existed before this
+ * choice was offered keep behaving exactly as they did.
+ */
+function readProvider(req) {
+  const parsed = z.enum(['wechat', 'qq']).safeParse(req.query.provider || 'wechat');
+  if (!parsed.success) throw new ValidationError({ provider: ['未知的扫码方式'] });
+  return PROVIDERS[parsed.data];
+}
+
+// POST /api/music-sources/qq/qrcode[?provider=wechat|qq] — start a QR login
 router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
   try {
-    res.json(await qqLogin.createQrCode());
+    res.json(await readProvider(req).createQrCode());
   } catch (err) {
     if (err.code === 'QR_SHAPE_CHANGED' || err.code === 'QR_UNAVAILABLE') {
       return res.status(503).json({ error: { message: err.message, code: err.code } });
@@ -117,30 +154,38 @@ router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
 /**
  * GET /api/music-sources/qq/qrcode/:uuid — has it been scanned?
  *
- * One long poll per call: WeChat holds the connection until something happens
- * or roughly thirty seconds pass, so "waiting" is the normal answer and the
- * browser simply calls again. On success the credential is stored here, server
- * side, and the browser is told only that it worked.
+ * WeChat holds the connection open until something happens, so "waiting" is the
+ * normal answer and the browser simply calls again. QQ answers immediately
+ * instead, which means the browser's own polling interval sets the pace there.
+ *
+ * The provider must match the one that created the code: the identifier is a
+ * WeChat uuid or a QQ qrsig, and they are not interchangeable.
+ *
+ * On success the credential is stored here, server side, and the browser is
+ * told only that it worked.
  */
 router.get('/qq/qrcode/:uuid', async (req, res, next) => {
   try {
+    const provider = readProvider(req);
     // safeParse, not parse: a raw ZodError escapes as a 500, which reads as a
     // server fault when the caller merely sent a malformed id.
     const parsed = z.string().min(1).max(200).safeParse(req.params.uuid);
     if (!parsed.success) throw new ValidationError({ uuid: ['二维码标识无效'] });
-    const result = await qqLogin.pollQrCode(parsed.data);
+    const result = await provider.pollQrCode(parsed.data);
 
     if (result.status !== 'done') {
       return res.json({ status: result.status });
     }
 
-    const cred = await qqLogin.exchangeCode(result.code);
+    const cred = await provider.exchange(result);
     // Every field the renewal call needs is stored now. Storing only what
     // playback uses would leave the first renewal to fail three days later,
     // when the key is already dying and there is no way to recover it.
     const source = await svc.setCredential(req.user.id, 'qq', cred.cookie, {
       method: 'qr',
       uin: cred.uin,
+      loginType: cred.loginType,
+      accessToken: cred.accessToken,
       refreshKey: cred.refreshKey,
       refreshToken: cred.refreshToken,
       openid: cred.openid,
@@ -184,6 +229,8 @@ router.post('/qq/refresh', writeLimiter, async (req, res, next) => {
     const source = await svc.setCredential(req.user.id, 'qq', fresh.cookie, {
       method: 'qr',
       uin: fresh.uin,
+      loginType: fresh.loginType,
+      accessToken: fresh.accessToken,
       refreshKey: fresh.refreshKey,
       refreshToken: fresh.refreshToken,
       openid: fresh.openid,

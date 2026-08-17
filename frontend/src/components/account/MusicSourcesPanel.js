@@ -123,7 +123,7 @@ function ExpiryNotice({ source, onRefresh, busy }) {
       ) : (
         // A pasted credential has no refresh key, so renewal is not on offer —
         // saying "renew" and then failing would be worse than saying nothing.
-        <span className="opacity-80">手动粘贴的连接无法续期，请重新扫码</span>
+        <span className="opacity-80">手动输入的连接无法续期，请重新扫码</span>
       )}
     </div>
   );
@@ -162,13 +162,13 @@ export default function MusicSourcesPanel() {
   // QR code nobody can see.
   useEffect(() => () => { pollingRef.current = false; }, []);
 
-  const startQr = useCallback(async () => {
+  const startQr = useCallback(async (provider = "wechat") => {
     setError("");
     setBusy("qr");
     setQrStatus("");
     try {
-      const res = await musicSourcesAPI.createQr();
-      setQr({ uuid: res.data.uuid, image: res.data.image });
+      const res = await musicSourcesAPI.createQr(provider);
+      setQr({ uuid: res.data.uuid, image: res.data.image, provider });
       setQrStatus("waiting");
       pollingRef.current = true;
 
@@ -178,10 +178,10 @@ export default function MusicSourcesPanel() {
         while (pollingRef.current) {
           let res2;
           try {
-            res2 = await musicSourcesAPI.pollQr(res.data.uuid);
+            res2 = await musicSourcesAPI.pollQr(res.data.uuid, provider);
           } catch (err) {
             if (!pollingRef.current) return;
-            setError(err.response?.data?.error?.message || "扫码登录失败，可改用手动粘贴");
+            setError(err.response?.data?.error?.message || "扫码登录失败，可改用手动输入 Cookie");
             setQr(null);
             return;
           }
@@ -201,12 +201,23 @@ export default function MusicSourcesPanel() {
             pollingRef.current = false;
             return;
           }
+
+          /**
+           * WeChat holds each request open for tens of seconds, so its loop
+           * paces itself. QQ answers at once, and without a wait this becomes a
+           * tight loop against a login endpoint — the surest way to get an
+           * account flagged. Placed after the exit checks so it only ever
+           * delays a genuine retry, never the scan that just succeeded.
+           */
+          if (provider === "qq") {
+            await new Promise((r) => setTimeout(r, 2000));
+          }
         }
       })();
     } catch (err) {
       const code = err.response?.data?.error?.code;
       setError(code === "QR_SHAPE_CHANGED"
-        ? "微信扫码暂时不可用，请使用下方的手动粘贴"
+        ? "微信扫码暂时不可用，请使用下方的手动输入 Cookie"
         : err.response?.data?.error?.message || "无法获取二维码");
     } finally {
       setBusy(null);
@@ -287,7 +298,7 @@ export default function MusicSourcesPanel() {
                   <ExpiryNotice source={source} busy={busy === 'refresh'} onRefresh={renew} />
                   {connected && source.method === "paste" && (
                     <div className="mt-1 text-xs text-amber-400/80">
-                      手动粘贴的凭证约 3 天后失效，届时需要重新连接
+                      手动输入的凭证约 3 天后失效，届时需要重新连接
                     </div>
                   )}
                   {connected && source.method === "qr" && (
@@ -296,22 +307,37 @@ export default function MusicSourcesPanel() {
                 </div>
 
                 <div className="flex gap-2">
+                  {/* Two buttons, not one with a dropdown: a QQ Music account
+                      is tied to whichever of the two it was created with, and
+                      scanning with the wrong one silently connects a different,
+                      empty account. Naming both up front makes that choice
+                      visible instead of hiding it behind a default. */}
                   {p.supportsQr && !qr && (
-                    <button
-                      type="button"
-                      onClick={startQr}
-                      disabled={busy === "qr"}
-                      className="rounded-lg border border-primary bg-primary px-3 py-1.5 text-sm text-white hover:bg-primary-hover disabled:opacity-50"
-                    >
-                      {busy === "qr" ? "生成中…" : connected ? "重新扫码" : "扫码连接"}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => startQr("wechat")}
+                        disabled={busy === "qr"}
+                        className="rounded-lg border border-primary bg-primary px-3 py-1.5 text-sm text-white hover:bg-primary-hover disabled:opacity-50"
+                      >
+                        {busy === "qr" ? "生成中…" : "微信扫码"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startQr("qq")}
+                        disabled={busy === "qr"}
+                        className="rounded-lg border border-primary px-3 py-1.5 text-sm text-primary hover:bg-primary/10 disabled:opacity-50"
+                      >
+                        QQ 扫码
+                      </button>
+                    </>
                   )}
                   <button
                     type="button"
                     onClick={() => { setPasteFor(pasteFor === p.key ? null : p.key); setCookie(""); }}
                     className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-fg"
                   >
-                    {p.supportsQr ? "手动粘贴" : connected ? "重新连接" : "连接"}
+                    {p.supportsQr ? "手动输入 Cookie" : connected ? "重新连接" : "连接"}
                   </button>
                   {connected && (
                     <button
@@ -329,7 +355,11 @@ export default function MusicSourcesPanel() {
               {p.supportsQr && qr && (
                 <div className="mt-4 flex flex-col items-center gap-3 rounded-lg border border-border/60 bg-bg/50 p-4">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={qr.image} alt="微信扫码登录" className="h-48 w-48 rounded bg-white p-2" />
+                  <img
+                    src={qr.image}
+                    alt={qr.provider === "qq" ? "QQ 扫码登录" : "微信扫码登录"}
+                    className="h-48 w-48 rounded bg-white p-2"
+                  />
                   <p className="text-sm text-muted">
                     {qrStatus === "scanned"
                       ? "已扫描，请在手机上确认"
@@ -337,11 +367,18 @@ export default function MusicSourcesPanel() {
                         ? "二维码已过期，请重新生成"
                         : qrStatus === "refused"
                           ? "已取消授权"
-                          : "请用微信扫描二维码"}
+                          : qr.provider === "qq"
+                            ? "请用手机 QQ 扫描二维码"
+                            : "请用微信扫描二维码"}
+                  </p>
+                  {/* Said plainly, because the failure mode is silent: the wrong
+                      app connects a real but empty account rather than erroring. */}
+                  <p className="text-xs text-muted/80">
+                    请使用注册该 QQ 音乐账号时所用的方式扫码
                   </p>
                   <div className="flex gap-2">
                     {(qrStatus === "expired" || qrStatus === "refused") && (
-                      <button type="button" onClick={startQr} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:border-primary">
+                      <button type="button" onClick={() => startQr(qr.provider)} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:border-primary">
                         重新生成
                       </button>
                     )}
@@ -359,7 +396,7 @@ export default function MusicSourcesPanel() {
                     value={cookie}
                     onChange={(e) => setCookie(e.target.value)}
                     rows={3}
-                    placeholder="粘贴 Cookie…"
+                    placeholder="在此输入 Cookie…"
                     className="w-full rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-primary"
                   />
                   <div className="flex justify-end gap-2">

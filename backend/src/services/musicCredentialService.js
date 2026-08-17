@@ -107,6 +107,19 @@ async function setCredential(userId, platform, cookie, extra = {}) {
     // at all: only a QR login yields refresh_key, so a pasted cookie has to be
     // replaced by hand every few days.
     method: extra.method || 'paste',
+    /**
+     * 1 = WeChat account, 2 = QQ account.
+     *
+     * Kept because renewal is not one call with one shape: a QQ credential is
+     * renewed with access_token and a numeric musicid where a WeChat one sends
+     * unionid and str_musicid, and the platform rejects the wrong pairing. A
+     * pasted cookie has no login type, so it is inferred from the key prefix at
+     * use — see qqLogin.refreshParams.
+     */
+    loginType: extra.loginType ?? null,
+    // Only a QQ-account renewal sends this back; stored so that call can be
+    // made at all.
+    accessToken: extra.accessToken ? vault.encrypt(extra.accessToken) : null,
     // Encrypted like the cookie — it is a credential in its own right, enough
     // to mint fresh keys for this account.
     refreshKey: extra.refreshKey ? vault.encrypt(extra.refreshKey) : null,
@@ -263,9 +276,15 @@ async function getRefreshable(userId, platform) {
     musicKey: parsed.musicKey || null,
     refreshKey: vault.decrypt(entry.refreshKey),
     refreshToken: entry.refreshToken ? vault.decrypt(entry.refreshToken) : null,
+    accessToken: entry.accessToken ? vault.decrypt(entry.accessToken) : null,
     openid: entry.openid ?? null,
     unionid: entry.unionid ?? null,
     strMusicId: entry.strMusicId ?? null,
+    // Decides which renewal parameter shape to send. Null on credentials stored
+    // before login type was tracked, and on pasted ones — both fall back to
+    // reading the key prefix, which is how the platform's own clients infer it.
+    loginType: entry.loginType ?? null,
+    accessTokenExpiresAt: entry.accessTokenExpiresAt ?? null,
     expiresAt: entry.expiresAt ?? null,
     needRefreshInSec: entry.needRefreshInSec ?? null,
   };

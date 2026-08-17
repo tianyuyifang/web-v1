@@ -56,6 +56,10 @@ app.use('/api/feedback', authMiddleware, requireApproved, requireActiveSession, 
 // Updates routes (read = approved users, create/edit/delete = admin)
 app.use('/api/updates', authMiddleware, requireApproved, requireActiveSession, require('./routes/updates'));
 
+// A user's own QQ / NetEase credentials. Every route acts on the caller's own
+// account; none of them ever returns a stored cookie.
+app.use('/api/music-sources', authMiddleware, requireApproved, requireActiveSession, require('./routes/musicSources'));
+
 // Admin routes (auth + ADMIN role only)
 app.use('/api/admin', authMiddleware, requireRole('ADMIN'), requireActiveSession, require('./routes/admin'));
 

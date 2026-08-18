@@ -4,23 +4,21 @@
  * A tall lyrics panel that sits beside the review list.
  *
  * Lyrics are how a mapping actually gets judged: a cover shares the title and
- * often the duration, and the words are what give it away. So this shows many
- * lines rather than a handful, and keeps them readable by blurring with
- * distance instead of clipping — the trick QQ Music and Apple Music both use.
- * Far lines stay visible as texture without competing for attention, so twenty
- * lines read as calmly as five.
+ * often the duration, and the words are what give it away. So this shows a
+ * whole verse at once rather than a handful of lines.
  *
- * The blur curve is taken from applemusic-like-lyrics rather than invented:
- * one pixel per line of distance, capped, dropped entirely while the reviewer
- * is scrolling by hand so they can aim at a line to click it.
+ * Distance from the playing line is shown by fading only. Blurring the far
+ * lines looks the part — it is what the phone players do — but those players
+ * are glanced at while listening, whereas this one is read while comparing two
+ * recordings, and a blurred line cannot be read or aimed at.
+ *
+ * The panel is sized to end above the fold, since the transport sits at its
+ * bottom and a play button below the viewport cannot be clicked.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import { mappingAPI } from "@/lib/api";
-
-/** Matches the reference: 1px per line away, never past this. */
-const MAX_BLUR_PX = 4;
 
 function formatTime(sec) {
   if (!Number.isFinite(sec) || sec < 0) return "0:00";
@@ -32,16 +30,16 @@ function formatTime(sec) {
 /**
  * How a line looks, given how far it is from the one playing.
  *
- * Blur and fade rise together so distance reads as depth. Hovering or manual
- * scrolling clears both — a blurred line is hard to aim at, and clicking to
- * seek is the point of showing them.
+ * Fade only. Blurring distant lines looks the part but works against the
+ * reason they are on screen: these are read, not glanced at, and a reviewer
+ * comparing a cover against the original needs the whole verse legible at once.
  */
 function lineStyle(distance, isActive, suppressed) {
-  if (isActive) return { opacity: 1, filter: "none" };
-  if (suppressed) return { opacity: 0.65, filter: "none" };
-  const blur = Math.min(MAX_BLUR_PX, distance);
-  const opacity = distance === 1 ? 0.55 : distance === 2 ? 0.4 : 0.28;
-  return { opacity, filter: `blur(${blur}px)` };
+  if (isActive) return { opacity: 1 };
+  if (suppressed) return { opacity: 0.8 };
+  if (distance === 1) return { opacity: 0.7 };
+  if (distance <= 3) return { opacity: 0.55 };
+  return { opacity: 0.42 };
 }
 
 export default function TrackLyricPanel({
@@ -57,7 +55,7 @@ export default function TrackLyricPanel({
 }) {
   const [lyrics, setLyrics] = useState(null);
   const [loading, setLoading] = useState(true);
-  // While the reviewer is reading rather than following, blur would fight them.
+  // While the reviewer is reading rather than following, auto-scroll fights them.
   const [suppressed, setSuppressed] = useState(false);
   const suppressTimer = useRef(null);
   const scrollRef = useRef(null);
@@ -117,13 +115,25 @@ export default function TrackLyricPanel({
   const pct = duration > 0 ? Math.min(100, (current / duration) * 100) : 0;
 
   return (
-    <aside className="flex h-[calc(100vh-8rem)] flex-col rounded-lg border border-border bg-surface">
+    <aside className="flex h-[calc(100vh-9rem)] max-h-[42rem] flex-col rounded-lg border border-border bg-surface">
       <div className="flex items-start gap-2 border-b border-border/60 px-3 py-2">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[0.82rem] font-medium">{row.title}</div>
           <div className="truncate text-[0.68rem] text-muted">
             {row.artist || "（无歌手）"}
           </div>
+          {/* Kept out of the list, where it crowded the artist name, but still
+              one click away: this is what a track is looked up by elsewhere. */}
+          {row.externalId && (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard?.writeText(row.externalId)}
+              title="点击复制 ID"
+              className="mt-0.5 max-w-full truncate rounded bg-black/20 px-1 py-px font-mono text-[0.6rem] text-muted hover:text-fg"
+            >
+              {row.externalId}
+            </button>
+          )}
         </div>
         <button
           type="button"
@@ -166,10 +176,10 @@ export default function TrackLyricPanel({
                 onKeyDown={(e) => { if (e.key === "Enter") seekToLine(line); }}
                 style={{
                   ...lineStyle(distance, isActive, suppressed || !isTimed),
-                  transition: "opacity 0.4s ease, filter 0.4s ease",
+                  transition: "opacity 0.3s ease",
                 }}
                 className={`py-1.5 text-[0.82rem] leading-snug ${
-                  isTimed ? "cursor-pointer hover:!opacity-100 hover:!blur-0" : ""
+                  isTimed ? "cursor-pointer hover:!opacity-100" : ""
                 } ${isActive ? "font-medium text-accent" : "text-fg"}`}
               >
                 {line.text || " "}

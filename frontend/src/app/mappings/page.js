@@ -307,7 +307,7 @@ export default function MappingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl p-4 sm:p-6">
+    <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <header className="mb-5">
         <h1 className="text-xl font-semibold">唱卡映射审核</h1>
         <p className="mt-1 text-sm text-muted">
@@ -397,7 +397,11 @@ export default function MappingsPage() {
       {/* Two columns once there is room. The panel is tall and narrow, which
           is what lets it show twenty lines of lyrics without the list losing
           its place; on a small screen it drops below instead. */}
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-4">
+      {/* The list is a column of short rows, so it is capped rather than
+          stretched — a title and artist do not need half a widescreen, and the
+          width they were given left a band of empty space down the middle. The
+          panel takes the rest. */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,32rem)_1fr] lg:items-start lg:gap-4">
         <div className="min-w-0">
       <ul className="space-y-1">
         {rows.map((row) => (
@@ -415,43 +419,42 @@ export default function MappingsPage() {
                 {selected?.id === row.id ? "▪" : "▸"}
               </button>
 
+              {/* Everything a reviewer scans for is on one line: source and
+                  duration are short and fixed-width enough to sit beside the
+                  title rather than costing a second row of height.
+
+                  The platform id is deliberately not here. It matters to us —
+                  it is what a mapping resolves to and what the cache is keyed
+                  on — but a reviewer never reads it, and a 14-character mid
+                  crowded out the artist name it sat next to. */}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[0.82rem] font-medium leading-tight">
-                  {row.title}
-                  <span className="text-muted"> — {row.artist || "（无歌手）"}</span>
-                </div>
-                {/* Kept on one line: wrapping is what made rows tall, and every
-                    field here is short enough to truncate without losing its
-                    point. */}
-                <div className="mt-px flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-[0.68rem] leading-tight text-muted">
-                  <span className="shrink-0 rounded bg-black/20 px-1 py-px">
+                <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.82rem] leading-tight">
+                  <span className="shrink-0 rounded bg-black/20 px-1 py-px text-[0.62rem] text-muted">
                     {SOURCE_LABEL[row.source] || row.source}
                   </span>
-                  {/* The platform id is what a mapping actually resolves to.
-                      Two rows can look identical in title, artist and duration
-                      and still be different recordings, so this is often the
-                      only thing that distinguishes them — and it is what you
-                      paste elsewhere to look a track up. Click to copy. */}
-                  {row.externalId && (
-                    <button
-                      type="button"
-                      onClick={() => navigator.clipboard?.writeText(row.externalId)}
-                      title="点击复制 ID"
-                      className="shrink-0 rounded bg-black/20 px-1 py-px font-mono hover:text-fg"
-                    >
-                      {row.externalId}
-                    </button>
-                  )}
-                  <span className="shrink-0">{formatDuration(row.durationSec)}</span>
-                  {/* The platform regularly names the artist differently from
-                      the game (凤凰传奇 against 玲花/曾毅). Showing both is how a
-                      reviewer tells a real mismatch from a naming difference. */}
-                  {row.platformArtist && row.platformArtist !== row.artist && (
-                    <span className="truncate">平台：{row.platformTitle} — {row.platformArtist}</span>
-                  )}
-                  {row.matchKind && <span>匹配：{row.matchKind}</span>}
-                  {row.approvedBy && <span>由 {row.approvedBy} 确认</span>}
+                  <span className="truncate font-medium">
+                    {row.title}
+                    <span className="text-muted"> — {row.artist || "（无歌手）"}</span>
+                  </span>
+                  <span className="shrink-0 text-[0.68rem] tabular-nums text-muted">
+                    {formatDuration(row.durationSec)}
+                  </span>
                 </div>
+                {/* A second line only when there is something worth saying. Most
+                    rows have nothing here and stay one line tall. */}
+                {(row.matchKind || row.approvedBy
+                  || (row.platformArtist && row.platformArtist !== row.artist)) && (
+                  <div className="mt-px flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-[0.68rem] leading-tight text-muted">
+                    {/* The platform regularly names the artist differently from
+                        the game (凤凰传奇 against 玲花/曾毅). Showing both is how a
+                        reviewer tells a real mismatch from a naming difference. */}
+                    {row.platformArtist && row.platformArtist !== row.artist && (
+                      <span className="truncate">平台：{row.platformTitle} — {row.platformArtist}</span>
+                    )}
+                    {row.matchKind && <span className="shrink-0">匹配：{row.matchKind}</span>}
+                    {row.approvedBy && <span className="shrink-0">由 {row.approvedBy} 确认</span>}
+                  </div>
+                )}
               </div>
 
               <div className="flex shrink-0 gap-1.5">

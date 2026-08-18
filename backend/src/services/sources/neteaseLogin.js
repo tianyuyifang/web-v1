@@ -285,4 +285,125 @@ async function getAccountInfo(cookie) {
   };
 }
 
-module.exports = { createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo, QR_STATUS };
+/**
+ * Make a playback URL fetchable by the browser.
+ *
+ * NetEase hands out hosts that do not send CORS — m704 and m804 among them —
+ * and our player needs it: pitch shifting runs through AudioContext, which
+ * means fetch + decodeAudioData, which is a CORS request. A plain <audio> tag
+ * would play without it, but then there is no pitch shifting, and that is the
+ * point of the feature.
+ *
+ * The same file is served with `access-control-allow-origin: *` by the 01 host
+ * of the same numeric family. Verified byte-for-byte: identical sha256 over the
+ * first 4 KB and identical total length.
+ *
+ * Only rewritten when CORS is actually missing. Some hosts (m10 was seen) send
+ * it already, and rewriting those answers 403 — so this is a repair, not a
+ * blanket redirect.
+ */
+function corsFriendlyUrl(rawUrl, hasCors) {
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return rawUrl;
+  }
+  // The CDN serves both schemes; https keeps the page from mixing content.
+  u.protocol = 'https:';
+  if (hasCors) return u.toString();
+
+  // m704 -> m701, m804 -> m801: same family, host 01. Parsed rather than
+  // pattern-matched so an unfamiliar hostname is left alone instead of being
+  // mangled into something that does not exist.
+  const m = /^m(\d)\d*\.music\.126\.net$/.exec(u.hostname);
+  if (m) u.hostname = `m${m[1]}01.music.126.net`;
+  return u.toString();
+}
+
+/**
+ * Ask whether a CDN host sends CORS, so the rewrite only fires when needed.
+ *
+ * One cheap ranged request — a hundred bytes — rather than assuming from the
+ * hostname, because the set of hosts is not documented and guessing wrong
+ * either breaks playback or breaks a URL that already worked.
+ */
+function hostSendsCors(rawUrl) {
+  return new Promise((resolve) => {
+    let u;
+    try {
+      u = new URL(rawUrl);
+      u.protocol = 'https:';
+    } catch {
+      return resolve(false);
+    }
+    const req = https.request({
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      method: 'GET',
+      headers: { Range: 'bytes=0-99', Origin: 'https://qnicheatsheet.com' },
+    }, (res) => {
+      res.resume();
+      resolve(Boolean(res.headers['access-control-allow-origin']));
+    });
+    req.on('error', () => resolve(false));
+    // Cheap check; if it is slow, assume the rewrite is needed rather than wait.
+    req.setTimeout(4000, () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
+/**
+ * Resolve a playback URL for one track.
+ *
+ * Shaped like the QQ resolver so callers can treat the two the same: a url on
+ * success, or a null url with a reason. The audio itself is fetched by the
+ * listener's browser straight from the CDN, which is what keeps this off our
+ * bandwidth bill.
+ */
+async function resolveUrl(songId, { cookie, level = 'standard' } = {}) {
+  if (!cookie) {
+    const err = new Error('网易云需要登录凭证才能解析播放地址');
+    err.code = 'SOURCE_NEEDS_CREDENTIAL';
+    err.platform = 'netease';
+    throw err;
+  }
+
+  const { json } = await call('/api/song/enhance/player/url/v1', {
+    ids: JSON.stringify([String(songId)]),
+    level,
+    encodeType: 'flac',
+  }, { cookie });
+
+  // A dead cookie fails the whole call rather than one track.
+  if (json?.code === 301 || json?.code === 401) {
+    return { url: null, reason: 'credential-expired', platformResult: json.code };
+  }
+
+  const info = json?.data?.[0];
+  if (!info?.url) {
+    /**
+     * fee 1 and 4 mark paid tracks, and a null url alongside them means the
+     * account cannot play it rather than the track being gone. Saying which
+     * matters: one is fixed by a subscription, the other never.
+     */
+    const needsVip = info?.fee === 1 || info?.fee === 4;
+    return {
+      url: null,
+      reason: needsVip ? 'needs-vip' : 'unavailable',
+      platformResult: info?.code ?? json?.code ?? null,
+    };
+  }
+
+  const url = corsFriendlyUrl(info.url, await hostSendsCors(info.url));
+  return {
+    url,
+    reason: null,
+    // Seconds until the signed URL lapses; the caller can cache against it.
+    expiresInSec: info.expi ?? null,
+    size: info.size ?? null,
+    type: info.type ?? null,
+  };
+}
+
+module.exports = { createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo, resolveUrl, corsFriendlyUrl, QR_STATUS };

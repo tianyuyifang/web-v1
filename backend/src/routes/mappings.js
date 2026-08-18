@@ -4,6 +4,7 @@ const validate = require('../middleware/validate');
 const { ValidationError, NotFoundError } = require('../utils/errors');
 const svc = require('../services/mappingReviewService');
 const qq = require('../services/sources/qqSource');
+const netease = require('../services/sources/neteaseLogin');
 const { getFreshCredential, renewAfterRejection } = require('../services/musicCredentialAccess');
 const credentials = require('../services/musicCredentialService');
 
@@ -113,6 +114,9 @@ async function resolvePreview(userId, source, externalId, res) {
     // Local songs already have a streaming route; no external call needed.
     return res.json({ kind: 'local', songId: externalId, url: null });
   }
+  if (source === 'NETEASE') {
+    return resolveNeteasePreview(userId, externalId, res);
+  }
   if (source !== 'QQ') {
     return res.json({ kind: 'unsupported', url: null, reason: `${source} preview not implemented` });
   }
@@ -171,6 +175,43 @@ async function resolvePreview(userId, source, externalId, res) {
     }
     throw err;
   }
+}
+
+/**
+ * The NetEase half of resolvePreview.
+ *
+ * Separate from the QQ path rather than folded into it: the two share a return
+ * shape but nothing else — different credential, different failure codes, and
+ * no renew-and-retry, because NetEase refuses the whole call when a cookie is
+ * dead rather than refusing track by track.
+ */
+async function resolveNeteasePreview(userId, externalId, res) {
+  const cred = await getFreshCredential(userId, 'netease');
+  if (!cred) {
+    return res.status(400).json({
+      error: {
+        message: '这首歌来自网易云音乐，需要先在账号页连接网易云音乐才能试听',
+        code: 'NO_CREDENTIAL',
+        platform: 'netease',
+      },
+    });
+  }
+
+  const result = await netease.resolveUrl(externalId, { cookie: cred.cookie });
+
+  if (result.reason === 'credential-expired') {
+    await credentials.recordCheck(userId, 'netease', { ok: false, error: 'cookie expired' })
+      .catch(() => { /* bookkeeping only */ });
+    return res.status(400).json({
+      error: {
+        message: '网易云音乐连接已失效，请到账号页重新扫码连接',
+        code: 'CREDENTIAL_EXPIRED',
+        platform: 'netease',
+      },
+    });
+  }
+
+  return res.json({ kind: 'external', url: result.url, reason: result.reason });
 }
 
 /**

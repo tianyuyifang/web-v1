@@ -55,21 +55,15 @@ export default function MappingsPage() {
   const [expanded, setExpanded] = useState(null);
   const [candidates, setCandidates] = useState([]);
   /**
-   * Rows currently showing their player.
+   * The row whose lyrics are showing, or null.
    *
-   * A set rather than a single id: comparing two similar recordings means
-   * reading both sets of lyrics, and collapsing one to open the other loses
-   * your place. Playback stays exclusive even so — only one row can sound at a
-   * time, because the audio element is shared.
+   * Single rather than a set: the panel is one column beside the list, so two
+   * songs cannot occupy it. Picking another row simply replaces it.
    */
-  const [openPlayers, setOpenPlayers] = useState(() => new Set());
+  const [selected, setSelected] = useState(null);
 
-  const togglePlayer = useCallback((id) => {
-    setOpenPlayers((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  const togglePlayer = useCallback((row) => {
+    setSelected((prev) => (prev?.id === row.id ? null : row));
   }, []);
 
   /**
@@ -313,7 +307,7 @@ export default function MappingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl p-4 sm:p-6">
       <header className="mb-5">
         <h1 className="text-xl font-semibold">唱卡映射审核</h1>
         <p className="mt-1 text-sm text-muted">
@@ -400,6 +394,11 @@ export default function MappingsPage() {
         </div>
       )}
 
+      {/* Two columns once there is room. The panel is tall and narrow, which
+          is what lets it show twenty lines of lyrics without the list losing
+          its place; on a small screen it drops below instead. */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-4">
+        <div className="min-w-0">
       <ul className="space-y-1">
         {rows.map((row) => (
           <li key={row.id} className="rounded-lg border border-border bg-surface">
@@ -409,11 +408,11 @@ export default function MappingsPage() {
                   from a collapsed row gave no way to follow along. */}
               <button
                 type="button"
-                onClick={() => togglePlayer(row.id)}
-                title={openPlayers.has(row.id) ? "收起" : "展开播放器"}
+                onClick={() => togglePlayer(row)}
+                title={selected?.id === row.id ? "收起歌词" : "查看歌词"}
                 className="h-7 w-7 shrink-0 rounded-full border border-border text-xs hover:border-accent"
               >
-                {openPlayers.has(row.id) ? "▾" : "▸"}
+                {selected?.id === row.id ? "▪" : "▸"}
               </button>
 
               <div className="min-w-0 flex-1">
@@ -495,18 +494,6 @@ export default function MappingsPage() {
               </div>
             </div>
 
-            {openPlayers.has(row.id) && (
-              <TrackLyricPanel
-                row={row}
-                isPlaying={playing === row.id}
-                current={loadedFor === row.id ? progress.current : 0}
-                duration={loadedFor === row.id ? progress.duration : (row.durationSec || 0)}
-                onTogglePlay={() => play(row)}
-                onSeekSeconds={seekSeconds}
-                busy={busy === `play:${row.id}`}
-                error={playing === row.id || loadedFor === row.id ? playError : ""}
-              />
-            )}
 
             {claimFor === row.id && (
               <div className="border-t border-border p-3">
@@ -604,6 +591,26 @@ export default function MappingsPage() {
           </button>
         </div>
       )}
+        </div>
+
+        {/* Sticky so the lyrics stay put while the list scrolls behind them —
+            otherwise following along means scrolling back every few lines. */}
+        {selected && (
+          <div className="mt-4 lg:sticky lg:top-6 lg:mt-0">
+            <TrackLyricPanel
+              row={selected}
+              isPlaying={playing === selected.id}
+              current={loadedFor === selected.id ? progress.current : 0}
+              duration={loadedFor === selected.id ? progress.duration : (selected.durationSec || 0)}
+              onTogglePlay={() => play(selected)}
+              onSeekSeconds={seekSeconds}
+              onClose={() => setSelected(null)}
+              busy={busy === `play:${selected.id}`}
+              error={playing === selected.id || loadedFor === selected.id ? playError : ""}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

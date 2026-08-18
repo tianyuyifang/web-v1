@@ -266,7 +266,7 @@ async function exchangeQqCode(code) {
  * discovering that three days later — when the key has already died — is the
  * worst time to find out.
  */
-function shapeCredential(data) {
+function shapeCredential(data, knownLoginType = null) {
   /**
    * str_musicid first, and not as a matter of taste.
    *
@@ -293,7 +293,17 @@ function shapeCredential(data) {
    * and a QQ-issued one does not. That is how the reference client infers it,
    * and it matches the live credential in production.
    */
-  const loginType = data.loginType || (String(data.musickey || '').startsWith('W_X') ? 1 : 2);
+  /**
+   * Prefer what the caller knows, then what the platform said, then the key.
+   *
+   * The prefix rule only distinguishes WeChat from QQ. An app-QR login is
+   * neither — it is type 6 — and its key begins with Q_H_, which the rule
+   * misreads as a QQ login. That would send the wrong parameter set at renewal
+   * three days later, when the key is already dying.
+   */
+  const loginType = knownLoginType
+    || data.loginType
+    || (String(data.musickey || '').startsWith('W_X') ? 1 : 2);
 
   return {
     uin,
@@ -379,22 +389,45 @@ function refreshParams(saved) {
     loginMode: 2,
   };
 
-  const param = loginType === 1
-    ? { ...common, str_musicid: saved.strMusicId || saved.uin, unionid: saved.unionid }
-    /**
-     * A QQ login wants `musicid` as a number. That is the field which loses its
-     * last digits past 2^53 — the bug that made every track answer 104003 — so
-     * it is rebuilt from the string we kept, and `str_musicid` is sent
-     * alongside so the platform has an exact copy even if the number is
-     * rounded in transit.
-     */
-    : {
+  /**
+   * `musicid` goes as a number where the platform expects one, but it is
+   * rebuilt from the string we kept: past 2^53 the JSON number loses its last
+   * digits, which is what made every track answer 104003. `str_musicid` is
+   * sent alongside so the platform has an exact copy regardless.
+   */
+  const numeric = {
+    musicid: Number(saved.strMusicId || saved.uin),
+    str_musicid: saved.strMusicId || saved.uin,
+  };
+
+  let param;
+  if (loginType === 1) {
+    // WeChat: no access_token, and unionid instead.
+    param = { ...common, str_musicid: numeric.str_musicid, unionid: saved.unionid };
+  } else if (loginType === 2) {
+    // QQ: access_token and a numeric musicid, no unionid.
+    param = {
       ...common,
-      musicid: Number(saved.strMusicId || saved.uin),
-      str_musicid: saved.strMusicId || saved.uin,
+      musicid: numeric.musicid,
+      str_musicid: numeric.str_musicid,
       access_token: saved.accessToken,
       expired_in: saved.accessTokenExpiresAt || 0,
     };
+  } else {
+    /**
+     * Anything else — app QR is type 6 — sends the union of both shapes, which
+     * is what the reference client's default branch does. Sending the QQ shape
+     * here instead would also announce tmeLoginType 2, and the platform judges
+     * the credential by that.
+     */
+    param = {
+      ...common,
+      ...numeric,
+      unionid: saved.unionid,
+      access_token: saved.accessToken,
+      expired_in: saved.accessTokenExpiresAt || 0,
+    };
+  }
 
   return { loginType, param };
 }

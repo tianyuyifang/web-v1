@@ -280,7 +280,9 @@ async function exchangeCode({ musicId, token, qrcodeID }) {
   // Normalised by the same function the other two flows use, so the cookie
   // shape, the expiry handling and the uin precision fix are shared rather
   // than reimplemented here.
-  return shapeCredential(data);
+  // 6 is stated, not inferred: this flow's key prefix is indistinguishable
+  // from a QQ login's, and renewal depends on getting this right.
+  return shapeCredential(data, 6);
 }
 
 module.exports = { createQrCode, watchQrCode, pollQrCode, exchangeCode, closeWatch };

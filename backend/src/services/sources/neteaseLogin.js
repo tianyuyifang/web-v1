@@ -63,17 +63,44 @@ function eapiParams(apiPath, payload) {
  * same values are sent as the Cookie. Omitting either makes the call fail in
  * ways that do not name the cause.
  */
+/**
+ * A stable device identity for this server.
+ *
+ * Generated once per process rather than per request. The official client sends
+ * the same deviceId every time — a value that changes on every call is a
+ * clearer sign of automation than any single request could be, since no real
+ * installation behaves that way.
+ *
+ * Not persisted: a restart mints a new one, which reads as a reinstall rather
+ * than as many devices at once.
+ */
+const DEVICE_ID = crypto.randomBytes(16).toString('hex');
+
+/**
+ * The client identity every eapi call carries.
+ *
+ * It goes two places at once, which is the part that is easy to get wrong: the
+ * object is folded into the payload *before* encryption as `header`, and the
+ * same values are sent as the Cookie. Omitting either makes the call fail in
+ * ways that do not name the cause.
+ *
+ * The values are the reference's osMap.pc set, kept coherent on purpose. An
+ * earlier version claimed os "pc" while sending a mobile appver, an empty osver
+ * and no deviceId, alongside a plain browser User-Agent — a combination no real
+ * installation produces, and exactly the sort of mismatch a risk-control system
+ * is built to notice.
+ */
 function clientHeader(extra = {}) {
   return {
     os: 'pc',
-    appver: '8.9.70',
-    osver: '',
-    deviceId: '',
+    appver: '3.1.17.204416',
+    osver: 'Microsoft-Windows-10-Professional-build-19045-64bit',
+    deviceId: DEVICE_ID,
     versioncode: '140',
     mobilename: '',
     buildver: String(Date.now()).slice(0, 10),
     resolution: '1920x1080',
-    channel: '',
+    channel: 'netease',
     requestId: `${Date.now()}_${String(Math.floor(Math.random() * 1000)).padStart(4, '0')}`,
     ...extra,
   };
@@ -117,7 +144,7 @@ function call(apiPath, data, { cookie = '' } = {}) {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Content-Length': body.length,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.29.205117',
         Referer: 'https://music.163.com',
         Cookie: cookie || serialiseCookie(header),
       },

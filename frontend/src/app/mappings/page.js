@@ -53,6 +53,22 @@ export default function MappingsPage() {
 
   const [expanded, setExpanded] = useState(null);
   const [candidates, setCandidates] = useState([]);
+
+  /**
+   * Re-read the credential a row actually used.
+   *
+   * Called after a preview succeeds or fails, since both are moments when the
+   * page's idea of the credential is most likely stale. Keyed off the row's own
+   * source: a NetEase row says nothing about the QQ connection, and refreshing
+   * the wrong one leaves the banner describing a platform the user did not touch.
+   */
+  const refreshCredentialFor = useCallback((source) => {
+    const platform = source === "NETEASE" ? "netease" : source === "QQ" ? "qq" : null;
+    if (!platform) return;
+    musicSourcesAPI.get(platform)
+      .then((r) => setCredential(r.data.source))
+      .catch(() => { /* the banner simply keeps its last value */ });
+  }, []);
   const [busy, setBusy] = useState(null);
   const [claimFor, setClaimFor] = useState(null);
   const [gameTitle, setGameTitle] = useState("");
@@ -194,9 +210,7 @@ export default function MappingsPage() {
       // Playing proves the credential is alive, so refresh what the page
       // believes about it. A row that plays should not leave a stale "expiring
       // soon" notice on screen.
-      if (row.source === "QQ") {
-        musicSourcesAPI.get("qq").then((r) => setCredential(r.data.source)).catch(() => {});
-      }
+      refreshCredentialFor(row.source);
     } catch (err) {
       // The server knows which credential was missing or dead for this
       // particular track; it says so, and that beats anything guessed here.
@@ -204,9 +218,7 @@ export default function MappingsPage() {
       setPlayError(message || "试听失败");
       // A failure is the moment the credential state is most likely stale, so
       // re-read it rather than leaving the page showing yesterday's answer.
-      if (row.source === "QQ") {
-        musicSourcesAPI.get("qq").then((r) => setCredential(r.data.source)).catch(() => {});
-      }
+      refreshCredentialFor(row.source);
     } finally {
       setBusy(null);
     }

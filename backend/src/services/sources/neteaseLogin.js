@@ -234,4 +234,28 @@ async function refreshCredential(cookie) {
   return { cookie: /MUSIC_U=/.test(fresh) ? fresh : cookie };
 }
 
-module.exports = { createQrCode, pollQrCode, shapeCredential, refreshCredential, QR_STATUS };
+/**
+ * Who this credential belongs to, and whether the account has a subscription.
+ *
+ * The same call answers both, which is why it runs as soon as a credential is
+ * stored: saving one only proves it parsed. /nuser/account/get is what the
+ * official client uses for login status; the reference reaches it over weapi,
+ * but eapi works too and needs no RSA — verified against a live credential.
+ *
+ * vipType is 0 for a free account and non-zero for a paying one (11 observed on
+ * a real 黑胶VIP account). It is reported as-is rather than mapped to QQ's
+ * 1/2 scale, since the tiers do not correspond.
+ */
+async function getAccountInfo(cookie) {
+  const { json } = await call('/api/nuser/account/get', {}, { cookie });
+  if (json?.code !== 200 || !json?.account) {
+    return { ok: false, vipType: null, nickname: null };
+  }
+  return {
+    ok: true,
+    vipType: json.account.vipType ?? 0,
+    nickname: json.profile?.nickname || null,
+  };
+}
+
+module.exports = { createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo, QR_STATUS };

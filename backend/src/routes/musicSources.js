@@ -243,6 +243,8 @@ router.get('/qq/qrcode/:uuid', pollLimiter, noEtag, async (req, res, next) => {
     // when the key is already dying and there is no way to recover it.
     const source = await svc.setCredential(req.user.id, provider.platform, cred.cookie, {
       method: 'qr',
+      // Stated by flows that know; undefined elsewhere, where it is derived.
+      refreshable: cred.refreshable,
       uin: cred.uin,
       loginType: cred.loginType,
       accessToken: cred.accessToken,

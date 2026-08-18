@@ -19,6 +19,7 @@
 const credentials = require('./musicCredentialService');
 const qqLogin = require('./sources/qqLogin');
 const qqSource = require('./sources/qqSource');
+const neteaseLogin = require('./sources/neteaseLogin');
 
 /** Store a renewed credential, keeping every field renewal itself needs. */
 async function save(userId, fresh) {
@@ -96,6 +97,7 @@ async function renewAfterRejection(userId) {
  * "not verified yet" either way.
  */
 async function verifyCredential(userId, platform = 'qq') {
+  if (platform === 'netease') return verifyNetease(userId);
   if (platform !== 'qq') return null;
   try {
     const cred = await credentials.getCredential(userId, 'qq');
@@ -111,6 +113,33 @@ async function verifyCredential(userId, platform = 'qq') {
       ok: true,
       vipType: info.vipType,
       vipExpiresOn: info.expiresOn,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The NetEase counterpart.
+ *
+ * Reported as a plain yes/no rather than mapped onto QQ's tiers: NetEase uses
+ * its own scale (11 seen on a live 黑胶VIP account), and pretending the numbers
+ * mean the same thing would put a wrong label on the page.
+ */
+async function verifyNetease(userId) {
+  try {
+    const cred = await credentials.getCredential(userId, 'netease');
+    if (!cred) return null;
+
+    const info = await neteaseLogin.getAccountInfo(cred.cookie);
+    if (!info.ok) {
+      return credentials.recordCheck(userId, 'netease', { ok: false, error: '凭证已失效' });
+    }
+    return credentials.recordCheck(userId, 'netease', {
+      ok: true,
+      // Normalised to 0/1 so the page can render one rule for both platforms.
+      vipType: info.vipType > 0 ? 1 : 0,
+      nickname: info.nickname,
     });
   } catch {
     return null;

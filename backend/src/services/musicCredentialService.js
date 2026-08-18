@@ -129,7 +129,16 @@ async function setCredential(userId, platform, cookie, extra = {}) {
     openid: extra.openid ?? null,
     unionid: extra.unionid ?? null,
     strMusicId: extra.strMusicId ?? null,
-    refreshable: Boolean(extra.refreshKey) || Boolean(parsed.refreshable),
+    /**
+     * Whether this connection can renew itself.
+     *
+     * QQ proves it by carrying a refresh key. NetEase has no equivalent field —
+     * it renews by presenting the cookie it already has — so that flow states
+     * the answer instead, and deriving it from QQ's fields alone would mark
+     * every NetEase scan as non-renewable and tell the user to reconnect by
+     * hand for no reason.
+     */
+    refreshable: extra.refreshable ?? (Boolean(extra.refreshKey) || Boolean(parsed.refreshable)),
     savedAt: new Date().toISOString(),
     // The platform states both of these outright on a QR login, so they beat
     // anything inferred from a cookie's own expiry attribute.

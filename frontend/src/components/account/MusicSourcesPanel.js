@@ -65,7 +65,7 @@ function formatRemaining(ms) {
   return `不到 1 小时`;
 }
 
-function StatusLine({ source }) {
+function StatusLine({ source, platform }) {
   if (!source?.connected) {
     return <span className="text-sm text-muted">未连接</span>;
   }
@@ -77,7 +77,15 @@ function StatusLine({ source }) {
     ? { text: "已连接（尚未验证会员状态）", tone: "text-muted" }
     : source.vipType > 0
       ? { text: source.vipType > 1 ? "已连接 · 超级会员" : "已连接 · 会员", tone: "text-emerald-400" }
-      : { text: "已连接 · 非会员（多数歌曲无法播放）", tone: "text-amber-400" };
+      : {
+        // Said in terms of what the user will actually hit. On QQ Music most of
+        // the target library is VIP-only; on NetEase a free account still plays
+        // a good deal, so the same wording would overstate it.
+        text: platform === "netease"
+          ? "已连接 · 非会员（部分歌曲无法播放）"
+          : "已连接 · 非会员（多数歌曲无法播放）",
+        tone: "text-amber-400",
+      };
 
   return (
     <span className={`text-sm ${vip.tone}`}>
@@ -400,7 +408,7 @@ export default function MusicSourcesPanel() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-medium">{p.name}</div>
-                  <div className="mt-0.5"><StatusLine source={source} /></div>
+                  <div className="mt-0.5"><StatusLine source={source} platform={p.key} /></div>
                   <ExpiryNotice source={source} busy={busy === 'refresh'} onRefresh={renew} />
                   {connected && source.method === "paste" && (
                     <div className="mt-1 text-xs text-amber-400/80">

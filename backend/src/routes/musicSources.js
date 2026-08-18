@@ -95,6 +95,22 @@ router.put('/:platform', writeLimiter, validate(setSchema), async (req, res, nex
 
 // Generating a QR costs an outbound request, so it is limited more tightly
 // than polling. A user needs one every few minutes at most.
+/**
+ * Polling is capped too, not just QR creation.
+ *
+ * The browser polls every 2s for up to a QR lifetime, which is well under this.
+ * The cap exists for the case the loop misbehaves — a stuck tab hammering a
+ * login endpoint is what gets a platform account flagged, and the user's own
+ * account is the one at risk, not ours.
+ */
+const pollLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { message: '查询过于频繁，请稍后再试' } },
+});
+
 const qrLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 10,
@@ -170,7 +186,7 @@ router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
  * On success the credential is stored here, server side, and the browser is
  * told only that it worked.
  */
-router.get('/qq/qrcode/:uuid', async (req, res, next) => {
+router.get('/qq/qrcode/:uuid', pollLimiter, async (req, res, next) => {
   try {
     const provider = readProvider(req);
     // safeParse, not parse: a raw ZodError escapes as a 500, which reads as a

@@ -201,8 +201,25 @@ async function exchangeCode({ musicId, token, qrcodeID }) {
 
   const data = res.data || {};
   if (res.code !== 0 || !data.musickey) {
-    throw fail(data.errMsg || 'QQ 音乐登录失败，请重新扫码', 'QR_LOGIN_FAILED', {
+    /**
+     * Named outcomes, from the reference client's documented codes.
+     *
+     * Each says something the user can act on, and none of them mean "try
+     * again" — repeating a scan against a device limit or a restricted account
+     * achieves nothing, and that kind of retry is what draws attention to an
+     * account.
+     */
+    const KNOWN = {
+      20279: '这个账号登录的设备数已达上限，请先在 QQ 音乐 APP 里退出其他设备',
+      20277: '账号状态异常，暂时无法登录',
+      20278: '账号状态异常，暂时无法登录',
+      20450: '账号已被封禁',
+      104604: '操作过于频繁，请稍后再试',
+    };
+    throw fail(KNOWN[res.code] || data.errMsg || 'QQ 音乐登录失败，请重新扫码', 'QR_LOGIN_FAILED', {
       platformCode: res.code,
+      // Retrying these cannot help, so the page should not invite it.
+      retryable: !KNOWN[res.code],
     });
   }
   // Normalised by the same function the other two flows use, so the cookie

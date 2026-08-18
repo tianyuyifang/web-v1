@@ -169,6 +169,17 @@ export default function MusicSourcesPanel() {
     try {
       const res = await musicSourcesAPI.createQr(provider);
       setQr({ uuid: res.data.uuid, image: res.data.image, provider });
+      /**
+       * Hard stop for the polling loop.
+       *
+       * The loop otherwise ends only on done/expired/refused or an error, and
+       * a code that keeps answering "waiting" past its lifetime would poll
+       * forever — an unattended tab quietly hitting a login endpoint every two
+       * seconds is exactly the pattern that gets an account flagged. QQ Music
+       * states the lifetime itself (900s measured); a small margin past it is
+       * enough to catch a late scan without running on.
+       */
+      const deadline = Date.now() + ((res.data.expiresIn || 300) + 30) * 1000;
       setQrStatus("waiting");
       pollingRef.current = true;
 
@@ -176,6 +187,11 @@ export default function MusicSourcesPanel() {
       // and a gap between generating and polling is enough to miss it.
       (async () => {
         while (pollingRef.current) {
+          if (Date.now() > deadline) {
+            pollingRef.current = false;
+            setQrStatus("expired");
+            return;
+          }
           let res2;
           try {
             res2 = await musicSourcesAPI.pollQr(res.data.uuid, provider);

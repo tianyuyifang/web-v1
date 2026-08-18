@@ -7,6 +7,7 @@ const qq = require('../services/sources/qqSource');
 const netease = require('../services/sources/neteaseLogin');
 const { getFreshCredential, renewAfterRejection } = require('../services/musicCredentialAccess');
 const credentials = require('../services/musicCredentialService');
+const urlCache = require('../services/playbackUrlCache');
 
 /**
  * Song-mapping review.
@@ -121,6 +122,11 @@ async function resolvePreview(userId, source, externalId, res) {
     return res.json({ kind: 'unsupported', url: null, reason: `${source} preview not implemented` });
   }
 
+  // A URL resolved moments ago is still good, and re-asking costs a round trip
+  // the listener waits through plus one more request against their account.
+  const cached = urlCache.get(userId, 'QQ', externalId);
+  if (cached) return res.json({ kind: 'external', url: cached.url, reason: null, cached: true });
+
   // Renews first if the key is close to dying, so a review session does not
   // stop working halfway through.
   const cred = await getFreshCredential(userId, 'qq');
@@ -146,6 +152,7 @@ async function resolvePreview(userId, source, externalId, res) {
           cookie: renewed.cookie, uin: renewed.uin, musicKey: renewed.musicKey,
         });
         if (retry.url) {
+          urlCache.set(userId, 'QQ', externalId, retry);
           return res.json({ kind: 'external', url: retry.url, reason: retry.reason });
         }
       }
@@ -161,6 +168,9 @@ async function resolvePreview(userId, source, externalId, res) {
       });
     }
 
+    // Only successes are cached; a failure may be a credential the user is
+    // about to fix, and caching it would make that look permanent.
+    urlCache.set(userId, 'QQ', externalId, result);
     return res.json({ kind: 'external', url: result.url, reason: result.reason });
   } catch (err) {
     // A dead credential is the likeliest cause of a refusal here, and the user
@@ -186,6 +196,9 @@ async function resolvePreview(userId, source, externalId, res) {
  * dead rather than refusing track by track.
  */
 async function resolveNeteasePreview(userId, externalId, res) {
+  const cached = urlCache.get(userId, 'NETEASE', externalId);
+  if (cached) return res.json({ kind: 'external', url: cached.url, reason: null, cached: true });
+
   const cred = await getFreshCredential(userId, 'netease');
   if (!cred) {
     return res.status(400).json({
@@ -211,6 +224,14 @@ async function resolveNeteasePreview(userId, externalId, res) {
     });
   }
 
+  /**
+   * NetEase states the lifetime outright, so it is used rather than the
+   * default — but shortened, since the clock started when the platform
+   * answered and an entry that outlives its URL becomes a playback failure
+   * the user cannot explain.
+   */
+  const ttl = result.expiresInSec ? result.expiresInSec * 500 : undefined;
+  urlCache.set(userId, 'NETEASE', externalId, result, ttl);
   return res.json({ kind: 'external', url: result.url, reason: result.reason });
 }
 

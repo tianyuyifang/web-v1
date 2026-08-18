@@ -17,6 +17,7 @@ const vault = require('../utils/cookieVault');
 // The handler reads statusCode and isOperational; a bare Error with .status
 // becomes a 500 with its message replaced by 'Internal server error'.
 const { NotFoundError, ValidationError } = require('../utils/errors');
+const urlCache = require('./playbackUrlCache');
 
 const PLATFORMS = ['qq', 'netease'];
 const NAMESPACE = 'musicSources';
@@ -157,6 +158,11 @@ async function setCredential(userId, platform, cookie, extra = {}) {
     data: { preferences: { ...preferences, [NAMESPACE]: sources } },
   });
 
+  // Playback URLs are signed by the credential that requested them, so ones
+  // minted under the old credential are already dead. Serving them would fail
+  // in a way that looks like the new connection is broken.
+  urlCache.clearUser(userId);
+
   return getStatus(userId, platform);
 }
 
@@ -172,6 +178,8 @@ async function clearCredential(userId, platform) {
     where: { id: userId },
     data: { preferences: { ...preferences, [NAMESPACE]: sources } },
   });
+  // Disconnecting should stop playback working, not leave cached URLs behind.
+  urlCache.clearUser(userId);
   return { platform, connected: false };
 }
 

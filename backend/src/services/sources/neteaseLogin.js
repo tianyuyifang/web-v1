@@ -56,14 +56,6 @@ function eapiParams(apiPath, payload) {
 }
 
 /**
- * The client identity every eapi call carries.
- *
- * It goes two places at once, which is the part that is easy to get wrong: the
- * object is folded into the payload *before* encryption as `header`, and the
- * same values are sent as the Cookie. Omitting either makes the call fail in
- * ways that do not name the cause.
- */
-/**
  * A stable device identity for this server.
  *
  * Generated once per process rather than per request. The official client sends
@@ -406,4 +398,32 @@ async function resolveUrl(songId, { cookie, level = 'standard' } = {}) {
   };
 }
 
-module.exports = { createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo, resolveUrl, corsFriendlyUrl, QR_STATUS };
+/**
+ * Timestamped lyrics for one track.
+ *
+ * Needs no credential — lyrics are public — so this is safe to call for a track
+ * the reviewer cannot play. Shaped like the QQ equivalent so the route can hand
+ * back one thing regardless of platform.
+ *
+ * A song with no lyrics is ordinary, not an error, and is reported as a null
+ * lyric rather than a failure.
+ */
+async function getLyric(songId) {
+  const { json } = await call('/api/song/lyric', {
+    id: String(songId),
+    // The reference sends all four at -1: timed, plain, romanised and karaoke.
+    // Asking for everything costs nothing and lets the caller pick.
+    tv: -1, lv: -1, rv: -1, kv: -1, _nmclfl: 1,
+  });
+
+  if (json?.code !== 200) {
+    return { lyric: null, translation: null };
+  }
+  return {
+    lyric: json?.lrc?.lyric || null,
+    // NetEase supplies translations for many foreign-language tracks.
+    translation: json?.tlyric?.lyric || null,
+  };
+}
+
+module.exports = { createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo, resolveUrl, corsFriendlyUrl, getLyric, QR_STATUS };

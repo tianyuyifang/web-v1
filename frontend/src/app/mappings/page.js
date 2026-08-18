@@ -21,6 +21,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { mappingAPI, musicSourcesAPI } from "@/lib/api";
+import TrackLyricPanel from "@/components/mappings/TrackLyricPanel";
 import useAuth from "@/hooks/useAuth";
 
 const BUCKETS = [
@@ -53,6 +54,23 @@ export default function MappingsPage() {
 
   const [expanded, setExpanded] = useState(null);
   const [candidates, setCandidates] = useState([]);
+  /**
+   * Rows currently showing their player.
+   *
+   * A set rather than a single id: comparing two similar recordings means
+   * reading both sets of lyrics, and collapsing one to open the other loses
+   * your place. Playback stays exclusive even so — only one row can sound at a
+   * time, because the audio element is shared.
+   */
+  const [openPlayers, setOpenPlayers] = useState(() => new Set());
+
+  const togglePlayer = useCallback((id) => {
+    setOpenPlayers((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   /**
    * Re-read the credential a row actually used.
@@ -224,10 +242,11 @@ export default function MappingsPage() {
     }
   }, [playing, loadedFor, ensureAudio]);
 
-  const seek = useCallback((fraction) => {
+  /** Seek to an absolute position, which is what a lyric timestamp gives us. */
+  const seekSeconds = useCallback((seconds) => {
     const el = audioRef.current;
     if (!el || !el.duration) return;
-    el.currentTime = Math.max(0, Math.min(1, fraction)) * el.duration;
+    el.currentTime = Math.max(0, Math.min(el.duration, seconds));
   }, []);
 
   const act = useCallback(async (fn, id, after) => {
@@ -381,27 +400,32 @@ export default function MappingsPage() {
         </div>
       )}
 
-      <ul className="space-y-2">
+      <ul className="space-y-1">
         {rows.map((row) => (
-          <li key={row.id} className="rounded-xl border border-border bg-surface">
-            <div className="flex items-center gap-3 p-3">
+          <li key={row.id} className="rounded-lg border border-border bg-surface">
+            <div className="flex items-center gap-2 px-2.5 py-1.5">
+              {/* Expands rather than plays. Deciding on a mapping means reading
+                  the lyrics as much as hearing the audio, and starting playback
+                  from a collapsed row gave no way to follow along. */}
               <button
                 type="button"
-                onClick={() => play(row)}
-                disabled={busy === `play:${row.id}`}
-                title="试听"
-                className="h-9 w-9 shrink-0 rounded-full border border-border text-sm disabled:opacity-30 hover:border-accent"
+                onClick={() => togglePlayer(row.id)}
+                title={openPlayers.has(row.id) ? "收起" : "展开播放器"}
+                className="h-7 w-7 shrink-0 rounded-full border border-border text-xs hover:border-accent"
               >
-                {busy === `play:${row.id}` ? "…" : playing === row.id ? "❚❚" : "▶"}
+                {openPlayers.has(row.id) ? "▾" : "▸"}
               </button>
 
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">
+                <div className="truncate text-[0.82rem] font-medium leading-tight">
                   {row.title}
                   <span className="text-muted"> — {row.artist || "（无歌手）"}</span>
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
-                  <span className="rounded bg-black/20 px-1.5 py-0.5">
+                {/* Kept on one line: wrapping is what made rows tall, and every
+                    field here is short enough to truncate without losing its
+                    point. */}
+                <div className="mt-px flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-[0.68rem] leading-tight text-muted">
+                  <span className="shrink-0 rounded bg-black/20 px-1 py-px">
                     {SOURCE_LABEL[row.source] || row.source}
                   </span>
                   {/* The platform id is what a mapping actually resolves to.
@@ -414,13 +438,12 @@ export default function MappingsPage() {
                       type="button"
                       onClick={() => navigator.clipboard?.writeText(row.externalId)}
                       title="点击复制 ID"
-                      className="rounded bg-black/20 px-1.5 py-0.5 font-mono hover:text-fg"
+                      className="shrink-0 rounded bg-black/20 px-1 py-px font-mono hover:text-fg"
                     >
                       {row.externalId}
                     </button>
                   )}
-                  <span>{formatDuration(row.durationSec)}</span>
-                  {row.vipOnly && <span className="text-amber-400">需会员</span>}
+                  <span className="shrink-0">{formatDuration(row.durationSec)}</span>
                   {/* The platform regularly names the artist differently from
                       the game (凤凰传奇 against 玲花/曾毅). Showing both is how a
                       reviewer tells a real mismatch from a naming difference. */}
@@ -472,36 +495,17 @@ export default function MappingsPage() {
               </div>
             </div>
 
-            {loadedFor === row.id && (
-              <div className="flex items-center gap-2 px-3 pb-3">
-                <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted">
-                  {formatDuration(Math.floor(progress.current))}
-                </span>
-                {/* A range input rather than a custom track: it is draggable,
-                    keyboard-accessible and click-to-position for free. */}
-                <input
-                  type="range"
-                  min={0}
-                  max={1000}
-                  value={progress.duration ? Math.round((progress.current / progress.duration) * 1000) : 0}
-                  onChange={(e) => seek(Number(e.target.value) / 1000)}
-                  aria-label="播放进度"
-                  className="h-1 flex-1 cursor-pointer accent-accent"
-                />
-                <span className="w-10 shrink-0 text-xs tabular-nums text-muted">
-                  {formatDuration(Math.floor(progress.duration))}
-                </span>
-                {/* Jumping straight to the middle is the fastest way to tell
-                    two same-titled recordings apart. */}
-                <button
-                  type="button"
-                  onClick={() => seek(0.4)}
-                  title="跳到中段"
-                  className="shrink-0 rounded border border-border px-2 py-0.5 text-xs text-muted hover:text-fg"
-                >
-                  副歌
-                </button>
-              </div>
+            {openPlayers.has(row.id) && (
+              <TrackLyricPanel
+                row={row}
+                isPlaying={playing === row.id}
+                current={loadedFor === row.id ? progress.current : 0}
+                duration={loadedFor === row.id ? progress.duration : (row.durationSec || 0)}
+                onTogglePlay={() => play(row)}
+                onSeekSeconds={seekSeconds}
+                busy={busy === `play:${row.id}`}
+                error={playing === row.id || loadedFor === row.id ? playError : ""}
+              />
             )}
 
             {claimFor === row.id && (
@@ -556,7 +560,6 @@ export default function MappingsPage() {
                           <span className="ml-2 text-muted">{formatDuration(c.durationSec)}</span>
                           {c.artistMatches && <span className="ml-2 text-emerald-400">歌手吻合</span>}
                           {c.durationMatches && <span className="ml-2 text-emerald-400">时长吻合</span>}
-                          {c.vipOnly && <span className="ml-2 text-amber-400">需会员</span>}
                         </span>
                         {c.current ? (
                           <span className="shrink-0 text-muted">当前</span>

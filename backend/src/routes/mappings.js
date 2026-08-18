@@ -265,6 +265,52 @@ router.get('/:id/preview', async (req, res, next) => {
   }
 });
 
+/**
+ * Lyrics for a (source, id) pair.
+ *
+ * No credential is needed — lyrics are public on both platforms — so this
+ * answers even for a track the reviewer cannot play. That matters: knowing the
+ * words is often how you tell a cover from the original when the audio itself
+ * is withheld.
+ *
+ * A song without lyrics is ordinary, not an error, and comes back as a null
+ * lyric so the page can say so plainly.
+ */
+async function resolveLyrics(source, externalId, res) {
+  if (source === 'QQ') {
+    const r = await qq.getLyric(externalId).catch(() => ({ lyric: null, translation: null }));
+    return res.json({ lyric: r.lyric, translation: r.translation });
+  }
+  if (source === 'NETEASE') {
+    const r = await netease.getLyric(externalId).catch(() => ({ lyric: null, translation: null }));
+    return res.json({ lyric: r.lyric, translation: r.translation });
+  }
+  // LOCAL clips have their own lyrics route; anything else has none to give.
+  return res.json({ lyric: null, translation: null });
+}
+
+/** GET /api/mappings/track/:trackId/lyrics */
+router.get('/track/:trackId/lyrics', async (req, res, next) => {
+  try {
+    const parsed = z.string().uuid().safeParse(req.params.trackId);
+    if (!parsed.success) throw new NotFoundError('Track');
+    const track = await svc.getTrack(parsed.data);
+    return await resolveLyrics(track.source, track.externalId, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** GET /api/mappings/:id/lyrics */
+router.get('/:id/lyrics', async (req, res, next) => {
+  try {
+    const mapping = await svc.get(mappingId(req));
+    return await resolveLyrics(mapping.source, mapping.externalId, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/mappings — claim a pool track for a game song
 router.post('/', validate(createBody), async (req, res, next) => {
   try {

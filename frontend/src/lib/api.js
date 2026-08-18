@@ -299,6 +299,10 @@ export const mappingAPI = {
   // Resolves through the reviewer's own credential; the browser then fetches
   // the audio from the CDN directly.
   preview: (id) => api.get(`/mappings/${id}/preview`),
+  // Public on both platforms, so this answers even for a track the reviewer
+  // cannot play — knowing the words is often how a cover is spotted.
+  lyrics: (id) => api.get(`/mappings/${id}/lyrics`),
+  trackLyrics: (trackId) => api.get(`/mappings/track/${trackId}/lyrics`),
   // Same thing for a pool track nobody has claimed yet — you have to hear it
   // before you can say it is the right one.
   previewTrack: (trackId) => api.get(`/mappings/track/${trackId}/preview`),

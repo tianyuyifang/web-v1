@@ -141,6 +141,11 @@ export default function MusicSourcesPanel() {
   const [qr, setQr] = useState(null); // { uuid, image }
   const [qrStatus, setQrStatus] = useState("");
   const pollingRef = useRef(false);
+  // Everything a restarted poll loop needs. Held in a ref rather than state
+  // because the loop reads it without wanting to re-render on every tick.
+  const attemptRef = useRef(null); // { uuid, provider, deadline }
+  // True while a loop is actually running, so a resume cannot start a second.
+  const runningRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -162,49 +167,48 @@ export default function MusicSourcesPanel() {
   // QR code nobody can see.
   useEffect(() => () => { pollingRef.current = false; }, []);
 
-  const startQr = useCallback(async (provider = "wechat") => {
-    setError("");
-    setBusy("qr");
-    setQrStatus("");
-    try {
-      const res = await musicSourcesAPI.createQr(provider);
-      setQr({ uuid: res.data.uuid, image: res.data.image, provider });
-      /**
-       * Hard stop for the polling loop.
-       *
-       * The loop otherwise ends only on done/expired/refused or an error, and
-       * a code that keeps answering "waiting" past its lifetime would poll
-       * forever — an unattended tab quietly hitting a login endpoint every two
-       * seconds is exactly the pattern that gets an account flagged. QQ Music
-       * states the lifetime itself (900s measured); a small margin past it is
-       * enough to catch a late scan without running on.
-       */
-      const deadline = Date.now() + ((res.data.expiresIn || 300) + 30) * 1000;
-      setQrStatus("waiting");
-      pollingRef.current = true;
+  /**
+   * Poll until the code is scanned, expired, or the attempt is abandoned.
+   *
+   * Separated from startQr so it can be restarted. On a phone the user leaves
+   * this page to scan, and iOS suspends a backgrounded tab — the loop simply
+   * stops, and a scan that succeeded is never noticed. Restarting it when the
+   * page becomes visible again is what makes scanning on a single device work
+   * at all; without it the QR has to be shown on a second screen.
+   *
+   * Guarded so two loops never run at once: a resumed attempt would otherwise
+   * double the request rate against a login endpoint.
+   */
+  const runPollLoop = useCallback(() => {
+    if (runningRef.current) return;
+    const attempt = attemptRef.current;
+    if (!attempt) return;
+    runningRef.current = true;
 
-      // Poll immediately and keep going: the code expires in a few minutes,
-      // and a gap between generating and polling is enough to miss it.
-      (async () => {
+    (async () => {
+      try {
         while (pollingRef.current) {
-          if (Date.now() > deadline) {
+          if (Date.now() > attempt.deadline) {
             pollingRef.current = false;
             setQrStatus("expired");
             return;
           }
           let res2;
           try {
-            res2 = await musicSourcesAPI.pollQr(res.data.uuid, provider);
+            res2 = await musicSourcesAPI.pollQr(attempt.uuid, attempt.provider);
           } catch (err) {
             if (!pollingRef.current) return;
             setError(err.response?.data?.error?.message || "扫码登录失败，可改用手动输入 Cookie");
             setQr(null);
+            pollingRef.current = false;
             return;
           }
           if (!pollingRef.current) return;
 
           const { status, source } = res2.data;
-          setQrStatus(status);
+          // A 304 leaves the body empty; treat that as "nothing yet" rather
+          // than letting undefined reach the status display.
+          if (status) setQrStatus(status);
 
           if (status === "done") {
             setSources((prev) => ({ ...prev, qq: source }));
@@ -225,11 +229,78 @@ export default function MusicSourcesPanel() {
            * account flagged. Placed after the exit checks so it only ever
            * delays a genuine retry, never the scan that just succeeded.
            */
-          if (provider === "qqmusic") {
+          if (attempt.provider === "qqmusic") {
             await new Promise((r) => setTimeout(r, 2000));
           }
         }
-      })();
+      } finally {
+        runningRef.current = false;
+      }
+    })();
+  }, [refresh]);
+
+  /**
+   * Resume polling when the page comes back to the foreground.
+   *
+   * This is what makes scanning on one device work. To scan, the user leaves
+   * this page for their phone's camera or QQ Music, and a backgrounded tab is
+   * suspended — on iOS aggressively so. The loop stops mid-wait and never
+   * resumes, so a scan that actually succeeded goes unnoticed and the page just
+   * sits there. Observed in production: a poll sequence that should tick every
+   * two seconds showed 12- and 14-second gaps and then stopped altogether,
+   * twenty seconds into a fifteen-minute code.
+   *
+   * pageshow covers the back-forward cache, where visibilitychange does not
+   * always fire.
+   */
+  useEffect(() => {
+    const resume = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!pollingRef.current || !attemptRef.current) return;
+      // Past its deadline there is nothing to resume; say so rather than
+      // silently polling a dead code.
+      if (Date.now() > attemptRef.current.deadline) {
+        pollingRef.current = false;
+        setQrStatus("expired");
+        return;
+      }
+      runPollLoop();
+    };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("pageshow", resume);
+    window.addEventListener("focus", resume);
+    return () => {
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("pageshow", resume);
+      window.removeEventListener("focus", resume);
+    };
+  }, [runPollLoop]);
+
+  const startQr = useCallback(async (provider = "wechat") => {
+    setError("");
+    setBusy("qr");
+    setQrStatus("");
+    try {
+      const res = await musicSourcesAPI.createQr(provider);
+      setQr({ uuid: res.data.uuid, image: res.data.image, provider });
+      /**
+       * Hard stop for the polling loop.
+       *
+       * The loop otherwise ends only on done/expired/refused or an error, and
+       * a code that keeps answering "waiting" past its lifetime would poll
+       * forever — an unattended tab quietly hitting a login endpoint every two
+       * seconds is exactly the pattern that gets an account flagged. QQ Music
+       * states the lifetime itself (900s measured); a small margin past it is
+       * enough to catch a late scan without running on.
+       */
+      const deadline = Date.now() + ((res.data.expiresIn || 300) + 30) * 1000;
+      attemptRef.current = { uuid: res.data.uuid, provider, deadline };
+      setQrStatus("waiting");
+      pollingRef.current = true;
+
+      // Poll immediately and keep going: the code expires in a few minutes,
+      // and a gap between generating and polling is enough to miss it.
+      runPollLoop();
     } catch (err) {
       const code = err.response?.data?.error?.code;
       setError(code === "QR_SHAPE_CHANGED"

@@ -161,6 +161,29 @@ function readProvider(req) {
   return PROVIDERS[parsed.data];
 }
 
+/**
+ * Suppress the ETag on the polling route.
+ *
+ * Express adds a weak ETag to every JSON response, and the poll answers
+ * {"status":"waiting"} unchanged for as long as nobody scans. The browser then
+ * revalidates and gets a 304, which by spec carries no body — so the caller
+ * reads an undefined status and the on-screen state flickers between "waiting"
+ * and nothing.
+ *
+ * Cache-Control: no-store does NOT fix this; measured, Express still generates
+ * the ETag and still answers 304. Only removing the header does. It is stripped
+ * here rather than via app.set('etag', false), because that setting is global
+ * and would drop ETags from every other endpoint, where they are useful.
+ */
+function noEtag(req, res, next) {
+  const end = res.end;
+  res.end = function patched(...args) {
+    res.removeHeader('ETag');
+    return end.apply(this, args);
+  };
+  next();
+}
+
 // POST /api/music-sources/qq/qrcode[?provider=wechat|qqmusic] — start a QR login
 router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
   try {
@@ -186,7 +209,7 @@ router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
  * On success the credential is stored here, server side, and the browser is
  * told only that it worked.
  */
-router.get('/qq/qrcode/:uuid', pollLimiter, async (req, res, next) => {
+router.get('/qq/qrcode/:uuid', pollLimiter, noEtag, async (req, res, next) => {
   try {
     const provider = readProvider(req);
     // safeParse, not parse: a raw ZodError escapes as a 500, which reads as a

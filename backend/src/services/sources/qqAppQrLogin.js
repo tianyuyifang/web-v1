@@ -22,6 +22,7 @@
  */
 const https = require('https');
 const { shapeCredential } = require('./qqLogin');
+const mqttWatcher = require('./qqMqttWatcher');
 
 const HOST = 'u.y.qq.com';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -36,24 +37,6 @@ const TIMEOUT_MS = 15000;
  */
 const CLIENT = { ct: 11, cv: 13020508, v: 13020508, tmeAppID: 'qqmusic' };
 
-/**
- * Poll outcomes, from the reference client's own event names.
- *
- * A third set of constants, sharing nothing with WeChat's numeric codes or QQ's
- * — these are strings from a different API entirely, and mixing the three would
- * silently misread every state.
- */
-const APP_STATUS = {
-  new: 'waiting',
-  scaned: 'waiting',
-  scanned: 'scanned',
-  confirmed: 'done',
-  cookies: 'done',
-  canceled: 'refused',
-  timeout: 'expired',
-  expired: 'expired',
-  loginFailed: 'refused',
-};
 
 function fail(message, code, extra = {}) {
   const err = new Error(message);
@@ -138,6 +121,10 @@ async function createQrCode() {
     throw fail('QQ 音乐扫码暂时不可用', 'QR_UNAVAILABLE', { platformCode: res.code });
   }
 
+  // Connect before returning, so a fast scan cannot arrive before we are
+  // listening — establishing the connection takes a few seconds.
+  await watchQrCode(String(data.qrcodeID));
+
   return {
     uuid: String(data.qrcodeID),
     image: String(data.qrcode),
@@ -153,34 +140,98 @@ async function createQrCode() {
  * loop. `status` is a string here, unlike the other two providers' numeric
  * codes.
  */
+/**
+ * Scans in progress, keyed by qrcodeID.
+ *
+ * Each entry owns one MQTT connection and the last event it saw. The browser
+ * still polls this server every couple of seconds; that poll now reads a value
+ * pushed to us rather than asking QQ Music, which is the part that could not
+ * work — the status endpoint belongs to the scanning app, not to us.
+ *
+ * Entries are dropped as soon as the login settles, and swept on age so an
+ * abandoned scan cannot hold a socket open. A QR lives fifteen minutes.
+ */
+const watches = new Map();
+const WATCH_TTL_MS = 16 * 60 * 1000;
+
+function closeWatch(qrcodeID) {
+  const w = watches.get(qrcodeID);
+  if (!w) return;
+  watches.delete(qrcodeID);
+  try { w.client?.end(true); } catch { /* already gone */ }
+}
+
+function sweepWatches() {
+  const cutoff = Date.now() - WATCH_TTL_MS;
+  for (const [id, w] of watches) {
+    if (w.startedAt < cutoff) closeWatch(id);
+  }
+}
+
+/**
+ * Begin listening for this code to be scanned.
+ *
+ * Called once, right after the QR is created, so the connection is already up
+ * before the user can possibly scan. Doing it lazily on first poll would risk
+ * missing a fast scan, since connecting takes a few seconds.
+ */
+async function watchQrCode(qrcodeID) {
+  sweepWatches();
+  if (watches.has(qrcodeID)) return;
+
+  const entry = { client: null, event: { status: 'waiting' }, startedAt: Date.now() };
+  watches.set(qrcodeID, entry);
+
+  try {
+    const client = await mqttWatcher.connectAndSubscribe(qrcodeID);
+    // The attempt may have been abandoned while we were connecting.
+    if (!watches.has(qrcodeID)) { client.end(true); return; }
+    entry.client = client;
+
+    client.on('message', (_topic, payload, packet) => {
+      const type = packet?.properties?.userProperties?.type;
+      let parsed = null;
+      try { parsed = JSON.parse(payload.toString('utf8')); } catch { /* not JSON */ }
+      const event = mqttWatcher.readEvent(
+        Array.isArray(type) ? type[0] : type,
+        parsed,
+      );
+      if (event) entry.event = event;
+    });
+  } catch (err) {
+    // Recorded rather than thrown: the caller already has a QR on screen, and
+    // the next poll reports this cleanly instead of the request failing.
+    entry.event = { status: 'error', message: err.message };
+  }
+}
+
+/**
+ * What has happened to this code so far.
+ *
+ * Reads the last event MQTT delivered. No outbound request is made here, so
+ * the browser's polling costs nothing at the platform and cannot be mistaken
+ * for hammering a login endpoint.
+ */
 async function pollQrCode(qrcodeID) {
-  const res = await call('GetQRCodeStatus', { qrcodeID, tmeAppID: 'qqmusic' });
-  const info = (res.data || {}).info || {};
-
-  if (res.code !== 0) {
-    // 104610 means this client type is not allowed to scan — a wiring fault on
-    // our side rather than anything the user did.
-    throw fail(info.notSupportTxt || '扫码状态查询失败', 'QR_BAD_RESPONSE', { platformCode: res.code });
+  const entry = watches.get(qrcodeID);
+  if (!entry) {
+    // Nothing listening: the code was never started here, or it expired and
+    // was swept. Either way it cannot complete.
+    throw fail('二维码已失效，请重新生成', 'QR_SESSION_LOST');
   }
 
-  const status = APP_STATUS[info.status] || 'waiting';
-  if (status !== 'done') return { status };
-
-  /**
-   * The scanning account, and the token that proves the scan.
-   *
-   * musicId is a string here — which is the point. The numeric musicid loses
-   * its last digits past 2^53, and an account named by a rounded id is
-   * rejected on every later call.
-   */
-  const scanUser = info.scanUser || {};
-  const musicId = String(scanUser.musicId || '');
-  const token = String(info.token || '');
-  if (!musicId || !token) {
-    throw fail('扫码成功但未能取得登录参数', 'QR_BAD_RESPONSE');
+  const event = entry.event;
+  if (event.status === 'error') {
+    closeWatch(qrcodeID);
+    throw fail(event.message || '扫码通知服务不可用', 'QR_MQTT_FAILED');
   }
+  if (event.status === 'expired' || event.status === 'refused') {
+    closeWatch(qrcodeID);
+    return { status: event.status };
+  }
+  if (event.status !== 'done') return { status: event.status };
 
-  return { status: 'done', musicId, token, qrcodeID };
+  return { status: 'done', musicId: event.musicId, token: event.token, qrcodeID };
 }
 
 /**
@@ -216,16 +267,20 @@ async function exchangeCode({ musicId, token, qrcodeID }) {
       20450: '账号已被封禁',
       104604: '操作过于频繁，请稍后再试',
     };
+    closeWatch(qrcodeID);
     throw fail(KNOWN[res.code] || data.errMsg || 'QQ 音乐登录失败，请重新扫码', 'QR_LOGIN_FAILED', {
       platformCode: res.code,
       // Retrying these cannot help, so the page should not invite it.
       retryable: !KNOWN[res.code],
     });
   }
+
+  // The scan is spent; the socket has nothing left to deliver.
+  closeWatch(qrcodeID);
   // Normalised by the same function the other two flows use, so the cookie
   // shape, the expiry handling and the uin precision fix are shared rather
   // than reimplemented here.
   return shapeCredential(data);
 }
 
-module.exports = { createQrCode, pollQrCode, exchangeCode, APP_STATUS };
+module.exports = { createQrCode, watchQrCode, pollQrCode, exchangeCode, closeWatch };

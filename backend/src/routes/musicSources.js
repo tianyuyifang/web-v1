@@ -189,7 +189,7 @@ router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
   try {
     res.json(await readProvider(req).createQrCode());
   } catch (err) {
-    if (err.code === 'QR_SHAPE_CHANGED' || err.code === 'QR_UNAVAILABLE') {
+    if (err.code === 'QR_SHAPE_CHANGED' || err.code === 'QR_UNAVAILABLE' || err.code === 'QR_MQTT_FAILED') {
       return res.status(503).json({ error: { message: err.message, code: err.code } });
     }
     return next(err);
@@ -244,7 +244,7 @@ router.get('/qq/qrcode/:uuid', pollLimiter, noEtag, async (req, res, next) => {
     // subscription — the difference between most songs playing and most not.
     return res.json({ status: 'done', source: (await access.verifyCredential(req.user.id, 'qq')) ?? source });
   } catch (err) {
-    if (err.code === 'QR_LOGIN_FAILED' || err.code === 'QR_BAD_RESPONSE') {
+    if (err.code === 'QR_LOGIN_FAILED' || err.code === 'QR_BAD_RESPONSE' || err.code === 'QR_MQTT_FAILED') {
       // The redirect trail is the only record of which hop refused, and it is
       // gone once the response is sent. Logged, not returned: it describes the
       // user's own login attempt and the page has no use for it.

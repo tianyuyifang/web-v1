@@ -204,12 +204,12 @@ export default function MusicSourcesPanel() {
 
           /**
            * WeChat holds each request open for tens of seconds, so its loop
-           * paces itself. QQ answers at once, and without a wait this becomes a
-           * tight loop against a login endpoint — the surest way to get an
+           * paces itself. QQ Music answers at once, and without a wait this is
+           * a tight loop against a login endpoint — the surest way to get an
            * account flagged. Placed after the exit checks so it only ever
            * delays a genuine retry, never the scan that just succeeded.
            */
-          if (provider === "qq") {
+          if (provider === "qqmusic") {
             await new Promise((r) => setTimeout(r, 2000));
           }
         }
@@ -324,11 +324,11 @@ export default function MusicSourcesPanel() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => startQr("qq")}
+                        onClick={() => startQr("qqmusic")}
                         disabled={busy === "qr"}
                         className="rounded-lg border border-primary px-3 py-1.5 text-sm text-primary hover:bg-primary/10 disabled:opacity-50"
                       >
-                        QQ 扫码
+                        QQ音乐APP扫码
                       </button>
                     </>
                   )}
@@ -357,7 +357,7 @@ export default function MusicSourcesPanel() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={qr.image}
-                    alt={qr.provider === "qq" ? "QQ 扫码登录" : "微信扫码登录"}
+                    alt={qr.provider === "qqmusic" ? "QQ音乐APP扫码登录" : "微信扫码登录"}
                     className="h-48 w-48 rounded bg-white p-2"
                   />
                   <p className="text-sm text-muted">
@@ -367,14 +367,14 @@ export default function MusicSourcesPanel() {
                         ? "二维码已过期，请重新生成"
                         : qrStatus === "refused"
                           ? "已取消授权"
-                          : qr.provider === "qq"
-                            ? "请用手机 QQ 扫描二维码"
+                          : qr.provider === "qqmusic"
+                            ? "请用 QQ 音乐 APP 扫描二维码"
                             : "请用微信扫描二维码"}
                   </p>
                   {/* Said plainly, because the failure mode is silent: the wrong
                       app connects a real but empty account rather than erroring. */}
                   <p className="text-xs text-muted/80">
-                    请使用注册该 QQ 音乐账号时所用的方式扫码
+                    两种方式都可以，用你手机上已登录该账号的那个 APP 扫
                   </p>
                   <div className="flex gap-2">
                     {(qrStatus === "expired" || qrStatus === "refused") && (

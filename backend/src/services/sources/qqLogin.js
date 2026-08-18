@@ -448,6 +448,7 @@ module.exports = {
   pollQrCode,
   exchangeCode,
   exchangeQqCode,
+  shapeCredential,
   refreshCredential,
   APPID,
   WX_STATUS,

@@ -5,7 +5,7 @@ const validate = require('../middleware/validate');
 const { ValidationError } = require('../utils/errors');
 const svc = require('../services/musicCredentialService');
 const qqLogin = require('../services/sources/qqLogin');
-const qqQrLogin = require('../services/sources/qqQrLogin');
+const qqAppQr = require('../services/sources/qqAppQrLogin');
 const access = require('../services/musicCredentialAccess');
 
 /**
@@ -106,13 +106,19 @@ const qrLimiter = rateLimit({
 /**
  * Which QR flow to run.
  *
- * A QQ Music account is bound to either WeChat or QQ, and scanning with the
- * wrong one does not fail — it quietly signs the user into a different, empty
- * account. So this is a real choice the user has to make, not a convenience.
+ * A QQ Music account can be reached by scanning with WeChat or with QQ Music
+ * itself. Scanning with the wrong one does not error — it quietly connects a
+ * different, empty account — so this stays a visible choice.
  *
- * Both providers are reduced to the same three steps here; everything that
- * differs between them (endpoints, status codes, how many hops the exchange
- * takes) stays inside the two modules.
+ * Scanning with QQ is deliberately absent. It cannot work from a server: the
+ * flow ends at QQ Connect's authorize step, which signs its request with
+ * g_tk = hash33(p_skey), and p_skey is only ever given to JavaScript running on
+ * graph.qq.com. A live scan confirmed it — the login was accepted, no p_skey
+ * was issued, and authorize bounced to the login page. The app-QR flow below
+ * reaches the same accounts without any of that.
+ *
+ * Each provider is reduced to the same three steps; the differences (endpoints,
+ * status codes, how many hops the exchange takes) stay inside the modules.
  */
 const PROVIDERS = {
   wechat: {
@@ -121,11 +127,11 @@ const PROVIDERS = {
     // WeChat's poll returns the OAuth code directly.
     exchange: (result) => qqLogin.exchangeCode(result.code),
   },
-  qq: {
-    createQrCode: () => qqQrLogin.createQrCode(),
-    pollQrCode: (id) => qqQrLogin.pollQrCode(id),
-    // QQ's poll returns uin+sigx, which take two further hops to become a code.
-    exchange: async (result) => qqLogin.exchangeQqCode(await qqQrLogin.exchangeCode(result)),
+  qqmusic: {
+    createQrCode: () => qqAppQr.createQrCode(),
+    pollQrCode: (id) => qqAppQr.pollQrCode(id),
+    // Already a credential; no OAuth code changes hands in this flow.
+    exchange: (result) => qqAppQr.exchangeCode(result),
   },
 };
 
@@ -134,12 +140,12 @@ const PROVIDERS = {
  * choice was offered keep behaving exactly as they did.
  */
 function readProvider(req) {
-  const parsed = z.enum(['wechat', 'qq']).safeParse(req.query.provider || 'wechat');
+  const parsed = z.enum(['wechat', 'qqmusic']).safeParse(req.query.provider || 'wechat');
   if (!parsed.success) throw new ValidationError({ provider: ['未知的扫码方式'] });
   return PROVIDERS[parsed.data];
 }
 
-// POST /api/music-sources/qq/qrcode[?provider=wechat|qq] — start a QR login
+// POST /api/music-sources/qq/qrcode[?provider=wechat|qqmusic] — start a QR login
 router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
   try {
     res.json(await readProvider(req).createQrCode());
@@ -155,11 +161,11 @@ router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
  * GET /api/music-sources/qq/qrcode/:uuid — has it been scanned?
  *
  * WeChat holds the connection open until something happens, so "waiting" is the
- * normal answer and the browser simply calls again. QQ answers immediately
- * instead, which means the browser's own polling interval sets the pace there.
+ * normal answer and the browser simply calls again. QQ Music answers
+ * immediately instead, so the browser's own interval sets the pace there.
  *
  * The provider must match the one that created the code: the identifier is a
- * WeChat uuid or a QQ qrsig, and they are not interchangeable.
+ * WeChat uuid or a QQ Music qrcodeID, and they are not interchangeable.
  *
  * On success the credential is stored here, server side, and the browser is
  * told only that it worked.

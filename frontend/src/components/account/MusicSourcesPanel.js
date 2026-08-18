@@ -20,11 +20,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { musicSourcesAPI } from "@/lib/api";
 
+/**
+ * Scan options per platform.
+ *
+ * A QQ Music account is bound to either WeChat or QQ Music itself, and scanning
+ * with the wrong one silently connects a different, empty account — so both are
+ * named rather than hidden behind a default. NetEase accounts are their own and
+ * have a single app, so there is nothing to choose.
+ */
 const PLATFORMS = [
   {
     key: "qq",
     name: "QQ 音乐",
-    supportsQr: true,
+    providers: [
+      { id: "wechat", label: "微信扫码", scanHint: "请用微信扫描二维码" },
+      { id: "qqmusic", label: "QQ音乐APP扫码", scanHint: "请用 QQ 音乐 APP 扫描二维码" },
+    ],
     // Written out because "open devtools and copy a header" is not something
     // most people can do from memory.
     pasteHint: "登录 y.qq.com 后按 F12 → Network → 任意请求 → 复制 Cookie 整行",
@@ -32,10 +43,17 @@ const PLATFORMS = [
   {
     key: "netease",
     name: "网易云音乐",
-    supportsQr: false,
+    providers: [
+      { id: "netease", label: "扫码连接", scanHint: "请用网易云音乐 APP 扫描二维码" },
+    ],
     pasteHint: "登录 music.163.com 后按 F12 → Application → Cookies → 复制 MUSIC_U",
   },
 ];
+
+/** The scan option a QR was created with, for its on-screen wording. */
+function providerOf(platform, id) {
+  return (platform?.providers || []).find((p) => p.id === id) || null;
+}
 
 /** "还有 2 天" / "还有 5 小时" — precise enough to act on, no more. */
 function formatRemaining(ms) {
@@ -211,7 +229,8 @@ export default function MusicSourcesPanel() {
           if (status) setQrStatus(status);
 
           if (status === "done") {
-            setSources((prev) => ({ ...prev, qq: source }));
+            // Keyed by the platform the server stored it under, not always qq.
+            setSources((prev) => ({ ...prev, [source?.platform || "qq"]: source }));
             setQr(null);
             pollingRef.current = false;
             refresh();
@@ -224,12 +243,12 @@ export default function MusicSourcesPanel() {
 
           /**
            * WeChat holds each request open for tens of seconds, so its loop
-           * paces itself. QQ Music answers at once, and without a wait this is
-           * a tight loop against a login endpoint — the surest way to get an
-           * account flagged. Placed after the exit checks so it only ever
-           * delays a genuine retry, never the scan that just succeeded.
+           * paces itself. Every other provider answers at once, and without a
+           * wait this is a tight loop against a login endpoint — the surest way
+           * to get an account flagged. Placed after the exit checks so it only
+           * ever delays a genuine retry, never the scan that just succeeded.
            */
-          if (attempt.provider === "qqmusic") {
+          if (attempt.provider !== "wechat") {
             await new Promise((r) => setTimeout(r, 2000));
           }
         }
@@ -399,32 +418,25 @@ export default function MusicSourcesPanel() {
                       scanning with the wrong one silently connects a different,
                       empty account. Naming both up front makes that choice
                       visible instead of hiding it behind a default. */}
-                  {p.supportsQr && !qr && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => startQr("wechat")}
-                        disabled={busy === "qr"}
-                        className="rounded-lg border border-primary bg-primary px-3 py-1.5 text-sm text-white hover:bg-primary-hover disabled:opacity-50"
-                      >
-                        {busy === "qr" ? "生成中…" : "微信扫码"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => startQr("qqmusic")}
-                        disabled={busy === "qr"}
-                        className="rounded-lg border border-primary px-3 py-1.5 text-sm text-primary hover:bg-primary/10 disabled:opacity-50"
-                      >
-                        QQ音乐APP扫码
-                      </button>
-                    </>
-                  )}
+                  {p.providers?.length > 0 && !qr && p.providers.map((prov, i) => (
+                    <button
+                      key={prov.id}
+                      type="button"
+                      onClick={() => startQr(prov.id)}
+                      disabled={busy === "qr"}
+                      className={i === 0
+                        ? "rounded-lg border border-primary bg-primary px-3 py-1.5 text-sm text-white hover:bg-primary-hover disabled:opacity-50"
+                        : "rounded-lg border border-primary px-3 py-1.5 text-sm text-primary hover:bg-primary/10 disabled:opacity-50"}
+                    >
+                      {busy === "qr" && i === 0 ? "生成中…" : prov.label}
+                    </button>
+                  ))}
                   <button
                     type="button"
                     onClick={() => { setPasteFor(pasteFor === p.key ? null : p.key); setCookie(""); }}
                     className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-fg"
                   >
-                    {p.supportsQr ? "手动输入 Cookie" : connected ? "重新连接" : "连接"}
+                    {p.providers?.length > 0 ? "手动输入 Cookie" : connected ? "重新连接" : "连接"}
                   </button>
                   {connected && (
                     <button
@@ -439,12 +451,12 @@ export default function MusicSourcesPanel() {
                 </div>
               </div>
 
-              {p.supportsQr && qr && (
+              {p.providers?.length > 0 && qr && providerOf(p, qr.provider) && (
                 <div className="mt-4 flex flex-col items-center gap-3 rounded-lg border border-border/60 bg-bg/50 p-4">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={qr.image}
-                    alt={qr.provider === "qqmusic" ? "QQ音乐APP扫码登录" : "微信扫码登录"}
+                    alt={`${providerOf(p, qr.provider)?.label || "扫码"}登录`}
                     className="h-48 w-48 rounded bg-white p-2"
                   />
                   <p className="text-sm text-muted">
@@ -454,15 +466,17 @@ export default function MusicSourcesPanel() {
                         ? "二维码已过期，请重新生成"
                         : qrStatus === "refused"
                           ? "已取消授权"
-                          : qr.provider === "qqmusic"
-                            ? "请用 QQ 音乐 APP 扫描二维码"
-                            : "请用微信扫描二维码"}
+                          : providerOf(p, qr.provider)?.scanHint || "请扫描二维码"}
                   </p>
-                  {/* Said plainly, because the failure mode is silent: the wrong
-                      app connects a real but empty account rather than erroring. */}
-                  <p className="text-xs text-muted/80">
-                    两种方式都可以，用你手机上已登录该账号的那个 APP 扫
-                  </p>
+                  {/* Only worth saying where there is a choice to get wrong: with
+                      QQ Music the wrong app connects a real but empty account
+                      rather than erroring. NetEase has one app, so nothing to
+                      pick and nothing to warn about. */}
+                  {p.providers.length > 1 && (
+                    <p className="text-xs text-muted/80">
+                      两种方式都可以，用你手机上已登录该账号的那个 APP 扫
+                    </p>
+                  )}
                   <div className="flex gap-2">
                     {(qrStatus === "expired" || qrStatus === "refused") && (
                       <button type="button" onClick={() => startQr(qr.provider)} className="rounded-lg border border-border px-3 py-1.5 text-sm hover:border-primary">

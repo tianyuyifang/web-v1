@@ -6,6 +6,7 @@ const { ValidationError } = require('../utils/errors');
 const svc = require('../services/musicCredentialService');
 const qqLogin = require('../services/sources/qqLogin');
 const qqAppQr = require('../services/sources/qqAppQrLogin');
+const neteaseLogin = require('../services/sources/neteaseLogin');
 const access = require('../services/musicCredentialAccess');
 
 /**
@@ -138,16 +139,29 @@ const qrLimiter = rateLimit({
  */
 const PROVIDERS = {
   wechat: {
+    platform: 'qq',
     createQrCode: () => qqLogin.createQrCode(),
     pollQrCode: (id) => qqLogin.pollQrCode(id),
     // WeChat's poll returns the OAuth code directly.
     exchange: (result) => qqLogin.exchangeCode(result.code),
   },
   qqmusic: {
+    platform: 'qq',
     createQrCode: () => qqAppQr.createQrCode(),
     pollQrCode: (id) => qqAppQr.pollQrCode(id),
     // Already a credential; no OAuth code changes hands in this flow.
     exchange: (result) => qqAppQr.exchangeCode(result),
+  },
+  /**
+   * NetEase has exactly one QR flow, and it is the plain kind: three POSTs and
+   * a status that changes as the user scans. The scan itself yields the cookie,
+   * so there is nothing left to exchange afterwards.
+   */
+  netease: {
+    platform: 'netease',
+    createQrCode: () => neteaseLogin.createQrCode(),
+    pollQrCode: (id) => neteaseLogin.pollQrCode(id),
+    exchange: (result) => neteaseLogin.shapeCredential(result.cookie),
   },
 };
 
@@ -156,7 +170,7 @@ const PROVIDERS = {
  * choice was offered keep behaving exactly as they did.
  */
 function readProvider(req) {
-  const parsed = z.enum(['wechat', 'qqmusic']).safeParse(req.query.provider || 'wechat');
+  const parsed = z.enum(['wechat', 'qqmusic', 'netease']).safeParse(req.query.provider || 'wechat');
   if (!parsed.success) throw new ValidationError({ provider: ['未知的扫码方式'] });
   return PROVIDERS[parsed.data];
 }
@@ -203,8 +217,9 @@ router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {
  * normal answer and the browser simply calls again. QQ Music answers
  * immediately instead, so the browser's own interval sets the pace there.
  *
- * The provider must match the one that created the code: the identifier is a
- * WeChat uuid or a QQ Music qrcodeID, and they are not interchangeable.
+ * The provider must match the one that created the code — a WeChat uuid, a QQ
+ * Music qrcodeID and a NetEase unikey are not interchangeable — and it also
+ * decides which platform the resulting credential is stored under.
  *
  * On success the credential is stored here, server side, and the browser is
  * told only that it worked.
@@ -226,7 +241,7 @@ router.get('/qq/qrcode/:uuid', pollLimiter, noEtag, async (req, res, next) => {
     // Every field the renewal call needs is stored now. Storing only what
     // playback uses would leave the first renewal to fail three days later,
     // when the key is already dying and there is no way to recover it.
-    const source = await svc.setCredential(req.user.id, 'qq', cred.cookie, {
+    const source = await svc.setCredential(req.user.id, provider.platform, cred.cookie, {
       method: 'qr',
       uin: cred.uin,
       loginType: cred.loginType,
@@ -242,7 +257,10 @@ router.get('/qq/qrcode/:uuid', pollLimiter, noEtag, async (req, res, next) => {
     });
     // Verified right away so the page can say whether this account has a
     // subscription — the difference between most songs playing and most not.
-    return res.json({ status: 'done', source: (await access.verifyCredential(req.user.id, 'qq')) ?? source });
+    return res.json({
+      status: 'done',
+      source: (await access.verifyCredential(req.user.id, provider.platform)) ?? source,
+    });
   } catch (err) {
     if (err.code === 'QR_LOGIN_FAILED' || err.code === 'QR_BAD_RESPONSE' || err.code === 'QR_MQTT_FAILED') {
       // The redirect trail is the only record of which hop refused, and it is

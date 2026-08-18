@@ -20,6 +20,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import { mappingAPI } from "@/lib/api";
 
+/** Half a second — the scale at which a mistimed line becomes obvious. */
+const NUDGE_SEC = 0.5;
+
 function formatTime(sec) {
   if (!Number.isFinite(sec) || sec < 0) return "0:00";
   const m = Math.floor(sec / 60);
@@ -49,6 +52,7 @@ export default function TrackLyricPanel({
   duration,
   onTogglePlay,
   onSeekSeconds,
+  onNudge,
   onClose,
   busy,
   error,
@@ -111,6 +115,36 @@ export default function TrackLyricPanel({
     clearTimeout(suppressTimer.current);
     setSuppressed(false);
   }, [isTimed, onSeekSeconds]);
+
+  const nudge = useCallback((delta) => {
+    onNudge(delta);
+  }, [onNudge]);
+
+  /**
+   * a and d nudge backwards and forwards while the panel is open.
+   *
+   * Bound on the window rather than the panel, since the reviewer's focus is
+   * usually still in the list they clicked from — requiring them to click the
+   * panel first would make the keys feel broken.
+   *
+   * Ignored while typing: the search box is on the same page, and "d" in a
+   * song title must not jump the audio.
+   */
+  useEffect(() => {
+    const onKey = (e) => {
+      const el = e.target;
+      const typing = el instanceof HTMLElement
+        && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+      if (key !== "a" && key !== "d") return;
+      e.preventDefault();
+      nudge(key === "a" ? -NUDGE_SEC : NUDGE_SEC);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [nudge]);
 
   const pct = duration > 0 ? Math.min(100, (current / duration) * 100) : 0;
 
@@ -194,11 +228,29 @@ export default function TrackLyricPanel({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => nudge(-NUDGE_SEC)}
+            title="后退 0.5 秒（A）"
+            className="h-8 w-8 shrink-0 rounded-full border border-border text-[0.62rem] text-muted hover:border-accent hover:text-fg"
+          >
+            −0.5
+          </button>
+
+          <button
+            type="button"
             onClick={onTogglePlay}
             disabled={busy}
             className="h-8 w-8 shrink-0 rounded-full border border-border text-xs hover:border-accent disabled:opacity-30"
           >
             {busy ? "…" : isPlaying ? "❚❚" : "▶"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => nudge(NUDGE_SEC)}
+            title="前进 0.5 秒（D）"
+            className="h-8 w-8 shrink-0 rounded-full border border-border text-[0.62rem] text-muted hover:border-accent hover:text-fg"
+          >
+            +0.5
           </button>
 
           <div

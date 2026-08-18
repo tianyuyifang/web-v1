@@ -98,11 +98,20 @@ export default function MappingsPage() {
   const [credential, setCredential] = useState(null);
   const audioRef = useRef(null);
 
+  /**
+   * The search text as it was last submitted.
+   *
+   * Kept apart from the input's own value so typing does not fetch: the form
+   * searches on submit, but load() used to depend on every keystroke, which
+   * meant "chen'yi'xun" fetched the list eleven times on the way to one search.
+   */
+  const [submittedQuery, setSubmittedQuery] = useState("");
+
   const load = useCallback(async ({ append = false, cursor = null } = {}) => {
     setLoading(true);
     setError("");
     try {
-      const res = await mappingAPI.list({ bucket, q: query, cursor, take: 50 });
+      const res = await mappingAPI.list({ bucket, q: submittedQuery, cursor, take: 50 });
       setRows((prev) => (append ? [...prev, ...res.data.rows] : res.data.rows));
       setNextCursor(res.data.nextCursor);
       if (res.data.counts) setCounts(res.data.counts);
@@ -114,13 +123,26 @@ export default function MappingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [bucket, query]);
+  }, [bucket, submittedQuery]);
 
   useEffect(() => {
     if (authLoading || !user) return;
     load();
-    musicSourcesAPI.get('qq').then((r) => setCredential(r.data.source)).catch(() => {});
   }, [authLoading, user, load]);
+
+  /**
+   * Read the credential once, not on every keystroke.
+   *
+   * This used to sit alongside load(), which depends on the search text — so
+   * typing "chen'yi'xun" fired eleven credential lookups on the way. Harmless
+   * individually and invisible to the user, but it is a request per character
+   * for an answer that had not changed. Playback already refreshes this when
+   * it matters, via refreshCredentialFor.
+   */
+  useEffect(() => {
+    if (authLoading || !user) return;
+    musicSourcesAPI.get('qq').then((r) => setCredential(r.data.source)).catch(() => {});
+  }, [authLoading, user]);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
@@ -243,6 +265,22 @@ export default function MappingsPage() {
     el.currentTime = Math.max(0, Math.min(el.duration, seconds));
   }, []);
 
+  /**
+   * Step the audio by a relative amount.
+   *
+   * Reads the element rather than the progress state, because while paused
+   * there is no timeupdate to refresh it — nudging twice would otherwise seek
+   * from the same stale position both times and appear to do nothing. The
+   * result is pushed back into state for the same reason.
+   */
+  const nudgeSeconds = useCallback((delta) => {
+    const el = audioRef.current;
+    if (!el || !el.duration) return;
+    const next = Math.max(0, Math.min(el.duration, el.currentTime + delta));
+    el.currentTime = next;
+    setProgress({ current: next, duration: el.duration });
+  }, []);
+
   const act = useCallback(async (fn, id, after) => {
     setBusy(id);
     setError("");
@@ -349,7 +387,7 @@ export default function MappingsPage() {
 
       <form
         className="mb-4 flex gap-2"
-        onSubmit={(e) => { e.preventDefault(); load(); }}
+        onSubmit={(e) => { e.preventDefault(); setSubmittedQuery(query); }}
       >
         <input
           value={query}
@@ -607,6 +645,7 @@ export default function MappingsPage() {
               duration={loadedFor === selected.id ? progress.duration : (selected.durationSec || 0)}
               onTogglePlay={() => play(selected)}
               onSeekSeconds={seekSeconds}
+              onNudge={nudgeSeconds}
               onClose={() => setSelected(null)}
               busy={busy === `play:${selected.id}`}
               error={playing === selected.id || loadedFor === selected.id ? playError : ""}

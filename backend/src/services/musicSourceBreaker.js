@@ -28,6 +28,12 @@
  */
 const RATE_LIMIT_CODES = new Set([
   104604, // QQ: "操作过于频繁" — the platform's own rate-limit code.
+  // NetEase: {"code":-460,"msg":"Cheating"} on the playback-URL endpoint. It
+  // is an IP-reputation block, not a judgement about the track: the same
+  // request succeeds from another address and keeps failing from this one, so
+  // it is the same shape as QQ's 104604 and must stop traffic rather than be
+  // recorded against the song.
+  -460,
 ]);
 
 const DEFAULTS = {

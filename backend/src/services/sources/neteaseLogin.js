@@ -19,6 +19,10 @@
 const crypto = require('crypto');
 const https = require('https');
 const QRCode = require('qrcode');
+const breaker = require('../musicSourceBreaker');
+
+/** Breaker key. Matches the `platform` field carried on errors from here. */
+const PLATFORM = 'netease';
 
 /**
  * eapi, the client-facing encryption.
@@ -118,7 +122,7 @@ function fail(message, code, extra = {}) {
  * *sent* to `/eapi/...`. Signing the path it is sent to yields a valid-looking
  * request that the server rejects.
  */
-function call(apiPath, data, { cookie = '' } = {}) {
+function rawCall(apiPath, data, { cookie = '' } = {}) {
   const header = clientHeader();
   const payload = { ...data, header };
   const body = Buffer.from(new URLSearchParams(eapiParams(apiPath, payload)).toString(), 'utf8');
@@ -174,6 +178,52 @@ function call(apiPath, data, { cookie = '' } = {}) {
     req.write(body);
     req.end();
   });
+}
+
+/**
+ * One eapi call, with the circuit breaker around it.
+ *
+ * NetEase blocks by IP, and every user's lookups leave from this one server
+ * address, so a retry loop does not degrade one person's playback — it takes
+ * the feature down for everybody and keeps it down after the traffic stops.
+ * The breaker is what turns "a few bad requests" back into a few bad requests.
+ *
+ * `-460 Cheating` is the block, and it arrives as an ordinary 200 with a code
+ * in the body, so it has to be read out of the payload rather than the status.
+ * Nothing else counts: a track that needs a subscription is a permission
+ * answer, and tripping on those would disable playback over ordinary missing
+ * songs.
+ */
+async function call(apiPath, data, opts = {}) {
+  // Claims an in-flight slot as well as checking the breaker, so a burst of
+  // simultaneous callers cannot all reach the platform before the first
+  // failure is recorded.
+  breaker.acquire(PLATFORM);
+
+  let res;
+  try {
+    res = await rawCall(apiPath, data, opts);
+  } catch (err) {
+    // Timeouts and socket errors are not rate limiting; leave the breaker be.
+    err.platform = PLATFORM;
+    throw err;
+  } finally {
+    breaker.release(PLATFORM);
+  }
+
+  const code = res?.json?.code;
+  if (breaker.isRateLimit(code)) {
+    const err = fail('网易云音源暂时不可用，请稍后再试', 'SOURCE_RATE_LIMITED', {
+      platform: PLATFORM,
+      platformCode: code,
+      status: 503,
+    });
+    err.breakerOpened = breaker.recordFailure(PLATFORM, code);
+    throw err;
+  }
+
+  breaker.recordSuccess(PLATFORM);
+  return res;
 }
 
 /**

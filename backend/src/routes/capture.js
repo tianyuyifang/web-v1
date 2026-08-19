@@ -99,14 +99,23 @@ router.post('/pair', pairLimiter, async (req, res, next) => {
 // deliberately absent: it would consume a device slot and evict the browser.
 router.post('/ingest', captureAuth, async (req, res, next) => {
   try {
-    const result = await captureService.ingestText({
-      session: req.captureSession,
-      rawText: req.body && req.body.text,
-      // Optional: clients before v3 do not send it.
-      side: req.body && req.body.side,
-      // Optional: clients before v9 do not send it.
-      row: req.body && req.body.row,
-    });
+    // The session decides how a title is handled, not the client. A live run
+    // resolves against the mapping table; a playlist run matches clips exactly
+    // as it always has. Dispatching here rather than on a request field means
+    // an old client posting to a live session still does the right thing.
+    const result = req.captureSession.mode === 'live'
+      ? await captureService.ingestLive({
+        session: req.captureSession,
+        rawText: req.body && req.body.text,
+      })
+      : await captureService.ingestText({
+        session: req.captureSession,
+        rawText: req.body && req.body.text,
+        // Optional: clients before v3 do not send it.
+        side: req.body && req.body.side,
+        // Optional: clients before v9 do not send it.
+        row: req.body && req.body.row,
+      });
     res.json(result);
   } catch (err) {
     next(err);
@@ -118,7 +127,12 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
 // reports a lost connection while capture is working fine.
 router.post('/heartbeat', captureAuth, async (req, res, next) => {
   try {
-    res.json(await captureService.touchSession(req.captureSession));
+    const result = await captureService.touchSession(req.captureSession);
+    // How the client learns which screens to scan. Carried on the heartbeat
+    // rather than pushed, because the client already polls this and a second
+    // channel would be one more thing to keep alive (item 13). Clients that
+    // predate live mode ignore the extra field.
+    res.json({ ...result, mode: req.captureSession.mode });
   } catch (err) {
     next(err);
   }
@@ -130,9 +144,9 @@ const web = [authMiddleware, requireApproved, requireActiveSession];
 // POST /api/capture/sessions — start a run; token is shown once
 router.post('/sessions', ...web, requireCaptureAddOn, async (req, res, next) => {
   try {
-    const { playlistId, label, ttlMinutes } = req.body || {};
+    const { playlistId, label, ttlMinutes, mode } = req.body || {};
     const { session, token } = await captureService.startSession({
-      userId: req.user.id, playlistId, label, ttlMinutes,
+      userId: req.user.id, playlistId, label, ttlMinutes, mode,
     });
     res.json({
       token,
@@ -143,6 +157,7 @@ router.post('/sessions', ...web, requireCaptureAddOn, async (req, res, next) => 
       session: {
         id: session.id,
         playlistId: session.playlistId,
+        mode: session.mode,
         label: session.label,
         expiresAt: session.expiresAt,
       },
@@ -180,6 +195,22 @@ router.get('/sessions/:id/report', ...web, async (req, res, next) => {
   try {
     res.json(await captureService.getReport({
       userId: req.user.id, sessionId: req.params.id,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/capture/sessions/:id/live — recent cards for a live run.
+// The page calls this on load and again after an SSE reconnect, which is what
+// makes a dropped push harmless: the events live in the database, not just on
+// the wire.
+router.get('/sessions/:id/live', ...web, async (req, res, next) => {
+  try {
+    res.json(await captureService.getLiveFeed({
+      userId: req.user.id,
+      sessionId: req.params.id,
+      limit: Number(req.query.limit) || undefined,
     }));
   } catch (err) {
     next(err);

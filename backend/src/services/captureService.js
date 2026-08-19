@@ -4,6 +4,7 @@ const {
   matchTitle, normTitleFolded, splitEllipsis, FOLD_FROM, FOLD_TO,
 } = require('./captureMatchService');
 const { ensureLiked } = require('./likeService');
+const { resolveGameSong } = require('./mappingResolveService');
 const { broadcast } = require('./sseManager');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 
@@ -23,6 +24,19 @@ const PAIR_TTL_MS = 5 * 60 * 1000;
  * panel render thousands of empty rows.
  */
 const MAX_ROW_INDEX = 200;
+
+/**
+ * SSE channel for a live run.
+ *
+ * The stream manager keys subscriptions by playlist id, and a live session has
+ * no playlist — so live runs get their own namespace keyed by user instead.
+ * The `live:` prefix keeps it from ever colliding with a playlist UUID, which
+ * matters because a collision would leak one user's captures into another
+ * user's stream.
+ */
+function liveChannel(userId) {
+  return `live:${userId}`;
+}
 
 /** The user must be able to like in this playlist to capture into it. */
 async function assertPlaylistAccess(userId, playlistId) {
@@ -51,8 +65,13 @@ async function assertPlaylistAccess(userId, playlistId) {
  * a disconnected client, because the session being watched never heard from
  * anyone. One live run per user makes that state unreachable.
  */
-async function startSession({ userId, playlistId, label, ttlMinutes }) {
-  await assertPlaylistAccess(userId, playlistId);
+async function startSession({ userId, playlistId, label, ttlMinutes, mode }) {
+  // A live (唱卡) run has no playlist: titles are read off the game screen and
+  // resolved against the mapping table, so there is nothing to like into and
+  // nothing to check access on. Anything else keeps the original contract.
+  const runMode = mode === 'live' ? 'live' : 'playlist';
+  const targetPlaylistId = runMode === 'live' ? null : playlistId;
+  if (runMode === 'playlist') await assertPlaylistAccess(userId, playlistId);
 
   await prisma.captureSession.updateMany({
     where: { userId, endedAt: null, expiresAt: { gt: new Date() } },
@@ -72,7 +91,8 @@ async function startSession({ userId, playlistId, label, ttlMinutes }) {
       session = await prisma.captureSession.create({
         data: {
           userId,
-          playlistId,
+          playlistId: targetPlaylistId,
+          mode: runMode,
           tokenHash: hashToken(token),
           pairCode: generatePairCode(),
           pairExpiresAt: new Date(Date.now() + PAIR_TTL_MS),
@@ -327,6 +347,114 @@ async function ingestText({ session, rawText, side, row }) {
   return payload;
 }
 
+/**
+ * Split "歌名-歌手" as the singing screen writes it.
+ *
+ * The separator also occurs inside real titles ("Lost-你的名字"), so the split
+ * is a guess. It is made at the LAST separator because a trailing artist is
+ * the reliable half of the pattern: titles carry hyphens far more often than
+ * artist names do, so splitting from the right keeps the artist intact and
+ * lets a hyphenated title absorb its own dash.
+ *
+ * When there is no separator at all the whole string is the title. That is a
+ * real case (the candidate screen sends title and artist apart, item 3), and
+ * an empty artist key still finds a mapping stored with one.
+ */
+function splitTitleArtist(text) {
+  const m = /^(.*)[-–—]([^-–—]+)$/.exec(text);
+  if (!m) return { title: text, artist: '' };
+  const title = m[1].trim();
+  const artist = m[2].trim();
+  // A leading dash ("-歌手") leaves no title — that is decoration, not a split.
+  if (!title || !artist) return { title: text, artist: '' };
+  return { title, artist };
+}
+
+/**
+ * Ingest one captured title in live (唱卡) mode.
+ *
+ * Where the playlist flow asks "which clip of mine is this", live asks "what
+ * can play this at all" — so it resolves against the mapping table instead of
+ * the playlist, and nothing is ever liked. A miss is not a failure: it means
+ * the song has no approved mapping yet, which is exactly what the review page
+ * exists to fill in.
+ *
+ * Deliberately does NOT call any platform search. Resolution here is a local
+ * table lookup only; hitting QQ or NetEase once per captured title is the
+ * batch-prefetch pattern that got this machine rate-limited twice (item 53).
+ */
+async function ingestLive({ session, rawText }) {
+  const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
+  if (!text) throw new ValidationError({ text: ['Text is required'] });
+
+  await prisma.captureSession.update({
+    where: { id: session.id },
+    data: { lastSeenAt: new Date() },
+  });
+
+  // Same dedupe as the playlist flow: a title sits on screen for seconds and
+  // is read over and over, byte-identical each time.
+  const existing = await prisma.captureEvent.findUnique({
+    where: { sessionId_rawText: { sessionId: session.id, rawText: text } },
+  });
+  if (existing) {
+    return {
+      outcome: 'duplicate',
+      eventId: existing.id,
+      rawText: text,
+      mapping: existing.candidates || null,
+    };
+  }
+
+  const { title, artist } = splitTitleArtist(text);
+
+  // The full lookup chain: an existing mapping, or a track claimed from the
+  // imported pool. Unapproved mappings resolve too — the song plays now and a
+  // reviewer confirms it later, because a round lasts seconds and waiting for
+  // a human would mean the feature never works when it is needed.
+  const { status, mapping, tier, candidates } = await resolveGameSong({ title, artist });
+
+  const resolved = mapping
+    ? {
+      mappingId: mapping.id,
+      source: mapping.source,
+      externalId: mapping.externalId,
+      title: mapping.platformTitle,
+      artist: mapping.platformArtist,
+      durationSec: mapping.durationSec,
+      // Whether a reviewer has signed this off. The page shows unconfirmed
+      // songs differently: they play, but they may be the wrong recording.
+      approved: status === 'approved',
+      tier: tier || null,
+      // Alternatives for the reviewer to switch to, when there were any.
+      candidates: candidates && candidates.length > 1 ? candidates : undefined,
+    }
+    : null;
+
+  const event = await prisma.captureEvent.create({
+    data: {
+      sessionId: session.id,
+      rawText: text,
+      outcome: resolved ? 'resolved' : 'unmapped',
+      candidates: resolved || undefined,
+    },
+  });
+
+  const payload = {
+    eventId: event.id,
+    rawText: text,
+    // What the split produced, so the page can show the two halves apart and
+    // the reviewer can see when the guess went wrong.
+    title,
+    artist,
+    outcome: event.outcome,
+    mapping: resolved,
+    createdAt: event.createdAt,
+  };
+  broadcast(liveChannel(session.userId), 'live-card', payload);
+  return payload;
+}
+
 /** Approve a proposed match: apply the like. Idempotent by construction. */
 async function approveEvent({ userId, eventId, clipId }) {
   const event = await prisma.captureEvent.findUnique({
@@ -431,9 +559,48 @@ async function getReport({ userId, sessionId }) {
   return { session, events, summary, unmatched };
 }
 
+/**
+ * Recent cards for a live run.
+ *
+ * This is what makes the missing SSE `id:` field harmless (item 15): the page
+ * refetches on reconnect and gets whatever it missed, because the events are
+ * in the database rather than only on the wire.
+ */
+async function getLiveFeed({ userId, sessionId, limit }) {
+  const session = await prisma.captureSession.findUnique({ where: { id: sessionId } });
+  if (!session) throw new NotFoundError('Capture session');
+  if (session.userId !== userId) throw new ForbiddenError('Not your capture session');
+
+  const take = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 40;
+  const events = await prisma.captureEvent.findMany({
+    where: { sessionId },
+    orderBy: { createdAt: 'desc' },
+    take,
+  });
+
+  return {
+    cards: events.map((e) => {
+      const { title, artist } = splitTitleArtist(e.rawText);
+      return {
+        eventId: e.id,
+        rawText: e.rawText,
+        title,
+        artist,
+        outcome: e.outcome,
+        mapping: e.candidates || null,
+        createdAt: e.createdAt,
+      };
+    }),
+  };
+}
+
 module.exports = {
   startSession, endSession, resolveSession, redeemPairCode,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
+  ingestLive, liveChannel, getLiveFeed,
+  // Exposed for tests: the "歌名-歌手" split is a guess that decides whether a
+  // mapping is found at all, so it needs checking against real captures.
+  splitTitleArtist,
   // Exposed for the matching regression script — the prefilter decides which
   // songs the matcher ever sees, so it needs checking against real data.
   fetchCandidateSongs,

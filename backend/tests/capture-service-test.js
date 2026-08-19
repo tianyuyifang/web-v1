@@ -121,6 +121,80 @@ assert.ok(!/\btoggleLike\b/.test(src), 'captureService must not call toggleLike'
     await captureService.endSession({ userId: user.id, sessionId: session.id });
     assert.strictEqual(await captureService.resolveSession(token), null, 'ended token is dead');
 
+    // --- live (唱卡) mode ---
+    // A live run has no playlist at all. The point of these assertions is that
+    // the playlist flow above and this one share a table without sharing a
+    // code path: a live session must never be able to like anything.
+    const liveRun = await captureService.startSession({
+      userId: user.id, mode: 'live', label: '__live_test',
+    });
+    assert.strictEqual(liveRun.session.playlistId, null, 'live run holds no playlist');
+    assert.strictEqual(liveRun.session.mode, 'live');
+
+    const liveSession = await captureService.resolveSession(liveRun.token);
+    assert.ok(liveSession, 'live token resolves');
+    assert.strictEqual(liveSession.mode, 'live', 'mode survives the token round trip');
+
+    const key = require('../src/services/songKeyService').songKey(
+      `__live_title_${Date.now()}`, '__live_artist'
+    );
+    const mapping = await prisma.songMapping.create({
+      data: {
+        ...key, source: 'QQ', externalId: '__LIVE_TEST_MID', platformTitle: 'T',
+        platformArtist: 'A', durationSec: 180, approved: true, origin: 'search',
+      },
+    });
+
+    try {
+      const hit = await captureService.ingestLive({
+        session: liveSession, rawText: `${key.rawTitle}-${key.rawArtist}`,
+      });
+      assert.strictEqual(hit.outcome, 'resolved');
+      assert.strictEqual(hit.mapping.externalId, '__LIVE_TEST_MID');
+
+      // Same title again is the common case, not an error: a title sits on
+      // screen for seconds and is read over and over.
+      const again = await captureService.ingestLive({
+        session: liveSession, rawText: `${key.rawTitle}-${key.rawArtist}`,
+      });
+      assert.strictEqual(again.outcome, 'duplicate');
+
+      const miss = await captureService.ingestLive({
+        session: liveSession, rawText: '__live_no_such_song_9f3a1b-__nobody',
+      });
+      assert.strictEqual(miss.outcome, 'unmapped');
+      assert.strictEqual(miss.mapping, null);
+
+      // An unapproved mapping still plays — a round lasts seconds, so waiting
+      // for a reviewer would mean the song is never available when it is
+      // wanted. It is flagged rather than withheld.
+      await prisma.songMapping.update({ where: { id: mapping.id }, data: { approved: false } });
+      const unapprovedRun = await captureService.startSession({ userId: user.id, mode: 'live' });
+      const unapprovedSession = await captureService.resolveSession(unapprovedRun.token);
+      const guarded = await captureService.ingestLive({
+        session: unapprovedSession, rawText: `${key.rawTitle}-${key.rawArtist}`,
+      });
+      assert.strictEqual(guarded.outcome, 'resolved', 'unapproved mappings still play');
+      assert.strictEqual(guarded.mapping.approved, false, 'but are marked unconfirmed');
+      await prisma.captureEvent.deleteMany({ where: { sessionId: unapprovedRun.session.id } });
+      await prisma.captureSession.delete({ where: { id: unapprovedRun.session.id } });
+
+      const feed = await captureService.getLiveFeed({
+        userId: user.id, sessionId: liveRun.session.id,
+      });
+      assert.strictEqual(feed.cards.length, 2, 'feed returns both captures');
+
+      // The whole reason live mode is a separate path: it never likes.
+      assert.strictEqual(
+        await prisma.like.count({ where: { playlistId: playlist.id } }), 1,
+        'CRITICAL: live capture must not like anything'
+      );
+    } finally {
+      await prisma.captureEvent.deleteMany({ where: { sessionId: liveRun.session.id } });
+      await prisma.captureSession.delete({ where: { id: liveRun.session.id } }).catch(() => {});
+      await prisma.songMapping.delete({ where: { id: mapping.id } }).catch(() => {});
+    }
+
     console.log('capture-service tests passed');
   } finally {
     await prisma.playlist.delete({ where: { id: playlist.id } }).catch(() => {});

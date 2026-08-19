@@ -209,6 +209,11 @@ export const captureAPI = {
   approve: (eventId, clipId) => api.post(`/capture/events/${eventId}/approve`, clipId ? { clipId } : {}),
   ignore: (eventId) => api.post(`/capture/events/${eventId}/ignore`),
   version: () => api.get("/capture/version"),
+  // A live (唱卡) run names no playlist: titles are resolved against the
+  // mapping table instead of matched against a list's clips.
+  startLive: (opts = {}) => api.post("/capture/sessions", { mode: "live", ...opts }),
+  liveFeed: (sessionId, limit) =>
+    api.get(`/capture/sessions/${sessionId}/live${limit ? `?limit=${limit}` : ""}`),
 };
 
 // --- Admin ---
@@ -310,6 +315,15 @@ export const mappingAPI = {
   approve: (id, body = {}) => api.post(`/mappings/${id}/approve`, body),
   unapprove: (id) => api.post(`/mappings/${id}/unapprove`),
   remove: (id) => api.delete(`/mappings/${id}`),
+};
+
+/**
+ * Stream for a live run. Separate from the playlist stream because a live
+ * session has no playlist to key on — the server keys these by user.
+ */
+export const getLiveSSEUrl = (sessionId) => {
+  const { base, token } = streamBase();
+  return `${base}/sse/capture/live/${sessionId}${token ? `?token=${token}` : ""}`;
 };
 
 export const getLikesSSEUrl = (playlistId) => {

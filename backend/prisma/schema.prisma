@@ -307,7 +307,13 @@ model Feedback {
 model CaptureSession {
   id         String    @id @default(uuid()) @db.Uuid
   userId     String    @map("user_id") @db.Uuid
-  playlistId String    @map("playlist_id") @db.Uuid
+  /// Null for live (唱卡) sessions, which resolve songs against the mapping
+  /// table rather than liking them into a list.
+  playlistId String?   @map("playlist_id") @db.Uuid
+  /// "playlist" (歌 P, the original short-code flow) or "live" (唱卡).
+  /// Decided by the page the user started from, not by the client -- the
+  /// APK learns it from the heartbeat response.
+  mode       String    @default("playlist")
   tokenHash  String    @unique @map("token_hash")
   /// Short code the user types into the capture client to fetch the real
   /// token. The website and the client live in separate worlds (browser on
@@ -325,7 +331,7 @@ model CaptureSession {
   lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz
 
   user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  playlist Playlist       @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  playlist Playlist?      @relation(fields: [playlistId], references: [id], onDelete: Cascade)
   events   CaptureEvent[]
 
   @@index([userId])

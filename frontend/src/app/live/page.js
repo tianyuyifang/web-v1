@@ -122,7 +122,7 @@ function toBatches(cards) {
 }
 
 export default function LivePage() {
-  const { user, canCapture, loading: authLoading } = useAuth();
+  const { user, isAdmin, loading: authLoading } = useAuth();
 
   const [session, setSession] = useState(null);
   const [pairCode, setPairCode] = useState(null);
@@ -406,11 +406,15 @@ export default function LivePage() {
     return <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted">请先登录。</div>;
   }
 
-  if (!canCapture) {
+  // Admins only while this is being proven out. The nav link is hidden the same
+  // way, but the URL is guessable and the add-on that would otherwise open this
+  // was sold for auto-tagging -- its holders have a client that cannot read the
+  // 唱卡 screens, so they would reach a page that never receives anything.
+  if (!isAdmin) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="mb-2 text-lg font-medium">唱卡</h1>
-        <p className="text-sm text-muted">唱卡是会员附加功能，开通后即可使用。</p>
+        <p className="text-sm text-muted">唱卡还在内测中，暂未开放。</p>
       </div>
     );
   }

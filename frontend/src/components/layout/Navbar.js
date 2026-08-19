@@ -9,7 +9,7 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
 
 export default function Navbar() {
-  const { user, isAuthenticated, isAdmin, canCapture } = useAuth();
+  const { user, isAuthenticated, isAdmin } = useAuth();
   const { theme } = useTheme();
   const init = useAuthStore((s) => s.init);
   const pathname = usePathname();
@@ -65,9 +65,12 @@ export default function Navbar() {
             {/* Desktop nav */}
             <div className="hidden items-center gap-1 md:flex">
               {navLink("/playlists", t("navPlaylists"))}
-              {/* Only for accounts that hold the add-on: to everyone else
-                  the page is a locked door, and a link to one is noise. */}
-              {canCapture && navLink("/live", t("navLive"))}
+              {/* Admins only while 唱卡 is being proven out. The add-on that
+                  gates it was sold for auto-tagging, and its holders cannot
+                  use this yet -- their client does not read the 唱卡 screens,
+                  so the page would sit on "waiting to connect" forever.
+                  Widen this once the client ships. */}
+              {isAdmin && navLink("/live", t("navLive"))}
               {navLink("/tools", t("navTools"))}
               {/* No /pricing here on purpose — it is reached from the account
                   page (套餐与续费) and the register-success screen, so it is
@@ -99,7 +102,7 @@ export default function Navbar() {
           </div>
           <div className="flex flex-col gap-1">
             {navLink("/playlists", t("navPlaylists"))}
-            {canCapture && navLink("/live", t("navLive"))}
+            {isAdmin && navLink("/live", t("navLive"))}
             {navLink("/tools", t("navTools"))}
             {navLink("/updates", t("navUpdates"))}
             {navLink("/help", t("navHelp"))}

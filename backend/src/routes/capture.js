@@ -145,6 +145,17 @@ const web = [authMiddleware, requireApproved, requireActiveSession];
 router.post('/sessions', ...web, requireCaptureAddOn, async (req, res, next) => {
   try {
     const { playlistId, label, ttlMinutes, mode } = req.body || {};
+
+    // 唱卡 is admin-only while it is being proven out. The add-on above was
+    // sold for auto-tagging, and its holders run a client that does not read
+    // the 唱卡 screens -- letting them start a live run would give them a
+    // session that can never receive anything. Hiding the page is not enough:
+    // this route is reachable directly.
+    if (mode === 'live' && req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: { code: 'NOT_AVAILABLE', message: '唱卡还在内测中，暂未开放' },
+      });
+    }
     const { session, token } = await captureService.startSession({
       userId: req.user.id, playlistId, label, ttlMinutes, mode,
     });

@@ -6,6 +6,7 @@ export default {
   you: "我",
   navPlaylists: "播放列表",
   navHelp: "帮助",
+  navLive: "唱卡",
   helpTitle: "帮助",
   helpTabInstruction: "使用说明",
   helpTabFeedback: "反馈",

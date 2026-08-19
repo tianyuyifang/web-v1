@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { z } = require('zod');
 const validate = require('../middleware/validate');
 const { ValidationError, NotFoundError } = require('../utils/errors');
+const prisma = require('../db/client');
 const svc = require('../services/mappingReviewService');
 const qq = require('../services/sources/qqSource');
 const netease = require('../services/sources/neteaseLogin');
@@ -255,11 +256,36 @@ router.get('/track/:trackId/preview', async (req, res, next) => {
   }
 });
 
-/** GET /api/mappings/:id/preview — hear what a mapping resolves to. */
+/**
+ * GET /api/mappings/:id/preview — hear what a mapping resolves to.
+ *
+ * `source` and `externalId` may name a different track, so a reviewer can hear
+ * an alternative before committing to it: two recordings of the same song can
+ * open identically and only diverge at the chorus, and approving a version
+ * nobody listened to is how the wrong one goes site-wide.
+ *
+ * The override is checked against the imported pool rather than trusted. It
+ * arrives from the browser, and resolving whatever id it names would turn this
+ * into an open proxy for the reviewer's own platform credential.
+ */
 router.get('/:id/preview', async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
-    return await resolvePreview(req.user.id, mapping.source, mapping.externalId, res);
+
+    let { source, externalId } = mapping;
+    const wanted = req.query.source;
+    const wantedId = req.query.externalId;
+    if (wanted && wantedId) {
+      const known = await prisma.importedTrack.findUnique({
+        where: { source_externalId: { source: wanted, externalId: String(wantedId) } },
+        select: { source: true, externalId: true },
+      });
+      if (!known) throw new NotFoundError('Track');
+      source = known.source;
+      externalId = known.externalId;
+    }
+
+    return await resolvePreview(req.user.id, source, externalId, res);
   } catch (err) {
     next(err);
   }

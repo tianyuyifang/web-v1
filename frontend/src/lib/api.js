@@ -303,7 +303,14 @@ export const mappingAPI = {
   candidates: (id) => api.get(`/mappings/${id}/candidates`),
   // Resolves through the reviewer's own credential; the browser then fetches
   // the audio from the CDN directly.
-  preview: (id) => api.get(`/mappings/${id}/preview`),
+  // An optional {source, externalId} names a different track, so a reviewer can
+  // hear an alternative before approving it. The server checks the pair against
+  // the imported pool rather than resolving whatever it is handed.
+  preview: (id, override) => api.get(
+    `/mappings/${id}/preview${override
+      ? `?source=${encodeURIComponent(override.source)}&externalId=${encodeURIComponent(override.externalId)}`
+      : ""}`
+  ),
   // Public on both platforms, so this answers even for a track the reviewer
   // cannot play — knowing the words is often how a cover is spotted.
   lyrics: (id) => api.get(`/mappings/${id}/lyrics`),

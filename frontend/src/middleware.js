@@ -31,5 +31,8 @@ export const config = {
   matcher: [
     "/dashboard/:path*", "/playlists/:path*", "/admin/:path*",
     "/settings/:path*", "/help/:path*", "/mappings/:path*",
+    // Without this /live renders its shell to a signed-out visitor and then
+    // shows "please sign in" instead of taking them there.
+    "/live/:path*", "/live",
   ],
 };

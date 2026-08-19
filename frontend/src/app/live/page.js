@@ -10,28 +10,35 @@
  *
  * Opening this page is what selects live mode — the client is told by the
  * heartbeat, so there is no mode switch to forget and no way to write 唱卡
- * captures into a playlist by mistake (decisions 10 and 13).
+ * captures into a playlist by mistake.
  *
- * Nothing plays by itself. A card is resolved, not started: audio begins only
- * when it is tapped, because a round puts several songs up at once and only
- * one of them is being sung.
+ * Cards are grouped into the rounds they arrived in, newest on top, because
+ * that is how the game presents them: a batch goes up, one gets sung, the next
+ * batch replaces it. Older rounds collapse rather than disappear — a session
+ * runs for hours and the list must not become something to scroll.
+ *
+ * Nothing plays by itself, and only one card is ever open. A round shows
+ * several songs at once and only one of them is being sung; auto-playing them
+ * would mean several songs at once, out loud, during a game.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { captureAPI, mappingAPI, getLiveSSEUrl } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
 
 const SOURCE_LABEL = { LOCAL: "曲库", QQ: "QQ", NETEASE: "网易" };
 
 /**
- * How many cards stay on screen.
+ * Cards captured within this long of each other belong to the same round.
  *
- * A round holds a handful and they are sung one at a time, so the useful
- * window is "this round and the one before it" — enough to still see a song
- * that was picked a moment ago, short enough that the list never becomes
- * something to scroll through mid-game.
+ * The game shows a batch, it sits there for seconds while the client reads it
+ * repeatedly, then the round ends. A gap much longer than that means the
+ * screen changed, so the next card starts a new group.
  */
-const KEEP_CARDS = 12;
+const BATCH_GAP_MS = 45 * 1000;
+
+/** Rounds kept on screen. Hours of play must not turn into endless scroll. */
+const KEEP_BATCHES = 12;
 
 /** Survives a reload, so a refresh mid-round does not end the run. */
 const SESSION_KEY = "capture-session:live";
@@ -74,6 +81,46 @@ function formatDuration(sec) {
   return `${m}:${s}`;
 }
 
+function formatClock(sec) {
+  if (!Number.isFinite(sec) || sec < 0) return "0:00";
+  return formatDuration(Math.floor(sec));
+}
+
+function relativeTime(iso) {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "";
+  const diff = Math.max(0, Date.now() - then);
+  if (diff < 60_000) return "刚刚";
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins} 分钟前`;
+  return `${Math.floor(mins / 60)} 小时前`;
+}
+
+/**
+ * Group cards into rounds by arrival time.
+ *
+ * Time rather than a batch id from the client, because the two capture
+ * channels disagree about what a batch is: the candidate screen sends a whole
+ * round at once, while the singing screen sends one song at a time. Grouping
+ * on arrival treats both the same.
+ */
+function toBatches(cards) {
+  const sorted = [...cards].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+  const batches = [];
+  for (const card of sorted) {
+    const at = new Date(card.createdAt).getTime();
+    const last = batches[batches.length - 1];
+    if (last && Math.abs(new Date(last.at).getTime() - at) < BATCH_GAP_MS) {
+      last.cards.push(card);
+    } else {
+      batches.push({ at: card.createdAt, cards: [card] });
+    }
+  }
+  return batches.slice(0, KEEP_BATCHES);
+}
+
 export default function LivePage() {
   const { user, canCapture, loading: authLoading } = useAuth();
 
@@ -83,12 +130,23 @@ export default function LivePage() {
   const [client, setClient] = useState("waiting");
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
+  const [collapsed, setCollapsed] = useState({});
 
-  const [playing, setPlaying] = useState(null);
-  const [playBusy, setPlayBusy] = useState(null);
+  // Only one card is ever open — see the header note.
+  const [openId, setOpenId] = useState(null);
+  const [playing, setPlaying] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [playError, setPlayError] = useState("");
+  const [progress, setProgress] = useState({ current: 0, duration: 0 });
+  const [candidates, setCandidates] = useState([]);
+  const [approving, setApproving] = useState(false);
+  /** Set once the server refuses an approve: this account cannot edit. */
+  const [canApprove, setCanApprove] = useState(true);
+
   const audioRef = useRef(null);
   const loadedFor = useRef(null);
+
+  const batches = useMemo(() => toBatches(cards), [cards]);
 
   /**
    * Merge a card in by event id.
@@ -98,16 +156,12 @@ export default function LivePage() {
    * makes that harmless instead of showing the song twice.
    */
   const upsert = useCallback((card) => {
-    setCards((prev) => {
-      const next = prev.filter((c) => c.eventId !== card.eventId);
-      next.unshift(card);
-      return next.slice(0, KEEP_CARDS);
-    });
+    setCards((prev) => [card, ...prev.filter((c) => c.eventId !== card.eventId)]);
   }, []);
 
   const loadFeed = useCallback(async (sessionId) => {
     try {
-      const res = await captureAPI.liveFeed(sessionId, KEEP_CARDS);
+      const res = await captureAPI.liveFeed(sessionId, 60);
       setCards(res.data.cards || []);
     } catch {
       // A failed refetch is not worth a message: the stream is still live and
@@ -115,7 +169,6 @@ export default function LivePage() {
     }
   }, []);
 
-  // Restore a run that is still going.
   useEffect(() => {
     const saved = recall();
     if (!saved) return;
@@ -124,7 +177,7 @@ export default function LivePage() {
   }, [loadFeed]);
 
   // The stream. Reconnects are handled by EventSource itself; the refetch on
-  // open is what fills in anything missed while it was down (decision 15).
+  // open is what fills in anything missed while it was down.
   useEffect(() => {
     if (!session) return undefined;
     const es = new EventSource(getLiveSSEUrl(session.id));
@@ -144,7 +197,7 @@ export default function LivePage() {
    *
    * Deliberately not inferred from the SSE connection: that only proves the
    * browser can reach the server, which says nothing about whether the capture
-   * client is still running (decision 16).
+   * client is still running.
    */
   useEffect(() => {
     if (!session) return undefined;
@@ -166,6 +219,152 @@ export default function LivePage() {
     const id = setInterval(tick, 15000);
     return () => { stop = true; clearInterval(id); };
   }, [session]);
+
+  const ensureAudio = useCallback(() => {
+    if (audioRef.current) return audioRef.current;
+    const el = new Audio();
+    el.preload = "metadata";
+    const sync = () => setProgress({
+      current: el.currentTime || 0,
+      duration: el.duration || 0,
+    });
+    el.addEventListener("timeupdate", sync);
+    el.addEventListener("loadedmetadata", sync);
+    el.addEventListener("ended", () => setPlaying(false));
+    audioRef.current = el;
+    return el;
+  }, []);
+
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+    }
+    loadedFor.current = null;
+    setPlaying(false);
+    setProgress({ current: 0, duration: 0 });
+  }, []);
+
+  /**
+   * Resolve and play a card.
+   *
+   * Resolution happens on open rather than on arrival: a round shows several
+   * songs and only one gets sung, so resolving all of them would spend platform
+   * requests on songs nobody asked for — the pattern that gets an IP throttled.
+   */
+  const playCard = useCallback(async (card, override) => {
+    if (!card.mapping) return;
+    setPlayError("");
+    const el = ensureAudio();
+
+    const key = override
+      ? `${card.eventId}:${override.source}:${override.externalId}`
+      : card.eventId;
+
+    if (loadedFor.current === key && el.src) {
+      if (playing) { el.pause(); setPlaying(false); }
+      else { await el.play().catch(() => {}); setPlaying(true); }
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await mappingAPI.preview(card.mapping.mappingId, override);
+      const { url, reason, kind } = res.data;
+      if (kind === "unsupported") {
+        setPlayError(`${SOURCE_LABEL[card.mapping.source] || card.mapping.source} 的播放还没做`);
+        return;
+      }
+      if (!url) {
+        setPlayError(reason === "credential-expired"
+          ? "音乐账号连接已失效，请到账号页重新扫码"
+          : reason === "needs-vip"
+            ? "这首歌需要会员"
+            : "这首歌当前拿不到播放地址（可能已下架）");
+        return;
+      }
+      el.src = url;
+      loadedFor.current = key;
+      setProgress({ current: 0, duration: 0 });
+      await el.play();
+      setPlaying(true);
+    } catch (err) {
+      setPlayError(err.response?.data?.error?.message || "播放失败");
+    } finally {
+      setBusy(false);
+    }
+  }, [ensureAudio, playing]);
+
+  /** Open a card, or close the one that is open. */
+  const toggleCard = useCallback(async (card) => {
+    stopAudio();
+    setPlayError("");
+    setCandidates([]);
+    if (openId === card.eventId) {
+      setOpenId(null);
+      return;
+    }
+    setOpenId(card.eventId);
+    if (!card.mapping) return;
+
+    // Alternatives came with the card when there were any; fall back to asking
+    // so a card restored from the feed still offers them.
+    if (card.mapping.candidates?.length) {
+      setCandidates(card.mapping.candidates);
+    } else {
+      try {
+        const res = await mappingAPI.candidates(card.mapping.mappingId);
+        setCandidates(res.data.candidates || res.data || []);
+      } catch {
+        /* offering no alternatives is a smaller problem than an error box */
+      }
+    }
+    playCard(card);
+  }, [openId, stopAudio, playCard]);
+
+  /** Switch to another version and play it immediately — hearing it is the test. */
+  const tryCandidate = useCallback((card, cand) => {
+    stopAudio();
+    playCard(card, { source: cand.source, externalId: cand.externalId });
+  }, [stopAudio, playCard]);
+
+  /**
+   * Confirm the mapping. Takes effect everywhere at once, which is the point:
+   * the next person to meet this song gets the version just verified by ear.
+   */
+  const approve = useCallback(async (card, cand) => {
+    if (!card.mapping) return;
+    setApproving(true);
+    try {
+      const body = cand ? { source: cand.source, externalId: cand.externalId } : {};
+      await mappingAPI.approve(card.mapping.mappingId, body);
+      setCards((prev) => prev.map((c) => (
+        c.eventId === card.eventId
+          ? {
+            ...c,
+            mapping: {
+              ...c.mapping,
+              approved: true,
+              ...(cand ? {
+                source: cand.source,
+                externalId: cand.externalId,
+                title: cand.title,
+                artist: cand.artist,
+                durationSec: cand.durationSec,
+              } : {}),
+            },
+          }
+          : c
+      )));
+    } catch (err) {
+      // A 403 means this account simply lacks the flag. Say so once and stop
+      // offering the button rather than failing every time it is pressed.
+      if (err.response?.status === 403) setCanApprove(false);
+      else setPlayError(err.response?.data?.error?.message || "确认失败");
+    } finally {
+      setApproving(false);
+    }
+  }, []);
 
   const start = useCallback(async () => {
     setError("");
@@ -191,93 +390,27 @@ export default function LivePage() {
     } catch {
       // Already gone server-side is the same outcome as stopping it.
     }
-    audioRef.current?.pause();
-    setPlaying(null);
+    stopAudio();
+    setOpenId(null);
     setSession(null);
     setPairCode(null);
     setCards([]);
     forget();
-  }, [session]);
-
-  const ensureAudio = useCallback(() => {
-    if (audioRef.current) return audioRef.current;
-    const el = new Audio();
-    el.preload = "metadata";
-    el.addEventListener("ended", () => setPlaying(null));
-    audioRef.current = el;
-    return el;
-  }, []);
-
-  /**
-   * Play a card.
-   *
-   * Resolution happens here rather than when the card arrives: a round shows
-   * several songs and only one gets sung, so resolving all of them would spend
-   * platform requests on songs nobody asked for — the pattern that gets an IP
-   * rate-limited (decision 53).
-   */
-  const play = useCallback(async (card) => {
-    if (!card.mapping) return;
-    setPlayError("");
-    const el = ensureAudio();
-
-    if (playing === card.eventId) {
-      el.pause();
-      setPlaying(null);
-      return;
-    }
-    if (loadedFor.current === card.eventId && el.src) {
-      await el.play().catch(() => {});
-      setPlaying(card.eventId);
-      return;
-    }
-
-    setPlayBusy(card.eventId);
-    try {
-      const res = await mappingAPI.preview(card.mapping.mappingId);
-      const { url, reason, kind } = res.data;
-      if (kind === "unsupported") {
-        setPlayError(`${SOURCE_LABEL[card.mapping.source] || card.mapping.source} 的播放还没做`);
-        return;
-      }
-      if (!url) {
-        setPlayError(reason === "credential-expired"
-          ? "音乐账号连接已失效，请到账号页重新扫码"
-          : reason === "unavailable"
-            ? "这首歌当前拿不到播放地址（可能需要会员或已下架）"
-            : "无法播放");
-        return;
-      }
-      el.src = url;
-      loadedFor.current = card.eventId;
-      await el.play();
-      setPlaying(card.eventId);
-    } catch (err) {
-      setPlayError(err.response?.data?.error?.message || "播放失败");
-    } finally {
-      setPlayBusy(null);
-    }
-  }, [ensureAudio, playing]);
+  }, [session, stopAudio]);
 
   useEffect(() => () => { audioRef.current?.pause(); }, []);
 
   if (authLoading) return null;
 
   if (!user) {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted">
-        请先登录。
-      </div>
-    );
+    return <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted">请先登录。</div>;
   }
 
   if (!canCapture) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="mb-2 text-lg font-medium">唱卡</h1>
-        <p className="text-sm text-muted">
-          唱卡是会员附加功能，开通后即可使用。
-        </p>
+        <p className="text-sm text-muted">唱卡是会员附加功能，开通后即可使用。</p>
       </div>
     );
   }
@@ -287,9 +420,7 @@ export default function LivePage() {
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-medium">唱卡</h1>
-          <p className="text-xs text-muted">
-            游戏里出现的歌会自动出现在这里，点一下就能播放。
-          </p>
+          <p className="text-xs text-muted">游戏里出现的歌会自动出现在这里，点开即可播放。</p>
         </div>
         {session ? (
           <button
@@ -330,20 +461,12 @@ export default function LivePage() {
         <div className="mb-3 flex items-center gap-2 text-xs text-muted">
           <span
             className={`inline-block h-2 w-2 rounded-full ${
-              client === "connected"
-                ? "bg-green-500"
-                : client === "stale"
-                  ? "bg-yellow-500"
-                  : "bg-white/30"
+              client === "connected" ? "bg-green-500"
+                : client === "stale" ? "bg-yellow-500" : "bg-white/30"
             }`}
           />
-          {client === "connected" ? "已连接" : client === "stale" ? "客户端没有响应" : "等待客户端连接"}
-        </div>
-      )}
-
-      {playError && (
-        <div className="mb-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-          {playError}
+          {client === "connected" ? "已连接 · 唱卡识别中"
+            : client === "stale" ? "客户端无响应" : "等待客户端连接"}
         </div>
       )}
 
@@ -351,58 +474,173 @@ export default function LivePage() {
         <div className="rounded border border-border bg-surface px-4 py-10 text-center text-sm text-muted">
           点「开始」后，在客户端里输入配对码即可。
         </div>
-      ) : !cards.length ? (
+      ) : !batches.length ? (
         <div className="rounded border border-border bg-surface px-4 py-10 text-center text-sm text-muted">
           还没有捕捉到歌曲。
         </div>
       ) : (
-        <ul className="space-y-2">
-          {cards.map((card) => {
-            const mapped = Boolean(card.mapping);
-            const isPlaying = playing === card.eventId;
+        <div className="space-y-3">
+          {batches.map((batch, bi) => {
+            // Older rounds fold away by default: the current one is what is
+            // being sung, and the rest are there to fall back on.
+            const isCollapsed = collapsed[batch.at] ?? bi > 0;
             return (
-              <li
-                key={card.eventId}
-                className={`flex items-center gap-3 rounded border px-3 py-2.5 ${
-                  mapped ? "border-border bg-surface" : "border-border/50 bg-surface/40"
-                }`}
-              >
+              <section key={batch.at} className="rounded-lg border border-border bg-surface">
                 <button
                   type="button"
-                  onClick={() => play(card)}
-                  disabled={!mapped || playBusy === card.eventId}
-                  title={mapped ? "播放" : "还没有配好这首歌"}
-                  className="h-9 w-9 shrink-0 rounded-full border border-border text-xs hover:border-accent disabled:opacity-25"
+                  onClick={() => setCollapsed((p) => ({ ...p, [batch.at]: !isCollapsed }))}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left"
                 >
-                  {playBusy === card.eventId ? "…" : isPlaying ? "❚❚" : "▶"}
+                  <span className="text-xs text-muted">
+                    第 {batches.length - bi} 批 · {relativeTime(batch.at)} · {batch.cards.length} 首
+                  </span>
+                  <span className="text-xs text-muted">{isCollapsed ? "▾" : "▴"}</span>
                 </button>
 
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{card.title}</div>
-                  <div className="truncate text-xs text-muted">
-                    {card.artist || "（无歌手）"}
-                    {mapped && (
-                      <>
-                        {" · "}
-                        {SOURCE_LABEL[card.mapping.source] || card.mapping.source}
-                        {" · "}
-                        {formatDuration(card.mapping.durationSec)}
-                      </>
-                    )}
-                  </div>
-                </div>
+                {!isCollapsed && (
+                  <ul className="border-t border-border/60">
+                    {batch.cards.map((card) => {
+                      const mapped = Boolean(card.mapping);
+                      const isOpen = openId === card.eventId;
+                      const confirmed = card.mapping?.approved;
+                      return (
+                        <li key={card.eventId} className="border-b border-border/40 last:border-b-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleCard(card)}
+                            disabled={!mapped}
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left disabled:opacity-60"
+                          >
+                            <span className="h-8 w-8 shrink-0 rounded-full border border-border text-center text-xs leading-8">
+                              {!mapped ? "—" : busy && isOpen ? "…" : isOpen && playing ? "❚❚" : "▶"}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm">{card.title}</span>
+                              <span className="block truncate text-xs text-muted">
+                                {card.artist || "（无歌手）"}
+                                {mapped && (
+                                  <>
+                                    {" · "}
+                                    {SOURCE_LABEL[card.mapping.source] || card.mapping.source}
+                                    {" · "}{formatDuration(card.mapping.durationSec)}
+                                  </>
+                                )}
+                              </span>
+                            </span>
+                            {/* An unmapped song is the ordinary way a gap shows
+                                up, and an unconfirmed one still plays — both say
+                                what they are rather than looking like failures. */}
+                            {!mapped ? (
+                              <span className="shrink-0 rounded bg-black/20 px-2 py-0.5 text-[0.65rem] text-muted">
+                                未配置
+                              </span>
+                            ) : !confirmed ? (
+                              <span className="shrink-0 rounded bg-yellow-500/15 px-2 py-0.5 text-[0.65rem] text-yellow-500">
+                                待确认
+                              </span>
+                            ) : null}
+                          </button>
 
-                {/* An unmapped song is the normal way a gap shows up, so it
-                    says what it is rather than looking like a failure. */}
-                {!mapped && (
-                  <span className="shrink-0 rounded bg-black/20 px-2 py-0.5 text-[0.65rem] text-muted">
-                    未配置
-                  </span>
+                          {isOpen && mapped && (
+                            <div className="border-t border-border/40 bg-black/10 px-3 py-3">
+                              {playError && (
+                                <div className="mb-2 text-xs text-red-400">{playError}</div>
+                              )}
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => playCard(card)}
+                                  disabled={busy}
+                                  className="h-8 w-8 shrink-0 rounded-full border border-border text-xs hover:border-accent disabled:opacity-30"
+                                >
+                                  {busy ? "…" : playing ? "❚❚" : "▶"}
+                                </button>
+                                <div
+                                  role="presentation"
+                                  onClick={(e) => {
+                                    const r = e.currentTarget.getBoundingClientRect();
+                                    const el = audioRef.current;
+                                    if (el && progress.duration > 0) {
+                                      el.currentTime = ((e.clientX - r.left) / r.width) * progress.duration;
+                                    }
+                                  }}
+                                  className="h-1.5 flex-1 cursor-pointer rounded-full bg-black/30"
+                                >
+                                  <div
+                                    className="h-full rounded-full bg-accent"
+                                    style={{
+                                      width: `${progress.duration > 0
+                                        ? Math.min(100, (progress.current / progress.duration) * 100)
+                                        : 0}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="shrink-0 font-mono text-[0.68rem] text-muted">
+                                  {formatClock(progress.current)} / {formatClock(progress.duration)}
+                                </span>
+                              </div>
+
+                              <div className="mt-2 truncate text-xs text-muted">
+                                当前：{card.mapping.title || card.title}
+                                {card.mapping.artist ? ` · ${card.mapping.artist}` : ""}
+                                {" · "}{SOURCE_LABEL[card.mapping.source] || card.mapping.source}
+                              </div>
+
+                              {canApprove && !confirmed && (
+                                <button
+                                  type="button"
+                                  onClick={() => approve(card)}
+                                  disabled={approving}
+                                  className="mt-2 rounded border border-accent px-2 py-1 text-xs text-accent disabled:opacity-40"
+                                >
+                                  {approving ? "…" : "✓ 就是这个"}
+                                </button>
+                              )}
+
+                              {candidates.length > 1 && (
+                                <div className="mt-3 border-t border-border/40 pt-2">
+                                  <div className="mb-1 text-[0.68rem] text-muted">其他版本</div>
+                                  <ul className="space-y-1">
+                                    {candidates
+                                      .filter((c) => c.externalId !== card.mapping.externalId)
+                                      .slice(0, 5)
+                                      .map((c) => (
+                                        <li key={`${c.source}:${c.externalId}`} className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => tryCandidate(card, c)}
+                                            className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-xs text-muted hover:bg-white/5 hover:text-fg"
+                                          >
+                                            {c.title} · {c.artist} · {formatDuration(c.durationSec)}
+                                            {" · "}{SOURCE_LABEL[c.source] || c.source}
+                                          </button>
+                                          {canApprove && (
+                                            <button
+                                              type="button"
+                                              onClick={() => approve(card, c)}
+                                              disabled={approving}
+                                              className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[0.65rem] text-muted hover:border-accent hover:text-fg disabled:opacity-40"
+                                            >
+                                              选它
+                                            </button>
+                                          )}
+                                        </li>
+                                      ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
-              </li>
+              </section>
             );
           })}
-        </ul>
+        </div>
       )}
     </div>
   );

@@ -219,6 +219,17 @@ router.post('/connect', ...web, requireCaptureAddOn, async (req, res, next) => {
   }
 });
 
+// GET /api/capture/connection — the current connection, or null.
+// Polled by the nav indicator, which is on every page and has no session in
+// mind; being disconnected answers null rather than 404.
+router.get('/connection', ...web, async (req, res, next) => {
+  try {
+    res.json({ connection: await captureService.getConnection(req.user.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/capture/target — point the open connection somewhere, or nowhere.
 router.patch('/target', ...web, requireCaptureAddOn, async (req, res, next) => {
   try {

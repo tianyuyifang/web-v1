@@ -212,6 +212,14 @@ export const captureAPI = {
   // A live (唱卡) run names no playlist: titles are resolved against the
   // mapping table instead of matched against a list's clips.
   startLive: (opts = {}) => api.post("/capture/sessions", { mode: "live", ...opts }),
+  // Open a connection with no destination. The pairing code it returns lasts
+  // the whole game — changing destination moves the target, not the token.
+  connect: (opts = {}) => api.post("/capture/connect", opts),
+  // The current connection, or null. Polled by the nav indicator.
+  connection: () => api.get("/capture/connection"),
+  // Point the open connection at a playlist, at 唱卡, or at nothing.
+  setTarget: (target, playlistId) =>
+    api.patch("/capture/target", playlistId ? { target, playlistId } : { target }),
   liveFeed: (sessionId, limit) =>
     api.get(`/capture/sessions/${sessionId}/live${limit ? `?limit=${limit}` : ""}`),
 };

@@ -633,6 +633,47 @@ async function getStatus({ userId, sessionId }) {
 }
 
 /**
+ * The user's current connection, whatever it is pointing at.
+ *
+ * Keyed on the user rather than a session id because the caller is the nav
+ * bar, which is on every page and has no run in mind: the question it asks is
+ * "am I connected, and where is it going", not "how is session X doing".
+ *
+ * Returns null rather than throwing when there is nothing — being
+ * disconnected is the ordinary state, not an error.
+ */
+async function getConnection(userId) {
+  const session = await prisma.captureSession.findFirst({
+    where: { userId, endedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+    include: { playlist: { select: { id: true, name: true } } },
+  });
+  if (!session) return null;
+
+  const STALE_AFTER_MS = 60 * 1000;
+  let client = 'waiting';
+  if (session.lastSeenAt) {
+    const age = Date.now() - new Date(session.lastSeenAt).getTime();
+    client = age <= STALE_AFTER_MS ? 'connected' : 'stale';
+  }
+
+  return {
+    sessionId: session.id,
+    client,
+    target: session.target,
+    playlist: session.playlist || null,
+    lastSeenAt: session.lastSeenAt,
+    expiresAt: session.expiresAt,
+    // Only while it is still redeemable — a spent or stale code on screen is
+    // worse than none, since it is indistinguishable from a working one.
+    pairCode: session.pairCode && session.pairExpiresAt
+      && session.pairExpiresAt.getTime() > Date.now()
+      ? session.pairCode : null,
+    pairExpiresAt: session.pairExpiresAt,
+  };
+}
+
+/**
  * Everything captured in this run, plus the unmatched list.
  * Unmatched is per session by design — it answers "what did this run miss".
  */
@@ -699,7 +740,7 @@ async function getLiveFeed({ userId, sessionId, limit }) {
 
 module.exports = {
   startSession, endSession, resolveSession, redeemPairCode,
-  connect, setTarget,
+  connect, setTarget, getConnection,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
   ingestLive, liveChannel, getLiveFeed,
   // Exposed for tests: the "歌名-歌手" split is a guess that decides whether a

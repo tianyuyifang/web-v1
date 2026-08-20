@@ -7,9 +7,10 @@ import useAuth from "@/hooks/useAuth";
 import useAuthStore from "@/store/authStore";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
+import CaptureIndicator from "@/components/layout/CaptureIndicator";
 
 export default function Navbar() {
-  const { user, isAuthenticated, isAdmin } = useAuth();
+  const { user, isAuthenticated, isAdmin, canCapture } = useAuth();
   const { theme } = useTheme();
   const init = useAuthStore((s) => s.init);
   const pathname = usePathname();
@@ -64,6 +65,9 @@ export default function Navbar() {
           <>
             {/* Desktop nav */}
             <div className="hidden items-center gap-1 md:flex">
+              {/* Only for accounts that can capture at all — to everyone else
+                  it is a status light for a machine they do not have. */}
+              {canCapture && <CaptureIndicator />}
               {navLink("/playlists", t("navPlaylists"))}
               {/* Admins only while 唱卡 is being proven out. The add-on that
                   gates it was sold for auto-tagging, and its holders cannot
@@ -100,6 +104,11 @@ export default function Navbar() {
           <div className="mb-2 text-sm text-muted">
             {t("welcome")} <span className="font-medium" style={{ color: "var(--text)" }}>{user?.username}</span>
           </div>
+          {canCapture && (
+            <div className="mb-1">
+              <CaptureIndicator />
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             {navLink("/playlists", t("navPlaylists"))}
             {isAdmin && navLink("/live", t("navLive"))}

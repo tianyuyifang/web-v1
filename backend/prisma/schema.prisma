@@ -314,6 +314,13 @@ model CaptureSession {
   /// Decided by the page the user started from, not by the client -- the
   /// APK learns it from the heartbeat response.
   mode       String    @default("playlist")
+  /// Where captures currently go: "none" | "playlist" | "live".
+  ///
+  /// Separate from the token, which is what lets one connection outlive a
+  /// change of destination -- the user types the pairing code once a game
+  /// rather than once per playlist. "none" means connected but not yet
+  /// delivering, and captures arriving then are dropped on purpose.
+  target     String    @default("none")
   tokenHash  String    @unique @map("token_hash")
   /// Short code the user types into the capture client to fetch the real
   /// token. The website and the client live in separate worlds (browser on

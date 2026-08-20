@@ -99,11 +99,21 @@ router.post('/pair', pairLimiter, async (req, res, next) => {
 // deliberately absent: it would consume a device slot and evict the browser.
 router.post('/ingest', captureAuth, async (req, res, next) => {
   try {
-    // The session decides how a title is handled, not the client. A live run
-    // resolves against the mapping table; a playlist run matches clips exactly
-    // as it always has. Dispatching here rather than on a request field means
-    // an old client posting to a live session still does the right thing.
-    const result = req.captureSession.mode === 'live'
+    // The session decides where a title goes, not the client. That is what
+    // lets an old client -- which knows nothing about targets -- keep working
+    // untouched while the destination moves underneath it.
+    const target = req.captureSession.target;
+
+    // Connected but not delivering: the user has paired and not yet said what
+    // they are doing. Dropping is deliberate -- the alternative is guessing a
+    // destination, and a wrong guess likes songs into a playlist everyone can
+    // see. Still counts as contact, so the panel shows the client as alive.
+    if (target === 'none') {
+      await captureService.touchSession(req.captureSession);
+      return res.json({ outcome: 'no_target' });
+    }
+
+    const result = target === 'live'
       ? await captureService.ingestLive({
         session: req.captureSession,
         rawText: req.body && req.body.text,
@@ -132,7 +142,13 @@ router.post('/heartbeat', captureAuth, async (req, res, next) => {
     // rather than pushed, because the client already polls this and a second
     // channel would be one more thing to keep alive (item 13). Clients that
     // predate live mode ignore the extra field.
-    res.json({ ...result, mode: req.captureSession.mode });
+    res.json({
+      ...result,
+      mode: req.captureSession.mode,
+      // What the client actually needs: which screens are worth scanning, and
+      // whether to scan at all. Older clients ignore both fields.
+      target: req.captureSession.target,
+    });
   } catch (err) {
     next(err);
   }
@@ -170,6 +186,59 @@ router.post('/sessions', ...web, requireCaptureAddOn, async (req, res, next) => 
         playlistId: session.playlistId,
         mode: session.mode,
         label: session.label,
+        expiresAt: session.expiresAt,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/capture/connect — open a connection with no destination yet.
+// The pairing code from here lasts the whole game: changing playlists moves the
+// target rather than issuing a new token.
+router.post('/connect', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const { label, ttlMinutes } = req.body || {};
+    const { session, token } = await captureService.connect({
+      userId: req.user.id, label, ttlMinutes,
+    });
+    res.json({
+      token,
+      pairCode: session.pairCode,
+      pairExpiresAt: session.pairExpiresAt,
+      session: {
+        id: session.id,
+        target: session.target,
+        playlistId: session.playlistId,
+        expiresAt: session.expiresAt,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/capture/target — point the open connection somewhere, or nowhere.
+router.patch('/target', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const { target, playlistId } = req.body || {};
+
+    // 唱卡 stays admin-only while it is proven out, same as the session route.
+    if (target === 'live' && req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: { code: 'NOT_AVAILABLE', message: '唱卡还在内测中，暂未开放' },
+      });
+    }
+
+    const session = await captureService.setTarget({
+      userId: req.user.id, target, playlistId,
+    });
+    res.json({
+      session: {
+        id: session.id,
+        target: session.target,
+        playlistId: session.playlistId,
         expiresAt: session.expiresAt,
       },
     });

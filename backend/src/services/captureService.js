@@ -93,6 +93,10 @@ async function startSession({ userId, playlistId, label, ttlMinutes, mode }) {
           userId,
           playlistId: targetPlaylistId,
           mode: runMode,
+          // The old path names its destination at creation and never changes
+          // it. Without this the column would default to 'none' and every
+          // capture from an existing client would be dropped.
+          target: runMode,
           tokenHash: hashToken(token),
           pairCode: generatePairCode(),
           pairExpiresAt: new Date(Date.now() + PAIR_TTL_MS),
@@ -107,6 +111,99 @@ async function startSession({ userId, playlistId, label, ttlMinutes, mode }) {
   if (!session) throw new ValidationError({ pairCode: ['Could not allocate a pairing code'] });
 
   return { session, token };
+}
+
+/**
+ * Open a connection without naming a destination.
+ *
+ * This is the half of the old startSession that lasts: a token, a pairing
+ * code, and nothing about where captures go. The destination is set separately
+ * and can move as often as the player changes playlists, which is the whole
+ * point -- the pairing code gets typed once a game instead of once per
+ * playlist.
+ *
+ * Captures arriving while the target is "none" are dropped on purpose. The
+ * user has connected but not yet said what they are doing, and guessing would
+ * mean liking songs into whichever playlist was used last.
+ */
+async function connect({ userId, label, ttlMinutes }) {
+  // Still one connection per user. The old reason holds -- a second client
+  // posting under a stale token would deliver to the wrong place -- but it now
+  // costs the user nothing, because changing destination no longer needs a new
+  // connection.
+  await prisma.captureSession.updateMany({
+    where: { userId, endedAt: null, expiresAt: { gt: new Date() } },
+    data: { endedAt: new Date() },
+  });
+
+  const ttl = Number(ttlMinutes) > 0
+    ? Math.min(Number(ttlMinutes), 24 * 60)
+    : DEFAULT_TTL_MINUTES;
+  const token = generateToken();
+
+  let session = null;
+  for (let attempt = 0; attempt < 5 && !session; attempt++) {
+    try {
+      session = await prisma.captureSession.create({
+        data: {
+          userId,
+          playlistId: null,
+          mode: 'playlist',
+          target: 'none',
+          tokenHash: hashToken(token),
+          pairCode: generatePairCode(),
+          pairExpiresAt: new Date(Date.now() + PAIR_TTL_MS),
+          label: label || null,
+          expiresAt: new Date(Date.now() + ttl * 60 * 1000),
+        },
+      });
+    } catch (err) {
+      if (err.code !== 'P2002') throw err;
+    }
+  }
+  if (!session) throw new ValidationError({ pairCode: ['Could not allocate a pairing code'] });
+
+  return { session, token };
+}
+
+/**
+ * Point an existing connection at a destination, or at nothing.
+ *
+ * The token is deliberately untouched: the capture client is mid-game with it
+ * and must not notice. That is what makes switching playlists free.
+ */
+async function setTarget({ userId, target, playlistId }) {
+  const session = await prisma.captureSession.findFirst({
+    where: { userId, endedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!session) throw new NotFoundError('Capture session');
+
+  if (target === 'playlist') {
+    // Checked on every switch, not just at connect: access can be revoked
+    // while a connection is open, and this is the point where captures would
+    // start landing in the playlist.
+    await assertPlaylistAccess(userId, playlistId);
+  } else if (target === 'live') {
+    if (session.userId !== userId) throw new ForbiddenError('Not your capture session');
+  } else if (target !== 'none') {
+    throw new ValidationError({ target: ['Unknown target'] });
+  }
+
+  const updated = await prisma.captureSession.update({
+    where: { id: session.id },
+    data: {
+      target,
+      // Cleared when not delivering to a playlist, so a stale id can never be
+      // read as the destination by anything downstream.
+      playlistId: target === 'playlist' ? playlistId : null,
+      // Kept in step for the heartbeat, which is how the client learns which
+      // screens are worth scanning.
+      mode: target === 'live' ? 'live' : 'playlist',
+    },
+  });
+
+  return updated;
 }
 
 /**
@@ -596,6 +693,7 @@ async function getLiveFeed({ userId, sessionId, limit }) {
 
 module.exports = {
   startSession, endSession, resolveSession, redeemPairCode,
+  connect, setTarget,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
   ingestLive, liveChannel, getLiveFeed,
   // Exposed for tests: the "歌名-歌手" split is a guess that decides whether a

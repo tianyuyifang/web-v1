@@ -68,14 +68,19 @@ const pairLimiter = rateLimit({
 // titles claimed row 0 and the panel showed one of them. The panel no longer
 // lets a repeated row overwrite anything either, so a v9 client is cosmetically
 // off at worst.
+// v11 reads the delivery target off the heartbeat and scans only the round it
+// names. Up to v10 every round's titles were read and sent regardless, so 唱卡
+// songs were tagged into playlists during a 歌 P run -- 22 of 200 production
+// captures. minSupported stays at 1: an older client is wrong only while both
+// rounds are in play, and cutting users off mid-game is worse.
 const CLIENT_VERSION = {
-  latest: 10,
+  latest: 11,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '1.9',
-  releasedAt: '2026-08-10',
+  latestName: '2.0',
+  releasedAt: '2026-08-20',
 };
 
 // GET /api/capture/version — checked by the client at startup.

@@ -68,6 +68,10 @@ const pairLimiter = rateLimit({
 // titles claimed row 0 and the panel showed one of them. The panel no longer
 // lets a repeated row overwrite anything either, so a v9 client is cosmetically
 // off at worst.
+// v15 sends the words the game shows while a song is sung, and says which
+// screen each capture came from. Both were needed for the lyrics to survive at
+// all: picking and singing show the same title, so the performance -- the only
+// capture carrying lyrics -- was being discarded as a repeat.
 // v14 reaches the 唱卡 views by their own ids: the container it had been
 // asking for, singerDuelSingingAudienceHolder_cl_root, does not exist, so the
 // singing screen always fell through to the tree walk and 两军对决 -- which
@@ -85,12 +89,12 @@ const pairLimiter = rateLimit({
 // captures. minSupported stays at 1: an older client is wrong only while both
 // rounds are in play, and cutting users off mid-game is worse.
 const CLIENT_VERSION = {
-  latest: 14,
+  latest: 15,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '2.3',
+  latestName: '2.4',
   releasedAt: '2026-08-20',
 };
 
@@ -133,6 +137,10 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
       ? await captureService.ingestLive({
         session: req.captureSession,
         rawText: req.body && req.body.text,
+        // Both optional: clients before v15 send neither, and are read as
+        // picking-screen captures with no words.
+        lyric: req.body && req.body.lyric,
+        stage: req.body && req.body.stage,
       })
       : await captureService.ingestText({
         session: req.captureSession,

@@ -10,6 +10,14 @@ const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/err
 
 const DEFAULT_TTL_MINUTES = 4 * 60;
 const MAX_TEXT_LENGTH = 200;
+/**
+ * Ceiling on a captured lyric passage.
+ *
+ * The singing screen shows a handful of lines, not a whole song; this is well
+ * clear of the longest observed and exists only so a malformed read cannot
+ * write an unbounded string.
+ */
+const MAX_LYRIC_LENGTH = 2000;
 const MAX_CANDIDATE_SCAN = 30;
 /**
  * Shortest ellipsis fragment worth filtering on. "一…的约定" leaves "一", which
@@ -512,9 +520,17 @@ function splitTitleArtist(text) {
  * table lookup only; hitting QQ or NetEase once per captured title is the
  * batch-prefetch pattern that got this machine rate-limited twice (item 53).
  */
-async function ingestLive({ session, rawText }) {
+async function ingestLive({ session, rawText, lyric, stage }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
+
+  // Which screen this came from. Clients that predate the field say nothing,
+  // and are treated as the picking screen -- that is all they ever read.
+  const from = stage === 'singing' ? 'singing' : 'picking';
+  // Stored verbatim. The game shuffles lines, masks characters with
+  // underscores and misspells words, so cleaning it up here would destroy the
+  // evidence needed to reconcile it against real lyrics later.
+  const words = lyric == null ? null : String(lyric).slice(0, MAX_LYRIC_LENGTH).trim() || null;
 
   // Re-read rather than trusting the caller's copy, for the same reason as the
   // playlist flow: the target can move between the token being resolved and
@@ -528,13 +544,33 @@ async function ingestLive({ session, rawText }) {
     return { outcome: 'no_target', rawText: text };
   }
 
-  // Same dedupe as the playlist flow: a title sits on screen for seconds and
-  // is read over and over, byte-identical each time. Live captures carry no
-  // playlist, so they dedupe among themselves.
+  // Dedupe within a stage, not across them. The same song appears on both
+  // screens with identical text, so keying on text alone answered "duplicate"
+  // for the performance and threw away the only copy of the lyrics.
   const existing = await prisma.captureEvent.findFirst({
-    where: { sessionId: session.id, playlistId: null, rawText: text },
+    where: { sessionId: session.id, playlistId: null, rawText: text, stage: from },
   });
   if (existing) {
+    // A repeat still carries something new when the words have arrived or
+    // grown: the game reveals a passage progressively, so a later read of the
+    // same song is often a longer one.
+    if (words && words.length > (existing.lyric ? existing.lyric.length : 0)) {
+      const updated = await prisma.captureEvent.update({
+        where: { id: existing.id },
+        data: { lyric: words },
+      });
+      const payload = {
+        eventId: updated.id,
+        rawText: text,
+        outcome: 'lyric_updated',
+        stage: from,
+        lyric: words,
+        mapping: updated.candidates || null,
+        createdAt: updated.createdAt,
+      };
+      broadcast(liveChannel(session.userId), 'live-card', payload);
+      return payload;
+    }
     return {
       outcome: 'duplicate',
       eventId: existing.id,
@@ -572,6 +608,8 @@ async function ingestLive({ session, rawText }) {
     data: {
       sessionId: session.id,
       rawText: text,
+      stage: from,
+      lyric: words,
       outcome: resolved ? 'resolved' : 'unmapped',
       candidates: resolved || undefined,
     },
@@ -584,6 +622,8 @@ async function ingestLive({ session, rawText }) {
     // the reviewer can see when the guess went wrong.
     title,
     artist,
+    stage: from,
+    lyric: words,
     outcome: event.outcome,
     mapping: resolved,
     createdAt: event.createdAt,
@@ -790,6 +830,8 @@ async function getLiveFeed({ userId, sessionId, limit }) {
         rawText: e.rawText,
         title,
         artist,
+        stage: e.stage || 'picking',
+        lyric: e.lyric || null,
         outcome: e.outcome,
         mapping: e.candidates || null,
         createdAt: e.createdAt,

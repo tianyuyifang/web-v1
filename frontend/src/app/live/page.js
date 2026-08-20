@@ -26,6 +26,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { captureAPI, mappingAPI, getLiveSSEUrl } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
 import useCaptureStore from "@/store/captureStore";
+import useLivePlayer from "@/hooks/useLivePlayer";
+import LiveLyrics from "@/components/live/LiveLyrics";
+import PitchControl from "@/components/player/PitchControl";
+import SpeedControl from "@/components/player/SpeedControl";
 
 const SOURCE_LABEL = { LOCAL: "曲库", QQ: "QQ", NETEASE: "网易" };
 
@@ -131,16 +135,18 @@ export default function LivePage() {
 
   // Only one card is ever open — see the header note.
   const [openId, setOpenId] = useState(null);
-  const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [playError, setPlayError] = useState("");
-  const [progress, setProgress] = useState({ current: 0, duration: 0 });
+  // Playback lives in the hook: it starts an <audio> element straight away and
+  // decodes in the background, so a card makes sound in well under a second
+  // while pitch shifting becomes available a moment later.
+  const player = useLivePlayer();
+  const { isPlaying: playing, current, duration } = player;
   const [candidates, setCandidates] = useState([]);
   const [approving, setApproving] = useState(false);
   /** Set once the server refuses an approve: this account cannot edit. */
   const [canApprove, setCanApprove] = useState(true);
 
-  const audioRef = useRef(null);
   const loadedFor = useRef(null);
 
   const batches = useMemo(() => toBatches(cards), [cards]);
@@ -236,30 +242,10 @@ export default function LivePage() {
     return () => { stop = true; clearInterval(id); };
   }, [session]);
 
-  const ensureAudio = useCallback(() => {
-    if (audioRef.current) return audioRef.current;
-    const el = new Audio();
-    el.preload = "metadata";
-    const sync = () => setProgress({
-      current: el.currentTime || 0,
-      duration: el.duration || 0,
-    });
-    el.addEventListener("timeupdate", sync);
-    el.addEventListener("loadedmetadata", sync);
-    el.addEventListener("ended", () => setPlaying(false));
-    audioRef.current = el;
-    return el;
-  }, []);
-
   const stopAudio = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-    }
+    player.stop();
     loadedFor.current = null;
-    setPlaying(false);
-    setProgress({ current: 0, duration: 0 });
-  }, []);
+  }, [player]);
 
   /**
    * Resolve and play a card.
@@ -271,15 +257,15 @@ export default function LivePage() {
   const playCard = useCallback(async (card, override) => {
     if (!card.mapping) return;
     setPlayError("");
-    const el = ensureAudio();
 
     const key = override
       ? `${card.eventId}:${override.source}:${override.externalId}`
       : card.eventId;
 
-    if (loadedFor.current === key && el.src) {
-      if (playing) { el.pause(); setPlaying(false); }
-      else { await el.play().catch(() => {}); setPlaying(true); }
+    // Same track again: pause or resume rather than reloading, so the position
+    // and any decode already done survive.
+    if (loadedFor.current === key) {
+      await player.toggle();
       return;
     }
 
@@ -299,17 +285,14 @@ export default function LivePage() {
             : "这首歌当前拿不到播放地址（可能已下架）");
         return;
       }
-      el.src = url;
       loadedFor.current = key;
-      setProgress({ current: 0, duration: 0 });
-      await el.play();
-      setPlaying(true);
+      await player.load(url);
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "播放失败");
     } finally {
       setBusy(false);
     }
-  }, [ensureAudio, playing]);
+  }, [player]);
 
   /** Open a card, or close the one that is open. */
   const toggleCard = useCallback(async (card) => {
@@ -415,7 +398,7 @@ export default function LivePage() {
     setCards([]);
   }, [session, stopAudio, stopDelivery]);
 
-  useEffect(() => () => { audioRef.current?.pause(); }, []);
+  // Teardown lives in the hook, which also has to close the AudioContext.
 
   if (authLoading) return null;
 
@@ -590,9 +573,8 @@ export default function LivePage() {
                                   role="presentation"
                                   onClick={(e) => {
                                     const r = e.currentTarget.getBoundingClientRect();
-                                    const el = audioRef.current;
-                                    if (el && progress.duration > 0) {
-                                      el.currentTime = ((e.clientX - r.left) / r.width) * progress.duration;
+                                    if (duration > 0) {
+                                      player.seek(((e.clientX - r.left) / r.width) * duration);
                                     }
                                   }}
                                   className="h-1.5 flex-1 cursor-pointer rounded-full bg-black/30"
@@ -600,15 +582,47 @@ export default function LivePage() {
                                   <div
                                     className="h-full rounded-full bg-accent"
                                     style={{
-                                      width: `${progress.duration > 0
-                                        ? Math.min(100, (progress.current / progress.duration) * 100)
+                                      width: `${duration > 0
+                                        ? Math.min(100, (current / duration) * 100)
                                         : 0}%`,
                                     }}
                                   />
                                 </div>
                                 <span className="shrink-0 font-mono text-[0.68rem] text-muted">
-                                  {formatClock(progress.current)} / {formatClock(progress.duration)}
+                                  {formatClock(current)} / {formatClock(duration)}
                                 </span>
+                              </div>
+
+                              {/* Pitch and tempo. Pitch appears only once the
+                                  track is decoded, which is a second or two
+                                  behind the first sound -- offering a control
+                                  that silently does nothing would be worse
+                                  than making it arrive late. */}
+                              <div className="mt-2 flex items-center gap-3">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[0.65rem] text-muted">变调</span>
+                                  {player.canShift ? (
+                                    <PitchControl pitch={player.pitch} onChange={player.setPitch} />
+                                  ) : (
+                                    <span className="text-[0.65rem] text-muted/60">准备中…</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[0.65rem] text-muted">速度</span>
+                                  <SpeedControl speed={player.speed} onChange={player.setSpeed} />
+                                </div>
+                              </div>
+
+                              {/* The words. The game's own passage is picked
+                                  out inside the real lyrics, so the singer can
+                                  see what is coming and jump straight to it. */}
+                              <div className="mt-2 border-t border-border/40 pt-1">
+                                <LiveLyrics
+                                  mappingId={card.mapping.mappingId}
+                                  gameLyric={card.lyric}
+                                  current={current}
+                                  onSeek={player.seek}
+                                />
                               </div>
 
                               <div className="mt-2 truncate text-xs text-muted">

@@ -195,6 +195,54 @@ assert.ok(!/\btoggleLike\b/.test(src), 'captureService must not call toggleLike'
       await prisma.songMapping.delete({ where: { id: mapping.id } }).catch(() => {});
     }
 
+    // --- connection and destination are separate things ---
+    // The point of the split: the pairing code is typed once a game, so a
+    // change of destination must not disturb the token the client is holding.
+    const conn = await captureService.connect({ userId: user.id, label: '__conn_test' });
+    try {
+      assert.strictEqual(conn.session.target, 'none', 'a fresh connection delivers nowhere');
+      assert.strictEqual(conn.session.playlistId, null);
+
+      const tokenHashBefore = conn.session.tokenHash;
+
+      await captureService.setTarget({
+        userId: user.id, target: 'playlist', playlistId: playlist.id,
+      });
+      const aimed = await captureService.resolveSession(conn.token);
+      assert.ok(aimed, 'CRITICAL: aiming the connection must not invalidate its token');
+      assert.strictEqual(aimed.target, 'playlist');
+      assert.strictEqual(aimed.playlistId, playlist.id);
+      assert.strictEqual(aimed.tokenHash, tokenHashBefore, 'the token itself is untouched');
+
+      // Switching away must not leave the old destination behind, or a stale
+      // id could still be read as where captures go.
+      await captureService.setTarget({ userId: user.id, target: 'none' });
+      const idle = await captureService.resolveSession(conn.token);
+      assert.strictEqual(idle.target, 'none');
+      assert.strictEqual(idle.playlistId, null, 'stopping clears the destination');
+      assert.ok(idle, 'stopping keeps the connection alive');
+
+      // A destination that needs a playlist must say so rather than reaching
+      // the database with an undefined id, which surfaces as a 500.
+      await assert.rejects(
+        () => captureService.setTarget({ userId: user.id, target: 'playlist' }),
+        // statusCode, not status: AppError stores it under that name, and
+        // matching the wrong property passes for any thrown error at all.
+        (err) => err.constructor.name === 'ValidationError' && err.statusCode === 400,
+        'a playlist target with no playlist is a validation error'
+      );
+
+      // Second arg must be a matcher, not a message: assert.rejects reads a
+      // bare string as the expected error, so a "message" there silently
+      // changes what is being asserted.
+      await assert.rejects(
+        () => captureService.setTarget({ userId: user.id, target: 'wat' }),
+        (err) => err.constructor.name === 'ValidationError' && err.statusCode === 400
+      );
+    } finally {
+      await prisma.captureSession.deleteMany({ where: { id: conn.session.id } });
+    }
+
     console.log('capture-service tests passed');
   } finally {
     await prisma.playlist.delete({ where: { id: playlist.id } }).catch(() => {});

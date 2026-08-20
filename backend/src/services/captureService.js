@@ -180,6 +180,12 @@ async function setTarget({ userId, target, playlistId }) {
   if (!session) throw new NotFoundError('Capture session');
 
   if (target === 'playlist') {
+    // Rejected here rather than left to the access check, which passes the id
+    // straight to Prisma and fails as a 500 on a missing one -- a validation
+    // problem reported as a server fault.
+    if (!playlistId || typeof playlistId !== 'string') {
+      throw new ValidationError({ playlistId: ['Playlist is required for this target'] });
+    }
     // Checked on every switch, not just at connect: access can be revoked
     // while a connection is open, and this is the point where captures would
     // start landing in the playlist.

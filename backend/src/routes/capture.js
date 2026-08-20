@@ -68,6 +68,13 @@ const pairLimiter = rateLimit({
 // titles claimed row 0 and the panel showed one of them. The panel no longer
 // lets a repeated row overwrite anything either, so a v9 client is cosmetically
 // off at worst.
+// v14 reaches the 唱卡 views by their own ids: the container it had been
+// asking for, singerDuelSingingAudienceHolder_cl_root, does not exist, so the
+// singing screen always fell through to the tree walk and 两军对决 -- which
+// alternates picking and singing every few seconds -- was never recognised. It
+// also notices when an over-the-top install leaves the accessibility service
+// switched on but no longer receiving events, which used to fail silently
+// while the app reported itself healthy.
 // v12 stops walking the whole tree on 歌 P screens. That walk never once
 // produced a title (14 of 14 came from the team lists) but cost 2-12s on the
 // main thread, blocking the events that arrived during it -- which is why tags
@@ -78,12 +85,12 @@ const pairLimiter = rateLimit({
 // captures. minSupported stays at 1: an older client is wrong only while both
 // rounds are in play, and cutting users off mid-game is worse.
 const CLIENT_VERSION = {
-  latest: 12,
+  latest: 14,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '2.1',
+  latestName: '2.3',
   releasedAt: '2026-08-20',
 };
 

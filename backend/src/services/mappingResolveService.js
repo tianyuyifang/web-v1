@@ -96,6 +96,17 @@ async function resolveGameSong({ title, artist }) {
   const ak = artistKey(artist);
   if (!tk) return { status: 'unmapped', mapping: null, tier: null, candidates: [] };
 
+  // A 唱卡 capture always names its artist: the picking screen carries it in
+  // its own view beside the title, and the singing screen writes "title-artist".
+  // So an empty artist means the capture did not come from 唱卡 at all -- 歌 P
+  // titles reaching this channel is how it happened before -- and matching on
+  // the title alone is actively wrong: 夜夜夜夜 with no artist was paired with
+  // 梁静茹 when the game had said 齐秦.
+  //
+  // Resolved against an existing mapping is still fine; it is creating one from
+  // a title alone that is refused.
+  const artistless = !ak;
+
   // --- steps 1 and 2: an existing mapping wins, approved or not ---
   const existing = await prisma.songMapping.findUnique({
     where: { titleKey_artistKey: { titleKey: tk, artistKey: ak } },
@@ -107,6 +118,13 @@ async function resolveGameSong({ title, artist }) {
       tier: existing.matchKind || null,
       candidates: [],
     };
+  }
+
+  // Nothing on record, and nothing to key a new record on. Answering
+  // "unmapped" leaves the pool track where it is, still counted as unseen,
+  // so the song is picked up properly the next time the game names its artist.
+  if (artistless) {
+    return { status: 'unmapped', mapping: null, tier: null, candidates: [] };
   }
 
   // --- step 3: claim a track from the imported pool ---

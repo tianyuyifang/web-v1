@@ -457,51 +457,48 @@ export default function MappingsPage() {
                 {selected?.id === row.id ? "▪" : "▸"}
               </button>
 
-              {/* Everything a reviewer scans for is on one line: source and
-                  duration are short and fixed-width enough to sit beside the
-                  title rather than costing a second row of height.
+              {/* Two lines, one per side of the pairing, because that
+                  comparison is the entire review: does the platform track on
+                  top really correspond to the game song underneath.
 
-                  The platform id is deliberately not here. It matters to us —
-                  it is what a mapping resolves to and what the cache is keyed
-                  on — but a reviewer never reads it, and a 14-character mid
-                  crowded out the artist name it sat next to. */}
+                  They used to share a line, with the source chip in front of
+                  the game's own title and artist -- so a row read "QQ 纯真 —"
+                  while QQ knew perfectly well the artist was 五月天. The chip
+                  names where a mapping resolves to, and putting it in front of
+                  the other side's text made it look like a label for it.
+
+                  The platform id stays out of both. It matters to us — it is
+                  what playback resolves and what the cache is keyed on — but a
+                  reviewer never reads it, and a 14-character mid crowded out
+                  the artist beside it. */}
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.82rem] leading-tight">
                   <span className="shrink-0 rounded bg-black/20 px-1 py-px text-[0.62rem] text-muted">
                     {SOURCE_LABEL[row.source] || row.source}
                   </span>
                   <span className="truncate font-medium">
-                    {row.title}
-                    <span className="text-muted"> — {row.artist || "（无歌手）"}</span>
+                    {row.platformTitle || row.title}
+                    <span className="text-muted"> — {row.platformArtist || "—"}</span>
                   </span>
                   <span className="shrink-0 text-[0.68rem] tabular-nums text-muted">
                     {formatDuration(row.durationSec)}
                   </span>
                 </div>
-                {/* A second line only when there is something worth saying. Most
-                    rows have nothing here and stay one line tall. */}
-                {(row.matchKind || row.approvedBy || row.note
-                  || (row.platformArtist && row.platformArtist !== row.artist)) && (
-                  <div className="mt-px flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-[0.68rem] leading-tight text-muted">
-                    {/* The platform regularly names the artist differently from
-                        the game (凤凰传奇 against 玲花/曾毅). Showing both is how a
-                        reviewer tells a real mismatch from a naming difference.
-                        A weak row shows it even when the two agree: what makes
-                        it weak is the shape of the artist name itself — whether
-                        the separator in 陈伟霆/袁娅维TIA RAY joins two performers
-                        or sits inside one name — and that cannot be judged
-                        against a name the page declined to print. */}
-                    {row.platformArtist
-                      && (row.matchKind === "weak" || row.platformArtist !== row.artist) && (
-                      <span className="truncate">平台：{row.platformTitle} — {row.platformArtist}</span>
-                    )}
-                    {row.matchKind && <span className="shrink-0">匹配：{row.matchKind}</span>}
-                    {/* Says why it is waiting, which for a weak row is the whole
-                        question the reviewer is being asked to answer. */}
-                    {row.note && <span className="truncate text-yellow-500/80">{row.note}</span>}
-                    {row.approvedBy && <span className="shrink-0">由 {row.approvedBy} 确认</span>}
-                  </div>
-                )}
+
+                <div className="mt-px flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.68rem] leading-tight text-muted">
+                  <span className="shrink-0 rounded bg-black/20 px-1 py-px text-[0.6rem]">QNI</span>
+                  {/* 《》 is how 歌 P writes a title and never how 唱卡 does, so
+                      a row still carrying them came in through the wrong
+                      channel. Stripped for reading; the stored key is
+                      untouched. */}
+                  <span className="truncate">
+                    {String(row.title || "").replace(/^《|》$/g, "")}
+                    {row.artist ? ` — ${row.artist}` : ""}
+                  </span>
+                  {row.matchKind && <span className="shrink-0">· {row.matchKind}</span>}
+                  {row.note && <span className="truncate text-yellow-500/80">· {row.note}</span>}
+                  {row.approvedBy && <span className="shrink-0">· 由 {row.approvedBy} 确认</span>}
+                </div>
               </div>
 
               <div className="flex shrink-0 gap-1.5">

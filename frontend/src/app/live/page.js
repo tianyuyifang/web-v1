@@ -30,50 +30,32 @@ import useCaptureStore from "@/store/captureStore";
 const SOURCE_LABEL = { LOCAL: "曲库", QQ: "QQ", NETEASE: "网易" };
 
 /**
- * Cards captured within this long of each other belong to the same round.
+ * How long a round may stay open for new songs to join it.
  *
- * The game shows a batch, it sits there for seconds while the client reads it
- * repeatedly, then the round ends. A gap much longer than that means the
- * screen changed, so the next card starts a new group.
+ * A round is opened by the picking screen and then sung through, and the three
+ * modes sing different amounts of it: 唱卡 sings one of three, 极限抢唱 and
+ * 两军对决 sing all of them, one performer at a time. So a round is not a
+ * moment — it is a picking screen plus every performance that follows, which
+ * for a five-song 两军对决 runs for minutes.
+ *
+ * A placeholder, and known to be one. Measured against real play, time cannot
+ * recover the true grouping: gaps within a round and gaps between rounds are
+ * both 25-35s and are indistinguishable. This value only keeps clearly
+ * separate rounds apart (the observed between-round gap was 236s).
+ *
+ * The real key is which picking screen a capture came from, which the client
+ * does not report yet -- the same thing the lyrics work needs, so it lands
+ * with that.
  */
-const BATCH_GAP_MS = 45 * 1000;
+const ROUND_IDLE_MS = 60 * 1000;
 
 /** Rounds kept on screen. Hours of play must not turn into endless scroll. */
 const KEEP_BATCHES = 12;
 
-/** Survives a reload, so a refresh mid-round does not end the run. */
-const SESSION_KEY = "capture-session:live";
-
-function remember(session) {
-  try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  } catch {
-    // private mode or a full quota; losing this only costs the restore
-  }
-}
-
-function recall() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw);
-    if (!s || !s.id) return null;
-    // An expired run cannot be resumed — dropping it here means the page opens
-    // ready to start rather than showing a session that is already dead.
-    if (s.expiresAt && new Date(s.expiresAt).getTime() <= Date.now()) return null;
-    return s;
-  } catch {
-    return null;
-  }
-}
-
-function forget() {
-  try {
-    localStorage.removeItem(SESSION_KEY);
-  } catch {
-    /* nothing to do */
-  }
-}
+// No local copy of the run is kept. The server knows whether captures are
+// being recognised, and a browser-side copy only ever disagreed with it: it
+// existed solely in the tab that pressed 开始识别, so every other way of
+// arriving here reported "not started" while recognition was running.
 
 function formatDuration(sec) {
   if (sec == null) return "—";
@@ -98,12 +80,16 @@ function relativeTime(iso) {
 }
 
 /**
- * Group cards into rounds by arrival time.
+ * Group cards into the rounds they belong to.
  *
- * Time rather than a batch id from the client, because the two capture
- * channels disagree about what a batch is: the candidate screen sends a whole
- * round at once, while the singing screen sends one song at a time. Grouping
- * on arrival treats both the same.
+ * Measured against real play, a fixed window could not do this: songs arrive
+ * in bursts seconds apart within one picking screen, and then the performances
+ * trickle in over the following minutes. A short window split one round into
+ * several; a long one merged two rounds that happened to be close together.
+ *
+ * So the gap is measured against the last card of the round rather than its
+ * first, which lets a round stay open as long as songs keep arriving and close
+ * once play has moved on.
  */
 function toBatches(cards) {
   const sorted = [...cards].sort(
@@ -113,10 +99,13 @@ function toBatches(cards) {
   for (const card of sorted) {
     const at = new Date(card.createdAt).getTime();
     const last = batches[batches.length - 1];
-    if (last && Math.abs(new Date(last.at).getTime() - at) < BATCH_GAP_MS) {
+    // `last.oldest` walks backwards as cards are added, since the list runs
+    // newest-first — so this compares against the nearest card, not the first.
+    if (last && last.oldest - at < ROUND_IDLE_MS) {
       last.cards.push(card);
+      last.oldest = at;
     } else {
-      batches.push({ at: card.createdAt, cards: [card] });
+      batches.push({ at: card.createdAt, oldest: at, cards: [card] });
     }
   }
   return batches.slice(0, KEEP_BATCHES);
@@ -177,23 +166,27 @@ export default function LivePage() {
     }
   }, []);
 
-  // Pick a run back up after a reload — but only if the connection is still
-  // pointed here. A stored id no longer proves captures are arriving on this
-  // page: the same connection may since have been aimed at a playlist, and
-  // reopening as though it were live would show a feed that never moves.
+  /**
+   * Show whatever the connection is actually doing, on every visit.
+   *
+   * The server is the only thing that knows whether captures are being
+   * recognised; this page had been asking localStorage instead, which only
+   * held anything if 开始识别 had been pressed in this browser. Arriving any
+   * other way — a reload, a second tab, coming back from another page — found
+   * nothing stored and reported "not started" while recognition was running
+   * the whole time.
+   */
   useEffect(() => {
-    const saved = recall();
-    if (!saved) return;
     let alive = true;
     (async () => {
       const conn = await refreshConnection();
       if (!alive) return;
       if (!conn || conn.target !== "live") {
-        forget();
+        setSession(null);
         return;
       }
-      setSession(saved);
-      loadFeed(saved.id);
+      setSession({ id: conn.sessionId, expiresAt: conn.expiresAt });
+      loadFeed(conn.sessionId);
     })();
     return () => { alive = false; };
   }, [loadFeed, refreshConnection]);
@@ -229,9 +222,10 @@ export default function LivePage() {
         const res = await captureAPI.status(session.id);
         if (stop) return;
         setClient(res.data.client);
-        if (res.data.ended) {
+        // Closed elsewhere, or aimed at something else: either way this page
+        // is no longer the destination, so stop showing a live run.
+        if (res.data.ended || res.data.target !== "live") {
           setSession(null);
-          forget();
         }
       } catch {
         /* a missed poll says nothing; the next one will answer */
@@ -402,7 +396,6 @@ export default function LivePage() {
       setSession(s);
       setPairCode(conn.pairCode || null);
       setCards([]);
-      remember(s);
     } catch (err) {
       setError(err.response?.data?.error?.message || "无法开始，请稍后再试");
     } finally {
@@ -420,7 +413,6 @@ export default function LivePage() {
     setSession(null);
     setPairCode(null);
     setCards([]);
-    forget();
   }, [session, stopAudio, stopDelivery]);
 
   useEffect(() => () => { audioRef.current?.pause(); }, []);
@@ -567,7 +559,16 @@ export default function LivePage() {
                               <span className="shrink-0 rounded bg-yellow-500/15 px-2 py-0.5 text-[0.65rem] text-yellow-500">
                                 待确认
                               </span>
-                            ) : null}
+                            ) : (
+                              /* Said outright rather than left blank. An
+                                 unlabelled card is indistinguishable from one
+                                 whose status has not loaded, and "this is the
+                                 right recording" is the thing a singer wants
+                                 to know before trusting it mid-game. */
+                              <span className="shrink-0 rounded bg-green-500/15 px-2 py-0.5 text-[0.65rem] text-green-500">
+                                已确认
+                              </span>
+                            )}
                           </button>
 
                           {isOpen && mapped && (

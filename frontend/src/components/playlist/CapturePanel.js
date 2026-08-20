@@ -6,6 +6,7 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
 import useAuth from "@/hooks/useAuth";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import useDraggablePosition from "@/hooks/useDraggablePosition";
+import useCaptureStore from "@/store/captureStore";
 
 /**
  * Floating capture panel — desktop only.
@@ -87,6 +88,10 @@ function isPerfect(e) {
 export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   const { t } = useLanguage();
   const { canCapture } = useAuth();
+  // One connection, shared with the nav indicator: this panel aims it rather
+  // than owning it, so the two can never disagree about whether it is alive.
+  const aim = useCaptureStore((s) => s.aim);
+  const stopDelivery = useCaptureStore((s) => s.stop);
   const [showAddOnNotice, setShowAddOnNotice] = useState(false);
   const [session, setSession] = useState(null);
   const [pairCode, setPairCode] = useState(null);
@@ -220,23 +225,32 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await captureAPI.start(playlistId);
-      setSession(res.data.session);
-      setPairCode(res.data.pairCode);
-      setPairExpiresAt(res.data.pairExpiresAt);
+      // Point the existing connection here, opening one first if there is
+      // none. That auto-connect is what preserves the old habit: pressing this
+      // with nothing connected still produces a pairing code, it just now
+      // lasts the rest of the game instead of this one playlist.
+      const ok = await aim("playlist", playlistId);
+      if (!ok) {
+        setError(useCaptureStore.getState().error || t("captureStartFailed"));
+        return;
+      }
+      const conn = useCaptureStore.getState().connection;
+      setSession({ id: conn.sessionId, expiresAt: conn.expiresAt });
+      setPairCode(conn.pairCode || null);
+      setPairExpiresAt(conn.pairExpiresAt || null);
       setEvents([]);
       // Totals are per run, so clear the tallies along with the rows.
       seenRef.current = new Set();
       taggedRef.current = new Set();
       setTotals({ caught: 0, tagged: 0 });
       setOpen(true);
-      remember(playlistId, res.data.session);
+      remember(playlistId, { id: conn.sessionId, expiresAt: conn.expiresAt });
     } catch (err) {
       setError(err.response?.data?.error?.message || t("captureStartFailed"));
     } finally {
       setBusy(false);
     }
-  }, [playlistId, t, canCapture]);
+  }, [playlistId, t, canCapture, aim]);
 
   // Pick a run back up after a reload.
   //
@@ -260,6 +274,21 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
           forget(playlistId);
           return;
         }
+
+        // The connection outlives any one playlist now, so a stored id is no
+        // longer proof that captures are coming *here*. Without this check the
+        // panel reopens as though it were tagging while the connection has
+        // since been aimed at another playlist or at 唱卡 — showing counts
+        // that will never move.
+        const conn = await useCaptureStore.getState().refresh();
+        if (!alive) return;
+        const aimedHere = conn && conn.target === "playlist"
+          && (conn.playlist?.id || conn.playlistId) === playlistId;
+        if (!aimedHere) {
+          forget(playlistId);
+          return;
+        }
+
         setSession(saved);
         setClient(status.data.client);
 
@@ -335,9 +364,12 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     if (!session) return;
     setBusy(true);
     try {
-      await captureAPI.stop(session.id);
+      // Stop delivering here, but keep the connection: the client is mid-game
+      // and making it pair again to tag the next playlist is the whole cost
+      // this split exists to remove.
+      await stopDelivery();
     } catch {
-      /* stopping is best-effort; the token expires on its own anyway */
+      /* stopping is best-effort; the connection expires on its own anyway */
     } finally {
       setSession(null);
       setPairCode(null);
@@ -347,7 +379,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       // Drop the stored id too, or the next visit restores a dead run.
       forget(playlistId);
     }
-  }, [session, playlistId]);
+  }, [session, playlistId, stopDelivery]);
 
   const approve = useCallback(async (eventId, clipId) => {
     setEvents((prev) => prev.filter((x) => x.eventId !== eventId)); // optimistic

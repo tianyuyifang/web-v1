@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { captureAPI, mappingAPI, getLiveSSEUrl } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
+import useCaptureStore from "@/store/captureStore";
 
 const SOURCE_LABEL = { LOCAL: "曲库", QQ: "QQ", NETEASE: "网易" };
 
@@ -123,6 +124,13 @@ function toBatches(cards) {
 
 export default function LivePage() {
   const { user, isAdmin, loading: authLoading } = useAuth();
+  // The connection belongs to the whole site, not this page: pressing 开始识别
+  // aims it here rather than opening one, so a game already tagging a playlist
+  // switches over without the client pairing again.
+  const connection = useCaptureStore((s) => s.connection);
+  const aim = useCaptureStore((s) => s.aim);
+  const stopDelivery = useCaptureStore((s) => s.stop);
+  const refreshConnection = useCaptureStore((s) => s.refresh);
 
   const [session, setSession] = useState(null);
   const [pairCode, setPairCode] = useState(null);
@@ -169,12 +177,26 @@ export default function LivePage() {
     }
   }, []);
 
+  // Pick a run back up after a reload — but only if the connection is still
+  // pointed here. A stored id no longer proves captures are arriving on this
+  // page: the same connection may since have been aimed at a playlist, and
+  // reopening as though it were live would show a feed that never moves.
   useEffect(() => {
     const saved = recall();
     if (!saved) return;
-    setSession(saved);
-    loadFeed(saved.id);
-  }, [loadFeed]);
+    let alive = true;
+    (async () => {
+      const conn = await refreshConnection();
+      if (!alive) return;
+      if (!conn || conn.target !== "live") {
+        forget();
+        return;
+      }
+      setSession(saved);
+      loadFeed(saved.id);
+    })();
+    return () => { alive = false; };
+  }, [loadFeed, refreshConnection]);
 
   // The stream. Reconnects are handled by EventSource itself; the refetch on
   // open is what fills in anything missed while it was down.
@@ -370,10 +392,15 @@ export default function LivePage() {
     setError("");
     setStarting(true);
     try {
-      const res = await captureAPI.startLive({ label: "唱卡" });
-      const s = res.data.session;
+      const ok = await aim("live");
+      if (!ok) {
+        setError(useCaptureStore.getState().error || "无法开始，请稍后再试");
+        return;
+      }
+      const conn = useCaptureStore.getState().connection;
+      const s = { id: conn.sessionId, expiresAt: conn.expiresAt };
       setSession(s);
-      setPairCode(res.data.pairCode);
+      setPairCode(conn.pairCode || null);
       setCards([]);
       remember(s);
     } catch (err) {
@@ -381,22 +408,20 @@ export default function LivePage() {
     } finally {
       setStarting(false);
     }
-  }, []);
+  }, [aim]);
 
   const stop = useCallback(async () => {
     if (!session) return;
-    try {
-      await captureAPI.stop(session.id);
-    } catch {
-      // Already gone server-side is the same outcome as stopping it.
-    }
+    // Stops delivery, not the connection: the client stays paired so the next
+    // round -- here or in a playlist -- costs nothing to start.
+    await stopDelivery();
     stopAudio();
     setOpenId(null);
     setSession(null);
     setPairCode(null);
     setCards([]);
     forget();
-  }, [session, stopAudio]);
+  }, [session, stopAudio, stopDelivery]);
 
   useEffect(() => () => { audioRef.current?.pause(); }, []);
 

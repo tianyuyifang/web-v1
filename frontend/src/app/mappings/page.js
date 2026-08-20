@@ -480,16 +480,25 @@ export default function MappingsPage() {
                 </div>
                 {/* A second line only when there is something worth saying. Most
                     rows have nothing here and stay one line tall. */}
-                {(row.matchKind || row.approvedBy
+                {(row.matchKind || row.approvedBy || row.note
                   || (row.platformArtist && row.platformArtist !== row.artist)) && (
                   <div className="mt-px flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-[0.68rem] leading-tight text-muted">
                     {/* The platform regularly names the artist differently from
                         the game (凤凰传奇 against 玲花/曾毅). Showing both is how a
-                        reviewer tells a real mismatch from a naming difference. */}
-                    {row.platformArtist && row.platformArtist !== row.artist && (
+                        reviewer tells a real mismatch from a naming difference.
+                        A weak row shows it even when the two agree: what makes
+                        it weak is the shape of the artist name itself — whether
+                        the separator in 陈伟霆/袁娅维TIA RAY joins two performers
+                        or sits inside one name — and that cannot be judged
+                        against a name the page declined to print. */}
+                    {row.platformArtist
+                      && (row.matchKind === "weak" || row.platformArtist !== row.artist) && (
                       <span className="truncate">平台：{row.platformTitle} — {row.platformArtist}</span>
                     )}
                     {row.matchKind && <span className="shrink-0">匹配：{row.matchKind}</span>}
+                    {/* Says why it is waiting, which for a weak row is the whole
+                        question the reviewer is being asked to answer. */}
+                    {row.note && <span className="truncate text-yellow-500/80">{row.note}</span>}
                     {row.approvedBy && <span className="shrink-0">由 {row.approvedBy} 确认</span>}
                   </div>
                 )}

@@ -68,18 +68,22 @@ const pairLimiter = rateLimit({
 // titles claimed row 0 and the panel showed one of them. The panel no longer
 // lets a repeated row overwrite anything either, so a v9 client is cosmetically
 // off at worst.
+// v12 stops walking the whole tree on 歌 P screens. That walk never once
+// produced a title (14 of 14 came from the team lists) but cost 2-12s on the
+// main thread, blocking the events that arrived during it -- which is why tags
+// used to appear in bursts after a stall. Worst-case scan went 17.4s -> 0.6s.
 // v11 reads the delivery target off the heartbeat and scans only the round it
 // names. Up to v10 every round's titles were read and sent regardless, so 唱卡
 // songs were tagged into playlists during a 歌 P run -- 22 of 200 production
 // captures. minSupported stays at 1: an older client is wrong only while both
 // rounds are in play, and cutting users off mid-game is worse.
 const CLIENT_VERSION = {
-  latest: 11,
+  latest: 12,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '2.0',
+  latestName: '2.1',
   releasedAt: '2026-08-20',
 };
 

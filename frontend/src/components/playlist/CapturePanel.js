@@ -206,13 +206,20 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
         .then((res) => {
           if (!alive) return;
           setClient(res.data.client);
-          // The connection outlives this playlist now, so "alive" is not the
-          // same as "delivering here". Without this the panel keeps showing a
-          // running session after the user aimed elsewhere — counters frozen,
-          // nothing arriving, and no clue why.
-          const here = res.data.target === "playlist"
-            && res.data.playlistId === playlistId;
-          if (!here) {
+          // Close only when the connection has demonstrably been claimed by
+          // somewhere else: another playlist, or 唱卡. Stopping is the user's
+          // to declare -- pressing 停止 here, or 开始 elsewhere.
+          //
+          // Deliberately NOT closing on target === "none". That state is also
+          // what a poll sees in the instant between connecting and aiming, and
+          // treating it as "the user left" made the panel shut itself the
+          // moment it opened: it cleared its own session, the aim never took,
+          // and every capture came back no_target with the client looking
+          // perfectly healthy.
+          const claimedElsewhere =
+            (res.data.target === "playlist" && res.data.playlistId !== playlistId)
+            || res.data.target === "live";
+          if (claimedElsewhere) {
             setSession(null);
             forget(playlistId);
           }

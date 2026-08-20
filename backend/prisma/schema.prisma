@@ -377,9 +377,16 @@ model CaptureEvent {
   session CaptureSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   clip    Clip?          @relation(fields: [matchedClipId], references: [id], onDelete: SetNull)
 
-  /// Dedupe key: the same song is read ~15 times while it sits on screen,
-  /// and the string is byte-identical each time, so one row per session+text.
-  @@unique([sessionId, rawText])
+  /// Dedupe key: the same song is read ~15 times while it sits on screen, and
+  /// the string is byte-identical each time. Scoped to the destination as well
+  /// as the connection -- a connection now spans several playlists, and keying
+  /// on it alone answered "duplicate" for the same song in a second playlist,
+  /// which silently never got tagged.
+  ///
+  /// Declared here for the client's benefit; the real index is expression-based
+  /// (COALESCE over the null playlist) so 唱卡 captures dedupe too, since
+  /// Postgres would otherwise treat their null playlist as always distinct.
+  @@index([sessionId, playlistId, rawText])
   @@index([sessionId, createdAt])
   @@index([playlistId])
   @@map("capture_events")

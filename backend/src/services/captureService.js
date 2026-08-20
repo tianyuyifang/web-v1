@@ -415,8 +415,12 @@ async function ingestText({ session, rawText, side, row }) {
 
   // Dedupe: the same song is read ~15 times while it sits on screen and the
   // string is byte-identical each time.
-  const existing = await prisma.captureEvent.findUnique({
-    where: { sessionId_rawText: { sessionId: session.id, rawText: text } },
+  //
+  // Scoped to the destination as well as the connection. Keyed on the
+  // connection alone, the same song tagged into a second playlist came back
+  // "duplicate" and was silently never recorded there.
+  const existing = await prisma.captureEvent.findFirst({
+    where: { sessionId: session.id, playlistId, rawText: text },
   });
   if (existing) {
     return { outcome: 'duplicate', eventId: existing.id, rawText: text };
@@ -512,15 +516,23 @@ async function ingestLive({ session, rawText }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
 
-  await prisma.captureSession.update({
+  // Re-read rather than trusting the caller's copy, for the same reason as the
+  // playlist flow: the target can move between the token being resolved and
+  // this running, and a capture that arrives after the user aimed at a
+  // playlist is not a live card.
+  const fresh = await prisma.captureSession.update({
     where: { id: session.id },
     data: { lastSeenAt: new Date() },
   });
+  if (fresh.target !== 'live') {
+    return { outcome: 'no_target', rawText: text };
+  }
 
   // Same dedupe as the playlist flow: a title sits on screen for seconds and
-  // is read over and over, byte-identical each time.
-  const existing = await prisma.captureEvent.findUnique({
-    where: { sessionId_rawText: { sessionId: session.id, rawText: text } },
+  // is read over and over, byte-identical each time. Live captures carry no
+  // playlist, so they dedupe among themselves.
+  const existing = await prisma.captureEvent.findFirst({
+    where: { sessionId: session.id, playlistId: null, rawText: text },
   });
   if (existing) {
     return {
@@ -664,6 +676,11 @@ async function getStatus({ userId, sessionId }) {
     lastSeenAt: session.lastSeenAt,
     ended: Boolean(session.endedAt),
     expiresAt: session.expiresAt,
+    // Liveness alone is no longer the whole answer: a connection can be alive
+    // and pointed somewhere else entirely, which a panel would otherwise show
+    // as a healthy run that never receives anything.
+    target: session.target,
+    playlistId: session.playlistId,
   };
 }
 
@@ -720,8 +737,12 @@ async function getReport({ userId, sessionId }) {
   if (!session) throw new NotFoundError('Capture session');
   if (session.userId !== userId) throw new ForbiddenError('Not your capture session');
 
+  // Scoped to the playlist this report is about. A connection now spans
+  // several playlists, so filtering on the session alone hands a panel the
+  // captures made for other lists -- which it then shows as its own receipts
+  // and, worse, feeds to auto-approve.
   const events = await prisma.captureEvent.findMany({
-    where: { sessionId },
+    where: { sessionId, playlistId: session.playlistId },
     orderBy: { createdAt: 'desc' },
   });
 
@@ -751,8 +772,12 @@ async function getLiveFeed({ userId, sessionId, limit }) {
   if (session.userId !== userId) throw new ForbiddenError('Not your capture session');
 
   const take = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 40;
+  // Live captures only. The same connection may have tagged playlists earlier,
+  // and those events carry a different shape -- `candidates` is an array of
+  // songs there and a single mapping object here -- so mixing them renders
+  // cards for songs that were never live captures at all.
   const events = await prisma.captureEvent.findMany({
-    where: { sessionId },
+    where: { sessionId, playlistId: null },
     orderBy: { createdAt: 'desc' },
     take,
   });

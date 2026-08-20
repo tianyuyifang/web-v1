@@ -85,6 +85,11 @@ const useCaptureStore = create((set, get) => ({
           ...s.connection,
           target: res.data.session.target,
           playlistId: res.data.session.playlistId,
+          // Cleared, not left behind: readers resolve the destination as
+          // `playlist?.id || playlistId`, so a stale nested object from an
+          // earlier refresh would name the previous playlist until the next
+          // one lands — and the nav label would name it on screen.
+          playlist: null,
         },
       }));
       // Pull the playlist name and liveness the server knows about.

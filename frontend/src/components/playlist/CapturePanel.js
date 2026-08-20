@@ -203,7 +203,20 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     const tick = () => {
       captureAPI
         .status(session.id)
-        .then((res) => alive && setClient(res.data.client))
+        .then((res) => {
+          if (!alive) return;
+          setClient(res.data.client);
+          // The connection outlives this playlist now, so "alive" is not the
+          // same as "delivering here". Without this the panel keeps showing a
+          // running session after the user aimed elsewhere — counters frozen,
+          // nothing arriving, and no clue why.
+          const here = res.data.target === "playlist"
+            && res.data.playlistId === playlistId;
+          if (!here) {
+            setSession(null);
+            forget(playlistId);
+          }
+        })
         .catch(() => {});
     };
     tick();
@@ -212,7 +225,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       alive = false;
       clearInterval(id);
     };
-  }, [session]);
+  }, [session, playlistId]);
 
   const start = useCallback(async () => {
     // Explain the add-on rather than firing a request that will 403. The

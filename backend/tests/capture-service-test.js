@@ -291,6 +291,60 @@ assert.ok(!/\btoggleLike\b/.test(src), 'captureService must not call toggleLike'
       await prisma.playlist.delete({ where: { id: other.id } }).catch(() => {});
     }
 
+    // --- the same song, tagged into two playlists on one connection ---
+    //
+    // Deduping is keyed on the destination as well as the connection. Keyed on
+    // the connection alone -- which was right only while a session meant one
+    // playlist -- the second playlist was answered "duplicate" and the song
+    // silently never appeared there.
+    const second = await prisma.playlist.create({
+      data: { name: `__capture_second_${Date.now()}`, userId: user.id },
+    });
+    await prisma.playlistClip.create({
+      data: { playlistId: second.id, clipId: clip.id, position: 0 },
+    });
+    const spanning = await captureService.connect({ userId: user.id, label: '__span' });
+    try {
+      await captureService.setTarget({
+        userId: user.id, target: 'playlist', playlistId: playlist.id,
+      });
+      let live2 = await captureService.resolveSession(spanning.token);
+      const first = await captureService.ingestText({
+        session: live2, rawText: clip.song.title,
+      });
+      assert.notStrictEqual(first.outcome, 'duplicate');
+
+      await captureService.setTarget({
+        userId: user.id, target: 'playlist', playlistId: second.id,
+      });
+      live2 = await captureService.resolveSession(spanning.token);
+      const again2 = await captureService.ingestText({
+        session: live2, rawText: clip.song.title,
+      });
+      assert.notStrictEqual(again2.outcome, 'duplicate',
+        'CRITICAL: the same song must still be captured for a second playlist');
+
+      // ...while a genuine repeat inside one playlist is still collapsed.
+      const repeat = await captureService.ingestText({
+        session: live2, rawText: clip.song.title,
+      });
+      assert.strictEqual(repeat.outcome, 'duplicate', 'a real repeat still dedupes');
+
+      // A report answers for one playlist, not for everything the connection
+      // has touched -- those rows would be shown as this panel's own receipts.
+      const scoped = await captureService.getReport({
+        userId: user.id, sessionId: spanning.session.id,
+      });
+      assert.ok(scoped.events.every((e) => e.playlistId === second.id),
+        'a report is scoped to the playlist it is about');
+    } finally {
+      await prisma.captureEvent.deleteMany({ where: { sessionId: spanning.session.id } });
+      await prisma.captureSession.deleteMany({ where: { id: spanning.session.id } });
+      await prisma.like.deleteMany({ where: { playlistId: second.id } });
+      await prisma.playlistClip.deleteMany({ where: { playlistId: second.id } });
+      await prisma.playlist.delete({ where: { id: second.id } }).catch(() => {});
+    }
+
     console.log('capture-service tests passed');
   } finally {
     await prisma.playlist.delete({ where: { id: playlist.id } }).catch(() => {});

@@ -362,6 +362,13 @@ model CaptureEvent {
   sessionId     String   @map("session_id") @db.Uuid
   rawText       String   @map("raw_text")
   matchedClipId String?  @map("matched_clip_id") @db.Uuid
+  /// Which playlist this capture was made for, fixed at capture time.
+  ///
+  /// Not read from the session at approval time: a connection is aimed and
+  /// re-aimed while it runs, so the session answers "where are captures going
+  /// now" rather than "where did this one come from". Null for 唱卡 captures,
+  /// which are never liked anywhere.
+  playlistId    String?  @map("playlist_id") @db.Uuid
   candidates    Json?    @db.JsonB
   outcome       String
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
@@ -374,6 +381,7 @@ model CaptureEvent {
   /// and the string is byte-identical each time, so one row per session+text.
   @@unique([sessionId, rawText])
   @@index([sessionId, createdAt])
+  @@index([playlistId])
   @@map("capture_events")
 }
 

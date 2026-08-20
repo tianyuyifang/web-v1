@@ -191,7 +191,9 @@ async function setTarget({ userId, target, playlistId }) {
     // start landing in the playlist.
     await assertPlaylistAccess(userId, playlistId);
   } else if (target === 'live') {
-    if (session.userId !== userId) throw new ForbiddenError('Not your capture session');
+    // No ownership check here: the session was fetched by userId already. The
+    // 唱卡 restriction lives in the route, and is deliberately not duplicated
+    // -- a second copy would be one more place to forget when it is lifted.
   } else if (target !== 'none') {
     throw new ValidationError({ target: ['Unknown target'] });
   }
@@ -342,6 +344,10 @@ async function fetchCandidateSongs(rawText) {
 /** Which clips of these songs are actually in the playlist. */
 async function clipsInPlaylist(playlistId, songIds) {
   if (!songIds.length) return [];
+  // A null playlist would query IS NULL on a non-nullable column: zero rows,
+  // no error, and every capture silently recorded as "not in playlist". The
+  // caller has no playlist to match against, which is a different answer.
+  if (!playlistId) return [];
   const rows = await prisma.playlistClip.findMany({
     where: { playlistId, clip: { songId: { in: songIds } } },
     select: {
@@ -390,10 +396,22 @@ async function ingestText({ session, rawText, side, row }) {
   // Mark the client as alive before anything else can fail. Without this the
   // UI cannot tell "emulator not running" from "nothing captured yet" — both
   // show zero rows.
-  await prisma.captureSession.update({
+  //
+  // Re-read rather than trusting the caller's copy: the target can move
+  // between the token being resolved and this running, and the copy would name
+  // a playlist the user has already left. update() returns the current row, so
+  // this costs nothing extra.
+  const fresh = await prisma.captureSession.update({
     where: { id: session.id },
     data: { lastSeenAt: new Date() },
   });
+
+  // Aimed elsewhere in the meantime — the capture belongs to whoever the
+  // connection points at now, and this is no longer it.
+  if (fresh.target !== 'playlist' || !fresh.playlistId) {
+    return { outcome: 'no_target', rawText: text };
+  }
+  const playlistId = fresh.playlistId;
 
   // Dedupe: the same song is read ~15 times while it sits on screen and the
   // string is byte-identical each time.
@@ -408,7 +426,7 @@ async function ingestText({ session, rawText, side, row }) {
   const { outcome: matchOutcome, candidates } = matchTitle(text, songs);
 
   // Annotate each candidate with the clips this playlist actually holds.
-  const clips = await clipsInPlaylist(session.playlistId, candidates.map((c) => c.songId));
+  const clips = await clipsInPlaylist(playlistId, candidates.map((c) => c.songId));
   const enriched = candidates.map((c) => {
     const own = clips.filter((cl) => cl.song.id === c.songId)
       .map((cl) => ({ clipId: cl.id, start: cl.start, length: cl.length }))
@@ -429,6 +447,10 @@ async function ingestText({ session, rawText, side, row }) {
     data: {
       sessionId: session.id,
       rawText: text,
+      // Pinned now, not read from the session later: the connection can be
+      // aimed elsewhere before this capture is approved, and the like must
+      // still land where it was captured.
+      playlistId,
       outcome,
       candidates: enriched.length ? enriched : undefined,
       matchedClipId:
@@ -446,7 +468,7 @@ async function ingestText({ session, rawText, side, row }) {
     side: team,
     row: rowIndex,
   };
-  broadcast(session.playlistId, 'capture-event', payload);
+  broadcast(playlistId, 'capture-event', payload);
   return payload;
 }
 
@@ -570,16 +592,26 @@ async function approveEvent({ userId, eventId, clipId }) {
   const target = clipId || event.matchedClipId;
   if (!target) throw new ValidationError({ clipId: ['No clip to approve'] });
 
+  // The event's own playlist, never the session's. The session says where
+  // captures go now; this says where this one came from, and approving after
+  // the connection moved must not like the song into the new destination.
+  // Older rows predate the column and fall back to the session, which for them
+  // cannot have moved.
+  const destination = event.playlistId || event.session.playlistId;
+  if (!destination) {
+    throw new ValidationError({ playlistId: ['This capture has no playlist to like into'] });
+  }
+
   // Must be ensureLiked: it only ever adds. The toggle variant would revoke
   // an existing like, including one a human made by hand.
-  const res = await ensureLiked(userId, event.session.playlistId, target);
+  const res = await ensureLiked(userId, destination, target);
 
   const updated = await prisma.captureEvent.update({
     where: { id: eventId },
     data: { outcome: 'approved', matchedClipId: target, resolvedAt: new Date() },
   });
 
-  broadcast(event.session.playlistId, 'capture-resolved', {
+  broadcast(destination, 'capture-resolved', {
     eventId, outcome: 'approved', clipId: target,
   });
   return { outcome: 'approved', clipId: target, alreadyLiked: res.alreadyLiked, event: updated };
@@ -598,7 +630,10 @@ async function ignoreEvent({ userId, eventId }) {
     where: { id: eventId },
     data: { outcome: 'ignored', resolvedAt: new Date() },
   });
-  broadcast(event.session.playlistId, 'capture-resolved', { eventId, outcome: 'ignored' });
+  // Same reasoning as approve: the row it is displayed in belongs to the
+  // playlist it was captured for, not to wherever the connection points now.
+  broadcast(event.playlistId || event.session.playlistId, 'capture-resolved',
+    { eventId, outcome: 'ignored' });
   return { outcome: 'ignored' };
 }
 

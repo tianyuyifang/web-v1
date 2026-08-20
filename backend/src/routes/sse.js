@@ -43,11 +43,16 @@ router.get('/capture/live/:sessionId', async (req, res, next) => {
   try {
     const session = await prisma.captureSession.findUnique({
       where: { id: req.params.sessionId },
-      select: { userId: true, mode: true },
+      select: { userId: true },
     });
     if (!session) return res.status(404).end();
     if (session.userId !== req.user.id) return res.status(403).end();
-    if (session.mode !== 'live') return res.status(400).end();
+    // Deliberately not gated on the session's current target. The target moves
+    // while the connection runs, and EventSource treats a 400 as permanent --
+    // so refusing here meant that aiming at a playlist and back left the 唱卡
+    // stream dead until a full page reload, with nothing on screen to say why.
+    // Nothing is leaked by allowing it: the channel is derived from the
+    // authenticated user, so an idle subscription simply receives nothing.
 
     addClient(captureService.liveChannel(req.user.id), res);
   } catch (err) {

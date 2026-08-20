@@ -243,6 +243,54 @@ assert.ok(!/\btoggleLike\b/.test(src), 'captureService must not call toggleLike'
       await prisma.captureSession.deleteMany({ where: { id: conn.session.id } });
     }
 
+    // --- a capture is liked where it was CAPTURED, not where the
+    //     connection points by the time somebody approves it ---
+    //
+    // This is the failure the old one-session-per-playlist rule prevented for
+    // free, and that separating connection from destination reintroduced: the
+    // song was liked into whichever playlist the user had moved on to, and a
+    // wrong like is visible to everyone who can see that list.
+    const other = await prisma.playlist.create({
+      data: { name: `__capture_other_${Date.now()}`, userId: user.id },
+    });
+    const moved = await captureService.connect({ userId: user.id, label: '__moved' });
+    try {
+      await captureService.setTarget({
+        userId: user.id, target: 'playlist', playlistId: playlist.id,
+      });
+      const aimed = await captureService.resolveSession(moved.token);
+      const cap = await captureService.ingestText({ session: aimed, rawText: clip.song.title });
+
+      const clipId = (cap.candidates || []).find((c) => c.inPlaylist)?.clips?.[0]?.clipId
+        || cap.matchedClipId;
+      assert.ok(clipId, 'the capture matched a clip in this playlist');
+
+      // The user moves on before approving.
+      await captureService.setTarget({
+        userId: user.id, target: 'playlist', playlistId: other.id,
+      });
+      await captureService.approveEvent({ userId: user.id, eventId: cap.eventId, clipId });
+
+      assert.strictEqual(
+        await prisma.like.count({ where: { playlistId: other.id, clipId } }), 0,
+        'CRITICAL: approving must not like into the playlist the user moved to'
+      );
+      assert.strictEqual(
+        await prisma.like.count({ where: { playlistId: playlist.id, clipId } }), 1,
+        'the like belongs to the playlist the capture was made for'
+      );
+
+      // And with the connection aimed at 唱卡, where the session has no
+      // playlist at all, approving must not reach the database with a null id.
+      await captureService.setTarget({ userId: user.id, target: 'live' });
+      await captureService.approveEvent({ userId: user.id, eventId: cap.eventId, clipId });
+    } finally {
+      await prisma.captureEvent.deleteMany({ where: { sessionId: moved.session.id } });
+      await prisma.captureSession.deleteMany({ where: { id: moved.session.id } });
+      await prisma.like.deleteMany({ where: { playlistId: other.id } });
+      await prisma.playlist.delete({ where: { id: other.id } }).catch(() => {});
+    }
+
     console.log('capture-service tests passed');
   } finally {
     await prisma.playlist.delete({ where: { id: playlist.id } }).catch(() => {});

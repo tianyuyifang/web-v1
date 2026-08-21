@@ -68,6 +68,11 @@ const pairLimiter = rateLimit({
 // titles claimed row 0 and the panel showed one of them. The panel no longer
 // lets a repeated row overwrite anything either, so a v9 client is cosmetically
 // off at worst.
+// v17 reads the picking screen as one container again. Splitting it into two
+// lookups doubled the calls per scan and then cost a tree climb per song to
+// pair title with artist -- on an emulator, where a binder call is ~90x a
+// handset's, that turned the fastest path in the client into one of the
+// slowest. v16 added the artist pairing that v17 now gets for free.
 // v15 sends the words the game shows while a song is sung, and says which
 // screen each capture came from. Both were needed for the lyrics to survive at
 // all: picking and singing show the same title, so the performance -- the only
@@ -89,12 +94,12 @@ const pairLimiter = rateLimit({
 // captures. minSupported stays at 1: an older client is wrong only while both
 // rounds are in play, and cutting users off mid-game is worse.
 const CLIENT_VERSION = {
-  latest: 15,
+  latest: 17,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '2.4',
+  latestName: '2.6',
   releasedAt: '2026-08-20',
 };
 

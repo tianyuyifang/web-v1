@@ -168,13 +168,19 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
       onWheel={() => setFollowing(false)}
       onTouchMove={() => setFollowing(false)}
       onMouseLeave={() => setFollowing(true)}
-      // A fixed height rather than a maximum, and half of it in padding at each
-      // end. Centring is arithmetic on clientHeight, so a box that shrinks to
-      // fit its content computes a tiny offset and the "centred" line sits at
-      // the top -- and without the padding the first and last lines can never
-      // reach the middle at all, because there is nothing to scroll past them.
-      className="h-56 overflow-y-auto px-1 py-[6.5rem]"
+      // Height fixed rather than max-, because centring is arithmetic on
+      // clientHeight and a box that shrinks to its content computes an offset
+      // too small to move: the "centred" line ends up at the top.
+      //
+      // The blank half-screens above and below are spacer divs, not padding on
+      // this element. Tailwind sets border-box, so padding here comes out of
+      // the 224px rather than adding to it -- py-[6.5rem] left a 16px slot,
+      // too short for one line, and the words scrolled up out of sight.
+      className="h-56 overflow-y-auto px-1"
     >
+      {/* Lets the first line reach the middle; without it there is nothing to
+          scroll past and line one stays pinned to the top. */}
+      <div aria-hidden className="h-24" />
       {parsed.map((line, i) => {
         const isActive = i === activeIndex;
         const inPassage = marks.has(i);
@@ -213,6 +219,9 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
           </div>
         );
       })}
+      {/* And the same below, so the last line can be centred rather than
+          stopping halfway up the box. */}
+      <div aria-hidden className="h-24" />
     </div>
   );
 }

@@ -673,6 +673,13 @@ async function ingestLive({ session, rawText, lyric, stage }) {
   // on the first round's card. The round is the picking row this session
   // already holds for that exact text -- rounds do not repeat a song inside
   // themselves, so one lookup identifies it.
+  // Split before the lookup, not after, because the repeat branch below sends
+  // a card to the page and every card has to carry these. Sent without them,
+  // an update to a song's lyrics arrived as a card with no title and no
+  // artist, and the page -- which replaces a card by id -- rubbed out the
+  // name of a song that was already on screen.
+  const { title, artist } = splitTitleArtist(text, await loadDashedArtists());
+
   // A performance prefers a row already marked as sung, and falls back to the
   // one the picking screen made. Preferring it matters because the dedupe
   // index covers stage: a session from before this change can hold both rows,
@@ -706,6 +713,11 @@ async function ingestLive({ session, rawText, lyric, stage }) {
       const payload = {
         eventId: updated.id,
         rawText: text,
+        // Carried even though only the words changed: the page replaces a card
+        // wholesale by id, so anything left out here is erased from a card the
+        // singer is looking at.
+        title,
+        artist,
         outcome: 'lyric_updated',
         stage: from,
         lyric: words,
@@ -722,8 +734,6 @@ async function ingestLive({ session, rawText, lyric, stage }) {
       mapping: existing.candidates || null,
     };
   }
-
-  const { title, artist } = splitTitleArtist(text, await loadDashedArtists());
 
   // The full lookup chain: an existing mapping, or a track claimed from the
   // imported pool. Unapproved mappings resolve too — the song plays now and a

@@ -980,9 +980,36 @@ async function getLiveFeed({ userId, sessionId, limit }) {
   // which cannot await.
   const known = await loadDashedArtists();
 
+  // Whether a mapping has been confirmed, as it stands now.
+  //
+  // The card carries a copy of the match made when the song was captured, and
+  // that copy records whether it was confirmed at that moment -- a fact which
+  // stops being true the moment someone confirms it. Reloading the page showed
+  // a song the singer had just confirmed as still awaiting confirmation, and
+  // 24 of 300 stored matches were already stale this way.
+  //
+  // One query for the whole page rather than one per card. Anything the lookup
+  // cannot answer -- a mapping since deleted -- keeps what the snapshot said,
+  // which is a better guess than calling it unconfirmed.
+  const mappingIds = [...new Set(
+    events.map((e) => e.candidates && e.candidates.mappingId).filter(Boolean)
+  )];
+  const approvedNow = new Map();
+  if (mappingIds.length) {
+    const rows = await prisma.songMapping.findMany({
+      where: { id: { in: mappingIds } },
+      select: { id: true, approved: true },
+    });
+    for (const r of rows) approvedNow.set(r.id, r.approved);
+  }
+
   return {
     cards: events.map((e) => {
       const { title, artist } = splitTitleArtist(e.rawText, known);
+      let mapping = e.candidates || null;
+      if (mapping && mapping.mappingId && approvedNow.has(mapping.mappingId)) {
+        mapping = { ...mapping, approved: approvedNow.get(mapping.mappingId) };
+      }
       return {
         eventId: e.id,
         rawText: e.rawText,
@@ -991,7 +1018,7 @@ async function getLiveFeed({ userId, sessionId, limit }) {
         stage: e.stage || 'picking',
         lyric: e.lyric || null,
         outcome: e.outcome,
-        mapping: e.candidates || null,
+        mapping,
         createdAt: e.createdAt,
       };
     }),

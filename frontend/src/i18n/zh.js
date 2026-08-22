@@ -40,6 +40,8 @@ export default {
   captureWaitingClient: "等待打标 App 连接",
   captureWaitingHint: "模拟器开了吗？APK 启动了吗？token 填了吗？",
   captureConnected: "打标 App 已连接",
+  captureNoTarget: "App 已连接，但没有瞄准这个歌单",
+  captureNoTargetHint: "点上面的「自动打标」重新开始，否则捕捉到的歌会被丢弃。",
   capturePairHint: "在自动打标 App 里输入这个配对码：",
   captureStale: "打标 App 可能已断开",
   navAccount: "账户",

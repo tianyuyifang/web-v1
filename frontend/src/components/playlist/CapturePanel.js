@@ -106,6 +106,11 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   // arming first means a stray click costs nothing but a second of red.
   const [stopArmed, setStopArmed] = useState(false);
   const [client, setClient] = useState("waiting");
+  // Where the connection is pointing, as the server sees it. Kept next to
+  // `client` because the banner below needs both: a live client aimed nowhere
+  // captures nothing, and reporting only liveness said "connected" through a
+  // whole game in which not one song was tagged.
+  const [aimedTarget, setAimedTarget] = useState(null);
   const esRef = useRef(null);
   const autoDoneRef = useRef(new Set()); // eventIds already auto-approved, never twice
 
@@ -206,6 +211,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
         .then((res) => {
           if (!alive) return;
           setClient(res.data.client);
+          setAimedTarget(res.data.target);
           // Close only when the connection has demonstrably been claimed by
           // somewhere else: another playlist, or 唱卡. Stopping is the user's
           // to declare -- pressing 停止 here, or 开始 elsewhere.
@@ -632,7 +638,17 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
             )}
           </div>
         )}
-        {client === "connected" && events.length === 0 && (
+        {/* A live client aimed at nothing is the one failure this banner used
+            to hide: it reported "已连接" off client liveness alone, so a run
+            that captured nothing all game looked identical to a healthy one.
+            The fix is in reach of the user, so say it and name it. */}
+        {client === "connected" && aimedTarget === "none" && (
+          <div className="border-b border-border bg-orange-500/10 px-3 py-1.5">
+            <p className="text-[11px] text-orange-400">🟠 {t("captureNoTarget")}</p>
+            <p className="text-[11px] text-muted">{t("captureNoTargetHint")}</p>
+          </div>
+        )}
+        {client === "connected" && aimedTarget !== "none" && events.length === 0 && (
           <div className="border-b border-border px-3 py-1.5">
             <p className="text-[11px] text-green-400">🟢 {t("captureConnected")}</p>
           </div>

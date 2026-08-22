@@ -94,13 +94,13 @@ const pairLimiter = rateLimit({
 // captures. minSupported stays at 1: an older client is wrong only while both
 // rounds are in play, and cutting users off mid-game is worse.
 const CLIENT_VERSION = {
-  latest: 17,
+  latest: 18,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '2.6',
-  releasedAt: '2026-08-20',
+  latestName: '2.7',
+  releasedAt: '2026-08-22',
 };
 
 // GET /api/capture/version — checked by the client at startup.

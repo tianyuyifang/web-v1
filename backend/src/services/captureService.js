@@ -370,6 +370,38 @@ async function clipsInPlaylist(playlistId, songIds) {
   return rows.map((r) => r.clip).filter(Boolean);
 }
 
+/**
+ * Say out loud that a capture was thrown away.
+ *
+ * Dropping is correct -- a capture with nowhere to go must not be guessed into
+ * the last playlist used -- but it was also silent, and that combination cost
+ * a user a whole game: the client heartbeated, the site showed connected, and
+ * every song was discarded without leaving a trace to find afterwards. The
+ * question "where did that round's songs go" had no answer anywhere.
+ *
+ * Rate-limited per session because a dropped run drops *everything*: a 歌 P
+ * screen is re-read every two seconds for as long as it is up, and logging each
+ * one would bury the rest of the log in a failure the first line already
+ * described.
+ */
+const noTargetLoggedAt = new Map();
+const NO_TARGET_LOG_MS = 60 * 1000;
+
+function logNoTarget(session, text, wanted) {
+  const last = noTargetLoggedAt.get(session.id) || 0;
+  const now = Date.now();
+  if (now - last < NO_TARGET_LOG_MS) return;
+  noTargetLoggedAt.set(session.id, now);
+  // Bounded: one entry per session, and sessions are created all day.
+  if (noTargetLoggedAt.size > 500) noTargetLoggedAt.clear();
+  console.warn(
+    `[capture] dropped "${text}" — session ${session.id.slice(0, 8)} `
+    + `(user ${session.userId.slice(0, 8)}) wants ${wanted}, target is `
+    + `${session.target}${session.playlistId ? '' : ' with no playlist'}. `
+    + 'Further drops on this session are quiet for 60s.'
+  );
+}
+
 /** Record that the capture client is alive, without ingesting anything. */
 async function touchSession(session) {
   await prisma.captureSession.update({
@@ -417,6 +449,7 @@ async function ingestText({ session, rawText, side, row }) {
   // Aimed elsewhere in the meantime — the capture belongs to whoever the
   // connection points at now, and this is no longer it.
   if (fresh.target !== 'playlist' || !fresh.playlistId) {
+    logNoTarget(fresh, text, 'playlist');
     return { outcome: 'no_target', rawText: text };
   }
   const playlistId = fresh.playlistId;
@@ -541,6 +574,7 @@ async function ingestLive({ session, rawText, lyric, stage }) {
     data: { lastSeenAt: new Date() },
   });
   if (fresh.target !== 'live') {
+    logNoTarget(fresh, text, 'live');
     return { outcome: 'no_target', rawText: text };
   }
 

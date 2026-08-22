@@ -19,17 +19,34 @@ import useCaptureStore from "@/store/captureStore";
 /** Matches the server's staleness window, so the dot and the API agree. */
 const POLL_MS = 15000;
 
+/**
+ * Green means captures are actually landing somewhere, not merely that the
+ * client is breathing.
+ *
+ * These were the same colour, and the difference is the whole failure this
+ * indicator exists to show: a connection with no destination heartbeats
+ * exactly like a working one, so the dot went green while every capture was
+ * dropped as no_target. The user watched a green light through a whole game,
+ * tagged nothing, and reasonably concluded the client was broken.
+ *
+ * The split is the one Kubernetes draws between liveness and readiness for the
+ * same reason -- a process can be running and still unable to make progress,
+ * and the two failures need different responses. Amber here means "the link is
+ * fine, you have not aimed it yet", which is a thing the user can fix in one
+ * click, and green is reserved for end to end.
+ */
 function dotClass(connection) {
   if (!connection) return "bg-white/25";
-  if (connection.client === "connected") return "bg-green-500";
   if (connection.client === "stale") return "bg-yellow-500";
-  return "bg-white/40";
+  if (connection.client !== "connected") return "bg-white/40";
+  return connection.target === "none" ? "bg-orange-500" : "bg-green-500";
 }
 
 function statusText(connection) {
   if (!connection) return "未连接";
   if (connection.client === "stale") return "客户端无响应";
   if (connection.client === "waiting") return "等待客户端";
+  if (connection.target === "none") return "未选目标";
   return "已连接";
 }
 
@@ -105,9 +122,15 @@ export default function CaptureIndicator() {
       >
         <span className={`inline-block h-2 w-2 rounded-full ${dotClass(connection)}`} />
         <span className="hidden lg:inline">{statusText(connection)}</span>
-        {/* Only once there is somewhere to name — "已连接 · 未开始" on a fresh
-            connection reads as a fault rather than a normal resting state. */}
-        {connection && connection.target !== "none" && (
+        {/* Named in both states, including "未开始".
+
+            This used to hide itself when the target was none, on the reasoning
+            that "已连接 · 未开始" reads as a fault on a fresh connection. It
+            does -- but it *is* one by the time a game is running, and hiding it
+            meant the label was present exactly when things worked and absent
+            exactly when they did not. The one moment it had something worth
+            saying was the moment it said nothing. */}
+        {connection && (
           <span className="hidden max-w-[10rem] truncate lg:inline text-muted/70">
             · {target}
           </span>

@@ -878,6 +878,9 @@ module.exports = {
   startSession, endSession, resolveSession, redeemPairCode,
   connect, setTarget, getConnection,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
+  // The route drops "aimed at nothing" before the service sees it, and that
+  // drop needs saying out loud just as much as the ones in here.
+  logNoTarget,
   ingestLive, liveChannel, getLiveFeed,
   // Exposed for tests: the "歌名-歌手" split is a guess that decides whether a
   // mapping is found at all, so it needs checking against real captures.

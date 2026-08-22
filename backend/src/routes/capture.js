@@ -94,12 +94,12 @@ const pairLimiter = rateLimit({
 // captures. minSupported stays at 1: an older client is wrong only while both
 // rounds are in play, and cutting users off mid-game is worse.
 const CLIENT_VERSION = {
-  latest: 18,
+  latest: 21,
   minSupported: 1,
   url: 'https://qnicheatsheet.com/qni-capture.apk',
   // Shown on the tools page. Update both when shipping a build, so the page
   // cannot advertise a version the server does not actually serve.
-  latestName: '2.7',
+  latestName: '3.0',
   releasedAt: '2026-08-22',
 };
 
@@ -134,6 +134,12 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
     // destination, and a wrong guess likes songs into a playlist everyone can
     // see. Still counts as contact, so the panel shows the client as alive.
     if (target === 'none') {
+      // Said out loud, because this is the drop that looks like nothing is
+      // wrong: the client heartbeats, the site shows connected, and every song
+      // goes in the bin. A user sat through a whole game like that and
+      // concluded the client was broken. The service logs its own drops, but
+      // this one returns before reaching it.
+      captureService.logNoTarget(req.captureSession, req.body && req.body.text, 'anything');
       await captureService.touchSession(req.captureSession);
       return res.json({ outcome: 'no_target' });
     }
@@ -177,6 +183,19 @@ router.post('/heartbeat', captureAuth, async (req, res, next) => {
       // What the client actually needs: which screens are worth scanning, and
       // whether to scan at all. Older clients ignore both fields.
       target: req.captureSession.target,
+      // Which playlist, not just that there is one.
+      //
+      // Without this the client cannot see a move from one playlist to
+      // another: target reads "playlist" before and after, so the string it
+      // compares is unchanged and its already-sent set is never cleared. Every
+      // song it had tagged into the first playlist was then skipped for the
+      // second. Measured on production: across ten playlist switches, the
+      // number of songs re-sent to the new destination was zero, every time.
+      //
+      // Null when the target is not a playlist, so "aimed at 唱卡" and "aimed
+      // at no playlist in particular" stay distinguishable from each other.
+      playlistId: req.captureSession.target === 'playlist'
+        ? req.captureSession.playlistId : null,
     });
   } catch (err) {
     next(err);

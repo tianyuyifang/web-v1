@@ -530,13 +530,95 @@ async function ingestText({ session, rawText, side, row }) {
  * real case (the candidate screen sends title and artist apart, item 3), and
  * an empty artist key still finds a mapping stored with one.
  */
-function splitTitleArtist(text) {
+/**
+ * Artists whose own name contains a dash, so the split can recognise them.
+ *
+ * Kept in memory and refreshed lazily. There are 1389 distinct artists in the
+ * catalogue and 14 of them carry a dash, so this set is tiny — but it is the
+ * only thing that can tell "幸福了然后呢-A-Lin" apart from a title that merely
+ * happens to end in "-A".
+ */
+let dashedArtists = null;
+let dashedArtistsAt = 0;
+const DASHED_ARTISTS_TTL_MS = 10 * 60 * 1000;
+
+async function loadDashedArtists() {
+  const now = Date.now();
+  if (dashedArtists && now - dashedArtistsAt < DASHED_ARTISTS_TTL_MS) return dashedArtists;
+  const next = new Set();
+  try {
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT DISTINCT artist FROM imported_tracks
+        WHERE artist LIKE '%-%' OR artist LIKE '%–%' OR artist LIKE '%—%'`
+    );
+    for (const r of rows) {
+      const a = String(r.artist || '').trim();
+      if (a) next.add(a.toLowerCase());
+    }
+    // Collaborations are stored joined with "/", and either side can be the
+    // one carrying the dash, so each part earns its own entry.
+    for (const a of [...next]) {
+      for (const part of a.split('/')) {
+        const p = part.trim();
+        if (p && /[-–—]/.test(p)) next.add(p);
+      }
+    }
+    dashedArtists = next;
+    dashedArtistsAt = now;
+  } catch (err) {
+    // A failed refresh must not take the split down with it: the last good set
+    // keeps working, and an empty one simply behaves the way this did before.
+    console.warn('[capture] could not refresh dashed-artist list:', err.message);
+    if (!dashedArtists) dashedArtists = next;
+  }
+  return dashedArtists;
+}
+
+/**
+ * Split "歌名-歌手" where either half may contain a dash of its own.
+ *
+ * Splitting at the last dash is right almost always, and wrong in exactly one
+ * way: when the artist's own name contains one. "幸福了然后呢-A-Lin" came apart
+ * as "幸福了然后呢-A" / "Lin", and every A-Lin song had been failing to map
+ * since -- there is not one mapping in the table whose artist holds a dash.
+ * Titles with dashes are unaffected either way, because "Non-Stop-周杰伦"
+ * splits correctly from the right.
+ *
+ * So the last dash stays the default, and the catalogue is consulted only for
+ * the strings that could be wrong: those with more than one dash. Each earlier
+ * dash is tried in turn, longest artist first, and the first candidate that
+ * names a known artist wins -- the maximal-munch rule a lexer uses, and what
+ * spaCy and gatenlp do for the same ambiguity. Nothing matches, nothing
+ * changes: the last-dash answer is returned as before.
+ *
+ * Synchronous on purpose. The gazetteer is passed in by callers that have
+ * awaited it, so this stays usable from places that cannot await -- and with
+ * no gazetteer it degrades to precisely the old behaviour.
+ */
+function splitTitleArtist(text, knownDashedArtists) {
   const m = /^(.*)[-–—]([^-–—]+)$/.exec(text);
   if (!m) return { title: text, artist: '' };
   const title = m[1].trim();
   const artist = m[2].trim();
   // A leading dash ("-歌手") leaves no title — that is decoration, not a split.
   if (!title || !artist) return { title: text, artist: '' };
+
+  // One dash cannot be ambiguous, so most captures never reach the lookup.
+  if (knownDashedArtists && knownDashedArtists.size && /[-–—].*[-–—]/.test(text)) {
+    // Right to left: the longest artist that matches is the one meant, so
+    // "A-Lin" is preferred over "Lin" without needing to rank afterwards.
+    for (let i = text.length - 1; i > 0; i--) {
+      const ch = text[i];
+      if (ch !== '-' && ch !== '–' && ch !== '—') continue;
+      const left = text.slice(0, i).trim();
+      const right = text.slice(i + 1).trim();
+      if (!left || !right) continue;
+      if (knownDashedArtists.has(right.toLowerCase())) {
+        return { title: left, artist: right };
+      }
+    }
+  }
+
   return { title, artist };
 }
 
@@ -578,12 +660,34 @@ async function ingestLive({ session, rawText, lyric, stage }) {
     return { outcome: 'no_target', rawText: text };
   }
 
-  // Dedupe within a stage, not across them. The same song appears on both
-  // screens with identical text, so keying on text alone answered "duplicate"
-  // for the performance and threw away the only copy of the lyrics.
-  const existing = await prisma.captureEvent.findFirst({
-    where: { sessionId: session.id, playlistId: null, rawText: text, stage: from },
-  });
+  // A song picked and then sung is one song, so the performance attaches to
+  // the row the picking screen already made rather than starting a second.
+  //
+  // These used to be separate rows, keyed per stage, because keying on text
+  // alone had answered "duplicate" for the performance and thrown away the
+  // only copy of the lyrics. Attaching keeps the lyrics and drops the double
+  // entry: 唱卡 and the review page each showed the same song twice.
+  //
+  // Only within the round that picked it. A later round can offer the same
+  // song again, and folding those together would put the second round's words
+  // on the first round's card. The round is the picking row this session
+  // already holds for that exact text -- rounds do not repeat a song inside
+  // themselves, so one lookup identifies it.
+  // A performance prefers a row already marked as sung, and falls back to the
+  // one the picking screen made. Preferring it matters because the dedupe
+  // index covers stage: a session from before this change can hold both rows,
+  // and promoting the picking one would collide with the singing one it
+  // already has.
+  const existing = from === 'singing'
+    ? (await prisma.captureEvent.findFirst({
+      where: { sessionId: session.id, playlistId: null, rawText: text, stage: 'singing' },
+    })) || (await prisma.captureEvent.findFirst({
+      where: { sessionId: session.id, playlistId: null, rawText: text },
+      orderBy: { createdAt: 'desc' },
+    }))
+    : await prisma.captureEvent.findFirst({
+      where: { sessionId: session.id, playlistId: null, rawText: text, stage: from },
+    });
   if (existing) {
     // A repeat still carries something new when the words have arrived or
     // grown: the game reveals a passage progressively, so a later read of the
@@ -591,7 +695,13 @@ async function ingestLive({ session, rawText, lyric, stage }) {
     if (words && words.length > (existing.lyric ? existing.lyric.length : 0)) {
       const updated = await prisma.captureEvent.update({
         where: { id: existing.id },
-        data: { lyric: words },
+        data: {
+          lyric: words,
+          // The row was made by the picking screen and is now being sung, so
+          // it says so. Without this a card that has words still reads as a
+          // song nobody has performed.
+          stage: from,
+        },
       });
       const payload = {
         eventId: updated.id,
@@ -613,7 +723,7 @@ async function ingestLive({ session, rawText, lyric, stage }) {
     };
   }
 
-  const { title, artist } = splitTitleArtist(text);
+  const { title, artist } = splitTitleArtist(text, await loadDashedArtists());
 
   // The full lookup chain: an existing mapping, or a track claimed from the
   // imported pool. Unapproved mappings resolve too — the song plays now and a
@@ -856,9 +966,13 @@ async function getLiveFeed({ userId, sessionId, limit }) {
     take,
   });
 
+  // Fetched once for the whole page rather than per card, and before the map,
+  // which cannot await.
+  const known = await loadDashedArtists();
+
   return {
     cards: events.map((e) => {
-      const { title, artist } = splitTitleArtist(e.rawText);
+      const { title, artist } = splitTitleArtist(e.rawText, known);
       return {
         eventId: e.id,
         rawText: e.rawText,

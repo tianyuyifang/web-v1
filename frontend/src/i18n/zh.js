@@ -32,6 +32,7 @@ export default {
   captureCopy: "点击复制",
   captureApprove: "确认",
   captureIgnore: "忽略",
+  captureTagByHand: "手动打标",
   captureUnmatched: "匹配不到",
   captureNothingYet: "还没抓到内容",
   captureAmbiguous: "选一个",

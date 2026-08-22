@@ -141,7 +141,15 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   }, []);
 
   const pending = events.filter((e) => e.outcome === "pending" || e.outcome === "ambiguous");
-  const settled = events.filter((e) => e.outcome === "auto");
+  // Everything that has been dealt with, however it was dealt with. Acting on
+  // a song used to delete it from the panel outright, which lost the one thing
+  // the receipts are for: seeing the round the way the game laid it out. A
+  // song you confirmed by hand belongs in its team and round just as much as
+  // one that matched on its own -- the difference is worth a colour, not a
+  // disappearance.
+  const settled = events.filter(
+    (e) => e.outcome === "auto" || e.outcome === "manual" || e.outcome === "skipped"
+  );
   // Failures stay until acted on — they are the one state you must not miss.
   const failed = events.filter((e) => e.outcome === "failed");
   const unmatched = events.filter(
@@ -187,7 +195,21 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
         // "pending" here and the receipt gets deleted a moment after it
         // appears. The ref is written synchronously, so it is already true.
         if (autoDoneRef.current.has(eventId)) return;
-        setEvents((prev) => prev.filter((x) => x.eventId !== eventId));
+        // Settle it where it sits. The row is deleted only if this tab has
+        // never seen it in a settled state -- which now means the action
+        // happened in another tab, and there is nothing here to keep.
+        //
+        // Deleting unconditionally undid the two handlers above: they mark a
+        // row settled, the server confirms a moment later, and the row this
+        // panel had just moved into the receipts disappeared again.
+        setEvents((prev) => {
+          const mine = prev.find((x) => x.eventId === eventId);
+          if (mine && (mine.outcome === "manual" || mine.outcome === "skipped")) return prev;
+          if (!mine) return prev;
+          return outcome === "approved"
+            ? prev.map((x) => (x.eventId === eventId ? { ...x, outcome: "manual" } : x))
+            : prev.map((x) => (x.eventId === eventId ? { ...x, outcome: "skipped" } : x));
+        });
       } catch {
         /* ignore */
       }
@@ -408,7 +430,11 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   }, [session, playlistId, stopDelivery]);
 
   const approve = useCallback(async (eventId, clipId) => {
-    setEvents((prev) => prev.filter((x) => x.eventId !== eventId)); // optimistic
+    // Moved to the receipts rather than removed: it is tagged now, and its
+    // place in the round is the same as any other tagged song's.
+    setEvents((prev) =>
+      prev.map((x) => (x.eventId === eventId ? { ...x, outcome: "manual" } : x))
+    ); // optimistic
     try {
       await captureAPI.approve(eventId, clipId);
       countTagged(eventId);
@@ -482,7 +508,14 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     setEvents((prev) => {
       // Recomputed from `prev` rather than closing over `settled`, which is a
       // fresh array each render and would make this effect re-run forever.
-      const rows = settledRows(prev.filter((x) => x.outcome === "auto"));
+      //
+      // The same three outcomes the grid draws. Counting rows one way and
+      // evicting by another would leave the list above the limit it is meant
+      // to hold, and the rows that never rolled off would be exactly the
+      // hand-settled ones.
+      const rows = settledRows(prev.filter(
+        (x) => x.outcome === "auto" || x.outcome === "manual" || x.outcome === "skipped"
+      ));
       if (rows.length <= AUTO_KEEP_ROWS) return prev;
       const drop = new Set();
       for (const r of rows.slice(0, rows.length - AUTO_KEEP_ROWS)) {
@@ -494,7 +527,12 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   }, [settledRowCount]);
 
   const ignore = useCallback(async (eventId) => {
-    setEvents((prev) => prev.filter((x) => x.eventId !== eventId));
+    // Still an ignore on the server -- nothing was tagged -- but the song
+    // stays visible in its own row, because "I will tag this one myself" is a
+    // decision about the song, not a reason to lose track of where it sat.
+    setEvents((prev) =>
+      prev.map((x) => (x.eventId === eventId ? { ...x, outcome: "skipped" } : x))
+    );
     try {
       await captureAPI.ignore(eventId);
     } catch {
@@ -893,10 +931,20 @@ function CompactAutoRow({ event }) {
   }
 
   const title = cleanTitle(event.rawText);
+  // How it got here, in the one glance you give this list. All three are
+  // settled and none can be acted on again, so the distinction that matters is
+  // whether a like was placed: green matched on its own, amber you confirmed,
+  // and grey is a song you said you would handle yourself -- nothing was
+  // tagged for that one, and the muted text is the reminder.
+  const tone = event.outcome === "skipped"
+    ? "text-muted"
+    : event.outcome === "manual"
+      ? "bg-amber-500/10 text-theme"
+      : "bg-green-500/5 text-theme";
   return (
     <p
       title={title}
-      className="truncate bg-green-500/5 px-2 py-1 text-[11px] leading-tight text-theme"
+      className={`truncate px-2 py-1 text-[11px] leading-tight ${tone}`}
     >
       {title}
     </p>
@@ -934,13 +982,14 @@ function UnmatchedRow({ event, onDismiss, t }) {
           <p className="truncate text-[11px] text-muted">{t("captureNotInPlaylist")}</p>
         )}
       </div>
+      {/* Named rather than an ✕, because it is not a dismissal: the song has
+          no match here and you are going to tag it yourself. The ✕ read as
+          "get rid of this", which is the opposite of what it is for. */}
       <button
         onClick={() => onDismiss(event.eventId)}
-        title={t("captureIgnore")}
-        aria-label={t("captureIgnore")}
-        className="shrink-0 rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-theme sm:px-1.5 sm:py-0.5"
+        className="shrink-0 rounded border border-border px-2 py-1 text-[11px] text-muted hover:bg-surface-hover hover:text-theme sm:py-0.5"
       >
-        ✕
+        {t("captureTagByHand")}
       </button>
     </div>
   );

@@ -110,21 +110,36 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
   // Jump to the passage the moment it is identified — that is the whole point
   // of showing it, and the singer has seconds to look at it.
   const firstMark = useMemo(() => (marks.size ? Math.min(...marks) : -1), [marks]);
+
+  /**
+   * Put a line in the middle of the lyric box.
+   *
+   * Not scrollIntoView: that scrolls whichever ancestor can move, and on a
+   * page this long the one that moved was the page, which threw the card the
+   * singer was reading off the screen.
+   */
+  const centreLine = (index, smooth) => {
+    const box = scrollRef.current;
+    if (!box) return;
+    const line = box.querySelector(`[data-line="${index}"]`);
+    if (!line) return;
+    box.scrollTo({
+      top: Math.max(0, line.offsetTop - box.clientHeight / 2 + line.clientHeight / 2),
+      behavior: smooth ? "smooth" : "auto",
+    });
+  };
+
+  // Jump to the passage the moment it is identified — that is the whole point
+  // of showing it, and the singer has seconds to look at it.
   useEffect(() => {
-    if (firstMark < 0 || !scrollRef.current) return;
-    const node = scrollRef.current.querySelector(`[data-line="${firstMark}"]`);
-    if (node) node.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (firstMark < 0) return;
+    centreLine(firstMark, true);
   }, [firstMark]);
 
   // Keep the playing line centred, unless the singer has scrolled away.
   useEffect(() => {
-    if (!following || activeIndex < 0 || !activeRef.current || !scrollRef.current) return;
-    const box = scrollRef.current;
-    const line = activeRef.current;
-    box.scrollTo({
-      top: Math.max(0, line.offsetTop - box.clientHeight / 2 + line.clientHeight / 2),
-      behavior: "smooth",
-    });
+    if (!following || activeIndex < 0) return;
+    centreLine(activeIndex, true);
   }, [activeIndex, following]);
 
   if (loading) {
@@ -153,7 +168,12 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
       onWheel={() => setFollowing(false)}
       onTouchMove={() => setFollowing(false)}
       onMouseLeave={() => setFollowing(true)}
-      className="max-h-56 overflow-y-auto px-1 py-2"
+      // A fixed height rather than a maximum, and half of it in padding at each
+      // end. Centring is arithmetic on clientHeight, so a box that shrinks to
+      // fit its content computes a tiny offset and the "centred" line sits at
+      // the top -- and without the padding the first and last lines can never
+      // reach the middle at all, because there is nothing to scroll past them.
+      className="h-56 overflow-y-auto px-1 py-[6.5rem]"
     >
       {parsed.map((line, i) => {
         const isActive = i === activeIndex;
@@ -173,16 +193,20 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
             onKeyDown={(e) => {
               if (e.key === "Enter" && timed && line.time >= 0) onSeek(line.time);
             }}
-            className={`rounded px-1.5 py-1 text-[0.8rem] leading-snug transition-colors ${
+            // The line being sung is bigger, not merely a different colour.
+            // Someone singing reads this from arm's length and out of the
+            // corner of an eye, where a hue change is easy to miss and a size
+            // change is not.
+            className={`rounded px-1.5 py-1 leading-snug transition-all ${
               timed ? "cursor-pointer hover:bg-white/5" : ""
             } ${
               isActive
-                ? "font-medium text-accent"
+                ? "text-[0.95rem] font-semibold text-accent"
                 : inPassage
                   // The passage the game is showing: what the singer has to
                   // perform, and the reason this panel is open.
-                  ? "bg-yellow-500/10 text-yellow-500/90"
-                  : "text-muted"
+                  ? "text-[0.8rem] bg-yellow-500/10 text-yellow-500/90"
+                  : "text-[0.8rem] text-muted"
             }`}
           >
             {line.text || " "}

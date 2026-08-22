@@ -321,6 +321,43 @@ export default function LivePage() {
     playCard(card);
   }, [openId, stopAudio, playCard]);
 
+  /**
+   * Space to play or pause, arrows to nudge a second either way.
+   *
+   * Someone practising has both hands occupied and their eyes on the words;
+   * reaching for a 32px button to shift the playhead by a beat is the part of
+   * this that was hardest to do while actually singing.
+   *
+   * Only while a card is open, and never while typing -- the page has a search
+   * box, and a space that pauses the music instead of typing a space is worse
+   * than no shortcut at all.
+   */
+  useEffect(() => {
+    if (!openId) return undefined;
+    const onKey = (e) => {
+      const el = e.target;
+      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA"
+        || el.isContentEditable);
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      const card = cards.find((c) => c.eventId === openId);
+      if (!card) return;
+
+      if (e.key === " ") {
+        e.preventDefault();
+        playCard(card);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        player.seek(Math.max(0, player.current - 1));
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        const d = player.duration;
+        player.seek(d > 0 ? Math.min(d, player.current + 1) : player.current + 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openId, cards, playCard, player]);
+
   /** Switch to another version and play it immediately — hearing it is the test. */
   const tryCandidate = useCallback((card, cand) => {
     stopAudio();
@@ -560,15 +597,23 @@ export default function LivePage() {
                                 <div className="mb-2 text-xs text-red-400">{playError}</div>
                               )}
 
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => playCard(card)}
-                                  disabled={busy}
-                                  className="h-8 w-8 shrink-0 rounded-full border border-border text-xs hover:border-accent disabled:opacity-30"
-                                >
-                                  {busy ? "…" : playing ? "❚❚" : "▶"}
-                                </button>
+                              {/* Words first, transport underneath.
+                                  Someone singing is reading the lyrics and
+                                  reaching for the controls without looking, so
+                                  the reading sits where the eyes already are
+                                  and the buttons stay under the thumb. Every
+                                  music player worth copying is laid out this
+                                  way. */}
+                              <div className="border-t border-border/40 pt-1">
+                                <LiveLyrics
+                                  mappingId={card.mapping.mappingId}
+                                  gameLyric={card.lyric}
+                                  current={current}
+                                  onSeek={player.seek}
+                                />
+                              </div>
+
+                              <div className="mt-2 flex items-center gap-2">
                                 <div
                                   role="presentation"
                                   onClick={(e) => {
@@ -577,7 +622,7 @@ export default function LivePage() {
                                       player.seek(((e.clientX - r.left) / r.width) * duration);
                                     }
                                   }}
-                                  className="h-1.5 flex-1 cursor-pointer rounded-full bg-black/30"
+                                  className="group h-1.5 flex-1 cursor-pointer rounded-full bg-black/30"
                                 >
                                   <div
                                     className="h-full rounded-full bg-accent"
@@ -593,36 +638,60 @@ export default function LivePage() {
                                 </span>
                               </div>
 
-                              {/* Pitch and tempo. Pitch appears only once the
-                                  track is decoded, which is a second or two
-                                  behind the first sound -- offering a control
-                                  that silently does nothing would be worse
-                                  than making it arrive late. */}
-                              <div className="mt-2 flex items-center gap-3">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[0.65rem] text-muted">变调</span>
-                                  {player.canShift ? (
-                                    <PitchControl pitch={player.pitch} onChange={player.setPitch} />
-                                  ) : (
-                                    <span className="text-[0.65rem] text-muted/60">准备中…</span>
+                              <div className="mt-2 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => playCard(card)}
+                                  disabled={busy}
+                                  className="h-8 w-8 shrink-0 rounded-full border border-border text-xs hover:border-accent disabled:opacity-30"
+                                >
+                                  {busy ? "…" : playing ? "❚❚" : "▶"}
+                                </button>
+                                {/* A second, not fifteen. The reason to move at
+                                    all here is landing on the beat you missed,
+                                    and a jump long enough to be useful for
+                                    skipping past something is far too long for
+                                    that. */}
+                                <button
+                                  type="button"
+                                  onClick={() => player.seek(Math.max(0, current - 1))}
+                                  disabled={!playing && current === 0}
+                                  className="shrink-0 rounded border border-border px-2 py-1 font-mono text-[0.68rem] text-muted hover:border-accent hover:text-theme disabled:opacity-30"
+                                  title="后退 1 秒（←）"
+                                >
+                                  −1s
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => player.seek(
+                                    duration > 0 ? Math.min(duration, current + 1) : current + 1
                                   )}
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[0.65rem] text-muted">速度</span>
-                                  <SpeedControl speed={player.speed} onChange={player.setSpeed} />
-                                </div>
-                              </div>
+                                  disabled={!playing && current === 0}
+                                  className="shrink-0 rounded border border-border px-2 py-1 font-mono text-[0.68rem] text-muted hover:border-accent hover:text-theme disabled:opacity-30"
+                                  title="前进 1 秒（→）"
+                                >
+                                  +1s
+                                </button>
 
-                              {/* The words. The game's own passage is picked
-                                  out inside the real lyrics, so the singer can
-                                  see what is coming and jump straight to it. */}
-                              <div className="mt-2 border-t border-border/40 pt-1">
-                                <LiveLyrics
-                                  mappingId={card.mapping.mappingId}
-                                  gameLyric={card.lyric}
-                                  current={current}
-                                  onSeek={player.seek}
-                                />
+                                {/* Pitch and tempo. Pitch appears only once the
+                                    track is decoded, which is a second or two
+                                    behind the first sound -- offering a control
+                                    that silently does nothing would be worse
+                                    than making it arrive late. */}
+                                <div className="ml-auto flex items-center gap-3">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[0.65rem] text-muted">变调</span>
+                                    {player.canShift ? (
+                                      <PitchControl pitch={player.pitch} onChange={player.setPitch} />
+                                    ) : (
+                                      <span className="text-[0.65rem] text-muted/60">准备中…</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[0.65rem] text-muted">速度</span>
+                                    <SpeedControl speed={player.speed} onChange={player.setSpeed} />
+                                  </div>
+                                </div>
                               </div>
 
                               <div className="mt-2 truncate text-xs text-muted">

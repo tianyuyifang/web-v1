@@ -123,8 +123,18 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
     if (!box) return;
     const line = box.querySelector(`[data-line="${index}"]`);
     if (!line) return;
+    // Measured against the box, not read off offsetTop. offsetTop is relative
+    // to the nearest positioned ancestor, and this box is not positioned, so
+    // the number came from somewhere further up the page -- far larger than
+    // the line's real position inside the box, which scrolled the words clean
+    // out of view. Rects are always relative to the viewport, so subtracting
+    // one from the other gives the distance actually wanted, whatever the
+    // ancestors happen to be.
+    const boxTop = box.getBoundingClientRect().top;
+    const lineTop = line.getBoundingClientRect().top;
+    const offsetInBox = lineTop - boxTop + box.scrollTop;
     box.scrollTo({
-      top: Math.max(0, line.offsetTop - box.clientHeight / 2 + line.clientHeight / 2),
+      top: Math.max(0, offsetInBox - box.clientHeight / 2 + line.clientHeight / 2),
       behavior: smooth ? "smooth" : "auto",
     });
   };

@@ -305,6 +305,10 @@ async function approve(id, { userId, source, externalId, note } = {}) {
 
   // Mark the pool entry as seen, so the coverage counter reflects reality.
   await markSeen(nextSource, nextExternalId);
+  // And release the one it just stopped pointing at: repointing abandons a
+  // track exactly as deleting the mapping does, and it belongs back in 未遇见
+  // unless something else still names it.
+  if (changed) await releaseIfUnclaimed(m.source, m.externalId);
 
   return shapeMapping(updated);
 }
@@ -321,9 +325,16 @@ async function unapprove(id) {
 }
 
 async function remove(id) {
+  // Read before deleting: the row is the only record of which track it claimed,
+  // and without that the track keeps a matchedAt nothing points at and drops
+  // out of every bucket on the review page.
+  const m = await prisma.songMapping.findUnique({ where: { id } });
+  if (!m) throw new NotFoundError('Mapping');
+
   await prisma.songMapping.delete({ where: { id } }).catch(() => {
     throw new NotFoundError('Mapping');
   });
+  await releaseIfUnclaimed(m.source, m.externalId);
   return { id, deleted: true };
 }
 
@@ -479,6 +490,28 @@ async function markSeen(source, externalId) {
 }
 
 /**
+ * The other half of markSeen: give a track back to 未遇见 once nothing maps it.
+ *
+ * matchedAt is what the review page counts as coverage, and it was only ever
+ * set. Deleting the mapping that claimed a track therefore left the track in no
+ * bucket at all — no mapping row to list it under 待确认 or 已确认, and a
+ * non-null matchedAt keeping it out of 未遇见. Four tracks were invisible this
+ * way before this existed.
+ *
+ * Checked rather than assumed: two game songs can name the same recording, and
+ * the track is still claimed while the other mapping stands.
+ */
+async function releaseIfUnclaimed(source, externalId) {
+  if (!source || !externalId) return;
+  const stillMapped = await prisma.songMapping.count({ where: { source, externalId } });
+  if (stillMapped > 0) return;
+  await prisma.importedTrack.updateMany({
+    where: { source, externalId, matchedAt: { not: null } },
+    data: { matchedAt: null },
+  });
+}
+
+/**
  * Create a mapping for a game song against a pool track.
  *
  * This is how an "unseen" row graduates: the reviewer says "the game calls
@@ -511,6 +544,14 @@ async function createFromTrack({
     ...(approved ? { approvedById: userId, approvedAt: new Date() } : {}),
   };
 
+  // What this game song pointed at before, if anything — the upsert below is
+  // just as much a repoint as approve() is, and the track it abandons has to
+  // be released the same way.
+  const previous = await prisma.songMapping.findUnique({
+    where: { titleKey_artistKey: { titleKey: tk, artistKey: ak } },
+    select: { source: true, externalId: true },
+  });
+
   // Upsert, because the same game song may already have a mapping — the
   // reviewer is repointing it rather than creating a duplicate, and the unique
   // key would reject the insert anyway.
@@ -522,6 +563,9 @@ async function createFromTrack({
   });
 
   await markSeen(source, externalId);
+  if (previous && (previous.source !== source || previous.externalId !== externalId)) {
+    await releaseIfUnclaimed(previous.source, previous.externalId);
+  }
   return shapeMapping(saved);
 }
 
@@ -539,5 +583,6 @@ module.exports = {
   reject,
   createFromTrack,
   markSeen,
+  releaseIfUnclaimed,
   PAGE_SIZE,
 };

@@ -387,7 +387,7 @@ async function rejectImpact(id) {
  * a mapping deleted without its track re-resolves to the same track, and a
  * track deleted without its mapping leaves a row pointing at nothing.
  */
-async function reject(id, { deleteTrack = true } = {}) {
+async function reject(id, { deleteTrack = true, resolve = true } = {}) {
   const outcome = await prisma.$transaction(async (tx) => {
     // Read inside the transaction. Two reviewers rejecting mappings that share
     // a track will each delete the other's row as an orphan, so a read taken
@@ -421,12 +421,52 @@ async function reject(id, { deleteTrack = true } = {}) {
   if (!outcome) throw new NotFoundError('Mapping');
 
   const { m, ...result } = outcome;
+
+  // With the track gone, ask the resolver what this game song maps to now.
+  //
+  // Not a courtesy re-match: the mapping was just deleted, so the song is
+  // unmapped until something says otherwise, and the next capture would run
+  // this same lookup anyway. Doing it here means the caller learns the outcome
+  // straight away instead of discovering it the next time the game plays it.
+  //
+  // It cannot come back with what was just removed — resolveGameSong builds
+  // its candidates from the pool, and that row is gone. A remaining recording
+  // of the same song is chosen by the ordinary rules, so an exact agreement on
+  // title and artist approves itself and anything looser queues for review.
+  //
+  // Required lazily: mappingResolveService imports nothing from here today,
+  // but a top-level require would make that a cycle the moment it did.
+  // Failures here are swallowed on purpose. The deletion is already committed
+  // and cannot be undone, so letting this throw would report a 500 for work
+  // that succeeded — and the caller would press again and get a 404. Two
+  // reviewers rejecting the same game song race to create the replacement, and
+  // the loser hits the unique constraint on (titleKey, artistKey); that is the
+  // winner's row being there already, not a failure of this call.
+  //
+  // Answering `null` costs nothing either way: the song is simply unmapped
+  // until the next capture runs the same lookup.
+  let replacement = null;
+  if (resolve !== false) {
+    const { resolveGameSong } = require('./mappingResolveService');
+    try {
+      const next = await resolveGameSong({ title: m.rawTitle, artist: m.rawArtist });
+      replacement = next.mapping
+        ? { ...shapeMapping(next.mapping), status: next.status, tier: next.tier }
+        : null;
+    } catch {
+      replacement = null;
+    }
+  }
+
   return {
     id,
     deleted: true,
     source: m.source,
     externalId: m.externalId,
     ...result,
+    // The game song's new home, or null when the pool has nothing else to
+    // offer — which is the caller's cue to show it as unconfigured.
+    replacement,
   };
 }
 

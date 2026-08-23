@@ -5,6 +5,7 @@ const {
 } = require('./captureMatchService');
 const { ensureLiked } = require('./likeService');
 const { resolveGameSong } = require('./mappingResolveService');
+const { titleKey, artistKey } = require('./songKeyService');
 const { broadcast } = require('./sseManager');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 
@@ -42,6 +43,17 @@ const MAX_ROW_INDEX = 200;
  * matters because a collision would leak one user's captures into another
  * user's stream.
  */
+/**
+ * One string for a (titleKey, artistKey) pair.
+ *
+ * Both halves are needed -- 致青春/王菲 and 致青春/李宇春 are different songs
+ * -- and the separator has to be something neither key can contain, since a
+ * key that swallowed it would collide two different songs.
+ */
+function gameKeyOf(tk, ak) {
+  return `${tk || ''}|${ak || ''}`;
+}
+
 function liveChannel(userId) {
   return `live:${userId}`;
 }
@@ -988,27 +1000,88 @@ async function getLiveFeed({ userId, sessionId, limit }) {
   // a song the singer had just confirmed as still awaiting confirmation, and
   // 24 of 300 stored matches were already stale this way.
   //
-  // One query for the whole page rather than one per card. Anything the lookup
-  // cannot answer -- a mapping since deleted -- keeps what the snapshot said,
-  // which is a better guess than calling it unconfirmed.
+  // One query for the whole page rather than one per card.
+  //
+  // The whole row is read, not just `approved`, because a mapping can now be
+  // repointed or deleted outright -- 不是这首 removes the recording from the
+  // catalogue. A snapshot that survived that describes a track which no longer
+  // exists, so the card offered a version that had been deleted and failed on
+  // play. Where the mapping is gone the card reports unconfigured, which is
+  // what it is; where it still exists the current target wins over the
+  // captured one.
   const mappingIds = [...new Set(
     events.map((e) => e.candidates && e.candidates.mappingId).filter(Boolean)
   )];
-  const approvedNow = new Map();
+  const MAPPING_FIELDS = {
+    id: true,
+    approved: true,
+    source: true,
+    externalId: true,
+    platformTitle: true,
+    platformArtist: true,
+    durationSec: true,
+    titleKey: true,
+    artistKey: true,
+  };
+
+  const currentById = new Map();
   if (mappingIds.length) {
     const rows = await prisma.songMapping.findMany({
       where: { id: { in: mappingIds } },
-      select: { id: true, approved: true },
+      select: MAPPING_FIELDS,
     });
-    for (const r of rows) approvedNow.set(r.id, r.approved);
+    for (const r of rows) currentById.set(r.id, r);
+  }
+
+  // A rejected song is re-resolved into a NEW mapping row, so the id on the
+  // snapshot names something that no longer exists while the game song itself
+  // is mapped again. Look those up by the game-side key instead of reporting
+  // the card as unconfigured when a perfectly good replacement is waiting.
+  const orphaned = events.filter((e) => {
+    const id = e.candidates && e.candidates.mappingId;
+    return id && !currentById.has(id);
+  });
+  const byGameKey = new Map();
+  if (orphaned.length) {
+    const keys = orphaned.map((e) => {
+      const { title, artist } = splitTitleArtist(e.rawText, known);
+      return { titleKey: titleKey(title), artistKey: artistKey(artist) };
+    }).filter((k) => k.titleKey);
+    if (keys.length) {
+      const rows = await prisma.songMapping.findMany({
+        where: { OR: keys },
+        select: MAPPING_FIELDS,
+      });
+      for (const r of rows) byGameKey.set(gameKeyOf(r.titleKey, r.artistKey), r);
+    }
   }
 
   return {
     cards: events.map((e) => {
       const { title, artist } = splitTitleArtist(e.rawText, known);
       let mapping = e.candidates || null;
-      if (mapping && mapping.mappingId && approvedNow.has(mapping.mappingId)) {
-        mapping = { ...mapping, approved: approvedNow.get(mapping.mappingId) };
+      if (mapping && mapping.mappingId) {
+        const now = currentById.get(mapping.mappingId)
+          || byGameKey.get(gameKeyOf(titleKey(title), artistKey(artist)));
+        if (!now) {
+          // Nothing maps this song any more. The event still records what the
+          // game showed -- that stays true -- but there is nothing to play.
+          mapping = null;
+        } else {
+          mapping = {
+            ...mapping,
+            mappingId: now.id,
+            approved: now.approved,
+            source: now.source,
+            externalId: now.externalId,
+            title: now.platformTitle ?? mapping.title,
+            artist: now.platformArtist ?? mapping.artist,
+            durationSec: now.durationSec ?? mapping.durationSec,
+            // The stored alternatives were computed against a pool that has
+            // since changed; the page refetches them when the card is opened.
+            candidates: undefined,
+          };
+        }
       }
       return {
         eventId: e.id,

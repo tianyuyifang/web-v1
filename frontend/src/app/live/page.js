@@ -146,6 +146,15 @@ export default function LivePage() {
   const [approving, setApproving] = useState(false);
   /** Set once the server refuses an approve: this account cannot edit. */
   const [canApprove, setCanApprove] = useState(true);
+  /**
+   * The card asking to be confirmed before its recording is deleted, and what
+   * the deletion would take with it.
+   *
+   * Confirmed in two steps because this is the one irreversible thing on the
+   * page: it removes the recording from the catalogue, not just this card's
+   * link to it, and a pool track can be named by more than one game song.
+   */
+  const [rejecting, setRejecting] = useState(null);
 
   const loadedFor = useRef(null);
 
@@ -299,6 +308,10 @@ export default function LivePage() {
     stopAudio();
     setPlayError("");
     setCandidates([]);
+    // A pending confirmation belongs to the card that raised it. Carrying it to
+    // the next one would offer to delete this card's recording under another
+    // card's heading.
+    setRejecting(null);
     if (openId === card.eventId) {
       setOpenId(null);
       return;
@@ -401,6 +414,84 @@ export default function LivePage() {
       setApproving(false);
     }
   }, []);
+
+  /**
+   * Ask what deleting this recording would take with it, then show the
+   * confirmation.
+   *
+   * The impact is read from the server rather than guessed: a pool track is
+   * keyed on (source, id) and nothing stops two game songs naming the same one,
+   * so the count is not visible from the card.
+   */
+  const startReject = useCallback(async (card) => {
+    if (!card.mapping) return;
+    if (rejecting?.eventId === card.eventId) { setRejecting(null); return; }
+    setApproving(true);
+    setPlayError("");
+    try {
+      const res = await mappingAPI.rejectImpact(card.mapping.mappingId);
+      setRejecting({ eventId: card.eventId, ...res.data });
+    } catch (err) {
+      if (err.response?.status === 403) setCanApprove(false);
+      else setPlayError(err.response?.data?.error?.message || "读取删除影响失败");
+    } finally {
+      setApproving(false);
+    }
+  }, [rejecting]);
+
+  /**
+   * Delete the recording, and take whatever the resolver offers next.
+   *
+   * The card stays on screen. It records what the game showed, which is still
+   * true — only what it plays changes, to the next recording of the same song
+   * or to nothing at all when the catalogue has no other.
+   */
+  const confirmReject = useCallback(async (card) => {
+    if (!card.mapping) return;
+    setApproving(true);
+    setPlayError("");
+    try {
+      const res = await mappingAPI.reject(card.mapping.mappingId, { deleteTrack: true });
+      const next = res.data.replacement;
+      // Whatever was playing is the recording that was just deleted.
+      stopAudio();
+      setCards((prev) => prev.map((c) => (c.eventId === card.eventId
+        ? {
+          ...c,
+          mapping: next
+            ? {
+              mappingId: next.id,
+              source: next.source,
+              externalId: next.externalId,
+              title: next.platformTitle,
+              artist: next.platformArtist,
+              durationSec: next.durationSec,
+              approved: next.approved,
+            }
+            : null,
+        }
+        : c)));
+      // The alternatives on screen came from the pool this just changed.
+      setCandidates([]);
+      setRejecting(null);
+      if (next) {
+        try {
+          const c2 = await mappingAPI.candidates(next.id);
+          setCandidates(c2.data.candidates || c2.data || []);
+        } catch { /* the card still plays; alternatives are a convenience */ }
+      } else {
+        // Nothing left to play, so the panel unmounts — it renders only for a
+        // mapped card. Letting `openId` keep naming it would make the next tap
+        // read as "close", so the card would need two taps to open again.
+        setOpenId(null);
+      }
+    } catch (err) {
+      if (err.response?.status === 403) setCanApprove(false);
+      else setPlayError(err.response?.data?.error?.message || "删除失败");
+    } finally {
+      setApproving(false);
+    }
+  }, [stopAudio]);
 
   const start = useCallback(async () => {
     setError("");
@@ -700,15 +791,77 @@ export default function LivePage() {
                                 {" · "}{SOURCE_LABEL[card.mapping.source] || card.mapping.source}
                               </div>
 
-                              {canApprove && !confirmed && (
-                                <button
-                                  type="button"
-                                  onClick={() => approve(card)}
-                                  disabled={approving}
-                                  className="mt-2 rounded border border-accent px-2 py-1 text-xs text-accent disabled:opacity-40"
-                                >
-                                  {approving ? "…" : "✓ 就是这个"}
-                                </button>
+                              {canApprove && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {!confirmed && (
+                                    <button
+                                      type="button"
+                                      onClick={() => approve(card)}
+                                      disabled={approving}
+                                      className="rounded border border-accent px-2 py-1 text-xs text-accent disabled:opacity-40"
+                                    >
+                                      {approving ? "…" : "✓ 就是这个"}
+                                    </button>
+                                  )}
+                                  {/* Offered on confirmed cards too. A song that
+                                      matched on title and artist approves itself,
+                                      which is exactly when several recordings
+                                      carry the same billing — so the wrong one
+                                      arrives already confirmed, and this is where
+                                      it gets noticed. */}
+                                  <button
+                                    type="button"
+                                    onClick={() => startReject(card)}
+                                    disabled={approving}
+                                    className="rounded border border-red-500/40 px-2 py-1 text-xs text-red-300 disabled:opacity-40"
+                                  >
+                                    不是这首
+                                  </button>
+                                </div>
+                              )}
+
+                              {rejecting?.eventId === card.eventId && (
+                                <div className="mt-2 rounded border border-red-500/30 bg-red-500/5 p-2">
+                                  <p className="text-[0.7rem] text-red-200">
+                                    从曲库彻底删除
+                                    <span className="mx-1 font-medium">
+                                      {rejecting.track
+                                        ? `${rejecting.track.title} — ${rejecting.track.artist}`
+                                        : "（曲库里已无此条目）"}
+                                    </span>
+                                    ？
+                                  </p>
+                                  {rejecting.otherMappings?.length > 0 && (
+                                    <p className="mt-1 text-[0.68rem] text-amber-300">
+                                      ⚠ 另有 {rejecting.otherMappings.length} 条映射指向同一首，会一并删除
+                                    </p>
+                                  )}
+                                  <p className="mt-1 text-[0.68rem] text-muted">
+                                    删除后会自动改用曲库里的其他版本；没有其他版本就显示未配置。
+                                  </p>
+                                  <div className="mt-1.5 flex gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => confirmReject(card)}
+                                      disabled={approving}
+                                      className="rounded border border-red-500/60 bg-red-500/15 px-2 py-1 text-[0.7rem] text-red-200 disabled:opacity-40"
+                                    >
+                                      {approving ? "删除中…" : "确认删除"}
+                                    </button>
+                                    {/* Disabled once the delete is away: the
+                                        request cannot be recalled, and closing
+                                        the panel would read as "cancelled"
+                                        while it lands anyway. */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setRejecting(null)}
+                                      disabled={approving}
+                                      className="rounded border border-border px-2 py-1 text-[0.7rem] text-muted disabled:opacity-40"
+                                    >
+                                      取消
+                                    </button>
+                                  </div>
+                                </div>
                               )}
 
                               {candidates.length > 1 && (
@@ -716,7 +869,10 @@ export default function LivePage() {
                                   <div className="mb-1 text-[0.68rem] text-muted">其他版本</div>
                                   <ul className="space-y-1">
                                     {candidates
-                                      .filter((c) => c.externalId !== card.mapping.externalId)
+                                      // Both halves: an id alone is only unique
+                                      // within its own platform.
+                                      .filter((c) => !(c.source === card.mapping.source
+                                        && c.externalId === card.mapping.externalId))
                                       .slice(0, 5)
                                       .map((c) => (
                                         <li key={`${c.source}:${c.externalId}`} className="flex items-center gap-2">

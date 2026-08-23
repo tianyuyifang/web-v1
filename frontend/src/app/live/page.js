@@ -28,8 +28,8 @@ import useAuth from "@/hooks/useAuth";
 import useCaptureStore from "@/store/captureStore";
 import useLivePlayer from "@/hooks/useLivePlayer";
 import LiveLyrics from "@/components/live/LiveLyrics";
-import PitchControl from "@/components/player/PitchControl";
-import SpeedControl from "@/components/player/SpeedControl";
+import LivePitchControl from "@/components/live/LivePitchControl";
+import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 
 const SOURCE_LABEL = { LOCAL: "曲库", QQ: "QQ", NETEASE: "网易" };
 
@@ -157,6 +157,16 @@ export default function LivePage() {
   const [rejecting, setRejecting] = useState(null);
 
   const loadedFor = useRef(null);
+  /**
+   * Start times of the open card's lyric lines, for w/s.
+   *
+   * A ref rather than state: nothing renders from it, and holding it in state
+   * would re-render the card every time the lyrics finished loading. The setter
+   * is stable, which matters — LiveLyrics reports through it from an effect,
+   * and a new function identity each render would make that effect loop.
+   */
+  const lineTimes = useRef([]);
+  const setLineTimes = useCallback((times) => { lineTimes.current = times || []; }, []);
 
   const batches = useMemo(() => toBatches(cards), [cards]);
 
@@ -312,6 +322,10 @@ export default function LivePage() {
     // the next one would offer to delete this card's recording under another
     // card's heading.
     setRejecting(null);
+    // Likewise the line times: the next card's lyrics are a fetch away, and
+    // until they land w/s would jump to positions belonging to the song that
+    // was open before.
+    setLineTimes([]);
     if (openId === card.eventId) {
       setOpenId(null);
       return;
@@ -332,7 +346,7 @@ export default function LivePage() {
       }
     }
     playCard(card);
-  }, [openId, stopAudio, playCard]);
+  }, [openId, stopAudio, playCard, setLineTimes]);
 
   /**
    * Space to play or pause, arrows to nudge a second either way.
@@ -355,17 +369,56 @@ export default function LivePage() {
       const card = cards.find((c) => c.eventId === openId);
       if (!card) return;
 
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+
+      /**
+       * Jump to the start of the previous or next lyric line.
+       *
+       * Nothing is fetched: the times were parsed when the words were drawn,
+       * and this reads that array. Seeking backwards has to look before the
+       * line currently playing, not at it — a second into a line, "previous"
+       * means the one before, not the top of this one, or the key would only
+       * ever restart the same line.
+       */
+      const jumpLine = (dir) => {
+        const times = lineTimes.current;
+        if (!times.length) return;
+        const now = player.current;
+        if (dir < 0) {
+          // A small grace period, so the key repeats through lines rather than
+          // sticking on the boundary it just landed on.
+          const target = now - 0.35;
+          let i = -1;
+          for (let k = 0; k < times.length; k++) if (times[k] <= target) i = k;
+          player.seek(Math.max(0, i >= 0 ? times[i] : 0));
+        } else {
+          const next = times.find((t) => t > now + 0.05);
+          if (next != null) player.seek(next);
+        }
+      };
+
       if (e.key === " ") {
         e.preventDefault();
         playCard(card);
-      } else if (e.key === "ArrowLeft") {
+      } else if (e.key === "ArrowLeft" || key === "a") {
         e.preventDefault();
         player.seek(Math.max(0, player.current - 1));
-      } else if (e.key === "ArrowRight") {
+      } else if (e.key === "ArrowRight" || key === "d") {
         e.preventDefault();
         const d = player.duration;
         player.seek(d > 0 ? Math.min(d, player.current + 1) : player.current + 1);
+      } else if (key === "w") {
+        e.preventDefault();
+        jumpLine(-1);
+      } else if (key === "s") {
+        e.preventDefault();
+        jumpLine(1);
       }
+      // Up and Down are deliberately left alone. This listener is on the
+      // window, not the card, so claiming them would stop the page scrolling
+      // for as long as any card is open -- and Up/Down is what a reader
+      // scrolls a long list of rounds with. Left/Right never scrolled, so
+      // taking those costs nothing.
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -701,6 +754,7 @@ export default function LivePage() {
                                   gameLyric={card.lyric}
                                   current={current}
                                   onSeek={player.seek}
+                                  onTimesChange={setLineTimes}
                                 />
                               </div>
 
@@ -769,18 +823,23 @@ export default function LivePage() {
                                     behind the first sound -- offering a control
                                     that silently does nothing would be worse
                                     than making it arrive late. */}
-                                <div className="ml-auto flex items-center gap-3">
+                                {/* Stacked, and the two rows are the same three
+                                    buttons in the same places: down, back to
+                                    normal, up. Side by side they read as one
+                                    long strip of controls and the labels stop
+                                    telling you which is which. */}
+                                <div className="ml-auto flex flex-col items-end gap-1">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-[0.65rem] text-muted">变调</span>
+                                    <span className="w-6 shrink-0 text-right text-[0.65rem] text-muted">变调</span>
                                     {player.canShift ? (
-                                      <PitchControl pitch={player.pitch} onChange={player.setPitch} />
+                                      <LivePitchControl pitch={player.pitch} onChange={player.setPitch} />
                                     ) : (
                                       <span className="text-[0.65rem] text-muted/60">准备中…</span>
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-[0.65rem] text-muted">速度</span>
-                                    <SpeedControl speed={player.speed} onChange={player.setSpeed} />
+                                    <span className="w-6 shrink-0 text-right text-[0.65rem] text-muted">变速</span>
+                                    <LiveSpeedControl speed={player.speed} onChange={player.setSpeed} />
                                   </div>
                                 </div>
                               </div>
@@ -791,14 +850,19 @@ export default function LivePage() {
                                 {" · "}{SOURCE_LABEL[card.mapping.source] || card.mapping.source}
                               </div>
 
+                              {/* Filled, not outlined. These were a thin border
+                                  and dim text on a dark card, which is the one
+                                  combination that disappears -- contrast has to
+                                  come from the fill, and the judgement being
+                                  made here is the whole reason the card opens. */}
                               {canApprove && (
-                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                <div className="mt-2 flex flex-wrap gap-2">
                                   {!confirmed && (
                                     <button
                                       type="button"
                                       onClick={() => approve(card)}
                                       disabled={approving}
-                                      className="rounded border border-accent px-2 py-1 text-xs text-accent disabled:opacity-40"
+                                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-40"
                                     >
                                       {approving ? "…" : "✓ 就是这个"}
                                     </button>
@@ -813,9 +877,9 @@ export default function LivePage() {
                                     type="button"
                                     onClick={() => startReject(card)}
                                     disabled={approving}
-                                    className="rounded border border-red-500/40 px-2 py-1 text-xs text-red-300 disabled:opacity-40"
+                                    className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-red-500 disabled:opacity-40"
                                   >
-                                    不是这首
+                                    ✕ 不是这首
                                   </button>
                                 </div>
                               )}
@@ -844,7 +908,7 @@ export default function LivePage() {
                                       type="button"
                                       onClick={() => confirmReject(card)}
                                       disabled={approving}
-                                      className="rounded border border-red-500/60 bg-red-500/15 px-2 py-1 text-[0.7rem] text-red-200 disabled:opacity-40"
+                                      className="rounded-md bg-red-600 px-3 py-1.5 text-[0.72rem] font-semibold text-white shadow-sm hover:bg-red-500 disabled:opacity-40"
                                     >
                                       {approving ? "删除中…" : "确认删除"}
                                     </button>

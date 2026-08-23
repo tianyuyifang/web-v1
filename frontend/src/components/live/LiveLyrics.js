@@ -83,7 +83,7 @@ function markPassage(gameLyric, parsed) {
   return marks;
 }
 
-export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
+export default function LiveLyrics({ mappingId, gameLyric, current, onSeek, onTimesChange }) {
   const [lrc, setLrc] = useState(null);
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef(null);
@@ -104,6 +104,20 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
 
   const parsed = useMemo(() => parseLRC(lrc), [lrc]);
   const timed = parsed.length > 0 && parsed[0].time !== -1;
+
+  /**
+   * Hand the line times up, so the page can jump between lines from the
+   * keyboard.
+   *
+   * Reported rather than re-parsed: these are already in memory, and a second
+   * copy of the parse would be a second thing to keep in step with the words on
+   * screen. Untimed lyrics report nothing — there is nowhere to jump to.
+   */
+  useEffect(() => {
+    if (!onTimesChange) return;
+    onTimesChange(timed ? parsed.map((p) => p.time) : []);
+  }, [parsed, timed, onTimesChange]);
+
   const activeIndex = timed ? getActiveLyricIndex(parsed, current) : -1;
   const marks = useMemo(() => markPassage(gameLyric, parsed), [gameLyric, parsed]);
 
@@ -184,13 +198,22 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
       //
       // The blank half-screens above and below are spacer divs, not padding on
       // this element. Tailwind sets border-box, so padding here comes out of
-      // the 224px rather than adding to it -- py-[6.5rem] left a 16px slot,
+      // the height rather than adding to it -- py-[6.5rem] left a 16px slot,
       // too short for one line, and the words scrolled up out of sight.
-      className="h-56 overflow-y-auto px-1"
+      //
+      // 320px from the sm breakpoint up, 224px below it. That is a width test
+      // standing in for a height one: phones are the narrow case and also the
+      // short one, and the controls sit below this box, so a tall box on a
+      // small screen pushes them out of reach.
+      //
+      // The spacers below scale with it. They exist so the first and last lines
+      // can reach the middle, which takes half the box height -- left at h-24
+      // they were 64px short of a 320px box and the opening lines sat high.
+      className="h-56 overflow-y-auto px-1 sm:h-80"
     >
       {/* Lets the first line reach the middle; without it there is nothing to
           scroll past and line one stays pinned to the top. */}
-      <div aria-hidden className="h-24" />
+      <div aria-hidden className="h-24 sm:h-40" />
       {parsed.map((line, i) => {
         const isActive = i === activeIndex;
         const inPassage = marks.has(i);
@@ -231,7 +254,7 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek }) {
       })}
       {/* And the same below, so the last line can be centred rather than
           stopping halfway up the box. */}
-      <div aria-hidden className="h-24" />
+      <div aria-hidden className="h-24 sm:h-40" />
     </div>
   );
 }

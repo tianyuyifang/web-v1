@@ -550,6 +550,27 @@ async function ingestText({ session, rawText, side, row }) {
  * only thing that can tell "幸福了然后呢-A-Lin" apart from a title that merely
  * happens to end in "-A".
  */
+/**
+ * Dashed artist names the game uses that the catalogue does not.
+ *
+ * The set below is derived from imported_tracks, which is the right source for
+ * almost everything: the artist a platform ships is the artist the game names.
+ * These are the exceptions — the game credits a group where the platform
+ * credits the member, so the name never appears in the catalogue to be found.
+ *
+ * Written here rather than corrected in the catalogue because the importer
+ * upserts artist from the platform on every run: an edited row would read
+ * correctly until the next import of that playlist and then silently revert,
+ * which is the worst shape a fix can have.
+ *
+ * Lowercase, matching how the derived entries are stored.
+ */
+const EXTRA_DASHED_ARTISTS = [
+  // 蠢货 is credited to 喻言 on QQ, and to THE9-喻言 in the game, so
+  // "蠢货-THE9-喻言" split at the first dash and made the title "蠢货-THE9".
+  'the9-喻言',
+];
+
 let dashedArtists = null;
 let dashedArtistsAt = 0;
 const DASHED_ARTISTS_TTL_MS = 10 * 60 * 1000;
@@ -557,7 +578,9 @@ const DASHED_ARTISTS_TTL_MS = 10 * 60 * 1000;
 async function loadDashedArtists() {
   const now = Date.now();
   if (dashedArtists && now - dashedArtistsAt < DASHED_ARTISTS_TTL_MS) return dashedArtists;
-  const next = new Set();
+  // Seeded before the query, so the hand-written names survive a failed
+  // refresh — they are the ones the catalogue can never supply.
+  const next = new Set(EXTRA_DASHED_ARTISTS);
   try {
     const rows = await prisma.$queryRawUnsafe(
       `SELECT DISTINCT artist FROM imported_tracks

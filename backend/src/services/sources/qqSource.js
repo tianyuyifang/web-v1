@@ -129,7 +129,17 @@ function request(url, { headers = {}, host, body = null } = {}) {
         ...headers,
       },
     }, (res) => {
-      let text = '';
+      // Kept as bytes and decoded once at the end, rather than appended to a
+      // string as each chunk arrives.
+      //
+      // `text += chunk` decodes every chunk on its own, and a chunk boundary
+      // lands wherever TCP happens to put it -- which is sometimes in the
+      // middle of a character. Each half then decodes to U+FFFD, and the song
+      // is stored with a hole in its name: 123木头人 came out as 123���头人,
+      // 陪你去流浪 lost its 薛. Twelve catalogue rows were damaged this way
+      // before anyone noticed, and nothing in the row could say what the
+      // missing character had been.
+      const chunks = [];
       let size = 0;
       res.on('data', (c) => {
         size += c.length;
@@ -142,14 +152,14 @@ function request(url, { headers = {}, host, body = null } = {}) {
           reject(new Error(`QQ response exceeded ${MAX_BODY_BYTES} bytes`));
           return;
         }
-        text += c;
+        chunks.push(c);
       });
       res.on('end', () => resolve({
         status: res.statusCode,
-        body: text,
+        body: Buffer.concat(chunks).toString('utf8'),
         headers: res.headers,
         ms: Date.now() - startedAt,
-        bytes: Buffer.byteLength(text),
+        bytes: size,
       }));
       // A socket that dies mid-body emits here, not on the request. Without
       // this the promise never settles and the caller hangs forever holding

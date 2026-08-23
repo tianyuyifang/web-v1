@@ -30,11 +30,22 @@ const path = require('path');
 const prisma = require('../src/db/client');
 
 const APPLY = process.argv.includes('--apply');
-const IN = path.join(__dirname, '../backups/qq-retry-tiers.json');
+const fromArg = (() => {
+  const i = process.argv.indexOf('--from');
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : null;
+})();
+const IN = path.join(__dirname, '..', fromArg || 'backups/qq-retry-tiers.json');
 
 (async () => {
   const audit = JSON.parse(fs.readFileSync(IN, 'utf8'));
-  const ids = audit.stillDead.map((d) => d.externalId);
+  console.log(`reading ${path.relative(path.join(__dirname, '..'), IN)}\n`);
+
+  // Two shapes, because two audits produce this list. qq-retry-tiers.json
+  // records what survived a per-tier retry as `stillDead`; qq-playable-audit
+  // records everything QQ declined as `dead`. Either names the same thing --
+  // a mid that resolves to nothing.
+  const rows = audit.stillDead || audit.dead || [];
+  const ids = rows.map((d) => d.externalId).filter(Boolean);
   if (!ids.length) { console.log('nothing listed as unplayable'); return; }
 
   const tracks = await prisma.importedTrack.findMany({

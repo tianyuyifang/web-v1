@@ -47,6 +47,13 @@ function lineStyle(distance, isActive, suppressed) {
 
 export default function TrackLyricPanel({
   row,
+  /**
+   * The alternative being auditioned, or null for the row's own track.
+   *
+   * Everything on display follows it — words, title, id — because the panel is
+   * what the reviewer judges by, and it must describe the thing they can hear.
+   */
+  audition = null,
   isPlaying,
   current,
   duration,
@@ -65,20 +72,32 @@ export default function TrackLyricPanel({
   const scrollRef = useRef(null);
   const activeRef = useRef(null);
 
+  // Refetched when the audition changes, not only when the row does: a live
+  // version and the studio cut have different words and different timings, and
+  // showing one against the other is how a reviewer approves the wrong pairing
+  // while looking straight at the evidence.
+  const auditionSource = audition?.source || null;
+  const auditionId = audition?.externalId || null;
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setLyrics(null);
     const request = row.kind === "imported"
       ? mappingAPI.trackLyrics(row.id)
-      : mappingAPI.lyrics(row.id);
+      : mappingAPI.lyrics(
+        row.id,
+        auditionSource && auditionId
+          ? { source: auditionSource, externalId: auditionId }
+          : undefined
+      );
     request
       .then((res) => { if (!cancelled) setLyrics(res.data.lyric || null); })
       // A song without lyrics is ordinary, not a failure worth shouting about.
       .catch(() => { if (!cancelled) setLyrics(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [row.id, row.kind]);
+  }, [row.id, row.kind, auditionSource, auditionId]);
 
   useEffect(() => () => clearTimeout(suppressTimer.current), []);
 
@@ -152,20 +171,30 @@ export default function TrackLyricPanel({
     <aside className="flex h-[calc(100vh-9rem)] max-h-[42rem] flex-col rounded-lg border border-border bg-surface">
       <div className="flex items-start gap-2 border-b border-border/60 px-3 py-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[0.82rem] font-medium">{row.title}</div>
-          <div className="truncate text-[0.68rem] text-muted">
-            {row.artist || "（无歌手）"}
+          {/* Names whatever is playing. During an audition that is the
+              alternative, so the header cannot claim to be one recording while
+              the speakers play another. */}
+          <div className="truncate text-[0.82rem] font-medium">
+            {audition ? audition.title : row.title}
           </div>
+          <div className="truncate text-[0.68rem] text-muted">
+            {(audition ? audition.artist : row.artist) || "（无歌手）"}
+          </div>
+          {audition && (
+            <div className="mt-0.5 text-[0.6rem] text-accent">试听中 · 未保存</div>
+          )}
           {/* Kept out of the list, where it crowded the artist name, but still
               one click away: this is what a track is looked up by elsewhere. */}
-          {row.externalId && (
+          {(audition ? audition.externalId : row.externalId) && (
             <button
               type="button"
-              onClick={() => navigator.clipboard?.writeText(row.externalId)}
+              onClick={() => navigator.clipboard?.writeText(
+                audition ? audition.externalId : row.externalId
+              )}
               title="点击复制 ID"
               className="mt-0.5 max-w-full truncate rounded bg-black/20 px-1 py-px font-mono text-[0.6rem] text-muted hover:text-fg"
             >
-              {row.externalId}
+              {audition ? audition.externalId : row.externalId}
             </button>
           )}
         </div>

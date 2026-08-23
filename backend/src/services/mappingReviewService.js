@@ -27,6 +27,8 @@ const { titleKey, artistKey, artistsOverlap } = require('./songKeyService');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 
 const PAGE_SIZE = 50;
+/** Alternatives offered per row. Well past any real number of versions. */
+const MAX_CANDIDATES = 25;
 
 /** Counts for the three tabs. Cheap enough to send with every response. */
 async function getCounts() {
@@ -112,11 +114,19 @@ async function list({ bucket = 'pending', query = '', cursor = null, take = PAGE
     include: { approvedBy: { select: { username: true } } },
   });
   const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+
+  // Alternatives ride along with the page. The list shows them without being
+  // asked, and fetching them per row made one page fifty round trips.
+  const alts = await candidatesForMany(page);
 
   return {
     bucket,
-    rows: rows.slice(0, limit).map(shapeMapping),
-    nextCursor: hasMore ? rows[limit - 1].id : null,
+    rows: page.map((m) => ({
+      ...shapeMapping(m),
+      poolCandidates: alts.get(m.id) || [],
+    })),
+    nextCursor: hasMore ? page[page.length - 1].id : null,
   };
 }
 
@@ -165,6 +175,35 @@ async function getTrack(id) {
 }
 
 /**
+ * Shape and rank pool tracks against one mapping.
+ *
+ * Ranked, not filtered: the game and the platform disagree about artists often
+ * enough that dropping the non-overlapping ones would hide the right answer.
+ *
+ * Shared by the single-row route and the batch that rides along with the list,
+ * so the two can never disagree about what a candidate looks like or which
+ * one sorts first.
+ */
+function shapeCandidates(mapping, tracks) {
+  return tracks
+    .map((t) => ({
+      source: t.source,
+      externalId: t.externalId,
+      title: t.title,
+      artist: t.artist,
+      durationSec: t.durationSec,
+      album: t.album,
+      vipOnly: t.vipOnly,
+      artistMatches: artistsOverlap(mapping.rawArtist, t.artist),
+      durationMatches: mapping.durationSec != null && t.durationSec != null
+        && Math.abs(mapping.durationSec - t.durationSec) <= 3,
+      current: t.source === mapping.source && t.externalId === mapping.externalId,
+    }))
+    .sort((a, b) => (Number(b.artistMatches) - Number(a.artistMatches))
+      || (Number(b.durationMatches) - Number(a.durationMatches)));
+}
+
+/**
  * Alternatives for a mapping, drawn from the imported pool.
  *
  * Offered so a reviewer can switch a row without running a fresh search — the
@@ -176,28 +215,48 @@ async function candidatesFor(id) {
 
   const sameTitle = await prisma.importedTrack.findMany({
     where: { titleKey: m.titleKey },
-    take: 25,
+    take: MAX_CANDIDATES,
   });
 
-  return sameTitle
-    .map((t) => ({
-      source: t.source,
-      externalId: t.externalId,
-      title: t.title,
-      artist: t.artist,
-      durationSec: t.durationSec,
-      album: t.album,
-      vipOnly: t.vipOnly,
-      // Ranked, not filtered: the game and the platform disagree about artists
-      // often enough that dropping the non-overlapping ones would hide the
-      // right answer.
-      artistMatches: artistsOverlap(m.rawArtist, t.artist),
-      durationMatches: m.durationSec != null && t.durationSec != null
-        && Math.abs(m.durationSec - t.durationSec) <= 3,
-      current: t.externalId === m.externalId,
-    }))
-    .sort((a, b) => (Number(b.artistMatches) - Number(a.artistMatches))
-      || (Number(b.durationMatches) - Number(a.durationMatches)));
+  return shapeCandidates(m, sameTitle);
+}
+
+/**
+ * Candidates for a whole page of mappings, in one query.
+ *
+ * The list shows them without being asked now, and fetching per row turned one
+ * page into fifty round trips. One `titleKey IN (...)` covers the page, and the
+ * index on title_key is the same one the single-row path uses.
+ *
+ * Capped per title rather than overall: a page where one song has thirty
+ * versions must not starve the other rows of theirs.
+ */
+async function candidatesForMany(mappings) {
+  const keys = [...new Set(mappings.map((m) => m.titleKey).filter(Boolean))];
+  if (!keys.length) return new Map();
+
+  // Bounded, though the pool today holds at most three versions of any one
+  // title: a future import of a heavily-covered song must not be able to pull
+  // an unbounded result set into memory to fill one page.
+  const tracks = await prisma.importedTrack.findMany({
+    where: { titleKey: { in: keys } },
+    take: keys.length * MAX_CANDIDATES,
+  });
+
+  const byKey = new Map();
+  for (const t of tracks) {
+    const list = byKey.get(t.titleKey);
+    if (list) list.push(t);
+    else byKey.set(t.titleKey, [t]);
+  }
+
+  const out = new Map();
+  for (const m of mappings) {
+    const pool = byKey.get(m.titleKey);
+    if (!pool || !pool.length) continue;
+    out.set(m.id, shapeCandidates(m, pool.slice(0, MAX_CANDIDATES)));
+  }
+  return out;
 }
 
 /**
@@ -268,6 +327,109 @@ async function remove(id) {
   return { id, deleted: true };
 }
 
+/**
+ * What "不是这首" would destroy, so the reviewer sees it before confirming.
+ *
+ * The count matters because a pool track is keyed on (source, externalId) and
+ * nothing stops two game songs pointing at it — 致青春/王菲 and 致青春/李宇春
+ * resolve to different tracks, but a cover and its original may not. Deleting
+ * the track breaks every mapping that names it, not just this one.
+ */
+async function rejectImpact(id) {
+  const m = await prisma.songMapping.findUnique({ where: { id } });
+  if (!m) throw new NotFoundError('Mapping');
+
+  const track = await prisma.importedTrack.findUnique({
+    where: { source_externalId: { source: m.source, externalId: m.externalId } },
+  });
+
+  const others = await prisma.songMapping.findMany({
+    where: {
+      source: m.source,
+      externalId: m.externalId,
+      id: { not: m.id },
+    },
+    select: { id: true, rawTitle: true, rawArtist: true, approved: true },
+  });
+
+  return {
+    mapping: shapeMapping(m),
+    // Null when the mapping points at something no longer in the pool: the
+    // mapping still goes, there is simply no track left to remove.
+    track: track
+      ? {
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        source: track.source,
+        externalId: track.externalId,
+      }
+      : null,
+    otherMappings: others.map((o) => ({
+      id: o.id,
+      title: o.rawTitle,
+      artist: o.rawArtist,
+      approved: o.approved,
+    })),
+  };
+}
+
+/**
+ * "不是这首" — this recording should not be in the catalogue at all.
+ *
+ * Distinct from picking a different candidate: that repoints a mapping and
+ * leaves the pool alone. This removes the track itself, which is what stops
+ * the automatic resolver handing it straight back — resolveGameSong builds its
+ * candidates from the pool, so a track that is gone cannot be re-chosen, and
+ * no blocklist is needed to keep it away.
+ *
+ * Both deletions happen in one transaction. Half of this is worse than none:
+ * a mapping deleted without its track re-resolves to the same track, and a
+ * track deleted without its mapping leaves a row pointing at nothing.
+ */
+async function reject(id, { deleteTrack = true } = {}) {
+  const outcome = await prisma.$transaction(async (tx) => {
+    // Read inside the transaction. Two reviewers rejecting mappings that share
+    // a track will each delete the other's row as an orphan, so a read taken
+    // outside can describe something that is already gone by the time the
+    // delete runs — which surfaced as a 500 for an operation that had in fact
+    // succeeded.
+    const m = await tx.songMapping.findUnique({ where: { id } });
+    if (!m) return null;
+
+    await tx.songMapping.delete({ where: { id } });
+
+    if (!deleteTrack) {
+      return { m, trackDeleted: false, mappingsRemoved: 1 };
+    }
+
+    // Every mapping naming this track goes with it, or they would be left
+    // resolving to a row that no longer exists.
+    const orphaned = await tx.songMapping.deleteMany({
+      where: { source: m.source, externalId: m.externalId },
+    });
+    const gone = await tx.importedTrack.deleteMany({
+      where: { source: m.source, externalId: m.externalId },
+    });
+    return {
+      m,
+      trackDeleted: gone.count > 0,
+      mappingsRemoved: 1 + orphaned.count,
+    };
+  });
+
+  if (!outcome) throw new NotFoundError('Mapping');
+
+  const { m, ...result } = outcome;
+  return {
+    id,
+    deleted: true,
+    source: m.source,
+    externalId: m.externalId,
+    ...result,
+  };
+}
+
 /** Note that a pool entry has been claimed. Idempotent. */
 async function markSeen(source, externalId) {
   await prisma.importedTrack.updateMany({
@@ -329,9 +491,12 @@ module.exports = {
   get,
   getTrack,
   candidatesFor,
+  candidatesForMany,
   approve,
   unapprove,
   remove,
+  rejectImpact,
+  reject,
   createFromTrack,
   markSeen,
   PAGE_SIZE,

@@ -321,7 +321,14 @@ export const mappingAPI = {
   ),
   // Public on both platforms, so this answers even for a track the reviewer
   // cannot play — knowing the words is often how a cover is spotted.
-  lyrics: (id) => api.get(`/mappings/${id}/lyrics`),
+  // Takes the same optional {source, externalId} as preview: while an
+  // alternative is being auditioned the words must be that recording's, not
+  // the one the mapping still points at.
+  lyrics: (id, override) => api.get(
+    `/mappings/${id}/lyrics${override
+      ? `?source=${encodeURIComponent(override.source)}&externalId=${encodeURIComponent(override.externalId)}`
+      : ""}`
+  ),
   trackLyrics: (trackId) => api.get(`/mappings/track/${trackId}/lyrics`),
   // Same thing for a pool track nobody has claimed yet — you have to hear it
   // before you can say it is the right one.
@@ -330,6 +337,10 @@ export const mappingAPI = {
   approve: (id, body = {}) => api.post(`/mappings/${id}/approve`, body),
   unapprove: (id) => api.post(`/mappings/${id}/unapprove`),
   remove: (id) => api.delete(`/mappings/${id}`),
+  // What "不是这首" would destroy — asked before the confirmation is shown,
+  // because deleting a pool track takes every mapping that names it.
+  rejectImpact: (id) => api.get(`/mappings/${id}/reject-impact`),
+  reject: (id, body = {}) => api.post(`/mappings/${id}/reject`, body),
 };
 
 /**

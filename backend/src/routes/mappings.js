@@ -38,6 +38,42 @@ const approveBody = z.object({
   note: z.string().max(500).optional(),
 });
 
+/**
+ * Resolve an optional `?source=&externalId=` override to a real pool track.
+ *
+ * Both the preview and the lyrics route accept one so a reviewer can audition
+ * an alternative, and both must treat it the same way: it arrives from the
+ * browser, so it is looked up rather than trusted — otherwise these become an
+ * open proxy for the reviewer's own platform credential.
+ *
+ * The source is checked against the enum before it reaches Prisma. A value
+ * outside it is a bad request, but findUnique throws a validation error for it
+ * that surfaces as a 500.
+ */
+const SOURCE_VALUES = z.enum(['LOCAL', 'QQ', 'NETEASE']);
+
+async function resolveOverride(req, fallback) {
+  const wanted = req.query.source;
+  const wantedId = req.query.externalId;
+  if (!wanted || !wantedId) return fallback;
+
+  const source = SOURCE_VALUES.safeParse(wanted);
+  if (!source.success) throw new NotFoundError('Track');
+
+  const known = await prisma.importedTrack.findUnique({
+    where: { source_externalId: { source: source.data, externalId: String(wantedId) } },
+    select: { source: true, externalId: true },
+  });
+  if (!known) throw new NotFoundError('Track');
+  return { source: known.source, externalId: known.externalId };
+}
+
+const rejectBody = z.object({
+  // Defaults to removing the pool track as well: that is what "不是这首" means,
+  // and it is what stops the resolver choosing the same recording again.
+  deleteTrack: z.boolean().optional().default(true),
+});
+
 const createBody = z.object({
   gameTitle: z.string().min(1).max(300),
   gameArtist: z.string().max(300).optional().default(''),
@@ -271,20 +307,7 @@ router.get('/track/:trackId/preview', async (req, res, next) => {
 router.get('/:id/preview', async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
-
-    let { source, externalId } = mapping;
-    const wanted = req.query.source;
-    const wantedId = req.query.externalId;
-    if (wanted && wantedId) {
-      const known = await prisma.importedTrack.findUnique({
-        where: { source_externalId: { source: wanted, externalId: String(wantedId) } },
-        select: { source: true, externalId: true },
-      });
-      if (!known) throw new NotFoundError('Track');
-      source = known.source;
-      externalId = known.externalId;
-    }
-
+    const { source, externalId } = await resolveOverride(req, mapping);
     return await resolvePreview(req.user.id, source, externalId, res);
   } catch (err) {
     next(err);
@@ -327,11 +350,23 @@ router.get('/track/:trackId/lyrics', async (req, res, next) => {
   }
 });
 
-/** GET /api/mappings/:id/lyrics */
+/**
+ * GET /api/mappings/:id/lyrics
+ *
+ * Takes the same optional `source`/`externalId` override as the preview route,
+ * and for the same reason: while a reviewer auditions an alternative, the words
+ * on screen have to be that recording's. Showing the original's lyrics against
+ * a live version is worse than showing none — it invites the reviewer to
+ * approve a pairing on evidence belonging to the other track.
+ *
+ * Checked against the imported pool rather than trusted, exactly as preview
+ * does: the pair arrives from the browser.
+ */
 router.get('/:id/lyrics', async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
-    return await resolveLyrics(mapping.source, mapping.externalId, res);
+    const { source, externalId } = await resolveOverride(req, mapping);
+    return await resolveLyrics(source, externalId, res);
   } catch (err) {
     next(err);
   }
@@ -371,6 +406,40 @@ router.post('/:id/unapprove', async (req, res, next) => {
 router.delete('/:id', async (req, res, next) => {
   try {
     const result = await svc.remove(mappingId(req));
+    res.json({ ...result, counts: await svc.getCounts() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/mappings/:id/reject-impact — what "不是这首" would destroy.
+ *
+ * Read-only, and asked before the confirmation is shown: deleting a pool track
+ * takes every mapping that names it, which the reviewer cannot know from the
+ * row in front of them.
+ */
+router.get('/:id/reject-impact', async (req, res, next) => {
+  try {
+    res.json(await svc.rejectImpact(mappingId(req)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/mappings/:id/reject — this recording does not belong in the
+ * catalogue.
+ *
+ * A POST rather than another DELETE because it destroys more than the row it
+ * names: the imported track goes too, which is the point — the resolver picks
+ * from the pool, so removing the track is what stops it being chosen again.
+ */
+router.post('/:id/reject', validate(rejectBody), async (req, res, next) => {
+  try {
+    const result = await svc.reject(mappingId(req), {
+      deleteTrack: req.validated.deleteTrack,
+    });
     res.json({ ...result, counts: await svc.getCounts() });
   } catch (err) {
     next(err);

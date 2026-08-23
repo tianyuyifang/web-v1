@@ -32,6 +32,18 @@ const BUCKETS = [
 
 const SOURCE_LABEL = { LOCAL: "曲库", QQ: "QQ", NETEASE: "网易" };
 
+/**
+ * What the audio element is keyed on: a row, or one alternative under it.
+ *
+ * Playing a row and auditioning a candidate beneath it are two different
+ * sounds, so they cannot share a key — the second click would be read as
+ * "resume what is loaded" and replay the first. Everything that asks whether
+ * this is playing goes through here, so no two callers can key it differently.
+ */
+function audioKey(row, candidate) {
+  return candidate ? `${row.id}:${candidate.source}:${candidate.externalId}` : row.id;
+}
+
 function formatDuration(sec) {
   if (sec == null) return "—";
   const m = Math.floor(sec / 60);
@@ -53,7 +65,6 @@ export default function MappingsPage() {
   const [denied, setDenied] = useState(false);
 
   const [expanded, setExpanded] = useState(null);
-  const [candidates, setCandidates] = useState([]);
   /**
    * The row whose lyrics are showing, or null.
    *
@@ -90,6 +101,17 @@ export default function MappingsPage() {
   // Which row the audio element currently holds. Kept apart from `playing` so
   // pausing does not discard the loaded track and the scrub position with it.
   const [loadedFor, setLoadedFor] = useState(null);
+  /**
+   * The alternative currently being auditioned: `{ rowId, candidate }`.
+   *
+   * Confirming has to commit what was heard. Without this the approve button
+   * sends no target and writes whatever the row already pointed at, so a
+   * reviewer who listened to the live version and pressed 就是这个 would have
+   * silently kept the studio one — the exact mistake this feature exists to fix.
+   */
+  const [auditioning, setAuditioning] = useState(null);
+  // Which row is showing the "不是这首" confirmation, and what it would destroy.
+  const [rejecting, setRejecting] = useState(null);
   const [progress, setProgress] = useState({ current: 0, duration: 0 });
   const [playError, setPlayError] = useState("");
   // Reviewing depends on a working QQ connection, so its health belongs on
@@ -113,6 +135,14 @@ export default function MappingsPage() {
     try {
       const res = await mappingAPI.list({ bucket, q: submittedQuery, cursor, take: 50 });
       setRows((prev) => (append ? [...prev, ...res.data.rows] : res.data.rows));
+      // A fresh list is a different set of rows, so anything keyed on a row id
+      // is now stale. Left alone, an audition from the previous search would
+      // still be armed and 就是这个 would commit a track that is no longer on
+      // screen. Appending keeps them: those rows are still there.
+      if (!append) {
+        setAuditioning(null);
+        setRejecting(null);
+      }
       setNextCursor(res.data.nextCursor);
       if (res.data.counts) setCounts(res.data.counts);
     } catch (err) {
@@ -157,23 +187,16 @@ export default function MappingsPage() {
     }
   }, []);
 
-  const toggleExpand = useCallback(async (row) => {
-    if (expanded === row.id) {
-      setExpanded(null);
-      setCandidates([]);
-      return;
-    }
-    setExpanded(row.id);
-    setCandidates([]);
-    if (row.kind === "mapping") {
-      try {
-        const res = await mappingAPI.candidates(row.id);
-        setCandidates(res.data.candidates);
-      } catch {
-        setCandidates([]);
-      }
-    }
-  }, [expanded]);
+  /**
+   * Show the keys a row is filed under, and the narrower delete.
+   *
+   * Candidates used to be fetched here, one request per row opened. They now
+   * arrive with the list and are always on screen, so this is left with the
+   * details that only matter when something looks wrong.
+   */
+  const toggleExpand = useCallback((row) => {
+    setExpanded((prev) => (prev === row.id ? null : row.id));
+  }, []);
 
   /**
    * Attach the shared audio element, wiring up progress.
@@ -197,32 +220,53 @@ export default function MappingsPage() {
     return el;
   }, []);
 
-  const play = useCallback(async (row) => {
+  /**
+   * Play a row, or one of the alternatives offered under it.
+   *
+   * `candidate` is the whole point of auditioning: two recordings of the same
+   * song can open identically and only diverge at the chorus, so the reviewer
+   * has to hear the alternative before committing to it. Passing one changes
+   * nothing in the database — it only resolves a different id for playback.
+   *
+   * Everything the audio element is keyed on therefore keys on the pair, not
+   * the row: playing the row and then a candidate under it are two different
+   * sounds, and keying on row.id alone would treat the second click as "resume
+   * what is already loaded" and play the first one again.
+   */
+  const play = useCallback(async (row, candidate) => {
     setPlayError("");
     const el = ensureAudio();
+    const key = audioKey(row, candidate);
 
-    // Same row again: pause or resume, keeping the position so scrubbing is
+    // Same thing again: pause or resume, keeping the position so scrubbing is
     // not undone by a stray click on the button.
-    if (playing === row.id) {
+    if (playing === key) {
       el.pause();
       setPlaying(null);
       return;
     }
-    if (loadedFor === row.id && el.src) {
+    if (loadedFor === key && el.src) {
       await el.play().catch(() => {});
-      setPlaying(row.id);
+      setPlaying(key);
       return;
     }
 
-    setBusy(`play:${row.id}`);
+    setBusy(`play:${key}`);
     try {
       const res = row.kind === "imported"
         ? await mappingAPI.previewTrack(row.id)
-        : await mappingAPI.preview(row.id);
+        : await mappingAPI.preview(
+          row.id,
+          candidate ? { source: candidate.source, externalId: candidate.externalId } : undefined
+        );
       const { url, reason, kind } = res.data;
 
+      // The source that matters is whatever is actually being resolved: a
+      // NetEase alternative under a QQ row fails for NetEase reasons.
+      const source = candidate ? candidate.source : row.source;
+
       if (kind === "unsupported") {
-        setPlayError(`${SOURCE_LABEL[row.source] || row.source} 的试听还没做，暂时无法播放`);
+        setPlayError(`${SOURCE_LABEL[source] || source} 的试听还没做，暂时无法播放`);
         return;
       }
       if (!url) {
@@ -237,14 +281,17 @@ export default function MappingsPage() {
       }
       el.src = url;
       setProgress({ current: 0, duration: 0 });
-      setLoadedFor(row.id);
+      setLoadedFor(key);
+      // Remember what is being auditioned, so "就是这个" can commit exactly
+      // what the reviewer heard rather than what the row still points at.
+      setAuditioning(candidate ? { rowId: row.id, candidate } : null);
       await el.play();
-      setPlaying(row.id);
+      setPlaying(key);
 
       // Playing proves the credential is alive, so refresh what the page
       // believes about it. A row that plays should not leave a stale "expiring
       // soon" notice on screen.
-      refreshCredentialFor(row.source);
+      refreshCredentialFor(source);
     } catch (err) {
       // The server knows which credential was missing or dead for this
       // particular track; it says so, and that beats anything guessed here.
@@ -252,11 +299,25 @@ export default function MappingsPage() {
       setPlayError(message || "试听失败");
       // A failure is the moment the credential state is most likely stale, so
       // re-read it rather than leaving the page showing yesterday's answer.
-      refreshCredentialFor(row.source);
+      refreshCredentialFor(candidate ? candidate.source : row.source);
     } finally {
-      setBusy(null);
+      // Only if still ours — see the note in act().
+      setBusy((prev) => (prev === `play:${key}` ? null : prev));
     }
-  }, [playing, loadedFor, ensureAudio]);
+  }, [playing, loadedFor, ensureAudio, refreshCredentialFor]);
+
+  /**
+   * The audition in force for the row whose lyrics are open, and the audio key
+   * that follows from it.
+   *
+   * Derived rather than stored: `auditioning` and `selected` move
+   * independently — opening another row's lyrics must not inherit the first
+   * row's audition — and deriving makes that impossible to get wrong.
+   */
+  const selectedAudition = selected && auditioning?.rowId === selected.id
+    ? auditioning.candidate
+    : null;
+  const selectedKey = selected ? audioKey(selected, selectedAudition) : null;
 
   /** Seek to an absolute position, which is what a lyric timestamp gives us. */
   const seekSeconds = useCallback((seconds) => {
@@ -291,15 +352,51 @@ export default function MappingsPage() {
     } catch (err) {
       setError(err.response?.data?.error?.message || "操作失败");
     } finally {
-      setBusy(null);
+      // Release only if this action is still the one holding it. Playback,
+      // approval and deletion share `busy` but key it differently, so an
+      // unconditional clear lets a preview finishing mid-approve re-enable the
+      // approve button — and a second click sends a second POST.
+      setBusy((prev) => (prev === id ? null : prev));
     }
   }, []);
 
-  const approve = (row, target) => act(
-    () => mappingAPI.approve(row.id, target ? { source: target.source, externalId: target.externalId } : {}),
-    row.id,
-    () => { setRows((prev) => prev.filter((r) => r.id !== row.id)); setExpanded(null); },
-  );
+  /**
+   * Confirm a mapping.
+   *
+   * `target` names the track to commit. It defaults to whatever is currently
+   * being auditioned for this row, so the button always agrees with the audio:
+   * confirming after listening to an alternative saves that alternative.
+   */
+  const approve = (row, target) => {
+    const chosen = target
+      || (auditioning?.rowId === row.id ? auditioning.candidate : null);
+    return act(
+      () => mappingAPI.approve(row.id, chosen
+        ? { source: chosen.source, externalId: chosen.externalId }
+        : {}),
+      row.id,
+      (res) => {
+        // A row leaves the list only when it leaves the bucket. Approving a
+        // pending row does exactly that. Correcting the version on a row that
+        // was already approved does not — it stays confirmed, so removing it
+        // would read as "I just deleted the thing I was fixing", and would
+        // leave the tab's count disagreeing with the rows on screen.
+        setRows((prev) => (row.approved
+          ? prev.map((r) => (r.id === row.id
+            ? { ...res.data.mapping, poolCandidates: r.poolCandidates }
+            : r))
+          : prev.filter((r) => r.id !== row.id)));
+        // The panel holds its own snapshot of the row, so it needs the new
+        // target too — otherwise it keeps naming the track that was just
+        // replaced.
+        setSelected((prev) => (prev?.id === row.id
+          ? { ...res.data.mapping, poolCandidates: prev.poolCandidates }
+          : prev));
+        setExpanded(null);
+        setAuditioning((prev) => (prev?.rowId === row.id ? null : prev));
+      },
+    );
+  };
 
   const unapprove = (row) => act(
     () => mappingAPI.unapprove(row.id),
@@ -311,6 +408,40 @@ export default function MappingsPage() {
     () => mappingAPI.remove(row.id),
     row.id,
     () => setRows((prev) => prev.filter((r) => r.id !== row.id)),
+  );
+
+  /**
+   * Open the "不是这首" confirmation, having first asked what it would destroy.
+   *
+   * The impact is fetched rather than assumed: a pool track can be named by
+   * more than one mapping, and deleting it takes all of them. That is not
+   * visible from the row, so it is read from the server before anything is
+   * offered to click.
+   */
+  const startReject = useCallback(async (row) => {
+    if (rejecting?.rowId === row.id) { setRejecting(null); return; }
+    setBusy(`reject:${row.id}`);
+    setError("");
+    try {
+      const res = await mappingAPI.rejectImpact(row.id);
+      setRejecting({ rowId: row.id, ...res.data });
+    } catch (err) {
+      setError(err.response?.data?.error?.message || "无法读取删除影响");
+    } finally {
+      // Only if still ours — see the note in act().
+      setBusy((prev) => (prev === `reject:${row.id}` ? null : prev));
+    }
+  }, [rejecting]);
+
+  const confirmReject = (row) => act(
+    () => mappingAPI.reject(row.id, { deleteTrack: true }),
+    row.id,
+    () => {
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      setRejecting(null);
+      setExpanded(null);
+      setAuditioning((prev) => (prev?.rowId === row.id ? null : prev));
+    },
   );
 
   const claim = (track) => act(
@@ -367,6 +498,11 @@ export default function MappingsPage() {
               audioRef.current?.pause();
               setPlaying(null);
               setLoadedFor(null);
+              // The audition goes with the audio. It is keyed on a row id, and
+              // leaving it set would let 就是这个 on some later row commit a
+              // track nobody is listening to.
+              setAuditioning(null);
+              setRejecting(null);
               setBucket(b.key);
               setExpanded(null);
               setNextCursor(null);
@@ -428,7 +564,9 @@ export default function MappingsPage() {
 
       {!loading && rows.length === 0 && (
         <div className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">
-          {query ? "没有匹配的结果。" : "这个分类目前是空的。"}
+          {/* The submitted term, not the input: typing without pressing enter
+              must not relabel an empty bucket as "no matches". */}
+          {submittedQuery ? "没有匹配的结果。" : "这个分类目前是空的。"}
         </div>
       )}
 
@@ -502,14 +640,30 @@ export default function MappingsPage() {
               </div>
 
               <div className="flex shrink-0 gap-1.5">
-                {row.kind === "mapping" && !row.approved && (
+                {/* Confirming is offered on approved rows too, but only while an
+                    alternative is playing. An automatic STRONG match that chose
+                    the wrong version arrives already approved, so requiring
+                    撤销确认 first would make correcting it a three-step detour. */}
+                {row.kind === "mapping" && (!row.approved || auditioning?.rowId === row.id) && (
                   <button
                     type="button"
                     onClick={() => approve(row)}
                     disabled={busy === row.id}
                     className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
                   >
-                    就是这个
+                    {/* Says which one it would save. Sending the row's own id
+                        while an alternative plays is the mistake this guards. */}
+                    {auditioning?.rowId === row.id ? "就用这个版本" : "就是这个"}
+                  </button>
+                )}
+                {row.kind === "mapping" && (
+                  <button
+                    type="button"
+                    onClick={() => startReject(row)}
+                    disabled={busy === `reject:${row.id}`}
+                    className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                  >
+                    {busy === `reject:${row.id}` ? "…" : "不是这首"}
                   </button>
                 )}
                 {row.kind === "mapping" && row.approved && (
@@ -572,19 +726,24 @@ export default function MappingsPage() {
               </div>
             )}
 
-            {expanded === row.id && row.kind === "mapping" && (
-              <div className="border-t border-border p-3">
-                <div className="mb-2 text-xs text-muted">
-                  键：{row.titleKey} | {row.artistKey || "（无歌手）"}
-                </div>
-                {candidates.length === 0 ? (
-                  <p className="text-xs text-muted">曲库池里没有同名的其他候选。</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {candidates.map((c) => (
+            {/* Alternatives, shown without being asked.
+                Only when there is a real choice: a lone candidate is the row
+                itself restated, and a list of those would push the next row off
+                the screen for nothing. */}
+            {row.kind === "mapping" && (row.poolCandidates?.length || 0) > 1 && (
+              <div className="border-t border-border/60 px-2.5 py-1.5">
+                <ul className="space-y-1">
+                  {row.poolCandidates.map((c) => {
+                    const key = audioKey(row, c);
+                    const isAudition = auditioning?.rowId === row.id
+                      && auditioning.candidate.source === c.source
+                      && auditioning.candidate.externalId === c.externalId;
+                    return (
                       <li
                         key={`${c.source}:${c.externalId}`}
-                        className="flex items-center gap-2 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs"
+                        className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${
+                          isAudition ? "border-accent/70 bg-accent/5" : "border-border/60"
+                        }`}
                       >
                         <span className="min-w-0 flex-1 truncate">
                           {c.title} — {c.artist}
@@ -594,21 +753,83 @@ export default function MappingsPage() {
                           <span className="ml-2 text-muted">{formatDuration(c.durationSec)}</span>
                           {c.artistMatches && <span className="ml-2 text-emerald-400">歌手吻合</span>}
                           {c.durationMatches && <span className="ml-2 text-emerald-400">时长吻合</span>}
+                          {c.current && <span className="ml-2 text-muted">· 当前</span>}
                         </span>
-                        {c.current ? (
-                          <span className="shrink-0 text-muted">当前</span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => approve(row, c)}
-                            className="shrink-0 rounded border border-border px-2 py-1 hover:border-accent"
-                          >
-                            改用这个
-                          </button>
-                        )}
+                        {/* Auditions, never commits. Hearing an alternative is
+                            how you tell two recordings apart; 就是这个 on the row
+                            above is what writes the choice down. */}
+                        <button
+                          type="button"
+                          onClick={() => play(row, c)}
+                          disabled={busy === `play:${key}`}
+                          className={`shrink-0 rounded border px-2 py-1 disabled:opacity-50 ${
+                            isAudition ? "border-accent text-accent" : "border-border hover:border-accent"
+                          }`}
+                        >
+                          {busy === `play:${key}` ? "…" : playing === key ? "暂停" : "试听"}
+                        </button>
                       </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            {rejecting?.rowId === row.id && (
+              <div className="border-t border-red-500/30 bg-red-500/5 p-3">
+                <p className="text-xs text-red-200">
+                  确定这首不该留在曲库里？将从曲库彻底删除
+                  <span className="mx-1 font-medium">
+                    {rejecting.track
+                      ? `${rejecting.track.title} — ${rejecting.track.artist}`
+                      : "（曲库里已无此条目）"}
+                  </span>
+                  并删除这条映射。
+                </p>
+                {/* A pool track keyed on (source, id) can be named by more than
+                    one mapping. Those go too, and saying so afterwards would be
+                    too late. */}
+                {rejecting.otherMappings?.length > 0 && (
+                  <p className="mt-1.5 text-xs text-amber-300">
+                    ⚠ 另有 {rejecting.otherMappings.length} 条映射指向同一首，会一并删除：
+                    {rejecting.otherMappings.slice(0, 4).map((o) => (
+                      <span key={o.id} className="ml-1">
+                        「{o.title}{o.artist ? ` — ${o.artist}` : ""}」{o.approved ? "（已确认）" : ""}
+                      </span>
                     ))}
-                  </ul>
+                    {rejecting.otherMappings.length > 4 && <span className="ml-1">等</span>}
+                  </p>
+                )}
+                <p className="mt-1.5 text-xs text-muted">
+                  删除后自动匹配不会再选中它。若之后重新导入同一歌单，它会重新出现。
+                </p>
+                <div className="mt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRejecting(null)}
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-fg"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => confirmReject(row)}
+                    disabled={busy === row.id}
+                    className="rounded-lg border border-red-500/60 bg-red-500/15 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/25 disabled:opacity-50"
+                  >
+                    {busy === row.id ? "删除中…" : "确认删除"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {expanded === row.id && row.kind === "mapping" && (
+              <div className="border-t border-border p-3">
+                <div className="mb-2 text-xs text-muted">
+                  键：{row.titleKey} | {row.artistKey || "（无歌手）"}
+                </div>
+                {(row.poolCandidates?.length || 0) <= 1 && (
+                  <p className="text-xs text-muted">曲库池里没有同名的其他版本可选。</p>
                 )}
                 <div className="mt-3 flex justify-end">
                   <button
@@ -617,7 +838,7 @@ export default function MappingsPage() {
                     disabled={busy === row.id}
                     className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50"
                   >
-                    删除这条映射
+                    只删除这条映射
                   </button>
                 </div>
               </div>
@@ -644,17 +865,23 @@ export default function MappingsPage() {
             otherwise following along means scrolling back every few lines. */}
         {selected && (
           <div className="mt-4 lg:sticky lg:top-6 lg:mt-0">
+            {/* The panel follows whatever this row is actually playing,
+                audition included. Comparing against the bare row id would have
+                frozen the lyrics the moment an alternative started — the audio
+                would play on while the panel showed 0:00 and highlighted
+                nothing, which is the one thing the panel exists to do. */}
             <TrackLyricPanel
               row={selected}
-              isPlaying={playing === selected.id}
-              current={loadedFor === selected.id ? progress.current : 0}
-              duration={loadedFor === selected.id ? progress.duration : (selected.durationSec || 0)}
-              onTogglePlay={() => play(selected)}
+              audition={selectedAudition}
+              isPlaying={playing === selectedKey}
+              current={loadedFor === selectedKey ? progress.current : 0}
+              duration={loadedFor === selectedKey ? progress.duration : (selected.durationSec || 0)}
+              onTogglePlay={() => play(selected, selectedAudition)}
               onSeekSeconds={seekSeconds}
               onNudge={nudgeSeconds}
               onClose={() => setSelected(null)}
-              busy={busy === `play:${selected.id}`}
-              error={playing === selected.id || loadedFor === selected.id ? playError : ""}
+              busy={busy === `play:${selectedKey}`}
+              error={playing === selectedKey || loadedFor === selectedKey ? playError : ""}
             />
           </div>
         )}

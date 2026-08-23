@@ -36,6 +36,7 @@ const prisma = require('../src/db/client');
 const creds = require('../src/services/musicCredentialService');
 
 const ALL = process.argv.includes('--all');
+const NEW_ONLY = process.argv.includes('--new-only');
 const BATCH = 100;          // the ceiling the open-source clients settle on
 const GAP_MS = 3000;
 const OUT = path.join(__dirname, '../backups/qq-playable-audit.json');
@@ -124,11 +125,39 @@ async function probe({ mids, cookie, uin, musicKey, guid }) {
     orderBy: { externalId: 'asc' },
   });
   const seen = new Set();
-  const list = tracks.filter((t) => {
+  let list = tracks.filter((t) => {
     if (!t.externalId || seen.has(t.externalId)) return false;
     seen.add(t.externalId);
     return true;
   });
+
+  // --new-only: skip mids a previous run already answered for.
+  //
+  // Re-asking about a track QQ has already placed spends a request to learn
+  // nothing, and every request is one more than the account needs to make.
+  // After an import the interesting population is the songs that arrived with
+  // it, so the audit is pointed at those and the earlier verdicts stand.
+  if (NEW_ONLY) {
+    let known = new Set();
+    try {
+      const prev = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+      // The file records every mid it asked about: the dead ones in full, and
+      // the playable ones by count alone -- so "already asked" has to be
+      // reconstructed from both. checkedIds is written by this branch; older
+      // files predate it and contribute their dead list only.
+      for (const id of prev.checkedIds || []) known.add(id);
+      for (const d of prev.dead || []) known.add(d.externalId);
+    } catch {
+      console.log('(no previous audit found — checking everything)\n');
+      known = new Set();
+    }
+    if (known.size) {
+      const before = list.length;
+      list = list.filter((t) => !known.has(t.externalId));
+      console.log(`--new-only: ${known.size} mids already answered, `
+        + `${before - list.length} skipped, ${list.length} left to ask about\n`);
+    }
+  }
 
   const chunks = [];
   for (let i = 0; i < list.length; i += BATCH) chunks.push(list.slice(i, i + BATCH));
@@ -190,6 +219,24 @@ async function probe({ mids, cookie, uin, musicKey, guid }) {
       + `${playable.length} playable / ${dead.length} not (running total)`);
   }
 
+  // Merge rather than overwrite on an incremental run. The previous file is
+  // the only record of which mids have been asked about, and replacing it with
+  // just this run's slice would make the next --new-only re-ask about
+  // everything it already knows.
+  let merged = { dead, checkedIds: [...playable, ...dead].map((t) => t.externalId) };
+  if (NEW_ONLY) {
+    try {
+      const prev = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+      const ids = new Set(merged.checkedIds);
+      for (const id of prev.checkedIds || []) ids.add(id);
+      const deadById = new Map(dead.map((d) => [d.externalId, d]));
+      // A mid that failed before and was not re-asked keeps its old verdict.
+      for (const d of prev.dead || []) if (!deadById.has(d.externalId)) deadById.set(d.externalId, d);
+      for (const id of (prev.dead || []).map((d) => d.externalId)) ids.add(id);
+      merged = { dead: [...deadById.values()], checkedIds: [...ids] };
+    } catch { /* no previous file — this run stands alone */ }
+  }
+
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.writeFileSync(OUT, JSON.stringify({
     checkedAt: new Date().toISOString(),
@@ -197,7 +244,9 @@ async function probe({ mids, cookie, uin, musicKey, guid }) {
     totalInCatalogue: list.length,
     checked: playable.length + dead.length,
     playable: playable.length,
-    dead,
+    thisRun: { playable: playable.length, dead: dead.length },
+    dead: merged.dead,
+    checkedIds: merged.checkedIds,
   }, null, 2), 'utf8');
 
   console.log(`\nchecked ${playable.length + dead.length} of ${list.length}`);

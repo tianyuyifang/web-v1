@@ -25,6 +25,7 @@
 require('dotenv').config();
 const prisma = require('../src/db/client');
 const qq = require('../src/services/sources/qqSource');
+const netease = require('../src/services/sources/neteaseLogin');
 const breaker = require('../src/services/musicSourceBreaker');
 const { titleKey, artistKey, isSeparatorAmbiguous } = require('../src/services/songKeyService');
 
@@ -73,23 +74,33 @@ function summarise(tracks) {
   };
 }
 
+/** Which platform this run is talking to, and where its cookie comes from. */
+const PLATFORMS = {
+  qq: { source: 'QQ', label: 'QQ', env: 'QQ_COOKIE', api: qq },
+  netease: { source: 'NETEASE', label: '网易云', env: 'NETEASE_COOKIE', api: netease },
+};
+
 (async () => {
   if (!PLAYLIST) bail('Which playlist? e.g. --playlist 9669986815');
-  if (PLATFORM !== 'qq') bail(`Only qq is implemented so far, got --platform ${PLATFORM}`);
+  const plat = PLATFORMS[PLATFORM];
+  if (!plat) {
+    bail(`Unknown --platform ${PLATFORM}. One of: ${Object.keys(PLATFORMS).join(', ')}`);
+  }
+  const SOURCE = plat.source;
 
-  const cookie = process.env.QQ_COOKIE;
+  const cookie = process.env[plat.env];
   if (!cookie) {
-    bail('Set QQ_COOKIE. It is read from the environment so it never lands in a file:\n'
-      + "  QQ_COOKIE='qm_keyst=...; uin=...' node scripts/import-mapping.js --playlist 9669986815");
+    bail(`Set ${plat.env}. It is read from the environment so it never lands in a file:\n`
+      + `  ${plat.env}='…' node scripts/import-mapping.js --platform ${PLATFORM} --playlist ${PLAYLIST}`);
   }
 
-  console.log(`\nFetching QQ playlist ${PLAYLIST} …`);
-  console.log('(paged, so a few thousand songs cost a handful of requests)\n');
+  console.log(`\nFetching ${plat.label} playlist ${PLAYLIST} …`);
+  console.log('(batched, so a few thousand songs cost a handful of requests)\n');
 
   const started = Date.now();
   let playlist;
   try {
-    playlist = await qq.getPlaylist(PLAYLIST, { cookie });
+    playlist = await plat.api.getPlaylist(PLAYLIST, { cookie });
   } catch (err) {
     // Say which kind of failure this is, because the fixes are unrelated:
     // a stale cookie needs replacing, a breaker trip needs waiting out.
@@ -113,7 +124,7 @@ function summarise(tracks) {
 
   // --- what is already stored ------------------------------------------------
   const existing = await prisma.importedTrack.findMany({
-    where: { source: 'QQ', externalId: { in: tracks.map((t) => t.externalId) } },
+    where: { source: SOURCE, externalId: { in: tracks.map((t) => t.externalId) } },
   });
   const existingById = new Map(existing.map((r) => [r.externalId, r]));
 
@@ -200,9 +211,9 @@ function summarise(tracks) {
   for (let i = 0; i < tracks.length; i += CHUNK) {
     const slice = tracks.slice(i, i + CHUNK);
     await prisma.$transaction(slice.map((t) => prisma.importedTrack.upsert({
-      where: { source_externalId: { source: 'QQ', externalId: t.externalId } },
+      where: { source_externalId: { source: SOURCE, externalId: t.externalId } },
       create: {
-        source: 'QQ',
+        source: SOURCE,
         externalId: t.externalId,
         title: t.title,
         artist: t.artist,

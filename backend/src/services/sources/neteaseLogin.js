@@ -476,4 +476,79 @@ async function getLyric(songId) {
   };
 }
 
-module.exports = { createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo, resolveUrl, corsFriendlyUrl, getLyric, QR_STATUS };
+/** One imported track, in the shape qqSource.getPlaylist already returns. */
+function toTrack(s) {
+  return {
+    source: 'NETEASE',
+    externalId: String(s.id),
+    title: s.name || '',
+    // The platforms disagree about the separator; '/' is what the rest of this
+    // codebase splits on.
+    artist: (s.ar || s.artists || []).map((a) => a.name).filter(Boolean).join('/'),
+    // Milliseconds here, seconds everywhere else.
+    durationSec: Number.isFinite(s.dt) ? Math.round(s.dt / 1000) : null,
+    album: s.al?.name ?? s.album?.name ?? null,
+    // fee 1 and 4 are the paid tiers. Knowing this up front lets review say
+    // "this will not play" without anyone trying it.
+    vipOnly: s.fee === 1 || s.fee === 4,
+  };
+}
+
+/**
+ * Every track in a NetEase playlist.
+ *
+ * Two calls rather than one, because the playlist endpoint answers two
+ * different ways: `tracks` carries full objects but only for the first few
+ * hundred songs, while `trackIds` lists every id in the playlist. Reading only
+ * `tracks` silently truncates a large playlist, so the ids are the source of
+ * truth and the details are fetched against them.
+ *
+ * Metadata only. Nothing here asks for a playback URL — that is `resolveUrl`,
+ * and it is the call that spends playback authorisation. A playlist import is
+ * therefore the same kind of traffic as opening the playlist in a browser.
+ *
+ * @returns {{ title, total, tracks }} matching qqSource.getPlaylist
+ */
+async function getPlaylist(playlistId, { cookie, batch = 100, maxSongs = 10000 } = {}) {
+  const { json } = await call('/api/v6/playlist/detail', {
+    id: String(playlistId),
+    n: '100000',
+    s: '8',
+  }, { cookie });
+
+  if (json?.code !== 200) {
+    throw fail(`网易云歌单读取失败 (code ${json?.code ?? 'unknown'})`, 'PLAYLIST_FAILED');
+  }
+
+  const playlist = json.playlist || {};
+  const title = playlist.name || null;
+  const ids = (playlist.trackIds || []).map((t) => t.id).filter(Boolean).slice(0, maxSongs);
+  const total = playlist.trackCount ?? ids.length;
+
+  // Whatever came back in full is kept, so those ids need no second lookup.
+  const have = new Map();
+  for (const s of playlist.tracks || []) {
+    if (s && s.id != null) have.set(String(s.id), toTrack(s));
+  }
+
+  const missing = ids.map(String).filter((id) => !have.has(id));
+  for (let i = 0; i < missing.length; i += batch) {
+    const slice = missing.slice(i, i + batch);
+    const { json: detail } = await call('/api/v3/song/detail', {
+      c: JSON.stringify(slice.map((id) => ({ id: Number(id) }))),
+    }, { cookie });
+    if (detail?.code !== 200) {
+      throw fail(`网易云歌曲详情失败 (code ${detail?.code ?? 'unknown'})`, 'PLAYLIST_FAILED');
+    }
+    for (const s of detail.songs || []) {
+      if (s && s.id != null) have.set(String(s.id), toTrack(s));
+    }
+  }
+
+  // Playlist order, and only the ones that actually came back: a delisted
+  // track keeps its id in the playlist but returns no detail.
+  const tracks = ids.map(String).map((id) => have.get(id)).filter(Boolean);
+  return { title, total, tracks };
+}
+
+module.exports = { createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo, resolveUrl, corsFriendlyUrl, getLyric, getPlaylist, QR_STATUS };

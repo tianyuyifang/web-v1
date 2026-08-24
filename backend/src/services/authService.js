@@ -155,6 +155,7 @@ async function getMe(userId) {
       id: true, username: true, role: true, preferences: true,
       expiresAt: true, monthlyFee: true, previousRole: true,
       entitlements: true,
+      canEditMapping: true,
     },
   });
   if (!user) return null;
@@ -171,6 +172,12 @@ async function getMe(userId) {
     // Paid add-ons. Guests hold none of their own but get them all for free,
     // so the UI asks hasAddOn() rather than reading this list directly.
     entitlements: user.entitlements || [],
+    // Whether this account may decide song mappings. Sent so the pages that
+    // offer those decisions can leave them out rather than show buttons that
+    // fail: 唱卡 is open to every add-on holder, but only editors confirm a
+    // version or remove one. The server checks it again on every write —
+    // this only spares the user a button that was never going to work.
+    canEditMapping: !!user.canEditMapping,
     status: deriveStatus(user.expiresAt),
   };
 }

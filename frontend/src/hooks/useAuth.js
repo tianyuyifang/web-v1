@@ -21,6 +21,12 @@ export default function useAuth() {
     // Holding any add-on means holding 加订版 — they are sold as one bundle.
     hasAddOnTier:
       user?.role === "ADMIN" || (user?.entitlements || []).length > 0,
+    // May this account decide song mappings? Not an add-on: a hand-granted
+    // flag, because one wrong approval changes what plays for everybody.
+    // Used to leave those buttons out rather than to protect anything — the
+    // server checks again on every write.
+    canEditMapping:
+      user?.role === "ADMIN" || user?.canEditMapping === true,
     loading,
     login,
     logout,

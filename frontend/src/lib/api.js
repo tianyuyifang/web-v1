@@ -297,8 +297,11 @@ export const musicSourcesAPI = {
   refresh: () => api.post("/music-sources/qq/refresh"),
 };
 
-// Song-mapping review. Admin-only on the server, so a non-editor calling any
-// of these gets a 403 rather than an empty list.
+// Song mappings. NOT uniformly admin-only, despite what the review page might
+// suggest: `candidates`, `preview` and `lyrics` answer any approved member,
+// because 唱卡 needs them to play a song and offer other recordings of it.
+// Everything else 403s for a non-editor. Check the route file before assuming
+// a call here is safe to make from a page ordinary members can reach.
 export const mappingAPI = {
   counts: () => api.get("/mappings/counts"),
   list: ({ bucket = "pending", q = "", cursor = null, take = 50 } = {}) => {

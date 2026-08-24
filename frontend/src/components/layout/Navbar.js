@@ -69,12 +69,10 @@ export default function Navbar() {
                   it is a status light for a machine they do not have. */}
               {canCapture && <CaptureIndicator />}
               {navLink("/playlists", t("navPlaylists"))}
-              {/* Admins only while 唱卡 is being proven out. The add-on that
-                  gates it was sold for auto-tagging, and its holders cannot
-                  use this yet -- their client does not read the 唱卡 screens,
-                  so the page would sit on "waiting to connect" forever.
-                  Widen this once the client ships. */}
-              {isAdmin && navLink("/live", t("navLive"))}
+              {/* Same add-on as the indicator above: the client has read the
+                  唱卡 screens since v14, so there is nothing left to hold this
+                  back to admins. */}
+              {canCapture && navLink("/live", t("navLive"))}
               {navLink("/tools", t("navTools"))}
               {/* No /pricing here on purpose — it is reached from the account
                   page (套餐与续费) and the register-success screen, so it is
@@ -111,7 +109,7 @@ export default function Navbar() {
           )}
           <div className="flex flex-col gap-1">
             {navLink("/playlists", t("navPlaylists"))}
-            {isAdmin && navLink("/live", t("navLive"))}
+            {canCapture && navLink("/live", t("navLive"))}
             {navLink("/tools", t("navTools"))}
             {navLink("/updates", t("navUpdates"))}
             {navLink("/help", t("navHelp"))}

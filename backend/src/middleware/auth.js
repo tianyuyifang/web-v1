@@ -119,26 +119,53 @@ function requireApproved(req, res, next) {
 }
 
 /**
- * Middleware: may this user approve song mappings?
+ * May this user approve song mappings?
  *
  * ADMINs always may. Anyone else needs the canEditMapping flag, which is read
  * from the database rather than the token: the flag is granted and revoked by
  * hand, and a token issued before a revocation would otherwise keep working
  * for a week. One wrong approval changes what plays for everybody, so this
  * checks the current truth even though it costs a query.
+ *
+ * Shared by the middleware below and by routes that are open to everyone but
+ * answer an editor more fully.
  */
+async function isMappingEditor(user) {
+  if (!user) return false;
+  if (user.role === 'ADMIN') return true;
+
+  const row = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { canEditMapping: true },
+  });
+  return !!row?.canEditMapping;
+}
+
+/** Middleware: refuse anyone who may not approve song mappings. */
 async function requireMappingEditor(req, res, next) {
   try {
-    if (!req.user) return next(new ForbiddenError('Insufficient permissions'));
-    if (req.user.role === 'ADMIN') return next();
-
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { canEditMapping: true },
-    });
-    if (!user || !user.canEditMapping) {
+    if (!await isMappingEditor(req.user)) {
       return next(new ForbiddenError('Insufficient permissions'));
     }
+    req.mappingEditor = true;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/**
+ * Middleware: record whether the caller may edit mappings, and let everyone
+ * through either way.
+ *
+ * For the routes a listener and a reviewer both use, where the difference is
+ * how much of the answer they get rather than whether they get one. Sets
+ * `req.mappingEditor`; a route that forgets to check it simply answers as it
+ * would for a listener, which is the safe direction to fail in.
+ */
+async function markMappingEditor(req, res, next) {
+  try {
+    req.mappingEditor = await isMappingEditor(req.user);
     return next();
   } catch (err) {
     return next(err);
@@ -146,5 +173,6 @@ async function requireMappingEditor(req, res, next) {
 }
 
 module.exports = {
-  authMiddleware, requireRole, requireApproved, requireActiveSession, requireMappingEditor,
+  authMiddleware, requireRole, requireApproved, requireActiveSession,
+  requireMappingEditor, markMappingEditor, isMappingEditor,
 };

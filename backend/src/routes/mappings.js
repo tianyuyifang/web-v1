@@ -9,19 +9,62 @@ const netease = require('../services/sources/neteaseLogin');
 const { getFreshCredential, renewAfterRejection } = require('../services/musicCredentialAccess');
 const credentials = require('../services/musicCredentialService');
 const urlCache = require('../services/playbackUrlCache');
+const lyricStore = require('../services/lyricStore');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { requireMappingEditor, markMappingEditor } = require('../middleware/auth');
 
 /**
- * Song-mapping review.
+ * Song mappings: review, and the reading a listener does.
  *
- * Mounted behind requireMappingEditor, so every route here is already limited
- * to admins and the few people trusted with the flag. Nothing is exposed to
- * ordinary users: a mapping decides what plays for everybody, so one wrong
- * approval is site-wide.
+ * ⚠ READ THIS BEFORE ADDING A ROUTE. Routes here are NOT uniformly gated.
+ * The mount only proves the caller is a signed-in, approved user; each route
+ * carries its own permission. A new route added without `requireMappingEditor`
+ * is a route every member can call.
+ *
+ * Three routes are deliberately open to any approved member -- candidates,
+ * preview and lyrics. They are what the 唱卡 page needs to play a song and
+ * offer other recordings of it, and they are all reads. Everything else stays
+ * behind `requireMappingEditor`, because a mapping decides what plays for
+ * everybody: one wrong approval is site-wide, and undoing it means finding it
+ * first. That includes the two list routes, which exist to serve the review
+ * page rather than to answer any listener's question.
  *
  * There is no route that lists the whole table. Thousands of rows are not
  * useful to scroll; the real question is always "what did the game just show
  * me", which is a search.
  */
+
+/**
+ * The ceiling on the three open routes.
+ *
+ * Not about abuse so much as about who pays for a loop. Playback resolution
+ * spends the caller's own platform account, but a lyric request carries no
+ * credential at all -- it leaves as the server, over the one address every
+ * user shares, and these platforms rate-limit by address. Measured with
+ * nothing in the way: 7.2 requests a second sustained, ~26k an hour.
+ *
+ * The lyric store is the real answer and makes almost every one of these a
+ * database read; this is the backstop for the rest -- a track imported an hour
+ * ago, or a page that starts looping. Per user rather than per IP, deliberately:
+ * users share carrier NAT, and an IP cap would let one person's stuck tab lock
+ * out strangers.
+ *
+ * 120 in 5 minutes is far above real use. Opening a card costs two calls and a
+ * round has a handful of cards, so a busy session runs at a fraction of it.
+ */
+const listenLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Every route using this sits behind authMiddleware, so the id is always
+  // there; the address is a fallback that should never be reached. It goes
+  // through ipKeyGenerator because a raw IPv6 address is per-device, and a
+  // whole /64 belongs to one subscriber -- counting the address rather than
+  // the prefix would let one person start over by changing the last group.
+  keyGenerator: (req) => req.user?.id || ipKeyGenerator(req.ip),
+  message: { error: { message: '操作过于频繁，请稍后再试' } },
+});
 
 const listQuery = z.object({
   bucket: z.enum(['confirmed', 'pending', 'unseen']).optional(),
@@ -83,7 +126,7 @@ const createBody = z.object({
 });
 
 // GET /api/mappings/counts — the three tab totals
-router.get('/counts', async (req, res, next) => {
+router.get('/counts', requireMappingEditor, async (req, res, next) => {
   try {
     res.json(await svc.getCounts());
   } catch (err) {
@@ -104,7 +147,7 @@ function mappingId(req) {
 }
 
 // GET /api/mappings?bucket=pending&q=…&cursor=…
-router.get('/', async (req, res, next) => {
+router.get('/', requireMappingEditor, async (req, res, next) => {
   try {
     // safeParse, not parse: a raw ZodError escapes as a 500, so a mistyped
     // query string would read as a server fault rather than a bad request.
@@ -120,7 +163,7 @@ router.get('/', async (req, res, next) => {
 });
 
 // GET /api/mappings/:id
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requireMappingEditor, async (req, res, next) => {
   try {
     res.json({ mapping: await svc.get(mappingId(req)) });
   } catch (err) {
@@ -128,10 +171,27 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// GET /api/mappings/:id/candidates — alternatives from the local pool
-router.get('/:id/candidates', async (req, res, next) => {
+/**
+ * GET /api/mappings/:id/candidates — other recordings of the same song.
+ *
+ * Open to any member, because choosing between versions is the listener's
+ * job as much as the reviewer's: the 唱卡 page offers them so a singer can
+ * find the recording that matches what the game is playing.
+ *
+ * Reviewers get more than listeners do. `artistMatches`, `durationMatches`
+ * and `current` are how the review page ranks and explains its ordering —
+ * they describe the state of a decision, and someone who cannot make that
+ * decision has no use for them. The rows arrive in the same order either
+ * way, since the sort happens before this.
+ */
+router.get('/:id/candidates', listenLimiter, markMappingEditor, async (req, res, next) => {
   try {
-    res.json({ candidates: await svc.candidatesFor(mappingId(req)) });
+    const all = await svc.candidatesFor(mappingId(req));
+    if (req.mappingEditor) return res.json({ candidates: all });
+
+    return res.json({
+      candidates: all.map(({ artistMatches, durationMatches, current, ...rest }) => rest),
+    });
   } catch (err) {
     next(err);
   }
@@ -280,7 +340,7 @@ async function resolveNeteasePreview(userId, externalId, res) {
  * which is backwards; every track in the pool came from a trusted playlist and
  * carries a real platform id, so there was never a reason to withhold it.
  */
-router.get('/track/:trackId/preview', async (req, res, next) => {
+router.get('/track/:trackId/preview', listenLimiter, requireMappingEditor, async (req, res, next) => {
   try {
     const parsed = z.string().uuid().safeParse(req.params.trackId);
     if (!parsed.success) throw new NotFoundError('Track');
@@ -304,7 +364,7 @@ router.get('/track/:trackId/preview', async (req, res, next) => {
  * arrives from the browser, and resolving whatever id it names would turn this
  * into an open proxy for the reviewer's own platform credential.
  */
-router.get('/:id/preview', async (req, res, next) => {
+router.get('/:id/preview', listenLimiter, async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
     const { source, externalId } = await resolveOverride(req, mapping);
@@ -326,12 +386,33 @@ router.get('/:id/preview', async (req, res, next) => {
  * lyric so the page can say so plainly.
  */
 async function resolveLyrics(source, externalId, res) {
-  if (source === 'QQ') {
-    const r = await qq.getLyric(externalId).catch(() => ({ lyric: null, translation: null }));
-    return res.json({ lyric: r.lyric, translation: r.translation });
-  }
-  if (source === 'NETEASE') {
-    const r = await netease.getLyric(externalId).catch(() => ({ lyric: null, translation: null }));
+  // Served from the pool row when it has been asked before. This is the whole
+  // defence for this route: the words never change, and every hit is one
+  // uncredentialed request not made over the server's shared address.
+  if (source === 'QQ' || source === 'NETEASE') {
+    const platform = source === 'QQ' ? qq : netease;
+    let r;
+    try {
+      // The fetch is allowed to throw through the store, so a platform outage
+      // is not written down as "this song has no lyrics" — that would be
+      // permanent, and the store never asks twice.
+      r = await lyricStore.getOrFetch(source, externalId, () => platform.getLyric(externalId));
+    } catch (err) {
+      // Being throttled is the one failure that must not read as "no lyrics".
+      // A 200 here tells the page everything is fine, so it keeps asking —
+      // turning the platform's own request to stop into a reason to continue,
+      // against the one address every user shares. Answering 503 lets the
+      // browser back off and puts the reason in the logs.
+      if (err.code === 'SOURCE_RATE_LIMITED' || err.code === 'SOURCE_UNAVAILABLE'
+        || err.httpStatus === 429 || err.httpStatus === 403) {
+        return res.status(503).json({
+          error: { message: '音源暂时繁忙，请稍后再试', code: err.code || 'SOURCE_BUSY' },
+        });
+      }
+      // Anything else is this one song having a bad minute, which is not worth
+      // an error box over a card that still plays.
+      return res.json({ lyric: null, translation: null });
+    }
     return res.json({ lyric: r.lyric, translation: r.translation });
   }
   // LOCAL clips have their own lyrics route; anything else has none to give.
@@ -339,7 +420,7 @@ async function resolveLyrics(source, externalId, res) {
 }
 
 /** GET /api/mappings/track/:trackId/lyrics */
-router.get('/track/:trackId/lyrics', async (req, res, next) => {
+router.get('/track/:trackId/lyrics', listenLimiter, requireMappingEditor, async (req, res, next) => {
   try {
     const parsed = z.string().uuid().safeParse(req.params.trackId);
     if (!parsed.success) throw new NotFoundError('Track');
@@ -362,7 +443,7 @@ router.get('/track/:trackId/lyrics', async (req, res, next) => {
  * Checked against the imported pool rather than trusted, exactly as preview
  * does: the pair arrives from the browser.
  */
-router.get('/:id/lyrics', async (req, res, next) => {
+router.get('/:id/lyrics', listenLimiter, async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
     const { source, externalId } = await resolveOverride(req, mapping);
@@ -373,7 +454,7 @@ router.get('/:id/lyrics', async (req, res, next) => {
 });
 
 // POST /api/mappings — claim a pool track for a game song
-router.post('/', validate(createBody), async (req, res, next) => {
+router.post('/', requireMappingEditor, validate(createBody), async (req, res, next) => {
   try {
     const mapping = await svc.createFromTrack({ ...req.validated, userId: req.user.id });
     res.json({ mapping, counts: await svc.getCounts() });
@@ -383,7 +464,7 @@ router.post('/', validate(createBody), async (req, res, next) => {
 });
 
 // POST /api/mappings/:id/approve
-router.post('/:id/approve', validate(approveBody), async (req, res, next) => {
+router.post('/:id/approve', requireMappingEditor, validate(approveBody), async (req, res, next) => {
   try {
     const mapping = await svc.approve(mappingId(req), { ...req.validated, userId: req.user.id });
     res.json({ mapping, counts: await svc.getCounts() });
@@ -393,7 +474,7 @@ router.post('/:id/approve', validate(approveBody), async (req, res, next) => {
 });
 
 // POST /api/mappings/:id/unapprove — put it back in the queue
-router.post('/:id/unapprove', async (req, res, next) => {
+router.post('/:id/unapprove', requireMappingEditor, async (req, res, next) => {
   try {
     const mapping = await svc.unapprove(mappingId(req));
     res.json({ mapping, counts: await svc.getCounts() });
@@ -403,7 +484,7 @@ router.post('/:id/unapprove', async (req, res, next) => {
 });
 
 // DELETE /api/mappings/:id
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requireMappingEditor, async (req, res, next) => {
   try {
     const result = await svc.remove(mappingId(req));
     res.json({ ...result, counts: await svc.getCounts() });
@@ -419,7 +500,7 @@ router.delete('/:id', async (req, res, next) => {
  * takes every mapping that names it, which the reviewer cannot know from the
  * row in front of them.
  */
-router.get('/:id/reject-impact', async (req, res, next) => {
+router.get('/:id/reject-impact', requireMappingEditor, async (req, res, next) => {
   try {
     res.json(await svc.rejectImpact(mappingId(req)));
   } catch (err) {
@@ -435,7 +516,7 @@ router.get('/:id/reject-impact', async (req, res, next) => {
  * names: the imported track goes too, which is the point — the resolver picks
  * from the pool, so removing the track is what stops it being chosen again.
  */
-router.post('/:id/reject', validate(rejectBody), async (req, res, next) => {
+router.post('/:id/reject', requireMappingEditor, validate(rejectBody), async (req, res, next) => {
   try {
     const result = await svc.reject(mappingId(req), {
       deleteTrack: req.validated.deleteTrack,

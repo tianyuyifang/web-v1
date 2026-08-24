@@ -48,7 +48,7 @@ function PermissionRow({ allowed = false, label, note }) {
 }
 
 export default function AccountPage() {
-  const { user, loading, logout, isGuest, isMember, isAdmin } = useAuth();
+  const { user, loading, logout, isGuest, isMember, canCapture } = useAuth();
   const { t } = useLanguage();
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const router = useRouter();
@@ -181,11 +181,11 @@ export default function AccountPage() {
         {[
           { key: "info", label: t("accountInfo") },
           { key: "change", label: t("changeAccount") },
-          // Hidden until the live-cards page exists. Right now connecting an
-          // account leads nowhere for an ordinary user — the credential is
-          // only consumed by mapping review, which is admin-only — so offering
-          // it would ask people to hand over a platform login for nothing.
-          ...(isAdmin ? [{ key: "music", label: "音乐账号" }] : []),
+          // Offered to whoever can reach 唱卡, which is what consumes the
+          // credential: every card resolves through the listener's own account,
+          // so without this the page has nothing it can play. Kept from anyone
+          // else, who would be handing over a platform login for nothing.
+          ...(canCapture ? [{ key: "music", label: "音乐账号" }] : []),
           { key: "appearance", label: t("appearance") },
         ].map((tab) => (
           <button
@@ -384,7 +384,7 @@ export default function AccountPage() {
 
         {/* Connected music accounts. Guarded as well as hidden, so a stale tab
             selection cannot render it for someone it was hidden from. */}
-        {activeTab === "music" && isAdmin && <MusicSourcesPanel />}
+        {activeTab === "music" && canCapture && <MusicSourcesPanel />}
 
         {/* Appearance */}
         {activeTab === "appearance" && (

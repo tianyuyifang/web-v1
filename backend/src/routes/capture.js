@@ -210,16 +210,11 @@ router.post('/sessions', ...web, requireCaptureAddOn, async (req, res, next) => 
   try {
     const { playlistId, label, ttlMinutes, mode } = req.body || {};
 
-    // 唱卡 is admin-only while it is being proven out. The add-on above was
-    // sold for auto-tagging, and its holders run a client that does not read
-    // the 唱卡 screens -- letting them start a live run would give them a
-    // session that can never receive anything. Hiding the page is not enough:
-    // this route is reachable directly.
-    if (mode === 'live' && req.user.role !== 'ADMIN') {
-      return res.status(403).json({
-        error: { code: 'NOT_AVAILABLE', message: '唱卡还在内测中，暂未开放' },
-      });
-    }
+    // 唱卡 was admin-only while it was proven out. The reason was the client:
+    // add-on holders ran a build that did not read the 唱卡 screens, so a live
+    // run would have given them a session that could never receive anything.
+    // Shipped clients have read those screens since v14 and the current build
+    // is v21, so the add-on above is the whole gate now.
     const { session, token } = await captureService.startSession({
       userId: req.user.id, playlistId, label, ttlMinutes, mode,
     });
@@ -283,13 +278,8 @@ router.patch('/target', ...web, requireCaptureAddOn, async (req, res, next) => {
   try {
     const { target, playlistId } = req.body || {};
 
-    // 唱卡 stays admin-only while it is proven out, same as the session route.
-    if (target === 'live' && req.user.role !== 'ADMIN') {
-      return res.status(403).json({
-        error: { code: 'NOT_AVAILABLE', message: '唱卡还在内测中，暂未开放' },
-      });
-    }
-
+    // No 唱卡 check here either, for the reason given on the session route: the
+    // add-on is the gate, and the session was already found by userId.
     const session = await captureService.setTarget({
       userId: req.user.id, target, playlistId,
     });

@@ -513,6 +513,26 @@ model ImportedTrack {
   /// Set once a game song claims this track — the "seen in play" flag that
   /// makes the review page's coverage counter meaningful.
   matchedAt    DateTime?  @map("matched_at") @db.Timestamptz
+
+  /// The platform's lyrics, fetched once and kept.
+  ///
+  /// Stored rather than cached because the lyric request carries no credential
+  /// at all: it leaves as the server, over the one IP every user shares, and
+  /// these platforms rate-limit by address. Measured at 7.2 requests a second
+  /// sustained with nothing in the way — so the fix is to stop asking, not to
+  /// ask more politely. An in-memory cache would not do: a restart empties it
+  /// and every open card goes back to the platform at once.
+  ///
+  /// Cheap to keep. A lyric measured ~2KB, so the whole catalogue is about
+  /// 6MB raw and a third of that once TOAST compresses it.
+  lyric        String?    @db.Text
+  /// When the lyric was last fetched — including when the answer was "none".
+  ///
+  /// Without this a song the platform has no words for is indistinguishable
+  /// from one never asked about, so every instrumental would be re-fetched
+  /// forever. Null means never asked.
+  lyricFetchedAt DateTime? @map("lyric_fetched_at") @db.Timestamptz
+
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
   /// Re-importing the same playlist updates rows instead of duplicating them.

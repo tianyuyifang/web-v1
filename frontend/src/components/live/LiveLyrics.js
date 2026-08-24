@@ -213,6 +213,7 @@ function markPassage(gameLyric, parsed) {
 
 export default function LiveLyrics({
   mappingId, gameLyric, current, onSeek, onTimesChange, onPassageTimes,
+  override,
 }) {
   const [lrc, setLrc] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -220,17 +221,25 @@ export default function LiveLyrics({
   const activeRef = useRef(null);
   const [following, setFollowing] = useState(true);
 
+  // Split out so the effect depends on the two strings rather than on an object
+  // rebuilt every render, which would refetch the words on every tick.
+  const ovSource = override?.source || null;
+  const ovId = override?.externalId || null;
+
   useEffect(() => {
     if (!mappingId) { setLrc(null); setLoading(false); return undefined; }
     let alive = true;
     setLoading(true);
-    mappingAPI.lyrics(mappingId)
+    // While an alternative is being auditioned the words must be that
+    // recording's: a cover is usually spotted by reading along, and the
+    // original's words under someone else's take is exactly the wrong answer.
+    mappingAPI.lyrics(mappingId, ovSource && ovId ? { source: ovSource, externalId: ovId } : undefined)
       .then((res) => { if (alive) setLrc(res.data.lyric || null); })
       // A song without lyrics is ordinary, not a failure worth shouting about.
       .catch(() => { if (alive) setLrc(null); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [mappingId]);
+  }, [mappingId, ovSource, ovId]);
 
   const parsed = useMemo(() => parseLRC(lrc), [lrc]);
   const timed = parsed.length > 0 && parsed[0].time !== -1;

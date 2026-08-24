@@ -116,7 +116,7 @@ function toBatches(cards) {
 }
 
 export default function LivePage() {
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, canCapture, canEditMapping, loading: authLoading } = useAuth();
   // The connection belongs to the whole site, not this page: pressing 开始识别
   // aims it here rather than opening one, so a game already tagging a playlist
   // switches over without the client pairing again.
@@ -144,8 +144,29 @@ export default function LivePage() {
   const { isPlaying: playing, current, duration } = player;
   const [candidates, setCandidates] = useState([]);
   const [approving, setApproving] = useState(false);
-  /** Set once the server refuses an approve: this account cannot edit. */
-  const [canApprove, setCanApprove] = useState(true);
+  /**
+   * May this account decide mappings?
+   *
+   * Starts from the account rather than at `true`, so a listener never sees a
+   * 就是这个 that was only ever going to 403. It can still be turned off by a
+   * refusal: the flag is hand-granted and can be revoked while a page is open,
+   * and the server is the authority either way.
+   */
+  const [canApprove, setCanApprove] = useState(canEditMapping);
+  /**
+   * Set once the server has refused, and never unset.
+   *
+   * The flag below is read from `me()`, which is minutes old; a refusal is the
+   * present tense. Without this the effect would put the buttons back every
+   * time the user object changed identity -- changing a preference is enough --
+   * so a revoked editor would watch them reappear and 403 again on every press.
+   */
+  const refused = useRef(false);
+  // The page renders before `me()` lands, so the flag arrives late on a cold
+  // load. Follow it up, but never past a refusal.
+  useEffect(() => {
+    if (canEditMapping && !refused.current) setCanApprove(true);
+  }, [canEditMapping]);
   /**
    * The card asking to be confirmed before its recording is deleted, and what
    * the deletion would take with it.
@@ -155,6 +176,16 @@ export default function LivePage() {
    * link to it, and a pool track can be named by more than one game song.
    */
   const [rejecting, setRejecting] = useState(null);
+  /**
+   * The alternative currently playing under this card, as {eventId, candidate}.
+   *
+   * Hearing a version is the whole test, so the confirm button has to commit
+   * what is actually sounding rather than what the card still points at —
+   * otherwise you listen to B and save A, and the card turns green as if it
+   * had worked. It also tells play/pause which recording to toggle: without it
+   * the pause button reloads the original mid-audition.
+   */
+  const [auditioning, setAuditioning] = useState(null);
 
   const loadedFor = useRef(null);
   /**
@@ -203,6 +234,12 @@ export default function LivePage() {
     try {
       const res = await captureAPI.liveFeed(sessionId, 60);
       setCards(res.data.cards || []);
+      // The feed re-resolves every card, so a mapping may have moved under an
+      // audition that is still on screen. Dropping it costs a relabelled button
+      // and keeps 就用这个版本 from committing an alternative against whatever
+      // the card points at now. The audio is left alone -- only the claim that
+      // it is pending a decision goes.
+      setAuditioning(null);
     } catch {
       // A failed refetch is not worth a message: the stream is still live and
       // the next card will arrive on its own.
@@ -282,6 +319,9 @@ export default function LivePage() {
   const stopAudio = useCallback(() => {
     player.stop();
     loadedFor.current = null;
+    // Nothing is sounding, so no version is under audition. Leaving it set
+    // would let 就是这个 commit an alternative the user can no longer hear.
+    setAuditioning(null);
   }, [player]);
 
   /**
@@ -323,6 +363,9 @@ export default function LivePage() {
         return;
       }
       loadedFor.current = key;
+      // Remember what is sounding, so 就是这个 commits the recording that was
+      // heard and play/pause toggles it rather than reloading the original.
+      setAuditioning(override ? { eventId: card.eventId, candidate: override } : null);
       await player.load(url);
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "播放失败");
@@ -368,6 +411,18 @@ export default function LivePage() {
     }
     playCard(card);
   }, [openId, stopAudio, playCard, setLineTimes]);
+
+  /**
+   * Play or pause whatever this card is currently sounding.
+   *
+   * Plain `playCard(card)` names the card's own recording, so during an
+   * audition it misses the loaded key and fetches the original instead of
+   * pausing. The transport and the spacebar both go through here.
+   */
+  const togglePlayback = useCallback((card) => {
+    const cand = auditioning?.eventId === card.eventId ? auditioning.candidate : null;
+    playCard(card, cand ? { source: cand.source, externalId: cand.externalId } : undefined);
+  }, [auditioning, playCard]);
 
   /**
    * Space to play or pause, arrows to nudge a second either way.
@@ -420,7 +475,7 @@ export default function LivePage() {
 
       if (e.key === " ") {
         e.preventDefault();
-        playCard(card);
+        togglePlayback(card);
       } else if (e.key === "ArrowLeft" || key === "a") {
         e.preventDefault();
         player.seek(Math.max(0, player.current - 1));
@@ -443,20 +498,33 @@ export default function LivePage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openId, cards, playCard, player]);
+  }, [openId, cards, togglePlayback, player]);
 
-  /** Switch to another version and play it immediately — hearing it is the test. */
+  /**
+   * Switch to another version and play it immediately — hearing it is the test.
+   *
+   * The whole candidate travels, not just its ids: confirming later rewrites
+   * the card from it, and a title stripped here would blank the card's heading.
+   */
   const tryCandidate = useCallback((card, cand) => {
     stopAudio();
-    playCard(card, { source: cand.source, externalId: cand.externalId });
+    playCard(card, cand);
   }, [stopAudio, playCard]);
 
   /**
    * Confirm the mapping. Takes effect everywhere at once, which is the point:
    * the next person to meet this song gets the version just verified by ear.
+   *
+   * `explicit` names a version outright; otherwise this commits whatever is
+   * being auditioned, so the button always agrees with the audio. Sending the
+   * card's own track while an alternative plays is the mistake this guards.
    */
-  const approve = useCallback(async (card, cand) => {
-    if (!card.mapping) return;
+  const approve = useCallback(async (card, explicit) => {
+    // The buttons are already hidden; this is the same answer stated where the
+    // work would start, so a stale handle or a future caller cannot reach it.
+    if (!canApprove || !card.mapping) return;
+    const cand = explicit
+      || (auditioning?.eventId === card.eventId ? auditioning.candidate : null);
     setApproving(true);
     try {
       const body = cand ? { source: cand.source, externalId: cand.externalId } : {};
@@ -479,15 +547,29 @@ export default function LivePage() {
           }
           : c
       )));
+      // The audition is over: what was an alternative is now the card's own
+      // recording. Leaving it set would keep the button reading 就用这个版本
+      // and keep the ▶ mark on a row that is no longer an alternative at all.
+      //
+      // The loaded key has to move with it. It still names the audition
+      // (`event:QQ:123`) while play/pause now asks for the card's own track
+      // (`event`), and a key that misses re-downloads the song instead of
+      // pausing it. Same audio either way — only its name here changes.
+      if (cand) {
+        if (loadedFor.current === `${card.eventId}:${cand.source}:${cand.externalId}`) {
+          loadedFor.current = card.eventId;
+        }
+        setAuditioning(null);
+      }
     } catch (err) {
       // A 403 means this account simply lacks the flag. Say so once and stop
       // offering the button rather than failing every time it is pressed.
-      if (err.response?.status === 403) setCanApprove(false);
+      if (err.response?.status === 403) { refused.current = true; setCanApprove(false); }
       else setPlayError(err.response?.data?.error?.message || "确认失败");
     } finally {
       setApproving(false);
     }
-  }, []);
+  }, [auditioning, canApprove]);
 
   /**
    * Ask what deleting this recording would take with it, then show the
@@ -498,7 +580,7 @@ export default function LivePage() {
    * so the count is not visible from the card.
    */
   const startReject = useCallback(async (card) => {
-    if (!card.mapping) return;
+    if (!canApprove || !card.mapping) return;
     if (rejecting?.eventId === card.eventId) { setRejecting(null); return; }
     setApproving(true);
     setPlayError("");
@@ -506,12 +588,12 @@ export default function LivePage() {
       const res = await mappingAPI.rejectImpact(card.mapping.mappingId);
       setRejecting({ eventId: card.eventId, ...res.data });
     } catch (err) {
-      if (err.response?.status === 403) setCanApprove(false);
+      if (err.response?.status === 403) { refused.current = true; setCanApprove(false); }
       else setPlayError(err.response?.data?.error?.message || "读取删除影响失败");
     } finally {
       setApproving(false);
     }
-  }, [rejecting]);
+  }, [rejecting, canApprove]);
 
   /**
    * Delete the recording, and take whatever the resolver offers next.
@@ -521,7 +603,7 @@ export default function LivePage() {
    * or to nothing at all when the catalogue has no other.
    */
   const confirmReject = useCallback(async (card) => {
-    if (!card.mapping) return;
+    if (!canApprove || !card.mapping) return;
     setApproving(true);
     setPlayError("");
     try {
@@ -560,12 +642,12 @@ export default function LivePage() {
         setOpenId(null);
       }
     } catch (err) {
-      if (err.response?.status === 403) setCanApprove(false);
+      if (err.response?.status === 403) { refused.current = true; setCanApprove(false); }
       else setPlayError(err.response?.data?.error?.message || "删除失败");
     } finally {
       setApproving(false);
     }
-  }, [stopAudio]);
+  }, [stopAudio, canApprove]);
 
   const start = useCallback(async () => {
     setError("");
@@ -608,15 +690,14 @@ export default function LivePage() {
     return <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted">请先登录。</div>;
   }
 
-  // Admins only while this is being proven out. The nav link is hidden the same
-  // way, but the URL is guessable and the add-on that would otherwise open this
-  // was sold for auto-tagging -- its holders have a client that cannot read the
-  // 唱卡 screens, so they would reach a page that never receives anything.
-  if (!isAdmin) {
+  // The add-on is the gate. Checked here as well as in the nav because the URL
+  // is guessable, though this only saves a wasted trip -- every route the page
+  // calls is gated on the server too.
+  if (!canCapture) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <h1 className="mb-2 text-lg font-medium">唱卡</h1>
-        <p className="text-sm text-muted">唱卡还在内测中，暂未开放。</p>
+        <p className="text-sm text-muted">唱卡是加订版功能，开通后即可使用。</p>
       </div>
     );
   }
@@ -694,7 +775,19 @@ export default function LivePage() {
               <section key={batch.at} className="rounded-lg border border-border bg-surface">
                 <button
                   type="button"
-                  onClick={() => setCollapsed((p) => ({ ...p, [batch.at]: !isCollapsed }))}
+                  onClick={() => {
+                    // Folding a round away takes its open card with it. Without
+                    // this the panel disappears while the song plays on, the
+                    // spacebar still toggles a card nobody can see, and any
+                    // audition survives to be confirmed later against a card
+                    // the user has lost track of.
+                    if (!isCollapsed && batch.cards.some((c) => c.eventId === openId)) {
+                      stopAudio();
+                      setOpenId(null);
+                      setRejecting(null);
+                    }
+                    setCollapsed((p) => ({ ...p, [batch.at]: !isCollapsed }));
+                  }}
                   className="flex w-full items-center justify-between px-3 py-2 text-left"
                 >
                   <span className="text-xs text-muted">
@@ -772,6 +865,8 @@ export default function LivePage() {
                               <div className="border-t border-border/40 pt-1">
                                 <LiveLyrics
                                   mappingId={card.mapping.mappingId}
+                                  override={auditioning?.eventId === card.eventId
+                                    ? auditioning.candidate : null}
                                   gameLyric={card.lyric}
                                   current={current}
                                   onSeek={player.seek}
@@ -833,7 +928,7 @@ export default function LivePage() {
                               <div className="mt-2 flex items-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => playCard(card)}
+                                  onClick={() => togglePlayback(card)}
                                   disabled={busy}
                                   className="h-8 w-8 shrink-0 rounded-full border border-border text-xs hover:border-accent disabled:opacity-30"
                                 >
@@ -904,14 +999,28 @@ export default function LivePage() {
                                   made here is the whole reason the card opens. */}
                               {canApprove && (
                                 <div className="mt-2 flex flex-wrap gap-2">
-                                  {!confirmed && (
+                                  {/* Offered on confirmed cards too, but only
+                                      while an alternative is playing. A match on
+                                      title and artist confirms itself, so the
+                                      wrong version arrives already green, and
+                                      requiring an 撤销 first would make fixing it
+                                      a detour. */}
+                                  {(!confirmed || auditioning?.eventId === card.eventId) && (
                                     <button
                                       type="button"
                                       onClick={() => approve(card)}
                                       disabled={approving}
                                       className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-40"
                                     >
-                                      {approving ? "…" : "✓ 就是这个"}
+                                      {/* Says which one it would save. Sending
+                                          the card's own track while an
+                                          alternative plays is the mistake this
+                                          wording guards against. */}
+                                      {approving
+                                        ? "…"
+                                        : auditioning?.eventId === card.eventId
+                                          ? "✓ 就用这个版本"
+                                          : "✓ 就是这个"}
                                     </button>
                                   )}
                                   {/* Offered on confirmed cards too. A song that
@@ -931,7 +1040,14 @@ export default function LivePage() {
                                 </div>
                               )}
 
-                              {rejecting?.eventId === card.eventId && (
+                              {/* `canApprove` as well as the panel's own flag.
+                                  It was reachable only through the guarded
+                                  button above, which made it safe by where it
+                                  could be opened from rather than by what it
+                                  checks -- and the flag can now go false while
+                                  it is open, which would leave 确认删除 alone
+                                  on screen with its siblings gone. */}
+                              {canApprove && rejecting?.eventId === card.eventId && (
                                 <div className="mt-2 rounded border border-red-500/30 bg-red-500/5 p-2">
                                   <p className="text-[0.7rem] text-red-200">
                                     从曲库彻底删除
@@ -985,28 +1101,30 @@ export default function LivePage() {
                                       .filter((c) => !(c.source === card.mapping.source
                                         && c.externalId === card.mapping.externalId))
                                       .slice(0, 5)
-                                      .map((c) => (
-                                        <li key={`${c.source}:${c.externalId}`} className="flex items-center gap-2">
-                                          <button
-                                            type="button"
-                                            onClick={() => tryCandidate(card, c)}
-                                            className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-xs text-muted hover:bg-white/5 hover:text-fg"
-                                          >
-                                            {c.title} · {c.artist} · {formatDuration(c.durationSec)}
-                                            {" · "}{SOURCE_LABEL[c.source] || c.source}
-                                          </button>
-                                          {canApprove && (
+                                      .map((c) => {
+                                        // Which one is sounding. Every row reads
+                                        // the same once the audio moves on, so
+                                        // without this the list gives no sign of
+                                        // what 就用这个版本 would save.
+                                        const isPlaying = auditioning?.eventId === card.eventId
+                                          && auditioning.candidate.source === c.source
+                                          && auditioning.candidate.externalId === c.externalId;
+                                        return (
+                                          <li key={`${c.source}:${c.externalId}`} className="flex items-center gap-2">
                                             <button
                                               type="button"
-                                              onClick={() => approve(card, c)}
-                                              disabled={approving}
-                                              className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[0.65rem] text-muted hover:border-accent hover:text-fg disabled:opacity-40"
+                                              onClick={() => tryCandidate(card, c)}
+                                              className={`min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-xs hover:bg-white/5 hover:text-fg ${
+                                                isPlaying ? "bg-white/5 text-fg" : "text-muted"
+                                              }`}
                                             >
-                                              选它
+                                              {isPlaying ? "▶ " : ""}
+                                              {c.title} · {c.artist} · {formatDuration(c.durationSec)}
+                                              {" · "}{SOURCE_LABEL[c.source] || c.source}
                                             </button>
-                                          )}
-                                        </li>
-                                      ))}
+                                          </li>
+                                        );
+                                      })}
                                   </ul>
                                 </div>
                               )}

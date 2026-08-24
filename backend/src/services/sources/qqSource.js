@@ -103,11 +103,28 @@ const TIERS = {
   flac: { prefix: 'F000', ext: '.flac' },
 };
 
-/** Wait out the minimum gap, so bursts queue instead of arriving together. */
+/**
+ * Wait out the minimum gap, so bursts queue instead of arriving together.
+ *
+ * The slot is claimed before the wait, not after it. Reading the clock, then
+ * sleeping, then writing it back looks equivalent and is not: every concurrent
+ * caller reads the same value, computes the same delay, sleeps in parallel and
+ * fires together. Measured that way, twenty callers left within 200ms of each
+ * other rather than spread over the 3.8 seconds the gap implies -- a delay, not
+ * a rate limit.
+ *
+ * Reserving first makes each caller wait for the slot the previous one took, so
+ * the queue is real and the ceiling is the one this file claims: five calls a
+ * second to QQ from this machine, however many people are asking.
+ */
 async function pace() {
-  const wait = lastCallAt + MIN_GAP_MS - Date.now();
+  const now = Date.now();
+  // max(), so an idle period does not let a caller claim a slot in the past and
+  // hand the next one a free pass.
+  const slot = Math.max(now, lastCallAt + MIN_GAP_MS);
+  lastCallAt = slot;
+  const wait = slot - now;
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  lastCallAt = Date.now();
 }
 
 function request(url, { headers = {}, host, body = null } = {}) {
@@ -548,7 +565,19 @@ async function getVipInfo({ cookie, uin, musicKey } = {}) {
   };
 }
 
-/** Lyrics. No cookie needed. */
+/**
+ * Lyrics. No cookie needed.
+ *
+ * And that is exactly why this path needs the same restraint as the others,
+ * not less. Carrying no credential means the request leaves as the server
+ * rather than as a user, over the one address everybody shares — and these
+ * platforms rate-limit by address. Measured without the pacing below: 7.2
+ * requests a second sustained, ~26k an hour, all attributable to this machine.
+ *
+ * The in-flight cap alone does not bound that. It caps how many calls are open
+ * at once (a burst of 30 sent 2 and refused 28), but two callers taking turns
+ * stay under it forever, so rate has to be limited separately.
+ */
 async function getLyric(mid) {
   breaker.acquire(PLATFORM);
   const url = `https://${LYRIC_HOST}/lyric/fcgi-bin/fcg_query_lyric_new.fcg`
@@ -556,6 +585,9 @@ async function getLyric(mid) {
 
   let res;
   try {
+    // Shares the module-level gap with every other QQ call, so the ceiling is
+    // on this machine's traffic to the platform rather than on any one caller.
+    await pace();
     res = await request(url, { headers: { Referer: 'https://y.qq.com/portal/player.html' } });
   } finally {
     breaker.release(PLATFORM);
@@ -565,8 +597,22 @@ async function getLyric(mid) {
     err.code = 'SOURCE_HTTP_ERROR';
     err.httpStatus = res.status;
     err.platform = PLATFORM;
+    // Same reading as callCgi: 429 and 403 are how a gateway says "slow down".
+    // Without this the breaker never learned anything from lyric traffic, so
+    // the one path that runs as the server was also the one that could not
+    // trip the protection meant to save it.
+    if (res.status === 429 || res.status === 403) {
+      err.breakerOpened = breaker.recordFailure(PLATFORM, 104604);
+    }
     throw err;
   }
+
+  // Reporting failures is only half of taking part. This call can be the probe
+  // that ends a cooldown, and only a success clears the half-open state -- a
+  // probe that answers and then says nothing leaves the breaker half-open for
+  // good, where the next single throttle re-opens it for the full fifteen
+  // minutes instead of taking three. Reproduced before this line existed.
+  breaker.recordSuccess(PLATFORM);
 
   let json;
   try {

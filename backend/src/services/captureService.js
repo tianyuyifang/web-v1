@@ -211,9 +211,9 @@ async function setTarget({ userId, target, playlistId }) {
     // start landing in the playlist.
     await assertPlaylistAccess(userId, playlistId);
   } else if (target === 'live') {
-    // No ownership check here: the session was fetched by userId already. The
-    // 唱卡 restriction lives in the route, and is deliberately not duplicated
-    // -- a second copy would be one more place to forget when it is lifted.
+    // Nothing to check. The session was fetched by userId, so a user can only
+    // ever re-aim their own, and 唱卡 writes to no playlist -- there is no
+    // access question of the kind the playlist branch above has to answer.
   } else if (target !== 'none') {
     throw new ValidationError({ target: ['Unknown target'] });
   }

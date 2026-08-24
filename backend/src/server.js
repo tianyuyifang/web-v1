@@ -5,7 +5,7 @@ const config = require('./config');
 const prisma = require('./db/client');
 const errorHandler = require('./middleware/errorHandler');
 const {
-  authMiddleware, requireRole, requireApproved, requireActiveSession, requireMappingEditor,
+  authMiddleware, requireRole, requireApproved, requireActiveSession,
 } = require('./middleware/auth');
 const trackBandwidth = require('./middleware/bandwidth');
 
@@ -62,9 +62,12 @@ app.use('/api/updates', authMiddleware, requireApproved, requireActiveSession, r
 // account; none of them ever returns a stored cookie.
 app.use('/api/music-sources', authMiddleware, requireApproved, requireActiveSession, require('./routes/musicSources'));
 
-// Song-mapping review. A mapping decides what plays for everyone, so this is
-// limited to admins and the few users given the canEditMapping flag.
-app.use('/api/mappings', authMiddleware, requireApproved, requireActiveSession, requireMappingEditor, require('./routes/mappings'));
+// Song mappings. Gated per route rather than here: three read routes serve the
+// 唱卡 page, where any member has to be able to play a song and hear the other
+// recordings of it, while every route that decides a mapping stays behind
+// requireMappingEditor -- a mapping decides what plays for everyone. The route
+// file says which is which, and a route added there without a gate is open.
+app.use('/api/mappings', authMiddleware, requireApproved, requireActiveSession, require('./routes/mappings'));
 
 // Admin routes (auth + ADMIN role only)
 app.use('/api/admin', authMiddleware, requireRole('ADMIN'), requireActiveSession, require('./routes/admin'));

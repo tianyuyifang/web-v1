@@ -211,7 +211,9 @@ function markPassage(gameLyric, parsed) {
   return places;
 }
 
-export default function LiveLyrics({ mappingId, gameLyric, current, onSeek, onTimesChange }) {
+export default function LiveLyrics({
+  mappingId, gameLyric, current, onSeek, onTimesChange, onPassageTimes,
+}) {
   const [lrc, setLrc] = useState(null);
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef(null);
@@ -271,6 +273,32 @@ export default function LiveLyrics({ mappingId, gameLyric, current, onSeek, onTi
     const used = first.filter((i) => i >= 0);
     return used.length ? Math.min(...used) : -1;
   }, [places]);
+
+  /**
+   * When each occurrence starts, so the transport can show where in the song
+   * they fall.
+   *
+   * Reported rather than derived twice: the passage has already been located
+   * here, and asking the page to work it out again would be a second copy of
+   * the rule to keep in step. Untimed lyrics report nothing — there is no
+   * position to point at.
+   */
+  const placeTimes = useMemo(() => {
+    if (!timed) return [];
+    return places
+      .map((place) => {
+        const used = place.filter((i) => i >= 0);
+        if (!used.length) return null;
+        const t = parsed[Math.min(...used)]?.time;
+        return Number.isFinite(t) && t >= 0 ? t : null;
+      })
+      .filter((t) => t !== null);
+  }, [places, parsed, timed]);
+
+  useEffect(() => {
+    if (!onPassageTimes) return;
+    onPassageTimes(placeTimes);
+  }, [placeTimes, onPassageTimes]);
 
   /**
    * Put a line in the middle of the lyric box.

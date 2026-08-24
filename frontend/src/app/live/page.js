@@ -168,6 +168,24 @@ export default function LivePage() {
   const lineTimes = useRef([]);
   const setLineTimes = useCallback((times) => { lineTimes.current = times || []; }, []);
 
+  /**
+   * Where in the song the passage the game is showing occurs.
+   *
+   * State rather than a ref, unlike the line times above: these are drawn on
+   * the progress bar, so the bar has to re-render when they arrive. The
+   * comparison keeps that to once per song — the reporting effect re-runs
+   * whenever the lyrics re-parse, and an unguarded set would re-render on
+   * every one of those.
+   */
+  const [passageTimes, setPassageTimes] = useState([]);
+  const onPassageTimes = useCallback((times) => {
+    setPassageTimes((prev) => {
+      const next = times || [];
+      if (prev.length === next.length && prev.every((t, i) => t === next[i])) return prev;
+      return next;
+    });
+  }, []);
+
   const batches = useMemo(() => toBatches(cards), [cards]);
 
   /**
@@ -326,6 +344,9 @@ export default function LivePage() {
     // until they land w/s would jump to positions belonging to the song that
     // was open before.
     setLineTimes([]);
+    // The marks belong to the song being closed; the next card's lyrics are a
+    // fetch away, and stale marks would sit on the new song's transport.
+    setPassageTimes([]);
     if (openId === card.eventId) {
       setOpenId(null);
       return;
@@ -755,6 +776,7 @@ export default function LivePage() {
                                   current={current}
                                   onSeek={player.seek}
                                   onTimesChange={setLineTimes}
+                                  onPassageTimes={onPassageTimes}
                                 />
                               </div>
 
@@ -767,7 +789,7 @@ export default function LivePage() {
                                       player.seek(((e.clientX - r.left) / r.width) * duration);
                                     }
                                   }}
-                                  className="group h-1.5 flex-1 cursor-pointer rounded-full bg-black/30"
+                                  className="group relative h-1.5 flex-1 cursor-pointer rounded-full bg-black/30"
                                 >
                                   <div
                                     className="h-full rounded-full bg-accent"
@@ -777,6 +799,31 @@ export default function LivePage() {
                                         : 0}%`,
                                     }}
                                   />
+                                  {/* Where the passage the game is showing sits
+                                      in the song. A chorus is sung in several
+                                      places and the words cannot say which, so
+                                      each is marked and the first is filled —
+                                      that is the one the lyrics scrolled to.
+
+                                      Each stops the click reaching the bar
+                                      underneath, which would seek to wherever
+                                      the pointer happened to land rather than
+                                      to the passage itself. */}
+                                  {duration > 0 && passageTimes.map((t, i) => (
+                                    <button
+                                      key={t}
+                                      type="button"
+                                      title={`跳到这段 ${formatClock(t)}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        player.seek(t);
+                                      }}
+                                      className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background transition-transform hover:scale-125 ${
+                                        i === 0 ? "bg-yellow-400" : "bg-yellow-400/50"
+                                      }`}
+                                      style={{ left: `${Math.min(100, (t / duration) * 100)}%` }}
+                                    />
+                                  ))}
                                 </div>
                                 <span className="shrink-0 font-mono text-[0.68rem] text-muted">
                                   {formatClock(current)} / {formatClock(duration)}

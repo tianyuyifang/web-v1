@@ -22,26 +22,25 @@ import { mappingAPI } from "@/lib/api";
 const SOURCE_LABEL = { LOCAL: "独家", QQ: "QQ", NETEASE: "网易" };
 
 /**
- * The three things that can be wrong, and what each one needs.
+ * Two states, because there are only two actions: press a button, or go and
+ * find the song.
  *
- * Kept apart because the actions differ: one is a button, one is a judgement,
- * one is a shopping list. Showing them in one undifferentiated list is what the
- * old "unmapped" outcome did, and it is why nobody could act on it.
+ * A same-titled track in the pool was once its own state, on the reasoning that
+ * the catalogue had something worth choosing between. That misread how this
+ * queue fills: anything worth a human's judgement has already been through
+ * 待确认, so a song still sitting here has had its same-titled candidates looked
+ * at and rejected, or never had a real one. A matching title is not the same
+ * song, and treating it as one split the shopping list in half.
  */
 const STATES = {
   resolvable: {
     label: "可自动配",
-    hint: "曲库里歌名和歌手都对得上，重新解析即可",
+    hint: "曲库里歌名和歌手都对得上，点「重新解析」即可",
     className: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  },
-  "needs-choice": {
-    label: "需人工选",
-    hint: "曲库里有同名的歌，但歌手对不上或游戏没给歌手",
-    className: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   },
   absent: {
     label: "曲库没有",
-    hint: "曲库里找不到这首歌，需要先导入",
+    hint: "曲库里没有这首歌（同名的不算），需要先导入。可以导出成 Excel",
     className: "bg-red-500/15 text-red-300 border-red-500/30",
   },
 };

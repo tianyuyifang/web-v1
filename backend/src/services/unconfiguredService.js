@@ -116,11 +116,23 @@ async function listUnconfigured({ query = '', all = false } = {}) {
     const automatable = !!u.artistKey;
     return {
       ...u,
-      // Three states, and they call for three different actions: one is a
-      // button, one is a judgement, one is a shopping list.
-      state: (automatable && exact.length)
-        ? 'resolvable'
-        : (candidates.length ? 'needs-choice' : 'absent'),
+      /**
+       * Two states, because there are only two actions: press a button, or go
+       * and find the song.
+       *
+       * A same-titled track in the pool used to be its own state, on the
+       * reasoning that the catalogue had something worth choosing between. That
+       * was wrong about how this queue fills. Anything worth a human's judgement
+       * has already been through 待确认 -- a song still sitting here has had its
+       * same-titled candidates looked at and rejected, or never had a real one.
+       * Either way the catalogue does not hold the recording the game means, and
+       * a matching title is not the same song: 《宁夏》 by someone else is not
+       * 《宁夏》, and five candidates for 《世界末日》 can be five wrong answers.
+       *
+       * So a title match no longer softens the verdict. Either the pool answers
+       * outright, or the song is missing and belongs on the shopping list.
+       */
+      state: (automatable && exact.length) ? 'resolvable' : 'absent',
       suggestions: candidates.slice(0, MAX_SUGGESTIONS).map((c) => ({
         source: c.source,
         externalId: c.externalId,
@@ -141,7 +153,7 @@ async function listUnconfigured({ query = '', all = false } = {}) {
   const counts = out.reduce((acc, r) => {
     acc[r.state] = (acc[r.state] || 0) + 1;
     return acc;
-  }, { resolvable: 0, 'needs-choice': 0, absent: 0 });
+  }, { resolvable: 0, absent: 0 });
   counts.total = out.length;
 
   const filtered = q

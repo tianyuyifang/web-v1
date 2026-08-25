@@ -344,6 +344,21 @@ export const mappingAPI = {
   // because deleting a pool track takes every mapping that names it.
   rejectImpact: (id) => api.get(`/mappings/${id}/reject-impact`),
   reject: (id, body = {}) => api.post(`/mappings/${id}/reject`, body),
+
+  // 未配置 — songs the game showed that nothing answers. Recomputed on every
+  // read, so the numbers move as the catalogue and the artist list change.
+  unconfigured: (q = "") => api.get(`/mappings/unconfigured${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  // Runs the queue back through the resolver the game itself uses.
+  reresolve: () => api.post("/mappings/unconfigured/reresolve"),
+  // The catalogue by eye, for titles no key can match across platforms.
+  poolSearch: (q) => api.get(`/mappings/unconfigured/search?q=${encodeURIComponent(q)}`),
+  configure: (body) => api.post("/mappings/unconfigured/configure", body),
+  forget: (rawText) => api.post("/mappings/unconfigured/forget", { rawText }),
+
+  // The list that decides whether a "-" belongs to a name or to the split.
+  dashedArtists: () => api.get("/mappings/dashed-artists"),
+  addDashedArtist: (body) => api.post("/mappings/dashed-artists", body),
+  removeDashedArtist: (id) => api.delete(`/mappings/dashed-artists/${id}`),
 };
 
 /**

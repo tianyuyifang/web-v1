@@ -553,23 +553,35 @@ async function ingestText({ session, rawText, side, row }) {
 /**
  * Dashed artist names the game uses that the catalogue does not.
  *
- * The set below is derived from imported_tracks, which is the right source for
- * almost everything: the artist a platform ships is the artist the game names.
- * These are the exceptions — the game credits a group where the platform
- * credits the member, so the name never appears in the catalogue to be found.
+ * Almost every such name is derived from imported_tracks, which is the right
+ * source: the artist a platform ships is usually the artist the game names.
+ * The dashed_artists table holds the exceptions — the game credits a group
+ * where the platform credits the member, so the name never appears in the
+ * catalogue to be found.
  *
- * Written here rather than corrected in the catalogue because the importer
+ * Kept in a table rather than corrected in the catalogue because the importer
  * upserts artist from the platform on every run: an edited row would read
  * correctly until the next import of that playlist and then silently revert,
- * which is the worst shape a fix can have.
+ * which is the worst shape a fix can have. And in a table rather than in this
+ * file because adding one used to mean a deploy.
  *
  * Lowercase, matching how the derived entries are stored.
  */
-const EXTRA_DASHED_ARTISTS = [
-  // 蠢货 is credited to 喻言 on QQ, and to THE9-喻言 in the game, so
-  // "蠢货-THE9-喻言" split at the first dash and made the title "蠢货-THE9".
-  'the9-喻言',
-];
+/**
+ * The names that must survive the table being unreadable.
+ *
+ * These used to be the whole hand-kept list; they live in the database now so
+ * that adding one is not a deploy. This is what is left behind: a floor, for
+ * the seconds during a deploy when the code is newer than the schema, and for
+ * any transient failure of that read. Without it the gazetteer comes back
+ * empty and "蠢货-THE9-喻言" splits into "蠢货-THE9" / "喻言" again -- the very
+ * bug the list exists to prevent, reappearing exactly when nobody is watching.
+ *
+ * Deliberately short. Every name here is also a row in dashed_artists, so this
+ * is a duplicate of the most load-bearing entries rather than a second list to
+ * maintain.
+ */
+const FALLBACK_DASHED_ARTISTS = ['the9-喻言'];
 
 let dashedArtists = null;
 let dashedArtistsAt = 0;
@@ -578,10 +590,24 @@ const DASHED_ARTISTS_TTL_MS = 10 * 60 * 1000;
 async function loadDashedArtists() {
   const now = Date.now();
   if (dashedArtists && now - dashedArtistsAt < DASHED_ARTISTS_TTL_MS) return dashedArtists;
-  // Seeded before the query, so the hand-written names survive a failed
-  // refresh — they are the ones the catalogue can never supply.
-  const next = new Set(EXTRA_DASHED_ARTISTS);
+  const next = new Set(FALLBACK_DASHED_ARTISTS);
+  let complete = true;
   try {
+    // Read separately from the catalogue query, so one failing does not discard
+    // the other. The table can be absent for a few seconds during a deploy --
+    // the code ships before `migrate deploy` finishes -- and losing the whole
+    // list for that window would silently mis-split every 唱卡 capture in it.
+    try {
+      const manual = await prisma.dashedArtist.findMany({ select: { name: true } });
+      for (const m of manual) {
+        const n = String(m.name || '').trim().toLowerCase();
+        if (n) next.add(n);
+      }
+    } catch (err) {
+      complete = false;
+      console.warn('[capture] hand-added dashed artists unavailable:', err.message);
+    }
+
     const rows = await prisma.$queryRawUnsafe(
       `SELECT DISTINCT artist FROM imported_tracks
         WHERE artist LIKE '%-%' OR artist LIKE '%–%' OR artist LIKE '%—%'`
@@ -599,14 +625,31 @@ async function loadDashedArtists() {
       }
     }
     dashedArtists = next;
-    dashedArtistsAt = now;
+    // Only a complete read earns the full cache window. A partial one is kept
+    // so the next capture has something to work with, but is not allowed to
+    // stand for ten minutes -- the next call retries and repairs it.
+    dashedArtistsAt = complete ? now : 0;
   } catch (err) {
     // A failed refresh must not take the split down with it: the last good set
-    // keeps working, and an empty one simply behaves the way this did before.
+    // keeps working, and a fresh process still has the fallback names below.
     console.warn('[capture] could not refresh dashed-artist list:', err.message);
     if (!dashedArtists) dashedArtists = next;
+    dashedArtistsAt = 0;
   }
   return dashedArtists;
+}
+
+/**
+ * Drop the cached list, so the next read rebuilds it.
+ *
+ * Called after a name is added or removed. Without this an admin adds the
+ * artist that would fix a song, presses 重新解析, and watches nothing happen
+ * for up to ten minutes — which reads as the feature being broken rather than
+ * as a cache.
+ */
+function invalidateDashedArtists() {
+  dashedArtists = null;
+  dashedArtistsAt = 0;
 }
 
 /**
@@ -1171,6 +1214,9 @@ module.exports = {
   // Exposed for tests: the "歌名-歌手" split is a guess that decides whether a
   // mapping is found at all, so it needs checking against real captures.
   splitTitleArtist,
+  // The unconfigured queue splits captures itself, and the artist editor has
+  // to be able to clear what it changed.
+  loadDashedArtists, invalidateDashedArtists,
   // Exposed for the matching regression script — the prefilter decides which
   // songs the matcher ever sees, so it needs checking against real data.
   fetchCandidateSongs,

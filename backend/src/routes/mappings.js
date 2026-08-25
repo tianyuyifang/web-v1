@@ -10,6 +10,8 @@ const { getFreshCredential, renewAfterRejection } = require('../services/musicCr
 const credentials = require('../services/musicCredentialService');
 const urlCache = require('../services/playbackUrlCache');
 const lyricStore = require('../services/lyricStore');
+const unconfigured = require('../services/unconfiguredService');
+const artists = require('../services/dashedArtistService');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { requireMappingEditor, markMappingEditor } = require('../middleware/auth');
 
@@ -145,6 +147,113 @@ function mappingId(req) {
   if (!parsed.success) throw new NotFoundError('Mapping');
   return parsed.data;
 }
+
+/* --- 未配置: songs the game showed that nothing answers ------------------ */
+
+/**
+ * GET /api/mappings/unconfigured
+ *
+ * Recomputed on every read — see the service header. Editor-only like the rest
+ * of the review page: it reports what the catalogue is missing, and every
+ * action offered from it writes a mapping.
+ */
+router.get('/unconfigured', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await unconfigured.listUnconfigured({ query: req.query.q }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/mappings/unconfigured/reresolve
+ *
+ * Runs the queue back through the resolver the game itself uses, so a song
+ * configured here lands in the same state as one met in play.
+ */
+router.post('/unconfigured/reresolve', requireMappingEditor, async (req, res, next) => {
+  try {
+    const result = await unconfigured.reresolveAll();
+    res.json({ ...result, counts: await svc.getCounts() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** GET /api/mappings/unconfigured/search?q= — the catalogue, by eye. */
+router.get('/unconfigured/search', listenLimiter, requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await unconfigured.searchPool({ query: req.query.q, take: req.query.take }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const configureBody = z.object({
+  rawText: z.string().min(1).max(300),
+  source: SOURCE_VALUES,
+  externalId: z.string().min(1).max(200),
+});
+
+/** POST /api/mappings/unconfigured/configure — bind one game text by hand. */
+router.post('/unconfigured/configure', requireMappingEditor, validate(configureBody), async (req, res, next) => {
+  try {
+    const result = await unconfigured.configure({
+      ...req.validated,
+      userId: req.user.id,
+    });
+    res.json({ ...result, counts: await svc.getCounts() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const forgetBody = z.object({ rawText: z.string().min(1).max(300) });
+
+/** POST /api/mappings/unconfigured/forget — drop every capture of one text. */
+router.post('/unconfigured/forget', requireMappingEditor, validate(forgetBody), async (req, res, next) => {
+  try {
+    res.json(await unconfigured.forget(req.validated.rawText));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* --- dashed artists: the list that decides where a "-" belongs ----------- */
+
+/** GET /api/mappings/dashed-artists — hand-added names, plus what the pool gives. */
+router.get('/dashed-artists', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await artists.list());
+  } catch (err) {
+    next(err);
+  }
+});
+
+const artistBody = z.object({
+  name: z.string().min(1).max(120),
+  note: z.string().max(300).optional(),
+});
+
+/** POST /api/mappings/dashed-artists — add one member, never a collaboration. */
+router.post('/dashed-artists', requireMappingEditor, validate(artistBody), async (req, res, next) => {
+  try {
+    res.json(await artists.add({ ...req.validated, userId: req.user.id }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** DELETE /api/mappings/dashed-artists/:id — hand-added rows only. */
+router.delete('/dashed-artists/:id', requireMappingEditor, async (req, res, next) => {
+  try {
+    const parsed = z.string().uuid().safeParse(req.params.id);
+    if (!parsed.success) throw new NotFoundError('Artist');
+    res.json(await artists.remove(parsed.data));
+  } catch (err) {
+    next(err);
+  }
+});
 
 // GET /api/mappings?bucket=pending&q=…&cursor=…
 router.get('/', requireMappingEditor, async (req, res, next) => {

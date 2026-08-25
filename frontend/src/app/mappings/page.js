@@ -22,12 +22,17 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { mappingAPI, musicSourcesAPI } from "@/lib/api";
 import TrackLyricPanel from "@/components/mappings/TrackLyricPanel";
+import UnconfiguredPanel from "@/components/mappings/UnconfiguredPanel";
 import useAuth from "@/hooks/useAuth";
 
 const BUCKETS = [
   { key: "pending", label: "待确认", hint: "等待人工判断" },
   { key: "confirmed", label: "已确认", hint: "已批准，播放时直接使用" },
   { key: "unseen", label: "未遇见", hint: "已导入，但游戏里还没出现过" },
+  // The one tab that looks from the game inward rather than from the catalogue
+  // outward, so it is the only one that can show a gap. Its rows are game texts
+  // rather than mapping rows, and it renders its own panel.
+  { key: "unconfigured", label: "未配置", hint: "游戏里出现过，但曲库配不上" },
 ];
 
 const SOURCE_LABEL = { LOCAL: "曲库", QQ: "QQ", NETEASE: "网易" };
@@ -130,6 +135,10 @@ export default function MappingsPage() {
   const [submittedQuery, setSubmittedQuery] = useState("");
 
   const load = useCallback(async ({ append = false, cursor = null } = {}) => {
+    // 未配置 is not a bucket of mapping rows and has no cursor to page; its own
+    // panel fetches and holds what it needs. Asking the list route for it would
+    // fail validation, and the spinner below would never clear.
+    if (bucket === "unconfigured") { setLoading(false); return; }
     setLoading(true);
     setError("");
     try {
@@ -144,7 +153,11 @@ export default function MappingsPage() {
         setRejecting(null);
       }
       setNextCursor(res.data.nextCursor);
-      if (res.data.counts) setCounts(res.data.counts);
+      // Merged, not replaced. The server counts the three mapping buckets and
+      // knows nothing about 未配置, which the panel reports separately — assigning
+      // wholesale dropped that key and left the new tab reading 0 whenever any
+      // other tab was loaded or any row approved.
+      if (res.data.counts) setCounts((prev) => ({ ...prev, ...res.data.counts }));
     } catch (err) {
       // A 403 here means the account simply lacks the flag; say so plainly
       // rather than showing an empty list that looks like a bug.
@@ -347,7 +360,11 @@ export default function MappingsPage() {
     setError("");
     try {
       const res = await fn();
-      if (res.data.counts) setCounts(res.data.counts);
+      // Merged, not replaced. The server counts the three mapping buckets and
+      // knows nothing about 未配置, which the panel reports separately — assigning
+      // wholesale dropped that key and left the new tab reading 0 whenever any
+      // other tab was loaded or any row approved.
+      if (res.data.counts) setCounts((prev) => ({ ...prev, ...res.data.counts }));
       after?.(res);
     } catch (err) {
       setError(err.response?.data?.error?.message || "操作失败");
@@ -521,6 +538,17 @@ export default function MappingsPage() {
         ))}
       </div>
 
+      {/* 未配置 owns its whole body: its rows are game texts rather than
+          mapping rows, it has its own search and its own actions, and it is
+          recomputed rather than paged. Everything below is for the other
+          three. */}
+      {bucket === "unconfigured" && (
+        <UnconfiguredPanel
+          onCountsChange={(n) => setCounts((prev) => ({ ...prev, unconfigured: n }))}
+        />
+      )}
+
+      {bucket !== "unconfigured" && (
       <form
         className="mb-4 flex gap-2"
         onSubmit={(e) => { e.preventDefault(); setSubmittedQuery(query); }}
@@ -535,6 +563,7 @@ export default function MappingsPage() {
           搜索
         </button>
       </form>
+      )}
 
       {/* Only warned about while it is still worth acting on. A banner about
           the QQ connection sat here before, which was wrong twice over: most
@@ -560,9 +589,9 @@ export default function MappingsPage() {
         </div>
       )}
 
-      {loading && rows.length === 0 && <div className="p-6 text-sm text-muted">加载中…</div>}
+      {bucket !== "unconfigured" && loading && rows.length === 0 && <div className="p-6 text-sm text-muted">加载中…</div>}
 
-      {!loading && rows.length === 0 && (
+      {bucket !== "unconfigured" && !loading && rows.length === 0 && (
         <div className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">
           {/* The submitted term, not the input: typing without pressing enter
               must not relabel an empty bucket as "no matches". */}
@@ -577,6 +606,7 @@ export default function MappingsPage() {
           stretched — a title and artist do not need half a widescreen, and the
           width they were given left a band of empty space down the middle. The
           panel takes the rest. */}
+      {bucket !== "unconfigured" && (
       <div className="lg:grid lg:grid-cols-[minmax(0,32rem)_1fr] lg:items-start lg:gap-4">
         <div className="min-w-0">
       <ul className="space-y-1">
@@ -886,6 +916,7 @@ export default function MappingsPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

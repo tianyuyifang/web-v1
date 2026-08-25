@@ -542,3 +542,31 @@ model ImportedTrack {
   @@index([titleKey])
   @@map("imported_tracks")
 }
+
+/// An artist whose own name contains a dash, added by hand.
+///
+/// The split between "歌名-歌手" is made at a dash, so a dash inside the
+/// artist's own name is the one thing that can break it: "幸福了然后呢-A-Lin"
+/// came apart as "幸福了然后呢-A" / "Lin". Almost every such name is found in
+/// imported_tracks and needs no help. This table is for the ones that are not:
+/// where the game credits a group and the platform credits the member, the
+/// name never appears in the catalogue to be found.
+///
+/// Kept here rather than corrected in the catalogue because the importer
+/// upserts artist from the platform on every run — an edited row reads
+/// correctly until the next import and then silently reverts.
+///
+/// One member per row, never a collaboration. A single member carrying the
+/// dash is enough to settle where the dash belongs, so "IN-K" covers every
+/// pairing IN-K will ever appear in, in any order.
+model DashedArtist {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Lowercase, matching how the derived entries are compared.
+  name      String   @unique
+  /// Why this one needed adding — the catalogue cannot explain itself.
+  note      String?
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("dashed_artists")
+}

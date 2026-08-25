@@ -270,6 +270,36 @@ export default function UnconfiguredPanel({ onCountsChange }) {
     }
   };
 
+  /**
+   * Download the 曲库没有 rows as a spreadsheet.
+   *
+   * Fetched as a blob and handed to a temporary link, because the route needs
+   * the auth header and a plain href cannot carry one. The object URL is
+   * revoked straight after — left behind it pins the whole file in memory for
+   * as long as the tab lives.
+   */
+  const exportAbsent = async () => {
+    setBusy("export");
+    setError("");
+    try {
+      const res = await mappingAPI.absentXlsx();
+      const href = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `曲库没有-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      const n = res.headers?.["x-row-count"];
+      setNote(n ? `已导出 ${n} 首` : "已导出");
+    } catch (err) {
+      setError(err.response?.data?.error?.message || "导出失败");
+    } finally {
+      setBusy((p) => (p === "export" ? null : p));
+    }
+  };
+
   const shown = filter === "all" ? rows : rows.filter((r) => r.state === filter);
 
   return (
@@ -333,6 +363,21 @@ export default function UnconfiguredPanel({ onCountsChange }) {
             {label}
           </button>
         ))}
+
+        {/* Sits with 曲库没有 because it exports exactly those rows. This is the
+            one state the page cannot fix -- the song has to come from somewhere
+            else -- so the useful thing to offer is a list to take away. */}
+        {(counts.absent ?? 0) > 0 && (
+          <button
+            type="button"
+            onClick={exportAbsent}
+            disabled={busy === "export"}
+            title={`把「曲库没有」的 ${counts.absent} 首导出成 Excel（歌名、歌手两列）`}
+            className="rounded-md border border-border px-2.5 py-1 text-xs text-muted transition hover:border-accent hover:text-fg disabled:opacity-40"
+          >
+            {busy === "export" ? "导出中…" : `↓ 导出「曲库没有」${counts.absent}`}
+          </button>
+        )}
       </div>
 
       {artistsOpen && (

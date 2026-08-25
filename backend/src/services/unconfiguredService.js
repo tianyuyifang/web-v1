@@ -17,6 +17,7 @@
  * Grouped by the game's own text, not by row: a song sits on screen for seconds
  * and is read many times, and 438 rows are 321 songs.
  */
+const XLSX = require('xlsx');
 const prisma = require('../db/client');
 const { AppError } = require('../utils/errors');
 const { titleKey, artistKey } = require('./songKeyService');
@@ -196,6 +197,39 @@ async function reresolveAll() {
 }
 
 /**
+ * The songs the catalogue does not have, as a spreadsheet.
+ *
+ * This is the one state nothing on the page can fix: the others are a button or
+ * a judgement, but a song we simply do not hold has to be bought or imported
+ * from somewhere else first. So the useful form is a list to take away, and a
+ * shopping list wants two columns and no ceremony.
+ *
+ * Built from the full set rather than the page — the whole point is to leave
+ * with everything, and a hundred rows of three hundred is a list that quietly
+ * lies about what is missing.
+ */
+async function absentWorkbook() {
+  const { rows } = await listUnconfigured({ all: true });
+  const absent = rows.filter((r) => r.state === 'absent');
+
+  // The split's own answer, not the game's raw string: 歌名 and 歌手 are what
+  // a search box on a music platform wants, and the raw text has them joined
+  // by a dash that means nothing to anyone but us.
+  const data = absent.map((r) => ({ 歌名: r.title, 歌手: r.artist || '' }));
+
+  const sheet = XLSX.utils.json_to_sheet(data, { header: ['歌名', '歌手'] });
+  // Wide enough for a long Chinese title without dragging the column border.
+  sheet['!cols'] = [{ wch: 32 }, { wch: 24 }];
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, '曲库没有');
+
+  return {
+    buffer: XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }),
+    count: data.length,
+  };
+}
+
+/**
  * Search the catalogue by hand, for the case automatic matching cannot reach.
  *
  * The platforms disagree about titles in ways no key can normalise -- 繁体 for
@@ -282,4 +316,6 @@ async function forget(rawText) {
   return { removed: res.count };
 }
 
-module.exports = { listUnconfigured, reresolveAll, searchPool, configure, forget, PAGE_SIZE };
+module.exports = {
+  listUnconfigured, reresolveAll, searchPool, configure, forget, absentWorkbook, PAGE_SIZE,
+};

@@ -353,6 +353,10 @@ export const mappingAPI = {
   // The catalogue by eye, for titles no key can match across platforms.
   poolSearch: (q) => api.get(`/mappings/unconfigured/search?q=${encodeURIComponent(q)}`),
   configure: (body) => api.post("/mappings/unconfigured/configure", body),
+  // The 曲库没有 rows as a spreadsheet. Fetched as a blob through the client
+  // rather than opened as a link, because the route needs the auth header and
+  // a plain <a href> cannot send one.
+  absentXlsx: () => api.get("/mappings/unconfigured/absent.xlsx", { responseType: "blob" }),
   forget: (rawText) => api.post("/mappings/unconfigured/forget", { rawText }),
 
   // The list that decides whether a "-" belongs to a name or to the split.

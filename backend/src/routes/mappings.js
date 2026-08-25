@@ -180,6 +180,39 @@ router.post('/unconfigured/reresolve', requireMappingEditor, async (req, res, ne
   }
 });
 
+/**
+ * GET /api/mappings/unconfigured/absent.xlsx — the shopping list.
+ *
+ * A download rather than JSON: the rows this exports are the one state the page
+ * cannot act on, so what an admin does next happens somewhere else entirely —
+ * a music platform's search box, someone else's playlist. A spreadsheet is the
+ * form that travels.
+ *
+ * The filename carries the date because these lists are compared: what was
+ * missing last week against what is missing now is how you tell whether an
+ * import actually landed.
+ */
+router.get('/unconfigured/absent.xlsx', requireMappingEditor, async (req, res, next) => {
+  try {
+    const { buffer, count } = await unconfigured.absentWorkbook();
+    const day = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    // Both forms: the plain one for older clients, the UTF-8 one so a Chinese
+    // filename survives. Sent as ASCII in the fallback for the same reason.
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="unconfigured-${day}.xlsx"; `
+      + `filename*=UTF-8''${encodeURIComponent(`曲库没有-${day}.xlsx`)}`
+    );
+    // Read by the page so it can say how many rows went into the file.
+    res.setHeader('X-Row-Count', String(count));
+    res.setHeader('Access-Control-Expose-Headers', 'X-Row-Count');
+    return res.send(buffer);
+  } catch (err) {
+    return next(err);
+  }
+});
+
 /** GET /api/mappings/unconfigured/search?q= — the catalogue, by eye. */
 router.get('/unconfigured/search', listenLimiter, requireMappingEditor, async (req, res, next) => {
   try {

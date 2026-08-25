@@ -648,13 +648,52 @@ function splitTitleArtist(text, knownDashedArtists) {
       const left = text.slice(0, i).trim();
       const right = text.slice(i + 1).trim();
       if (!left || !right) continue;
-      if (knownDashedArtists.has(right.toLowerCase())) {
+      if (namesKnownArtist(right, knownDashedArtists)) {
         return { title: left, artist: right };
       }
     }
   }
 
   return { title, artist };
+}
+
+/**
+ * Is this string an artist the catalogue knows?
+ *
+ * Exact match first, because that is what almost every name needs. The rest is
+ * for collaborations, where the two sides disagree in ways a string comparison
+ * cannot see through:
+ *
+ *   catalogue: "IN-K/王忻辰"      game: "王忻辰/IN-K"
+ *
+ * Same two people, opposite order, so "迷失幻境-王忻辰/IN-K" found nothing and
+ * split at the dash inside IN-K instead -- title "迷失幻境-王忻辰/IN", artist
+ * "K", and a song that is in the catalogue went unmapped.
+ *
+ * So a collaboration is compared as a set: same members, any order. And a
+ * single dashed member is enough on its own, since the whole reason to consult
+ * this list is to find where a dash belongs to a name rather than to the split.
+ */
+function namesKnownArtist(candidate, known) {
+  const lower = candidate.toLowerCase();
+  if (known.has(lower)) return true;
+  if (!lower.includes('/')) return false;
+
+  const parts = lower.split('/').map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) return false;
+
+  // Any member whose own name carries the dash settles it: the dash is part of
+  // a name, so the split does not belong there.
+  if (parts.some((p) => /[-–—]/.test(p) && known.has(p))) return true;
+
+  // Otherwise compare the whole credit order-insensitively.
+  const wanted = [...parts].sort().join('/');
+  for (const entry of known) {
+    if (!entry.includes('/')) continue;
+    const e = entry.split('/').map((p) => p.trim()).filter(Boolean).sort().join('/');
+    if (e === wanted) return true;
+  }
+  return false;
 }
 
 /**

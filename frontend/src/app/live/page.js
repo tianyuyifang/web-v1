@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { captureAPI, mappingAPI, getLiveSSEUrl } from "@/lib/api";
+import { captureAPI, mappingAPI, getLiveSSEUrl, getStreamUrl } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
 import useCaptureStore from "@/store/captureStore";
 import useLivePlayer from "@/hooks/useLivePlayer";
@@ -31,7 +31,9 @@ import LiveLyrics from "@/components/live/LiveLyrics";
 import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 
-const SOURCE_LABEL = { LOCAL: "曲库", QQ: "QQ", NETEASE: "网易" };
+// "独家" rather than "曲库": these are songs we hold ourselves, so they play
+// without a platform account and cannot be delisted out from under a singer.
+const SOURCE_LABEL = { LOCAL: "独家", QQ: "QQ", NETEASE: "网易" };
 
 /**
  * How long a round may stay open for new songs to join it.
@@ -349,9 +351,19 @@ export default function LivePage() {
     setBusy(true);
     try {
       const res = await mappingAPI.preview(card.mapping.mappingId, override);
-      const { url, reason, kind } = res.data;
+      const { url, reason, kind, songId } = res.data;
       if (kind === "unsupported") {
         setPlayError(`${SOURCE_LABEL[card.mapping.source] || card.mapping.source} 的播放还没做`);
+        return;
+      }
+      // A song we hold ourselves. The address is built here rather than sent,
+      // because the stream route wants a token and an <audio> element can only
+      // carry one in the query string — which is what this helper does, and
+      // what the playlist player has always done.
+      if (kind === "local" && songId) {
+        loadedFor.current = key;
+        setAuditioning(override ? { eventId: card.eventId, candidate: override } : null);
+        await player.load(getStreamUrl(songId));
         return;
       }
       if (!url) {

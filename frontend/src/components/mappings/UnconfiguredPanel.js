@@ -17,7 +17,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mappingAPI } from "@/lib/api";
 
-const SOURCE_LABEL = { LOCAL: "曲库", QQ: "QQ", NETEASE: "网易" };
+// "独家" rather than "曲库": these are songs we hold ourselves, so they play
+// without a platform account and cannot be delisted out from under a singer.
+const SOURCE_LABEL = { LOCAL: "独家", QQ: "QQ", NETEASE: "网易" };
 
 /**
  * The three things that can be wrong, and what each one needs.

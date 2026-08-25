@@ -313,12 +313,26 @@ router.get('/:id/candidates', listenLimiter, markMappingEditor, async (req, res,
  * behave identically — the audio does not care whether anyone has vouched for
  * the pairing yet.
  *
- * The reviewer's own credential is used and the URL goes to the browser, which
- * fetches from the CDN directly; the audio never passes through this server.
+ * For the two platforms the caller's own credential is used and the URL goes to
+ * the browser, which fetches from the CDN directly; that audio never passes
+ * through this server. A local song is the exception — see below.
  */
 async function resolvePreview(userId, source, externalId, res) {
   if (source === 'LOCAL') {
-    // Local songs already have a streaming route; no external call needed.
+    // A song we hold ourselves. No credential, no outbound call, no rate limit
+    // to respect -- it is the fastest of the three sources and the only one
+    // that cannot be taken away by a platform.
+    //
+    // The cost is that this audio does leave from here rather than from a CDN,
+    // so it spends real egress: 3-7MB a play. That is affordable because the
+    // catalogue here is a handful of songs chosen by hand, not the 4669 in the
+    // local library. Moving them to object storage is the answer if that ever
+    // stops being true.
+    //
+    // No url: an <audio> element cannot carry an Authorization header, and the
+    // stream route needs one. The browser builds the address itself from the
+    // song id, using the same helper the playlist player uses -- which puts the
+    // token in the query string, the one place a media element will carry it.
     return res.json({ kind: 'local', songId: externalId, url: null });
   }
   if (source === 'NETEASE') {
@@ -495,6 +509,18 @@ router.get('/:id/preview', listenLimiter, async (req, res, next) => {
  * lyric so the page can say so plainly.
  */
 async function resolveLyrics(source, externalId, res) {
+  // A local song keeps its words in the songs table, already timed. Read live
+  // rather than copied into the pool row: it costs 0.02ms more (measured) and
+  // means editing a local lyric shows up in 唱卡 immediately, instead of after
+  // someone remembers to re-import.
+  if (source === 'LOCAL') {
+    const song = await prisma.song.findUnique({
+      where: { id: String(externalId) },
+      select: { lyrics: true },
+    }).catch(() => null);
+    return res.json({ lyric: song?.lyrics || null, translation: null });
+  }
+
   // Served from the pool row when it has been asked before. This is the whole
   // defence for this route: the words never change, and every hit is one
   // uncredentialed request not made over the server's shared address.

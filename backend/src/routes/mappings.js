@@ -192,7 +192,7 @@ router.post('/unconfigured/reresolve', requireMappingEditor, async (req, res, ne
  * missing last week against what is missing now is how you tell whether an
  * import actually landed.
  */
-router.get('/unconfigured/absent.xlsx', requireMappingEditor, async (req, res, next) => {
+router.get('/unconfigured/absent.xlsx', listenLimiter, requireMappingEditor, async (req, res, next) => {
   try {
     const { buffer, count } = await unconfigured.absentWorkbook();
     const day = new Date().toISOString().slice(0, 10);

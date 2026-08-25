@@ -10,8 +10,19 @@
  * this server's egress and drown the pool's ranking in near-duplicates. Named
  * songs only, chosen by hand.
  *
- * What a row costs: the audio streams from here rather than from a CDN, about
- * 3-7MB a play. Fine for a handful, the reason not to do this in bulk.
+ * What a row costs, and there are two costs, not one:
+ *
+ * Egress. The audio streams from here rather than from a CDN, 1.6-2.6MB a play
+ * for the songs added so far. Fine for a handful; the reason not to do this in
+ * bulk.
+ *
+ * Reach. A row here is offered as a candidate to every 唱卡 listener, not only
+ * to editors -- candidatesFor is deliberately open so a singer can choose
+ * between recordings -- and a candidate can be previewed. So adding a row is
+ * also deciding that every member may stream that song on demand. That is the
+ * intent for songs picked for 唱卡, and it is a poor way to reach the whole
+ * local library: bulk-importing would silently make the lot of it streamable
+ * from the mapping routes, which is a bigger decision than it looks.
  *
  * Lyrics are NOT copied. The lyrics route reads them live from songs for LOCAL,
  * so editing a local lyric shows up in 唱卡 immediately -- measured at 0.02ms

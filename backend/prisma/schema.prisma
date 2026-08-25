@@ -386,15 +386,25 @@ model CaptureEvent {
   session CaptureSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   clip    Clip?          @relation(fields: [matchedClipId], references: [id], onDelete: SetNull)
 
-  /// Dedupe key: the same song is read ~15 times while it sits on screen, and
-  /// the string is byte-identical each time. Scoped to the destination as well
-  /// as the connection -- a connection now spans several playlists, and keying
-  /// on it alone answered "duplicate" for the same song in a second playlist,
-  /// which silently never got tagged.
+  /// Dedupe lookup: the same song is read ~15 times while it sits on screen,
+  /// and the string is byte-identical each time. Scoped to the destination as
+  /// well as the connection -- a connection now spans several playlists, and
+  /// keying on it alone answered "duplicate" for the same song in a second
+  /// playlist, which silently never got tagged.
   ///
-  /// Declared here for the client's benefit; the real index is expression-based
-  /// (COALESCE over the null playlist) so 唱卡 captures dedupe too, since
-  /// Postgres would otherwise treat their null playlist as always distinct.
+  /// An index, not a constraint. It was unique until the 唱卡 dedupe gained a
+  /// time window: a song offered again in a later round is a new card, and a
+  /// unique key on these four columns refuses to store it however the service
+  /// decides. Uniqueness now lives in one place -- the lookup in ingestLive and
+  /// ingestText -- rather than in two that can disagree.
+  ///
+  /// ⚠ This declaration does not describe the index that actually exists. The
+  /// real one is expression-based (COALESCE over the nullable playlist and
+  /// stage, so 唱卡 rows dedupe at all) and is named capture_events_dedupe_lookup;
+  /// Prisma cannot express that, so this line stands in for it and has never
+  /// matched. `migrate dev` will offer to create a second, redundant index --
+  /// decline it. `migrate deploy`, which is what the deploy actually runs, only
+  /// applies the migration files and is unaffected.
   @@index([sessionId, playlistId, stage, rawText])
   @@index([sessionId, createdAt])
   @@index([playlistId])

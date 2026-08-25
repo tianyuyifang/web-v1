@@ -19,6 +19,32 @@ const MAX_TEXT_LENGTH = 200;
  * write an unbounded string.
  */
 const MAX_LYRIC_LENGTH = 2000;
+
+/**
+ * How far back a 唱卡 capture looks for the row it belongs to.
+ *
+ * A song sits on screen for seconds and is read many times, so captures have to
+ * be deduplicated. The right key would be the round that picked it — but the
+ * client does not report a round, and timestamps cannot recover one: gaps
+ * within a round and gaps between rounds are both 25-35 seconds. So recency
+ * stands in for it.
+ *
+ * Deduplicating across the whole session, which is what this used to do, was
+ * wrong for the length a session actually runs. Measured: 100-225 songs over
+ * two to four hours. A song offered again in a later round found its old row
+ * and was discarded, so it never produced a card again for the rest of the run
+ * — the bug this window fixes.
+ *
+ * Five minutes, against measured gaps between consecutive captures of a median
+ * of 0s and a 90th percentile of 141s. That is roughly twice the p90, so the
+ * repeated reads within one round still collapse into one card.
+ *
+ * The failure directions are not equal, and this errs toward the cheap one: too
+ * short shows one song as two cards, too long loses the song entirely. A
+ * duplicate card is a moment's confusion; a missing card is a song the singer
+ * cannot play.
+ */
+const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
 const MAX_CANDIDATE_SCAN = 30;
 /**
  * Shortest ellipsis fragment worth filtering on. "一…的约定" leaves "一", which
@@ -787,9 +813,13 @@ async function ingestLive({ session, rawText, lyric, stage }) {
   //
   // Only within the round that picked it. A later round can offer the same
   // song again, and folding those together would put the second round's words
-  // on the first round's card. The round is the picking row this session
-  // already holds for that exact text -- rounds do not repeat a song inside
-  // themselves, so one lookup identifies it.
+  // on the first round's card -- or, worse, drop the second appearance
+  // entirely, which is what used to happen: the lookup was scoped to the whole
+  // session, so a song seen in round three never produced a card again for the
+  // rest of a four-hour run.
+  //
+  // Which round a capture belongs to is not something the client reports yet,
+  // so the round is approximated by recency -- see DEDUPE_WINDOW_MS.
   // Split before the lookup, not after, because the repeat branch below sends
   // a card to the page and every card has to carry these. Sent without them,
   // an update to a song's lyrics arrived as a card with no title and no
@@ -798,20 +828,32 @@ async function ingestLive({ session, rawText, lyric, stage }) {
   const { title, artist } = splitTitleArtist(text, await loadDashedArtists());
 
   // A performance prefers a row already marked as sung, and falls back to the
-  // one the picking screen made. Preferring it matters because the dedupe
-  // index covers stage: a session from before this change can hold both rows,
-  // and promoting the picking one would collide with the singing one it
-  // already has.
-  const existing = from === 'singing'
-    ? (await prisma.captureEvent.findFirst({
-      where: { sessionId: session.id, playlistId: null, rawText: text, stage: 'singing' },
-    })) || (await prisma.captureEvent.findFirst({
-      where: { sessionId: session.id, playlistId: null, rawText: text },
-      orderBy: { createdAt: 'desc' },
-    }))
-    : await prisma.captureEvent.findFirst({
-      where: { sessionId: session.id, playlistId: null, rawText: text, stage: from },
-    });
+  // The newest row for this song inside the window, whatever stage it is at.
+  //
+  // A performance used to look for a row already marked 'singing' first, so it
+  // would not collide with one a pre-per-stage session had left behind. With
+  // the window that preference became a trap: round two's picking makes a new
+  // row, but round two's performance skips past it to round one's 'singing' row
+  // -- writing this round's words over last round's, and leaving the new card
+  // with none at all. Reproduced before this was written.
+  //
+  // Newest-first is the whole rule now. Within five minutes there is one round,
+  // and its most recent row is the one this capture belongs to.
+  const since = new Date(Date.now() - DEDUPE_WINDOW_MS);
+  const existing = await prisma.captureEvent.findFirst({
+    where: {
+      sessionId: session.id,
+      playlistId: null,
+      rawText: text,
+      createdAt: { gte: since },
+      // A performance attaches to whichever row is newest; a picking read only
+      // ever matches another picking read. Without that asymmetry the picking
+      // screen that opens the next round would attach to the performance that
+      // just ended, and the round would never get a card of its own.
+      ...(from === 'singing' ? {} : { stage: from }),
+    },
+    orderBy: { createdAt: 'desc' },
+  });
   if (existing) {
     // A repeat still carries something new when the words have arrived or
     // grown: the game reveals a passage progressively, so a later read of the

@@ -88,11 +88,45 @@ const PLATFORMS = {
   }
   const SOURCE = plat.source;
 
-  const cookie = process.env[plat.env];
+  /**
+   * Where the cookie comes from, in order of preference.
+   *
+   * The stored one first. An admin who has connected the platform on the
+   * account page already has it encrypted in the database, and reading it from
+   * there means it is never typed, never pasted into a terminal, and never
+   * present in shell history — which is strictly safer than the environment
+   * variable, not merely more convenient.
+   *
+   * The environment stays as the fallback: a fresh machine with nothing
+   * connected, or a cookie for an account that is not in this database.
+   */
+  let cookie = process.env[plat.env];
+  let cookieFrom = 'environment';
+
   if (!cookie) {
-    bail(`Set ${plat.env}. It is read from the environment so it never lands in a file:\n`
-      + `  ${plat.env}='…' node scripts/import-mapping.js --platform ${PLATFORM} --playlist ${PLAYLIST}`);
+    const credentials = require('../src/services/musicCredentialService');
+    const admins = await prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true, username: true },
+      orderBy: { username: 'asc' },
+    });
+    for (const a of admins) {
+      const cred = await credentials.getCredential(a.id, PLATFORM).catch(() => null);
+      if (cred && cred.cookie) {
+        cookie = cred.cookie;
+        cookieFrom = `stored credential (${a.username})`;
+        break;
+      }
+    }
   }
+
+  if (!cookie) {
+    bail(`No ${plat.label} credential.\n`
+      + `  Connect it on the account page, or pass it in the environment so it\n`
+      + `  never lands in a file:\n`
+      + `    ${plat.env}='…' node scripts/import-mapping.js --platform ${PLATFORM} --playlist ${PLAYLIST}`);
+  }
+  console.log(`\n凭证来源：${cookieFrom}`);
 
   console.log(`\nFetching ${plat.label} playlist ${PLAYLIST} …`);
   console.log('(batched, so a few thousand songs cost a handful of requests)\n');

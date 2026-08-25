@@ -20,7 +20,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { mappingAPI, musicSourcesAPI } from "@/lib/api";
+import { mappingAPI, musicSourcesAPI, getStreamUrl } from "@/lib/api";
 import TrackLyricPanel from "@/components/mappings/TrackLyricPanel";
 import UnconfiguredPanel from "@/components/mappings/UnconfiguredPanel";
 import useAuth from "@/hooks/useAuth";
@@ -282,6 +282,20 @@ export default function MappingsPage() {
 
       if (kind === "unsupported") {
         setPlayError(`${SOURCE_LABEL[source] || source} 的试听还没做，暂时无法播放`);
+        return;
+      }
+      // A song we hold ourselves. No url is sent for these: an <audio> element
+      // cannot carry an Authorization header, so the address is built here from
+      // the song id with the helper that puts the token in the query string.
+      // Without this branch a 独家 row falls into the check below and reports
+      // 无法试听 for a song sitting on our own disk.
+      if (kind === "local" && res.data.songId) {
+        el.src = getStreamUrl(res.data.songId);
+        setProgress({ current: 0, duration: 0 });
+        setLoadedFor(key);
+        setAuditioning(candidate ? { rowId: row.id, candidate } : null);
+        await el.play();
+        setPlaying(key);
         return;
       }
       if (!url) {

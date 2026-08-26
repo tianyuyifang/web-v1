@@ -633,74 +633,71 @@ export default function MappingsPage() {
       <ul className="space-y-1">
         {rows.map((row) => (
           <li key={row.id} className="rounded-lg border border-border bg-surface">
-            {/* Text first, controls beneath, rather than the two competing for
-                one line. The buttons cannot shrink -- pressing the wrong one
-                deletes a recording -- so on a single line they took their
-                ~340px first and the titles lived on the remainder. Reading
-                comes before deciding here, so the reading gets the full width
-                and the buttons get their own row. */}
-            <div className="px-2.5 py-1.5">
-              <div className="flex items-center gap-2">
-                {/* Expands rather than plays. Deciding on a mapping means reading
-                    the lyrics as much as hearing the audio, and starting playback
-                    from a collapsed row gave no way to follow along. */}
-                <button
-                  type="button"
-                  onClick={() => togglePlayer(row)}
-                  title={selected?.id === row.id ? "收起歌词" : "查看歌词"}
-                  className="h-7 w-7 shrink-0 rounded-full border border-border text-xs hover:border-accent"
-                >
-                  {selected?.id === row.id ? "▪" : "▸"}
-                </button>
+            {/* One line again, which the width now affords. The buttons cannot
+                shrink -- pressing the wrong one deletes a recording -- so they
+                take their ~340px first and the titles live on the remainder;
+                at 32rem that left about 140px and the titles were cut short,
+                but at 48rem it leaves roughly 400px, which a Chinese title and
+                artist fit into. Two lines per row bought nothing after that
+                and cost a third of the rows on screen. */}
+            <div className="flex items-center gap-2 px-2.5 py-1.5">
+              {/* Expands rather than plays. Deciding on a mapping means reading
+                  the lyrics as much as hearing the audio, and starting playback
+                  from a collapsed row gave no way to follow along. */}
+              <button
+                type="button"
+                onClick={() => togglePlayer(row)}
+                title={selected?.id === row.id ? "收起歌词" : "查看歌词"}
+                className="h-7 w-7 shrink-0 rounded-full border border-border text-xs hover:border-accent"
+              >
+                {selected?.id === row.id ? "▪" : "▸"}
+              </button>
 
-                {/* Two lines, one per side of the pairing, because that
-                    comparison is the entire review: does the platform track on
-                    top really correspond to the game song underneath.
+              {/* Two lines, one per side of the pairing, because that
+                  comparison is the entire review: does the platform track on
+                  top really correspond to the game song underneath.
 
-                    They used to share a line, with the source chip in front of
-                    the game's own title and artist -- so a row read "QQ 纯真 —"
-                    while QQ knew perfectly well the artist was 五月天. The chip
-                    names where a mapping resolves to, and putting it in front of
-                    the other side's text made it look like a label for it.
+                  They used to share a line, with the source chip in front of
+                  the game's own title and artist -- so a row read "QQ 纯真 —"
+                  while QQ knew perfectly well the artist was 五月天. The chip
+                  names where a mapping resolves to, and putting it in front of
+                  the other side's text made it look like a label for it.
 
-                    The platform id stays out of both. It matters to us — it is
-                    what playback resolves and what the cache is keyed on — but a
-                    reviewer never reads it, and a 14-character mid crowded out
-                    the artist beside it. */}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.82rem] leading-tight">
-                    <span className="shrink-0 rounded bg-black/20 px-1 py-px text-[0.62rem] text-muted">
-                      {SOURCE_LABEL[row.source] || row.source}
-                    </span>
-                    <span className="truncate font-medium">
-                      {row.platformTitle || row.title}
-                      <span className="text-muted"> — {row.platformArtist || "—"}</span>
-                    </span>
-                    <span className="shrink-0 text-[0.68rem] tabular-nums text-muted">
-                      {formatDuration(row.durationSec)}
-                    </span>
-                  </div>
+                  The platform id stays out of both. It matters to us — it is
+                  what playback resolves and what the cache is keyed on — but a
+                  reviewer never reads it, and a 14-character mid crowded out
+                  the artist beside it. */}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.82rem] leading-tight">
+                  <span className="shrink-0 rounded bg-black/20 px-1 py-px text-[0.62rem] text-muted">
+                    {SOURCE_LABEL[row.source] || row.source}
+                  </span>
+                  <span className="truncate font-medium">
+                    {row.platformTitle || row.title}
+                    <span className="text-muted"> — {row.platformArtist || "—"}</span>
+                  </span>
+                  <span className="shrink-0 text-[0.68rem] tabular-nums text-muted">
+                    {formatDuration(row.durationSec)}
+                  </span>
+                </div>
 
-                  <div className="mt-px flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.68rem] leading-tight text-muted">
-                    <span className="shrink-0 rounded bg-black/20 px-1 py-px text-[0.6rem]">QNI</span>
-                    {/* 《》 is how 歌 P writes a title and never how 唱卡 does, so
-                        a row still carrying them came in through the wrong
-                        channel. Stripped for reading; the stored key is
-                        untouched. */}
-                    <span className="truncate">
-                      {String(row.title || "").replace(/^《|》$/g, "")}
-                      {row.artist ? ` — ${row.artist}` : ""}
-                    </span>
-                    {row.matchKind && <span className="shrink-0">· {row.matchKind}</span>}
-                    {row.note && <span className="truncate text-yellow-500/80">· {row.note}</span>}
-                    {row.approvedBy && <span className="shrink-0">· 由 {row.approvedBy} 确认</span>}
-                  </div>
+                <div className="mt-px flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.68rem] leading-tight text-muted">
+                  <span className="shrink-0 rounded bg-black/20 px-1 py-px text-[0.6rem]">QNI</span>
+                  {/* 《》 is how 歌 P writes a title and never how 唱卡 does, so
+                      a row still carrying them came in through the wrong
+                      channel. Stripped for reading; the stored key is
+                      untouched. */}
+                  <span className="truncate">
+                    {String(row.title || "").replace(/^《|》$/g, "")}
+                    {row.artist ? ` — ${row.artist}` : ""}
+                  </span>
+                  {row.matchKind && <span className="shrink-0">· {row.matchKind}</span>}
+                  {row.note && <span className="truncate text-yellow-500/80">· {row.note}</span>}
+                  {row.approvedBy && <span className="shrink-0">· 由 {row.approvedBy} 确认</span>}
                 </div>
               </div>
 
-              {/* Right-aligned so the eye lands on the text first and the
-                  controls sit where a decision is made, at the end. */}
-              <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">
+              <div className="flex shrink-0 gap-1.5">
                 {/* Confirming is offered on approved rows too, but only while an
                     alternative is playing. An automatic STRONG match that chose
                     the wrong version arrives already approved, so requiring

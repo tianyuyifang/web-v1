@@ -63,14 +63,31 @@ function rankCandidates(tracks, rawArtist) {
 /**
  * Which tier a pool match belongs to.
  *
- * The separator check is what stops `周杰伦_费玉清` — where `_` is this
- * project's own separator but is also a character inside some real names —
- * from silently self-approving on a split that was only ever a guess.
+ * The separator check exists because `/`, `&` and `_` all occur inside real
+ * names — AC/DC, Simon & Garfunkel — so splitting on them is a guess, and a
+ * guess should not approve itself.
+ *
+ * But it only matters while the guess is load-bearing. Both sides of the
+ * comparison run through the same splitArtists(), so a wrong split is applied
+ * identically to each: `AC/DC` read as two artists is read as the same two
+ * artists on the platform side, the keys still agree, and the mapping still
+ * names the right recording. Once the two keys are byte-equal, whether the
+ * split was right has stopped affecting the answer.
+ *
+ * So exactness is checked first. This was the wrong way round, and it showed:
+ * every duet in the catalogue — 周杰伦/费玉清 against 周杰伦/费玉清 — was held
+ * for review however exactly it agreed, and 81 of 1,426 mappings had been
+ * confirmed by hand for no reason other than carrying one separator.
+ *
+ * What still reaches the ambiguity check is the case it was written for: a
+ * separator string whose two sides do NOT agree, where the split really is
+ * deciding the outcome.
  */
 function classify({ gameArtist, track, exactArtist, ambiguous }) {
-  if (ambiguous) return TIER.WEAK;
-  // Title and artist both agree outright. Nothing left to judge.
+  // Title and artist both agree outright. Nothing left to judge — including,
+  // deliberately, whether a separator inside them was split correctly.
   if (exactArtist) return TIER.STRONG;
+  if (ambiguous) return TIER.WEAK;
   // Title matches and the artists share at least one name — the usual shape of
   // "same song, different billing".
   if (artistsOverlap(gameArtist, track.artist)) return TIER.MEDIUM;
@@ -144,8 +161,9 @@ async function resolveGameSong({ title, artist }) {
   const ranked = rankCandidates(pool, artist);
   const best = pool.find((t) => t.externalId === ranked[0].externalId) || pool[0];
 
-  // An artist string whose split was load-bearing gets no automatic approval,
-  // however well it otherwise scores.
+  // Whether either side carries a separator whose split is a guess. Only
+  // consulted when the two artist keys disagree — see classify: a split that
+  // both sides made identically cannot have changed the answer.
   const ambiguous = isSeparatorAmbiguous(artist) || isSeparatorAmbiguous(best.artist);
   const exactArtist = Boolean(ak) && artistKey(best.artist) === ak;
   const tier = classify({ gameArtist: artist, track: best, exactArtist, ambiguous });

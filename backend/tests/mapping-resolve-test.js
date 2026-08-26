@@ -63,15 +63,28 @@ async function resolve(title, artist) {
     assert.strictEqual(medium.status, 'pending', 'artist disagreement still plays');
     assert.strictEqual(medium.mapping.approved, false, 'but is not auto-approved');
 
-    // --- weak: a load-bearing separator guess never self-approves ---
-    // `_` is this project's separator AND a character inside some real names,
-    // so a split that decided the match must be seen by a human.
+    // --- weak: a separator guess that DECIDED the match never self-approves ---
+    // `_` is this project's separator AND a character inside some real names.
+    // What makes a split dangerous is not that it happened but that it changed
+    // the answer -- so the case to hold is one where the two sides disagree.
     await track({ title: `__weak_${stamp}`, artist: 'A_B', externalId: `__W${stamp}` });
-    const weak = await resolve(`__weak_${stamp}`, 'A_B');
+    const weak = await resolve(`__weak_${stamp}`, 'A_C');
     assert.strictEqual(weak.tier, TIER.WEAK, 'ambiguous separator forces weak');
     assert.strictEqual(weak.mapping.approved, false,
       'CRITICAL: a guessed artist split must never self-approve');
     assert.ok(weak.mapping.note, 'and says why it needs a human');
+
+    // --- ...but an identical separator string is not a guess that matters ---
+    // Both sides run through the same splitArtists(), so `A_B` read as two
+    // artists is read as the same two on the platform side: the keys agree and
+    // the mapping names the right track whether or not the split was correct.
+    // Holding these was costing a review of every duet in the catalogue.
+    await track({ title: `__dup_${stamp}`, artist: 'A_B', externalId: `__D${stamp}` });
+    const duet = await resolve(`__dup_${stamp}`, 'A_B');
+    assert.strictEqual(duet.tier, TIER.STRONG, 'identical artist strings agree outright');
+    assert.strictEqual(duet.mapping.approved, true,
+      'an exact agreement approves itself, separator or not');
+    assert.ok(duet.mapping.note, 'and is still flagged, so review can spot-check it');
 
     // --- nothing in the pool: an ordinary coverage gap, not an error ---
     const miss = await resolve(`__absent_${stamp}_9f3a1b`, '__nobody');

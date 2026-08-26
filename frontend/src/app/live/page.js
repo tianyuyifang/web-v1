@@ -145,7 +145,6 @@ export default function LivePage() {
   // while pitch shifting becomes available a moment later.
   const player = useLivePlayer();
   const { isPlaying: playing, current, duration } = player;
-  const [candidates, setCandidates] = useState([]);
   const [approving, setApproving] = useState(false);
   /**
    * May this account decide mappings?
@@ -170,15 +169,6 @@ export default function LivePage() {
   useEffect(() => {
     if (canEditMapping && !refused.current) setCanApprove(true);
   }, [canEditMapping]);
-  /**
-   * The card asking to be confirmed before its recording is deleted, and what
-   * the deletion would take with it.
-   *
-   * Confirmed in two steps because this is the one irreversible thing on the
-   * page: it removes the recording from the catalogue, not just this card's
-   * link to it, and a pool track can be named by more than one game song.
-   */
-  const [rejecting, setRejecting] = useState(null);
 
   /**
    * What each singer has settled on for a recording, keyed `SOURCE:externalId`.
@@ -250,16 +240,6 @@ export default function LivePage() {
            close the card. */
       });
   }, [prefKey]);
-  /**
-   * The alternative currently playing under this card, as {eventId, candidate}.
-   *
-   * Hearing a version is the whole test, so the confirm button has to commit
-   * what is actually sounding rather than what the card still points at —
-   * otherwise you listen to B and save A, and the card turns green as if it
-   * had worked. It also tells play/pause which recording to toggle: without it
-   * the pause button reloads the original mid-audition.
-   */
-  const [auditioning, setAuditioning] = useState(null);
 
   const loadedFor = useRef(null);
   /**
@@ -329,12 +309,6 @@ export default function LivePage() {
         }
         return next;
       });
-      // The feed re-resolves every card, so a mapping may have moved under an
-      // audition that is still on screen. Dropping it costs a relabelled button
-      // and keeps 就用这个版本 from committing an alternative against whatever
-      // the card points at now. The audio is left alone -- only the claim that
-      // it is pending a decision goes.
-      setAuditioning(null);
     } catch {
       // A failed refetch is not worth a message: the stream is still live and
       // the next card will arrive on its own.
@@ -414,9 +388,6 @@ export default function LivePage() {
   const stopAudio = useCallback(() => {
     player.stop();
     loadedFor.current = null;
-    // Nothing is sounding, so no version is under audition. Leaving it set
-    // would let 就是这个 commit an alternative the user can no longer hear.
-    setAuditioning(null);
   }, [player]);
 
   /**
@@ -426,13 +397,14 @@ export default function LivePage() {
    * songs and only one gets sung, so resolving all of them would spend platform
    * requests on songs nobody asked for — the pattern that gets an IP throttled.
    */
-  const playCard = useCallback(async (card, override) => {
+  const playCard = useCallback(async (card) => {
     if (!card.mapping) return;
     setPlayError("");
 
-    const key = override
-      ? `${card.eventId}:${override.source}:${override.externalId}`
-      : card.eventId;
+    // The card's own recording, and the only one it has: a card plays one
+    // song. That is what keeps a saved key honest -- the preference stored
+    // while this card is open belongs to what was sounding under it.
+    const key = card.eventId;
 
     // Same track again: pause or resume rather than reloading, so the position
     // and any decode already done survive.
@@ -443,7 +415,7 @@ export default function LivePage() {
 
     setBusy(true);
     try {
-      const res = await mappingAPI.preview(card.mapping.mappingId, override);
+      const res = await mappingAPI.preview(card.mapping.mappingId);
       const { url, reason, kind, songId } = res.data;
       if (kind === "unsupported") {
         setPlayError(`${SOURCE_LABEL[card.mapping.source] || card.mapping.source} 的播放还没做`);
@@ -455,7 +427,6 @@ export default function LivePage() {
       // what the playlist player has always done.
       if (kind === "local" && songId) {
         loadedFor.current = key;
-        setAuditioning(override ? { eventId: card.eventId, candidate: override } : null);
         await player.load(getStreamUrl(songId));
         return;
       }
@@ -468,9 +439,6 @@ export default function LivePage() {
         return;
       }
       loadedFor.current = key;
-      // Remember what is sounding, so 就是这个 commits the recording that was
-      // heard and play/pause toggles it rather than reloading the original.
-      setAuditioning(override ? { eventId: card.eventId, candidate: override } : null);
       await player.load(url);
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "播放失败");
@@ -590,18 +558,13 @@ export default function LivePage() {
   }, [prefKey]);
 
   /** Open a card, or close the one that is open. */
-  const toggleCard = useCallback(async (card) => {
+  const toggleCard = useCallback((card) => {
     // Before anything else: the card being left owns the key and tempo the
     // player is still holding, and stopAudio does not reset them.
     saveOpenCardSettings();
     stopAudio();
     setPlayError("");
-    setCandidates([]);
-    // A pending confirmation belongs to the card that raised it. Carrying it to
-    // the next one would offer to delete this card's recording under another
-    // card's heading.
-    setRejecting(null);
-    // Likewise the line times: the next card's lyrics are a fetch away, and
+    // The line times: the next card's lyrics are a fetch away, and
     // until they land w/s would jump to positions belonging to the song that
     // was open before.
     setLineTimes([]);
@@ -615,33 +578,18 @@ export default function LivePage() {
     setOpenId(card.eventId);
     openCardRef.current = card;
     if (!card.mapping) return;
-
-    // Alternatives came with the card when there were any; fall back to asking
-    // so a card restored from the feed still offers them.
-    if (card.mapping.candidates?.length) {
-      setCandidates(card.mapping.candidates);
-    } else {
-      try {
-        const res = await mappingAPI.candidates(card.mapping.mappingId);
-        setCandidates(res.data.candidates || res.data || []);
-      } catch {
-        /* offering no alternatives is a smaller problem than an error box */
-      }
-    }
     playCard(card);
   }, [openId, stopAudio, playCard, setLineTimes, saveOpenCardSettings]);
 
   /**
-   * Play or pause whatever this card is currently sounding.
+   * Play or pause this card's recording.
    *
-   * Plain `playCard(card)` names the card's own recording, so during an
-   * audition it misses the loaded key and fetches the original instead of
-   * pausing. The transport and the spacebar both go through here.
+   * A card plays one recording and only one, so this is `playCard` by another
+   * name -- kept because the transport and the spacebar both call it, and
+   * because playCard's second argument no longer has any caller that should
+   * be passing one.
    */
-  const togglePlayback = useCallback((card) => {
-    const cand = auditioning?.eventId === card.eventId ? auditioning.candidate : null;
-    playCard(card, cand ? { source: cand.source, externalId: cand.externalId } : undefined);
-  }, [auditioning, playCard]);
+  const togglePlayback = useCallback((card) => playCard(card), [playCard]);
 
   /**
    * Space to play or pause, arrows to nudge a second either way.
@@ -720,66 +668,33 @@ export default function LivePage() {
   }, [openId, cards, togglePlayback, player]);
 
   /**
-   * Switch to another version and play it immediately — hearing it is the test.
+   * Confirm this card's match: the recording it plays is the right one.
    *
-   * The whole candidate travels, not just its ids: confirming later rewrites
-   * the card from it, and a title stripped here would blank the card's heading.
-   */
-  const tryCandidate = useCallback((card, cand) => {
-    stopAudio();
-    playCard(card, cand);
-  }, [stopAudio, playCard]);
-
-  /**
-   * Confirm the mapping. Takes effect everywhere at once, which is the point:
-   * the next person to meet this song gets the version just verified by ear.
+   * The only mapping decision left on this page, and deliberately so. It is
+   * the one that needs the context the page has and the review page does not
+   * -- the song was on screen a moment ago and has just been heard, so
+   * "yes, that is it" is answerable here and nowhere else.
    *
-   * `explicit` names a version outright; otherwise this commits whatever is
-   * being auditioned, so the button always agrees with the audio. Sending the
-   * card's own track while an alternative plays is the mistake this guards.
+   * Rejecting is not offered alongside it, though it looks like the natural
+   * pair. It deletes the recording from the catalogue, taking every other
+   * mapping that names it and every singer's saved key with it; that belongs
+   * on the review page, where its consequences are shown before it is done.
+   *
+   * Whatever the card points at is what gets confirmed. There is no second
+   * recording in play any more, which is what makes the saved key safe: the
+   * preference the singer stores while this card is open belongs to the same
+   * recording throughout.
    */
-  const approve = useCallback(async (card, explicit) => {
-    // The buttons are already hidden; this is the same answer stated where the
+  const approve = useCallback(async (card) => {
+    // The button is already hidden; this is the same answer stated where the
     // work would start, so a stale handle or a future caller cannot reach it.
     if (!canApprove || !card.mapping) return;
-    const cand = explicit
-      || (auditioning?.eventId === card.eventId ? auditioning.candidate : null);
     setApproving(true);
     try {
-      const body = cand ? { source: cand.source, externalId: cand.externalId } : {};
-      await mappingAPI.approve(card.mapping.mappingId, body);
-      setCards((prev) => prev.map((c) => (
-        c.eventId === card.eventId
-          ? {
-            ...c,
-            mapping: {
-              ...c.mapping,
-              approved: true,
-              ...(cand ? {
-                source: cand.source,
-                externalId: cand.externalId,
-                title: cand.title,
-                artist: cand.artist,
-                durationSec: cand.durationSec,
-              } : {}),
-            },
-          }
-          : c
-      )));
-      // The audition is over: what was an alternative is now the card's own
-      // recording. Leaving it set would keep the button reading 就用这个版本
-      // and keep the ▶ mark on a row that is no longer an alternative at all.
-      //
-      // The loaded key has to move with it. It still names the audition
-      // (`event:QQ:123`) while play/pause now asks for the card's own track
-      // (`event`), and a key that misses re-downloads the song instead of
-      // pausing it. Same audio either way — only its name here changes.
-      if (cand) {
-        if (loadedFor.current === `${card.eventId}:${cand.source}:${cand.externalId}`) {
-          loadedFor.current = card.eventId;
-        }
-        setAuditioning(null);
-      }
+      await mappingAPI.approve(card.mapping.mappingId);
+      setCards((prev) => prev.map((c) => (c.eventId === card.eventId
+        ? { ...c, mapping: { ...c.mapping, approved: true } }
+        : c)));
     } catch (err) {
       // A 403 means this account simply lacks the flag. Say so once and stop
       // offering the button rather than failing every time it is pressed.
@@ -788,85 +703,7 @@ export default function LivePage() {
     } finally {
       setApproving(false);
     }
-  }, [auditioning, canApprove]);
-
-  /**
-   * Ask what deleting this recording would take with it, then show the
-   * confirmation.
-   *
-   * The impact is read from the server rather than guessed: a pool track is
-   * keyed on (source, id) and nothing stops two game songs naming the same one,
-   * so the count is not visible from the card.
-   */
-  const startReject = useCallback(async (card) => {
-    if (!canApprove || !card.mapping) return;
-    if (rejecting?.eventId === card.eventId) { setRejecting(null); return; }
-    setApproving(true);
-    setPlayError("");
-    try {
-      const res = await mappingAPI.rejectImpact(card.mapping.mappingId);
-      setRejecting({ eventId: card.eventId, ...res.data });
-    } catch (err) {
-      if (err.response?.status === 403) { refused.current = true; setCanApprove(false); }
-      else setPlayError(err.response?.data?.error?.message || "读取删除影响失败");
-    } finally {
-      setApproving(false);
-    }
-  }, [rejecting, canApprove]);
-
-  /**
-   * Delete the recording, and take whatever the resolver offers next.
-   *
-   * The card stays on screen. It records what the game showed, which is still
-   * true — only what it plays changes, to the next recording of the same song
-   * or to nothing at all when the catalogue has no other.
-   */
-  const confirmReject = useCallback(async (card) => {
-    if (!canApprove || !card.mapping) return;
-    setApproving(true);
-    setPlayError("");
-    try {
-      const res = await mappingAPI.reject(card.mapping.mappingId, { deleteTrack: true });
-      const next = res.data.replacement;
-      // Whatever was playing is the recording that was just deleted.
-      stopAudio();
-      setCards((prev) => prev.map((c) => (c.eventId === card.eventId
-        ? {
-          ...c,
-          mapping: next
-            ? {
-              mappingId: next.id,
-              source: next.source,
-              externalId: next.externalId,
-              title: next.platformTitle,
-              artist: next.platformArtist,
-              durationSec: next.durationSec,
-              approved: next.approved,
-            }
-            : null,
-        }
-        : c)));
-      // The alternatives on screen came from the pool this just changed.
-      setCandidates([]);
-      setRejecting(null);
-      if (next) {
-        try {
-          const c2 = await mappingAPI.candidates(next.id);
-          setCandidates(c2.data.candidates || c2.data || []);
-        } catch { /* the card still plays; alternatives are a convenience */ }
-      } else {
-        // Nothing left to play, so the panel unmounts — it renders only for a
-        // mapped card. Letting `openId` keep naming it would make the next tap
-        // read as "close", so the card would need two taps to open again.
-        setOpenId(null);
-      }
-    } catch (err) {
-      if (err.response?.status === 403) { refused.current = true; setCanApprove(false); }
-      else setPlayError(err.response?.data?.error?.message || "删除失败");
-    } finally {
-      setApproving(false);
-    }
-  }, [stopAudio, canApprove]);
+  }, [canApprove]);
 
   const start = useCallback(async () => {
     setError("");
@@ -1093,8 +930,6 @@ export default function LivePage() {
                               <div className="border-t border-border/40 pt-1">
                                 <LiveLyrics
                                   mappingId={card.mapping.mappingId}
-                                  override={auditioning?.eventId === card.eventId
-                                    ? auditioning.candidate : null}
                                   gameLyric={card.lyric}
                                   current={current}
                                   onSeek={player.seek}
@@ -1236,135 +1071,33 @@ export default function LivePage() {
                                   combination that disappears -- contrast has to
                                   come from the fill, and the judgement being
                                   made here is the whole reason the card opens. */}
-                              {canApprove && (
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  {/* Offered on confirmed cards too, but only
-                                      while an alternative is playing. A match on
-                                      title and artist confirms itself, so the
-                                      wrong version arrives already green, and
-                                      requiring an 撤销 first would make fixing it
-                                      a detour. */}
-                                  {(!confirmed || auditioning?.eventId === card.eventId) && (
-                                    <button
-                                      type="button"
-                                      onClick={() => approve(card)}
-                                      disabled={approving}
-                                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-40"
-                                    >
-                                      {/* Says which one it would save. Sending
-                                          the card's own track while an
-                                          alternative plays is the mistake this
-                                          wording guards against. */}
-                                      {approving
-                                        ? "…"
-                                        : auditioning?.eventId === card.eventId
-                                          ? "✓ 就用这个版本"
-                                          : "✓ 就是这个"}
-                                    </button>
-                                  )}
-                                  {/* Offered on confirmed cards too. A song that
-                                      matched on title and artist approves itself,
-                                      which is exactly when several recordings
-                                      carry the same billing — so the wrong one
-                                      arrives already confirmed, and this is where
-                                      it gets noticed. */}
+                              {/* Confirming is the one mapping decision left
+                                  here, and only for a card still awaiting one.
+                                  It needs what this page has and the review
+                                  page does not: the song was on screen a moment
+                                  ago and has just been heard.
+
+                                  Rejecting used to sit beside it and now lives
+                                  on the review page. It deletes a recording
+                                  from the catalogue -- taking every mapping
+                                  that names it, and every singer's saved key --
+                                  which is a decision to make with its
+                                  consequences in front of you, not mid-round.
+
+                                  Alternative recordings are gone from this page
+                                  for the same reason: a card plays one song, so
+                                  the key a singer saves while it is open always
+                                  belongs to what they were hearing. */}
+                              {canApprove && !confirmed && (
+                                <div className="mt-2">
                                   <button
                                     type="button"
-                                    onClick={() => startReject(card)}
+                                    onClick={() => approve(card)}
                                     disabled={approving}
-                                    className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-red-500 disabled:opacity-40"
+                                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-40"
                                   >
-                                    ✕ 不是这首
+                                    {approving ? "…" : "✓ 就是这个"}
                                   </button>
-                                </div>
-                              )}
-
-                              {/* `canApprove` as well as the panel's own flag.
-                                  It was reachable only through the guarded
-                                  button above, which made it safe by where it
-                                  could be opened from rather than by what it
-                                  checks -- and the flag can now go false while
-                                  it is open, which would leave 确认删除 alone
-                                  on screen with its siblings gone. */}
-                              {canApprove && rejecting?.eventId === card.eventId && (
-                                <div className="mt-2 rounded border border-red-500/30 bg-red-500/5 p-2">
-                                  <p className="text-[0.7rem] text-red-200">
-                                    从曲库彻底删除
-                                    <span className="mx-1 font-medium">
-                                      {rejecting.track
-                                        ? `${rejecting.track.title} — ${rejecting.track.artist}`
-                                        : "（曲库里已无此条目）"}
-                                    </span>
-                                    ？
-                                  </p>
-                                  {rejecting.otherMappings?.length > 0 && (
-                                    <p className="mt-1 text-[0.68rem] text-amber-300">
-                                      ⚠ 另有 {rejecting.otherMappings.length} 条映射指向同一首，会一并删除
-                                    </p>
-                                  )}
-                                  <p className="mt-1 text-[0.68rem] text-muted">
-                                    删除后会自动改用曲库里的其他版本；没有其他版本就显示未配置。
-                                  </p>
-                                  <div className="mt-1.5 flex gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => confirmReject(card)}
-                                      disabled={approving}
-                                      className="rounded-md bg-red-600 px-3 py-1.5 text-[0.72rem] font-semibold text-white shadow-sm hover:bg-red-500 disabled:opacity-40"
-                                    >
-                                      {approving ? "删除中…" : "确认删除"}
-                                    </button>
-                                    {/* Disabled once the delete is away: the
-                                        request cannot be recalled, and closing
-                                        the panel would read as "cancelled"
-                                        while it lands anyway. */}
-                                    <button
-                                      type="button"
-                                      onClick={() => setRejecting(null)}
-                                      disabled={approving}
-                                      className="rounded border border-border px-2 py-1 text-[0.7rem] text-muted disabled:opacity-40"
-                                    >
-                                      取消
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-
-                              {candidates.length > 1 && (
-                                <div className="mt-3 border-t border-border/40 pt-2">
-                                  <div className="mb-1 text-[0.68rem] text-muted">其他版本</div>
-                                  <ul className="space-y-1">
-                                    {candidates
-                                      // Both halves: an id alone is only unique
-                                      // within its own platform.
-                                      .filter((c) => !(c.source === card.mapping.source
-                                        && c.externalId === card.mapping.externalId))
-                                      .slice(0, 5)
-                                      .map((c) => {
-                                        // Which one is sounding. Every row reads
-                                        // the same once the audio moves on, so
-                                        // without this the list gives no sign of
-                                        // what 就用这个版本 would save.
-                                        const isPlaying = auditioning?.eventId === card.eventId
-                                          && auditioning.candidate.source === c.source
-                                          && auditioning.candidate.externalId === c.externalId;
-                                        return (
-                                          <li key={`${c.source}:${c.externalId}`} className="flex items-center gap-2">
-                                            <button
-                                              type="button"
-                                              onClick={() => tryCandidate(card, c)}
-                                              className={`min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-xs hover:bg-white/5 hover:text-fg ${
-                                                isPlaying ? "bg-white/5 text-fg" : "text-muted"
-                                              }`}
-                                            >
-                                              {isPlaying ? "▶ " : ""}
-                                              {c.title} · {c.artist} · {formatDuration(c.durationSec)}
-                                              {" · "}{SOURCE_LABEL[c.source] || c.source}
-                                            </button>
-                                          </li>
-                                        );
-                                      })}
-                                  </ul>
                                 </div>
                               )}
                             </div>

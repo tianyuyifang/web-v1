@@ -6,17 +6,35 @@ import { PRESET_COLORS } from "../player/ColorTag";
 /**
  * A singer's own marks on a 唱卡 card: colour flags and a note.
  *
- * Not ColorTag, though it shares that component's palette and its
- * pipe-separated storage. ColorTag is a bookmark pinned to the top-right
- * corner of a playlist row by absolute positioning, and it drops in with an
- * animation; this sits inline in a header line that already carries a title, a
- * stage label and a confirmation badge, where a corner-anchored flag would
- * land on top of them. Sharing the palette keeps the colours meaning the same
- * thing in both places, which is the part worth sharing.
- *
- * Dots rather than small bookmarks: at the size this line allows, the bookmark
- * silhouette stops reading as a shape and becomes a smudge.
+ * Not ColorTag, though it shares that component's palette, its pipe-separated
+ * storage and now its silhouette. ColorTag is pinned to the top-right corner
+ * of a playlist row by absolute positioning and drops in with an animation;
+ * this sits inline in a header line that already carries a title, a stage
+ * label and a confirmation badge, where a corner-anchored flag would land on
+ * top of them. What is worth sharing is the meaning — the same colour, the
+ * same shape, the same thing.
  */
+
+/**
+ * The same silhouette the playlist cards use, at the size this row allows.
+ *
+ * Copied rather than imported: ColorTag's is bound up with its absolute
+ * corner positioning and its drop animation, neither of which belongs in a
+ * flex row. The path is what carries the meaning, so that is what is shared.
+ */
+function Bookmark({ color, size = 13 }) {
+  return (
+    <svg
+      width={size}
+      height={Math.round((size * 28) / 18)}
+      viewBox="0 0 18 28"
+      style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.35))" }}
+      aria-hidden="true"
+    >
+      <path d="M0 0h18v23l-9-5-9 5V0z" fill={color} />
+    </svg>
+  );
+}
 
 /** Storage is one string so the row stays flat — the same shape PlaylistClip uses. */
 export function parseColors(colorTag) {
@@ -51,13 +69,12 @@ export const SongPrefMarks = memo(function SongPrefMarks({ prefs }) {
         </span>
       ) : null}
       {colors.length ? (
-        <span className="flex shrink-0 items-center gap-1">
+        // Hung from the top of the row, the way a bookmark sits on a page.
+        // -mt-1.5 lifts them into the row's padding so they read as attached
+        // to it rather than floating in the middle of the text line.
+        <span className="-mt-1.5 flex shrink-0 items-start gap-1 self-start">
           {colors.map((c) => (
-            <span
-              key={c}
-              className="h-2 w-2 rounded-full ring-1 ring-black/20"
-              style={{ background: c }}
-            />
+            <Bookmark key={c} color={c} />
           ))}
         </span>
       ) : null}
@@ -118,6 +135,8 @@ export default function SongPrefEditor({ prefs, onChange, disabled }) {
       <div ref={paletteRef} className="relative flex items-center gap-1.5">
         <span className="text-[0.65rem] text-muted">标记</span>
 
+        {/* The same bookmarks the collapsed row shows, so the editor and the
+            row are visibly the same thing rather than two notations. */}
         {colors.map((c) => (
           <button
             key={c}
@@ -125,9 +144,10 @@ export default function SongPrefEditor({ prefs, onChange, disabled }) {
             disabled={disabled}
             onClick={() => toggleColor(c)}
             title="点击移除"
-            className="h-3.5 w-3.5 rounded-full ring-1 ring-black/20 transition-transform hover:scale-110 disabled:opacity-40"
-            style={{ background: c }}
-          />
+            className="transition-transform hover:scale-110 disabled:opacity-40"
+          >
+            <Bookmark color={c} size={12} />
+          </button>
         ))}
 
         <button

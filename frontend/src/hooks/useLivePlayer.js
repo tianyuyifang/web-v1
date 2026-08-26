@@ -24,6 +24,23 @@ export default function useLivePlayer() {
   const [duration, setDuration] = useState(0);
   const [speed, setSpeedState] = useState(1);
   const [pitch, setPitchState] = useState(0);
+  /**
+   * The same two values, readable synchronously.
+   *
+   * `setSpeedState` does not change `speed` until the next render, so anything
+   * that reads the state variable is reading what it was BEFORE the caller
+   * asked for a change. That is fine for rendering and wrong for the audio:
+   * `load` assigns el.playbackRate and `startShifted` seeds the graph, and
+   * both ran with the previous value whenever a load and a change landed in
+   * the same tick -- which is exactly what happens when a card opens and its
+   * remembered settings are applied a moment later. The control showed the new
+   * number while the track played at the old one.
+   *
+   * Refs update in place, so the audio path reads what was actually asked for.
+   * The state variables stay, because rendering must go through them.
+   */
+  const speedRef = useRef(1);
+  const pitchRef = useRef(0);
   /** True once the buffer is decoded and pitch can actually be applied. */
   const [canShift, setCanShift] = useState(false);
 
@@ -62,11 +79,11 @@ export default function useLivePlayer() {
   /** Position in the track, wherever the sound is coming from. */
   const positionNow = useCallback(() => {
     if (shiftingRef.current && ctxRef.current) {
-      const elapsed = (ctxRef.current.currentTime - startedAtRef.current) * speed;
+      const elapsed = (ctxRef.current.currentTime - startedAtRef.current) * speedRef.current;
       return Math.min(offsetRef.current + elapsed, duration || Infinity);
     }
     return elRef.current ? elRef.current.currentTime || 0 : 0;
-  }, [speed, duration]);
+  }, [duration]);
 
   // The shifted graph reports no timeupdate events, so drive the clock here.
   useEffect(() => {
@@ -132,8 +149,8 @@ export default function useLivePlayer() {
     teardownGraph();
 
     const shifter = new PitchShifter(ctx, buf, 4096, () => setIsPlaying(false));
-    shifter.tempo = speed;
-    shifter.pitchSemitones = pitch;
+    shifter.tempo = speedRef.current;
+    shifter.pitchSemitones = pitchRef.current;
     shifter.percentagePlayed = Math.min(0.999, (from || 0) / buf.duration);
 
     if (!gainRef.current) {
@@ -147,7 +164,10 @@ export default function useLivePlayer() {
     startedAtRef.current = ctx.currentTime;
     shiftingRef.current = true;
     return true;
-  }, [speed, pitch, teardownGraph]);
+    // speed and pitch are read from refs above, so this stays stable across a
+    // tempo change instead of being rebuilt -- and a rebuild here restarts the
+    // graph, which is audible.
+  }, [teardownGraph]);
 
   /** Load a URL and start playing it through the element. */
   const load = useCallback(async (url) => {
@@ -157,12 +177,12 @@ export default function useLivePlayer() {
     el.src = url;
     setCurrent(0);
     setDuration(0);
-    el.playbackRate = speed;
+    el.playbackRate = speedRef.current;
     await el.play();
     setIsPlaying(true);
     // Deliberately not awaited: the point is that sound has already started.
     warmBuffer(url);
-  }, [element, speed, teardownGraph, warmBuffer]);
+  }, [element, teardownGraph, warmBuffer]);
 
   const toggle = useCallback(async () => {
     const el = element();
@@ -177,12 +197,15 @@ export default function useLivePlayer() {
       setIsPlaying(false);
       return;
     }
-    if (pitch !== 0 && bufferRef.current) {
+    // The ref, not the state: this decides WHICH engine resumes, so reading a
+    // value one render behind would start the plain element for a track that
+    // is meant to be shifted.
+    if (pitchRef.current !== 0 && bufferRef.current) {
       if (await startShifted(positionNow())) { setIsPlaying(true); return; }
     }
     await el.play().catch(() => {});
     setIsPlaying(true);
-  }, [element, isPlaying, pitch, positionNow, startShifted, teardownGraph]);
+  }, [element, isPlaying, positionNow, startShifted, teardownGraph]);
 
   const seek = useCallback(async (seconds) => {
     const at = Math.max(0, seconds);
@@ -203,6 +226,9 @@ export default function useLivePlayer() {
    */
   const setPitch = useCallback(async (value) => {
     const next = Math.max(-6, Math.min(6, value));
+    // Ref first: everything below, and anything that runs before the next
+    // render, has to see the value being asked for rather than the last one.
+    pitchRef.current = next;
     setPitchState(next);
 
     if (shifterRef.current) {
@@ -227,6 +253,7 @@ export default function useLivePlayer() {
 
   const setSpeed = useCallback((value) => {
     const next = Math.max(0.5, Math.min(2, value));
+    speedRef.current = next;
     setSpeedState(next);
     if (shifterRef.current) shifterRef.current.tempo = next;
     else if (elRef.current) elRef.current.playbackRate = next;

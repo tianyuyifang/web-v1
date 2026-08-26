@@ -241,6 +241,9 @@ export const captureAPI = {
     api.put("/capture/prefs", { source, externalId, ...fields }),
   clearSongPref: (source, externalId) =>
     api.delete("/capture/prefs", { data: { source, externalId } }),
+  // The key and tempo to open a song in when it has none of its own. The live
+  // feed returns these alongside the cards, so there is no matching read here.
+  saveSongPrefDefaults: (fields) => api.put("/capture/prefs/defaults", fields),
 };
 
 // --- Admin ---

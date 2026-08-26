@@ -31,6 +31,7 @@ import LiveLyrics from "@/components/live/LiveLyrics";
 import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
+import DefaultTuning from "@/components/live/DefaultTuning";
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
 // without a platform account and cannot be delisted out from under a singer.
@@ -181,6 +182,16 @@ export default function LivePage() {
    * request of its own is needed on load.
    */
   const [prefs, setPrefs] = useState({});
+  /**
+   * The key and tempo a song opens in when it has none of its own.
+   *
+   * Held here rather than written onto each song: a song that has never been
+   * adjusted stays that way, so changing this later moves all of them at once.
+   * Null means no default has been set, which is not the same as a default of
+   * 0 and 1.0 -- the distinction is what lets "unset" and "deliberately the
+   * original" stay apart, here as on the songs themselves.
+   */
+  const [defaults, setDefaults] = useState(null);
   const prefKey = useCallback(
     (mapping) => (mapping ? `${mapping.source}:${mapping.externalId}` : null),
     []
@@ -309,6 +320,8 @@ export default function LivePage() {
         }
         return next;
       });
+      // Carried by the same response, so this costs no request of its own.
+      if (res.data.defaults !== undefined) setDefaults(res.data.defaults);
     } catch {
       // A failed refetch is not worth a message: the stream is still live and
       // the next card will arrive on its own.
@@ -496,9 +509,15 @@ export default function LivePage() {
     if (!card || !card.mapping) return;
     // No stored preference is not "do nothing" -- it is "the original", which
     // is a value like any other and has to be applied for the same reason.
+    // Three tiers, narrowest first: what this song was set to, else this
+    // singer's default, else the original. The default is consulted rather
+    // than copied onto the song, so a song that has never been adjusted stays
+    // that way and follows the default when it changes.
     const saved = prefs[prefKey(card.mapping)] || {};
-    const wantSpeed = typeof saved.speed === "number" ? saved.speed : 1;
-    const wantPitch = typeof saved.pitch === "number" ? saved.pitch : 0;
+    const wantSpeed = typeof saved.speed === "number" ? saved.speed
+      : (typeof defaults?.speed === "number" ? defaults.speed : 1);
+    const wantPitch = typeof saved.pitch === "number" ? saved.pitch
+      : (typeof defaults?.pitch === "number" ? defaults.pitch : 0);
 
     // Tempo first, and once per card.
     if (appliedFor.current !== `${openId}:speed` && appliedFor.current !== `${openId}:both`) {
@@ -521,8 +540,8 @@ export default function LivePage() {
     // literal every render, so depending on it would re-run this effect on
     // every render -- including the ones this effect causes by applying a
     // value. The individual fields below are primitives and stable callbacks.
-  }, [openId, cards, prefs, prefKey, player.canShift, player.speed, player.pitch,
-    player.setSpeed, player.setPitch]);
+  }, [openId, cards, prefs, defaults, prefKey, player.canShift, player.speed,
+    player.pitch, player.setSpeed, player.setPitch]);
 
   /**
    * The singer moved a control themselves.
@@ -541,6 +560,55 @@ export default function LivePage() {
     touchedRef.current = true;
     playerSetSpeed(value);
   }, [playerSetSpeed]);
+
+  /**
+   * Change the singer's default key or tempo.
+   *
+   * It also moves whatever card is open, and that is the point: choosing a
+   * default by ear is impossible if you cannot hear it. So the control acts on
+   * the song in front of you as well as on the setting.
+   *
+   * What it does NOT do is give that song a memory it did not have. A song
+   * with its own setting has that setting updated -- the singer is adjusting
+   * the thing they are listening to, and it already had an opinion. A song
+   * without one simply follows the new default, exactly as it was already
+   * following the old one, and still has nothing stored.
+   *
+   * `touchedRef` is deliberately left alone. It marks the card's own controls
+   * having been moved, which is what makes a close write a memory; setting it
+   * here would mean adjusting the default silently pinned the open song to it.
+   */
+  const changeDefaults = useCallback((patch) => {
+    setDefaults((prev) => ({ pitch: null, speed: null, ...(prev || {}), ...patch }));
+    captureAPI.saveSongPrefDefaults(patch).catch(() => {
+      /* A default that failed to save is a small loss and a bad reason to
+         interrupt someone about to sing; the next change retries it. */
+    });
+
+    // Apply it to what is playing, and let the effect below re-run for the
+    // rest -- it reads `defaults`, which has just changed.
+    if (typeof patch.speed === "number") playerSetSpeed(patch.speed);
+    if (typeof patch.pitch === "number" && player.canShift) playerSetPitch(patch.pitch);
+
+    // A song that already had its own setting is following the singer's hand,
+    // so its stored value moves with it. One that had none keeps none.
+    const card = openId ? cards.find((c) => c.eventId === openId) : null;
+    if (!card || !card.mapping) return;
+    const key = prefKey(card.mapping);
+    const own = prefs[key];
+    if (!own) return;
+    const hasOwnPitch = typeof own.pitch === "number";
+    const hasOwnSpeed = typeof own.speed === "number";
+    const update = {};
+    if (patch.pitch !== undefined && hasOwnPitch) update.pitch = patch.pitch;
+    if (patch.speed !== undefined && hasOwnSpeed) update.speed = patch.speed;
+    if (!Object.keys(update).length) return;
+
+    setPrefs((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), ...update } }));
+    captureAPI
+      .saveSongPref(card.mapping.source, card.mapping.externalId, update)
+      .catch(() => { /* as above */ });
+  }, [openId, cards, prefs, prefKey, playerSetSpeed, playerSetPitch, player.canShift]);
 
   /**
    * Colours and the note, which commit as they are made.
@@ -1112,6 +1180,11 @@ export default function LivePage() {
           })}
         </div>
       )}
+
+      {/* Outside the card list on purpose: it belongs to the singer, not to any
+          one song, and it has to stay reachable while a card is open — a
+          default chosen without hearing it is a guess. */}
+      <DefaultTuning defaults={defaults} onChange={changeDefaults} />
     </div>
   );
 }

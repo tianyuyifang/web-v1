@@ -424,6 +424,23 @@ router.put('/prefs', ...web, requireCaptureAddOn, async (req, res, next) => {
   }
 });
 
+// PUT /api/capture/prefs/defaults — this singer's global key and tempo
+//
+// Applied to any song they have not set individually. Kept apart from the
+// per-song route because it is a different thing: that one describes one
+// recording, this one describes the singer.
+router.put('/prefs/defaults', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const { pitch, speed } = req.body || {};
+    const fields = {};
+    if (pitch !== undefined) fields.pitch = pitch;
+    if (speed !== undefined) fields.speed = speed;
+    res.json({ defaults: await songPrefService.setDefaults(req.user.id, fields) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/capture/prefs — forget this recording entirely
 router.delete('/prefs', ...web, requireCaptureAddOn, async (req, res, next) => {
   try {

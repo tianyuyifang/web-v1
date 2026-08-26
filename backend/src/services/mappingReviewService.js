@@ -20,6 +20,7 @@
  * me everything".
  */
 const prisma = require('../db/client');
+const songPrefs = require('./songPrefService');
 const { titleKey, artistKey, artistsOverlap } = require('./songKeyService');
 // The project's error classes set statusCode and isOperational, which the error
 // handler reads. A bare Error with .status ends up as a 500 with the message
@@ -422,10 +423,29 @@ async function reject(id, { deleteTrack = true, resolve = true } = {}) {
     const gone = await tx.importedTrack.deleteMany({
       where: { source: m.source, externalId: m.externalId },
     });
+
+    // Singers' saved keys for this recording go too.
+    //
+    // Tied to the track rather than to the mapping on purpose: repointing one
+    // game song at a different recording leaves the recording itself in the
+    // catalogue, and the people who worked out how to sing it are still right.
+    // Only when the recording is gone from the pool does the key describe
+    // something nobody can play.
+    //
+    // No foreign key does this automatically -- source+externalId spans three
+    // unrelated id spaces (a song uuid, a QQ songmid, a NetEase number), so
+    // there is nothing for a constraint to reference. Inside the transaction
+    // for the same reason the other two deletes are: a half-applied rejection
+    // leaves rows describing a track that no longer exists.
+    const prefsRemoved = await songPrefs.forgetTracks(
+      { source: m.source, externalId: m.externalId }, tx
+    );
+
     return {
       m,
       trackDeleted: gone.count > 0,
       mappingsRemoved: 1 + orphaned.count,
+      prefsRemoved: prefsRemoved.count,
     };
   });
 

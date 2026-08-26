@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const prisma = require('../src/db/client');
+const songPrefs = require('../src/services/songPrefService');
 const creds = require('../src/services/musicCredentialService');
 
 const APPLY = process.argv.includes('--apply');
@@ -110,7 +111,14 @@ function get(url, cookie) {
   const delTracks = await prisma.importedTrack.deleteMany({
     where: { id: { in: dead.map((d) => d.id) } },
   });
+
+  // Singers' saved keys for these recordings go too: with the track out of the
+  // catalogue there is nothing left to sing, so the key describes nothing. No
+  // foreign key can do this -- source+externalId spans three unrelated id
+  // spaces -- so every deletion path has to say so explicitly.
+  const delPrefs = await songPrefs.forgetTracks(dead);
   console.log(`removed ${delMaps.count} mappings and ${delTracks.count} catalogue rows`);
+  console.log(`removed ${delPrefs.count} saved singer preferences`);
   console.log(`catalogue now holds ${await prisma.importedTrack.count()} tracks`);
   await prisma.$disconnect();
 })().catch(async (e) => {

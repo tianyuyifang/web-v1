@@ -2,6 +2,7 @@ const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const prisma = require('../db/client');
 const captureService = require('../services/captureService');
+const songPrefService = require('../services/songPrefService');
 const { authMiddleware, requireApproved, requireActiveSession } = require('../middleware/auth');
 const captureAuth = require('../middleware/captureAuth');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
@@ -365,6 +366,69 @@ router.post('/events/:id/ignore', ...web, async (req, res, next) => {
     res.json(await captureService.ignoreEvent({
       userId: req.user.id, eventId: req.params.id,
     }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- per-singer song preferences ---
+//
+// Gated on the capture add-on rather than on approval alone, matching every
+// other 唱卡 route: these preferences exist only to be applied by the live
+// page, so an account that cannot reach that page has nothing to store.
+//
+// Every handler takes the account from the verified token and never from the
+// body. There is no shape of request that reads or writes another singer's
+// preferences.
+
+// GET /api/capture/prefs?keys=QQ:001abc,NETEASE:12345
+// Batched: the live page asks once for every recording on screen.
+router.get('/prefs', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const raw = String(req.query.keys || '').trim();
+    // Split on the separator, then on the FIRST colon only: a platform id is
+    // opaque and may contain one.
+    const keys = raw ? raw.split(',').map((pair) => {
+      const at = pair.indexOf(':');
+      if (at <= 0) return null;
+      return { source: pair.slice(0, at), externalId: pair.slice(at + 1) };
+    }).filter((k) => k && k.externalId) : [];
+
+    const map = await songPrefService.getMany(req.user.id, keys);
+    res.json({ prefs: Object.fromEntries(map) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/capture/prefs — store what this singer settled on
+//
+// A patch: fields that are absent are left alone, and an explicit null clears
+// one. The card saves its key when it closes and its colours the moment they
+// are clicked, so a whole-row write from either would discard the other.
+router.put('/prefs', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const { source, externalId, pitch, speed, note, colorTag } = req.body || {};
+    const fields = {};
+    // Rebuilt key by key rather than spread, so a client cannot reach a column
+    // this route does not mean to expose by adding it to the body.
+    if (pitch !== undefined) fields.pitch = pitch;
+    if (speed !== undefined) fields.speed = speed;
+    if (note !== undefined) fields.note = note;
+    if (colorTag !== undefined) fields.colorTag = colorTag;
+
+    const prefs = await songPrefService.upsert(req.user.id, { source, externalId, ...fields });
+    res.json({ prefs });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/capture/prefs — forget this recording entirely
+router.delete('/prefs', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const { source, externalId } = req.body || {};
+    res.json(await songPrefService.clear(req.user.id, { source, externalId }));
   } catch (err) {
     next(err);
   }

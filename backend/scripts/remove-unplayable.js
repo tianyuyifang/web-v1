@@ -28,6 +28,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const prisma = require('../src/db/client');
+const songPrefs = require('../src/services/songPrefService');
 
 const APPLY = process.argv.includes('--apply');
 const fromArg = (() => {
@@ -93,7 +94,14 @@ const IN = path.join(__dirname, '..', fromArg || 'backups/qq-retry-tiers.json');
     where: { id: { in: tracks.map((t) => t.id) } },
   });
 
+  // Singers' saved keys for these recordings go too: with the track out of the
+  // catalogue there is nothing left to sing, so the key describes nothing. No
+  // foreign key can do this -- source+externalId spans three unrelated id
+  // spaces -- so every deletion path has to say so explicitly.
+  const delPrefs = await songPrefs.forgetTracks(tracks);
+
   console.log(`\nremoved ${delMaps.count} mappings and ${delTracks.count} catalogue rows`);
+  console.log(`removed ${delPrefs.count} saved singer preferences`);
 
   const left = await prisma.importedTrack.count();
   console.log(`catalogue now holds ${left} tracks`);

@@ -222,6 +222,25 @@ export const captureAPI = {
     api.patch("/capture/target", playlistId ? { target, playlistId } : { target }),
   liveFeed: (sessionId, limit) =>
     api.get(`/capture/sessions/${sessionId}/live${limit ? `?limit=${limit}` : ""}`),
+
+  // What this singer has settled on for a recording: key, tempo, a note,
+  // colour flags. Keyed on the recording rather than the game song, so it
+  // follows the voice across playlists and survives a repointed mapping.
+  //
+  // The live feed already returns these for every card on screen, so this
+  // batch read is only for pages that do not go through it.
+  songPrefs: (keys) => api.get(
+    `/capture/prefs?keys=${encodeURIComponent(
+      keys.map((k) => `${k.source}:${k.externalId}`).join(",")
+    )}`
+  ),
+  // A patch: fields left out are untouched, an explicit null clears one. The
+  // card saves its key when it closes and its colours the moment they change,
+  // so a whole-row write from either would discard the other.
+  saveSongPref: (source, externalId, fields) =>
+    api.put("/capture/prefs", { source, externalId, ...fields }),
+  clearSongPref: (source, externalId) =>
+    api.delete("/capture/prefs", { data: { source, externalId } }),
 };
 
 // --- Admin ---

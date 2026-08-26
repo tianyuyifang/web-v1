@@ -1,4 +1,5 @@
 const prisma = require('../db/client');
+const songPrefs = require('./songPrefService');
 const { generateToken, generatePairCode, hashToken, isExpired } = require('../utils/captureToken');
 const {
   matchTitle, normTitleFolded, splitEllipsis, FOLD_FROM, FOLD_TO,
@@ -1203,45 +1204,71 @@ async function getLiveFeed({ userId, sessionId, limit }) {
     }
   }
 
-  return {
-    cards: events.map((e) => {
-      const { title, artist } = splitTitleArtist(e.rawText, known);
-      let mapping = e.candidates || null;
-      if (mapping && mapping.mappingId) {
-        const now = currentById.get(mapping.mappingId)
-          || byGameKey.get(gameKeyOf(titleKey(title), artistKey(artist)));
-        if (!now) {
-          // Nothing maps this song any more. The event still records what the
-          // game showed -- that stays true -- but there is nothing to play.
-          mapping = null;
-        } else {
-          mapping = {
-            ...mapping,
-            mappingId: now.id,
-            approved: now.approved,
-            source: now.source,
-            externalId: now.externalId,
-            title: now.platformTitle ?? mapping.title,
-            artist: now.platformArtist ?? mapping.artist,
-            durationSec: now.durationSec ?? mapping.durationSec,
-            // The stored alternatives were computed against a pool that has
-            // since changed; the page refetches them when the card is opened.
-            candidates: undefined,
-          };
-        }
+  const cards = events.map((e) => {
+    const { title, artist } = splitTitleArtist(e.rawText, known);
+    let mapping = e.candidates || null;
+    if (mapping && mapping.mappingId) {
+      const now = currentById.get(mapping.mappingId)
+        || byGameKey.get(gameKeyOf(titleKey(title), artistKey(artist)));
+      if (!now) {
+        // Nothing maps this song any more. The event still records what the
+        // game showed -- that stays true -- but there is nothing to play.
+        mapping = null;
+      } else {
+        mapping = {
+          ...mapping,
+          mappingId: now.id,
+          approved: now.approved,
+          source: now.source,
+          externalId: now.externalId,
+          title: now.platformTitle ?? mapping.title,
+          artist: now.platformArtist ?? mapping.artist,
+          durationSec: now.durationSec ?? mapping.durationSec,
+          // The stored alternatives were computed against a pool that has
+          // since changed; the page refetches them when the card is opened.
+          candidates: undefined,
+        };
       }
-      return {
-        eventId: e.id,
-        rawText: e.rawText,
-        title,
-        artist,
-        stage: e.stage || 'picking',
-        lyric: e.lyric || null,
-        outcome: e.outcome,
-        mapping,
-        createdAt: e.createdAt,
-      };
-    }),
+    }
+    return {
+      eventId: e.id,
+      rawText: e.rawText,
+      title,
+      artist,
+      stage: e.stage || 'picking',
+      lyric: e.lyric || null,
+      outcome: e.outcome,
+      mapping,
+      createdAt: e.createdAt,
+    };
+  });
+
+  // What this singer has settled on for the recordings now on screen: the key
+  // they sing them in, the tempo, a note, colour flags.
+  //
+  // Attached after the cards are built, because a card's recording is only
+  // known once the mapping above has been re-resolved -- a repointed mapping
+  // means the preference wanted belongs to the track playing now, not the one
+  // captured then.
+  //
+  // One query for the whole page, in keeping with the two lookups above.
+  // Failure is swallowed: preferences are a convenience, and a card that plays
+  // in its original key is far better than a page that does not load. The
+  // absent field reads as "nothing remembered", which is also what the page
+  // shows before anyone has set anything.
+  let prefs = new Map();
+  try {
+    prefs = await songPrefs.getMany(userId, cards
+      .filter((c) => c.mapping && c.mapping.source && c.mapping.externalId)
+      .map((c) => ({ source: c.mapping.source, externalId: c.mapping.externalId })));
+  } catch (err) {
+    console.warn('[capture] song preferences unavailable for this feed:', err.message);
+  }
+
+  return {
+    cards: cards.map((c) => (c.mapping
+      ? { ...c, prefs: prefs.get(`${c.mapping.source}:${c.mapping.externalId}`) || null }
+      : c)),
   };
 }
 

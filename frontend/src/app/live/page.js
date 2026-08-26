@@ -30,6 +30,7 @@ import useLivePlayer from "@/hooks/useLivePlayer";
 import LiveLyrics from "@/components/live/LiveLyrics";
 import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
+import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
 // without a platform account and cannot be delisted out from under a singer.
@@ -178,6 +179,77 @@ export default function LivePage() {
    * link to it, and a pool track can be named by more than one game song.
    */
   const [rejecting, setRejecting] = useState(null);
+
+  /**
+   * What each singer has settled on for a recording, keyed `SOURCE:externalId`.
+   *
+   * Keyed on the recording rather than the card, because the same song can be
+   * on screen twice -- the game offers it in one round and again in a later
+   * one -- and both cards must show the same marks and save to the same row.
+   *
+   * Seeded from the feed, which returns preferences alongside the cards, so no
+   * request of its own is needed on load.
+   */
+  const [prefs, setPrefs] = useState({});
+  const prefKey = useCallback(
+    (mapping) => (mapping ? `${mapping.source}:${mapping.externalId}` : null),
+    []
+  );
+
+  /**
+   * Whether the singer has actually moved the key or tempo on the open card.
+   *
+   * Without this, closing a card would write whatever the player happened to
+   * be holding -- and the player keeps the last song's values until the next
+   * one changes them, so opening a card and closing it untouched would stamp
+   * the previous song's key onto this song. Only a deliberate move counts.
+   */
+  const touchedRef = useRef(false);
+  /**
+   * What is open, readable from a cleanup that must not re-run when it changes.
+   *
+   * The save happens on close, and close is also what unmounts the page. Both
+   * paths need the card and its values as they are at that instant, which is
+   * exactly what state closed over by an effect cannot give.
+   */
+  const openCardRef = useRef(null);
+  const settingsRef = useRef({ pitch: 0, speed: 1 });
+  settingsRef.current = { pitch: player.pitch, speed: player.speed };
+
+  /**
+   * Store the key and tempo the singer settled on for the card being closed.
+   *
+   * On close rather than on every change, because the values in between are
+   * not decisions -- a singer tries +3, finds it too high and comes back down,
+   * and only where they stop is worth remembering. It also means no debounce:
+   * the button repeats while being held, and a per-change save would write
+   * once per press.
+   *
+   * 0 and 1.0 are saved like any other value. Trying +2 and settling back on
+   * the original is a decision, and storing it is different from never having
+   * tried -- the next round then opens in the key that was chosen rather than
+   * the one that was never considered.
+   */
+  const saveOpenCardSettings = useCallback(() => {
+    const card = openCardRef.current;
+    openCardRef.current = null;
+    if (!touchedRef.current) return;
+    touchedRef.current = false;
+    if (!card || !card.mapping) return;
+
+    const key = prefKey(card.mapping);
+    const { pitch, speed } = settingsRef.current;
+    // Optimistic: the row it writes is the one the page already shows, so
+    // waiting for the round trip would only delay agreeing with itself.
+    setPrefs((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), pitch, speed } }));
+    captureAPI
+      .saveSongPref(card.mapping.source, card.mapping.externalId, { pitch, speed })
+      .catch(() => {
+        /* A preference that failed to save is a small loss and a bad reason to
+           interrupt someone about to sing. It is retried the next time they
+           close the card. */
+      });
+  }, [prefKey]);
   /**
    * The alternative currently playing under this card, as {eventId, candidate}.
    *
@@ -230,12 +302,33 @@ export default function LivePage() {
    */
   const upsert = useCallback((card) => {
     setCards((prev) => [card, ...prev.filter((c) => c.eventId !== card.eventId)]);
+    // A pushed card carries no preferences -- ingest answers before it could
+    // read them -- so a song already marked keeps the marks the feed seeded.
+    // Only clear-out is wrong here, and nothing here clears.
+    if (card.mapping && card.prefs) {
+      setPrefs((prev) => ({
+        ...prev,
+        [`${card.mapping.source}:${card.mapping.externalId}`]: card.prefs,
+      }));
+    }
   }, []);
 
   const loadFeed = useCallback(async (sessionId) => {
     try {
       const res = await captureAPI.liveFeed(sessionId, 60);
-      setCards(res.data.cards || []);
+      const fresh = res.data.cards || [];
+      setCards(fresh);
+      // The feed carries each card's stored preferences, so seeding here costs
+      // no extra request. Merged rather than replaced: a card the singer just
+      // marked may have scrolled out of this window, and its marks should not
+      // vanish because the feed no longer mentions it.
+      setPrefs((prev) => {
+        const next = { ...prev };
+        for (const c of fresh) {
+          if (c.mapping && c.prefs) next[`${c.mapping.source}:${c.mapping.externalId}`] = c.prefs;
+        }
+        return next;
+      });
       // The feed re-resolves every card, so a mapping may have moved under an
       // audition that is still on screen. Dropping it costs a relabelled button
       // and keeps 就用这个版本 from committing an alternative against whatever
@@ -386,8 +479,121 @@ export default function LivePage() {
     }
   }, [player]);
 
+  /**
+   * Navigating away is a close too.
+   *
+   * Empty deps and a ref-based save on purpose: this must run once, when the
+   * page goes, reading the values as they are at that moment. A dependency
+   * would make it run on every change and save mid-adjustment.
+   */
+  const saveRef = useRef(saveOpenCardSettings);
+  saveRef.current = saveOpenCardSettings;
+  useEffect(() => () => saveRef.current(), []);
+
+  /**
+   * Put the open card into the key and tempo it should sound in.
+   *
+   * Every card gets an answer, including the ones nobody has marked: a song
+   * never adjusted sounds in its original key at normal speed. That has to be
+   * applied rather than assumed, because the player carries its values across
+   * songs -- stopping and loading a new track resets the position and the
+   * decode but not the pitch or the tempo. Left alone, a song adjusted to +4
+   * would hand that +4 to the next song opened, which is both wrong to hear
+   * and, if the singer then touches any control, wrong to save.
+   *
+   * The defaults are held here rather than written to the database when a card
+   * opens. Storing them would put a row behind every song ever glanced at, and
+   * would destroy the one thing a stored 0 means -- that this singer tried
+   * something else and decided the original was right.
+   *
+   * Tempo takes effect the moment the card opens: the <audio> element's own
+   * playbackRate needs nothing decoded.
+   *
+   * Key cannot. Shifting pitch runs on a decoded buffer, which lands a second
+   * or two after the first sound -- so a remembered key arrives mid-phrase and
+   * the opening bars play in the original. That is the accepted trade: sound
+   * starts immediately, as the page was built to do, and the alternative
+   * (holding the audio until the decode finished) would make every card slower
+   * to serve the ones that are remembered. Returning to the original key needs
+   * no decode at all, so the common case is instant either way.
+   *
+   * `appliedFor` guards against re-running: without it, applying a value would
+   * change player.pitch, which would re-run this effect, and the singer's own
+   * later adjustment would be undone by it.
+   */
+  const appliedFor = useRef(null);
+  useEffect(() => {
+    if (!openId) { appliedFor.current = null; return; }
+    const card = cards.find((c) => c.eventId === openId);
+    if (!card || !card.mapping) return;
+    // No stored preference is not "do nothing" -- it is "the original", which
+    // is a value like any other and has to be applied for the same reason.
+    const saved = prefs[prefKey(card.mapping)] || {};
+    const wantSpeed = typeof saved.speed === "number" ? saved.speed : 1;
+    const wantPitch = typeof saved.pitch === "number" ? saved.pitch : 0;
+
+    // Tempo first, and once per card.
+    if (appliedFor.current !== `${openId}:speed` && appliedFor.current !== `${openId}:both`) {
+      if (wantSpeed !== player.speed) player.setSpeed(wantSpeed);
+      appliedFor.current = `${openId}:speed`;
+    }
+
+    // Key, once the decode has landed and made it possible at all.
+    //
+    // Returning to 0 is the one case that does not need the decode: setPitch
+    // tears the shifted graph down and hands playback back to the element. But
+    // it is still gated on canShift, so that both directions settle at the
+    // same moment rather than the key snapping back before a remembered one
+    // could arrive.
+    if (player.canShift && appliedFor.current !== `${openId}:both`) {
+      if (wantPitch !== player.pitch) player.setPitch(wantPitch);
+      appliedFor.current = `${openId}:both`;
+    }
+    // `player` itself is deliberately absent: the hook returns a fresh object
+    // literal every render, so depending on it would re-run this effect on
+    // every render -- including the ones this effect causes by applying a
+    // value. The individual fields below are primitives and stable callbacks.
+  }, [openId, cards, prefs, prefKey, player.canShift, player.speed, player.pitch,
+    player.setSpeed, player.setPitch]);
+
+  /**
+   * The singer moved a control themselves.
+   *
+   * Wrapped rather than watching player.pitch, because this feature's own
+   * writes move that value too -- applying a remembered key would look
+   * identical to choosing one, and an untouched card would save itself.
+   */
+  const { setPitch: playerSetPitch, setSpeed: playerSetSpeed } = player;
+  const changePitch = useCallback((value) => {
+    touchedRef.current = true;
+    playerSetPitch(value);
+  }, [playerSetPitch]);
+
+  const changeSpeed = useCallback((value) => {
+    touchedRef.current = true;
+    playerSetSpeed(value);
+  }, [playerSetSpeed]);
+
+  /**
+   * Colours and the note, which commit as they are made.
+   *
+   * Unlike the key and tempo these are stated outright rather than arrived at
+   * by ear, so there is no trying-out phase worth waiting through.
+   */
+  const changeMarks = useCallback((card, patch) => {
+    if (!card.mapping) return;
+    const key = prefKey(card.mapping);
+    setPrefs((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), ...patch } }));
+    captureAPI
+      .saveSongPref(card.mapping.source, card.mapping.externalId, patch)
+      .catch(() => { /* see saveOpenCardSettings */ });
+  }, [prefKey]);
+
   /** Open a card, or close the one that is open. */
   const toggleCard = useCallback(async (card) => {
+    // Before anything else: the card being left owns the key and tempo the
+    // player is still holding, and stopAudio does not reset them.
+    saveOpenCardSettings();
     stopAudio();
     setPlayError("");
     setCandidates([]);
@@ -407,6 +613,7 @@ export default function LivePage() {
       return;
     }
     setOpenId(card.eventId);
+    openCardRef.current = card;
     if (!card.mapping) return;
 
     // Alternatives came with the card when there were any; fall back to asking
@@ -422,7 +629,7 @@ export default function LivePage() {
       }
     }
     playCard(card);
-  }, [openId, stopAudio, playCard, setLineTimes]);
+  }, [openId, stopAudio, playCard, setLineTimes, saveOpenCardSettings]);
 
   /**
    * Play or pause whatever this card is currently sounding.
@@ -686,6 +893,9 @@ export default function LivePage() {
     if (!session) return;
     // Stops delivery, not the connection: the client stays paired so the next
     // round -- here or in a playlist -- costs nothing to start.
+    // Ending the run closes whatever card was open, and that close deserves
+    // the same save as one made by hand.
+    saveOpenCardSettings();
     await stopDelivery();
     stopAudio();
     setOpenId(null);
@@ -838,6 +1048,12 @@ export default function LivePage() {
                                 )}
                               </span>
                             </span>
+                            {/* The singer's own marks, before the status
+                                badge: a note and colours are theirs, and the
+                                badge is the site's judgement of the recording.
+                                Renders nothing when the song has never been
+                                marked, so an untouched card is unchanged. */}
+                            {mapped ? <SongPrefMarks prefs={prefs[prefKey(card.mapping)]} /> : null}
                             {/* An unmapped song is the ordinary way a gap shows
                                 up, and an unconfirmed one still plays — both say
                                 what they are rather than looking like failures. */}
@@ -986,14 +1202,14 @@ export default function LivePage() {
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-6 shrink-0 text-right text-[0.65rem] text-muted">变调</span>
                                     {player.canShift ? (
-                                      <LivePitchControl pitch={player.pitch} onChange={player.setPitch} />
+                                      <LivePitchControl pitch={player.pitch} onChange={changePitch} />
                                     ) : (
                                       <span className="text-[0.65rem] text-muted/60">准备中…</span>
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-6 shrink-0 text-right text-[0.65rem] text-muted">变速</span>
-                                    <LiveSpeedControl speed={player.speed} onChange={player.setSpeed} />
+                                    <LiveSpeedControl speed={player.speed} onChange={changeSpeed} />
                                   </div>
                                 </div>
                               </div>
@@ -1003,6 +1219,17 @@ export default function LivePage() {
                                 {card.mapping.artist ? ` · ${card.mapping.artist}` : ""}
                                 {" · "}{SOURCE_LABEL[card.mapping.source] || card.mapping.source}
                               </div>
+
+                              {/* Colours and a note, kept per singer.
+                                  Below the transport because it is written
+                                  between songs rather than during one, and
+                                  above the confirmation buttons because those
+                                  decide the recording for everybody while
+                                  these belong to whoever is signed in. */}
+                              <SongPrefEditor
+                                prefs={prefs[prefKey(card.mapping)]}
+                                onChange={(patch) => changeMarks(card, patch)}
+                              />
 
                               {/* Filled, not outlined. These were a thin border
                                   and dim text on a dark card, which is the one

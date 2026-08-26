@@ -67,6 +67,7 @@ model User {
   feedback         Feedback[]
   bandwidthLogs    BandwidthLog[]
   approvedMappings SongMapping[] @relation("MappingApprover")
+  songPrefs        SongPref[]
 
   @@map("users")
 }
@@ -416,6 +417,53 @@ model CaptureEvent {
 /// mapping is approved. Local costs our bandwidth (3-5 MB a play) while the
 /// platforms cost none, so external is preferred and local is reserved for
 /// songs the platforms cannot serve.
+/// One singer's settled preferences for one recording: the key they sing it
+/// in, the tempo they want, a note to themselves, and colour flags.
+///
+/// Keyed on the platform recording (source + external id) rather than on the
+/// game song, so the key follows the voice: the same recording reached from a
+/// different game title, or after a mapping is repointed at it, is still the
+/// same performance to sing. The cost of that choice is the mirror of its
+/// benefit -- repointing a mapping to a different recording leaves the old
+/// preference behind on the old one, which is right when the two recordings
+/// are in different keys and merely untidy when they are not.
+///
+/// A table rather than another key inside User.preferences. That column already
+/// carries the theme and the encrypted platform cookies, and PostgreSQL rewrites
+/// an entire jsonb value on every update: measured here at 24x the write-ahead
+/// log per change (6,268 bytes against 257), crossing the 2 kB TOAST threshold
+/// at around twenty saved songs. Rows are cheap by comparison -- 146 bytes
+/// measured all-in, so every capture user keeping 300 songs costs 2.3 MB.
+model SongPref {
+  userId     String     @map("user_id") @db.Uuid
+  source     SongSource
+  /// Song UUID when source is LOCAL, else the platform's id. Deliberately a
+  /// plain string, matching SongMapping: the three id spaces have nothing in
+  /// common and a foreign key would only fit one of them.
+  externalId String     @map("external_id")
+
+  /// Semitones, -6..+6, clamped by the player. Nullable and meaningful at 0:
+  /// a singer who tries +2 and settles back on the original has decided
+  /// something, and storing that is different from never having tried.
+  pitch      Int?
+  /// Playback rate, 0.5..2.0. Nullable and meaningful at 1.0, as above.
+  speed      Float?
+  /// A note to oneself, shown on the collapsed card.
+  note       String?
+  /// Pipe-separated hex colours, the same shape PlaylistClip uses, so one
+  /// palette component serves both.
+  colorTag   String?    @map("color_tag")
+
+  updatedAt  DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The lookup is always "this user, these recordings on screen", so the
+  /// primary key serves it directly and no second index is needed.
+  @@id([userId, source, externalId])
+  @@map("song_prefs")
+}
+
 enum SongSource {
   LOCAL
   QQ

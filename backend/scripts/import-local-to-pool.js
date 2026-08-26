@@ -28,8 +28,12 @@
  * so editing a local lyric shows up in 唱卡 immediately -- measured at 0.02ms
  * more than reading a copy, which buys nothing.
  *
- *   node scripts/import-local-to-pool.js            # dry run, prints the plan
+ *   node scripts/import-local-to-pool.js            # dry run, the default list
  *   node scripts/import-local-to-pool.js --apply
+ *   node scripts/import-local-to-pool.js --song "情路放我过|詹雅雯" --apply
+ *
+ * The artist is checked, not merely recorded: it is compared through
+ * artistKey, so 向蕙玲/陈随意 and 向蕙玲_陈随意 are the same two people.
  *
  * Idempotent: a title already in the pool is skipped and named, whatever its
  * source. That is the point -- a QQ or NetEase version already there is the
@@ -41,8 +45,32 @@ require('dotenv').config();
 const prisma = require('../src/db/client');
 const { titleKey, artistKey } = require('../src/services/songKeyService');
 
+/**
+ * Which songs to bridge, as `--song "title|artist"` repeated.
+ *
+ * On the command line rather than only in this list, because the list is a
+ * record of one afternoon's picks and every later batch had to edit the file
+ * to reuse the script -- which puts a one-off shopping list into version
+ * control and makes the script's history a log of what was imported when.
+ * The default below is kept so the original batch stays reproducible.
+ */
+function fromArgv() {
+  const out = [];
+  const argv = process.argv;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] !== '--song' || !argv[i + 1]) continue;
+    const [title, artist] = argv[i + 1].split('|');
+    if (!title || !artist) {
+      console.error(`--song 要写成 "歌名|歌手"，收到的是：${argv[i + 1]}`);
+      process.exit(1);
+    }
+    out.push([title.trim(), artist.trim()]);
+  }
+  return out;
+}
+
 /** Exact local titles. Matched on title alone, then checked against the artist. */
-const WANTED = [
+const DEFAULT_WANTED = [
   ['不重逢', '华晨宇'],
   ['黑白艺术家', '华晨宇'],
   ['怪诞心理学', '华晨宇'],
@@ -55,6 +83,9 @@ const WANTED = [
   ['晨光里有你', '华晨宇'],
   ['黑夜问白天', '林俊杰'],
 ];
+
+const argvSongs = fromArgv();
+const WANTED = argvSongs.length ? argvSongs : DEFAULT_WANTED;
 
 const APPLY = process.argv.includes('--apply');
 

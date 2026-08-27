@@ -1,5 +1,7 @@
 "use client";
 
+import { LADDER_BUTTON, LadderExtra } from "./ladderStyle";
+
 /**
  * Pitch for the 唱卡 card: every useful key in one row, one press each.
  *
@@ -26,7 +28,7 @@ export default function LivePitchControl({ pitch, onChange }) {
   const value = typeof pitch === "number" ? pitch : 0;
 
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-1">
       {STEPS.map((n) => {
         const active = value === n;
         return (
@@ -36,23 +38,21 @@ export default function LivePitchControl({ pitch, onChange }) {
             onClick={() => { if (!active) onChange(n); }}
             aria-pressed={active}
             title={n === 0 ? "原调" : `${n > 0 ? "升" : "降"} ${Math.abs(n)} 个半音`}
-            className={`min-w-[1.6rem] rounded border px-1 py-0.5 text-center text-xs transition-colors ${
+            className={`${LADDER_BUTTON} ${
               active
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border bg-background text-theme hover:bg-surface-hover"
+                ? "border-accent bg-accent/15 font-medium text-accent"
+                : "border-border text-muted hover:border-accent/60 hover:text-theme"
             }`}
           >
-            {n === 0 ? "原" : n > 0 ? `+${n}` : n}
+            {n > 0 ? `+${n}` : n}
           </button>
         );
       })}
       {/* An odd key can still be in force — a stored preference, or the global
           default, both of which move by one. It has no button, so it is shown
-          here rather than left invisible while the row reads as "original". */}
+          here rather than left invisible while the row reads as unshifted. */}
       {STEPS.includes(value) ? null : (
-        <span className="ml-0.5 min-w-[1.8rem] rounded border border-accent px-1 py-0.5 text-center text-xs text-accent">
-          {value > 0 ? `+${value}` : value}
-        </span>
+        <LadderExtra>{value > 0 ? `+${value}` : value}</LadderExtra>
       )}
     </div>
   );

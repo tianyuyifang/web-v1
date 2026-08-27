@@ -21,10 +21,15 @@ const SPEED_MIN = 0.5;
 const SPEED_MAX = 2;
 const SPEED_STEP = 0.05;
 
-/** Signed, so +2 and −2 are told apart without reading the sign twice. */
+/**
+ * Signed, so +2 and −2 are told apart without reading the sign twice.
+ *
+ * 0 rather than 原调, matching the ladders on the cards: the two are read
+ * together and a word among numbers made the column jump.
+ */
 function pitchLabel(n) {
   const v = typeof n === "number" ? n : 0;
-  return v === 0 ? "原调" : `${v > 0 ? "+" : "−"}${Math.abs(v)}`;
+  return v === 0 ? "0" : `${v > 0 ? "+" : "−"}${Math.abs(v)}`;
 }
 
 /**
@@ -32,13 +37,17 @@ function pitchLabel(n) {
  * 1.15 with a different width and make the column jump.
  */
 function speedLabel(n) {
-  return `${(typeof n === "number" ? n : 1).toFixed(2)}x`;
+  return (typeof n === "number" ? n : 1).toFixed(2);
 }
 
 /** Floating-point addition leaves 1.0500000000000003; the step is exact. */
 function roundStep(n) {
   return Math.round(n * 100) / 100;
 }
+
+const STEP_BUTTON = "flex h-6 w-6 shrink-0 items-center justify-center rounded-md "
+  + "border border-border text-xs leading-none text-muted transition-colors "
+  + "hover:border-accent hover:text-theme disabled:opacity-30";
 
 function Stepper({ label, value, onStep, canDown, canUp, disabled }) {
   return (
@@ -48,19 +57,20 @@ function Stepper({ label, value, onStep, canDown, canUp, disabled }) {
         type="button"
         disabled={disabled || !canDown}
         onClick={() => onStep(-1)}
-        className="h-6 w-6 shrink-0 rounded border border-border text-xs leading-none text-muted hover:border-accent hover:text-theme disabled:opacity-30"
+        className={STEP_BUTTON}
       >
         −
       </button>
-      {/* Fixed width so the buttons hold still as the number changes. */}
-      <span className="w-14 text-center font-mono text-[0.72rem] text-theme">
+      {/* Fixed width so the buttons hold still as the number changes, and the
+          same face the ladders use so the two read as one family. */}
+      <span className="w-12 text-center font-mono text-[0.7rem] text-theme">
         {value}
       </span>
       <button
         type="button"
         disabled={disabled || !canUp}
         onClick={() => onStep(1)}
-        className="h-6 w-6 shrink-0 rounded border border-border text-xs leading-none text-muted hover:border-accent hover:text-theme disabled:opacity-30"
+        className={STEP_BUTTON}
       >
         +
       </button>

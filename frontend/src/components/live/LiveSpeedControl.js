@@ -1,5 +1,7 @@
 "use client";
 
+import { LADDER_BUTTON, LadderExtra } from "./ladderStyle";
+
 /**
  * Tempo for the 唱卡 card: every useful speed in one row, one press each.
  *
@@ -30,7 +32,7 @@ export default function LiveSpeedControl({ speed, onChange }) {
   const value = typeof speed === "number" ? speed : NORMAL;
 
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-1">
       {SPEEDS.map((n) => {
         const active = same(value, n);
         return (
@@ -39,25 +41,21 @@ export default function LiveSpeedControl({ speed, onChange }) {
             type="button"
             onClick={() => { if (!active) onChange(n); }}
             aria-pressed={active}
-            title={n === NORMAL ? "原速" : `${n}倍速`}
-            className={`min-w-[1.9rem] rounded border px-1 py-0.5 text-center text-xs transition-colors ${
+            title={n === NORMAL ? "原速" : `${n} 倍速`}
+            className={`${LADDER_BUTTON} ${
               active
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border bg-background text-theme hover:bg-surface-hover"
+                ? "border-accent bg-accent/15 font-medium text-accent"
+                : "border-border text-muted hover:border-accent/60 hover:text-theme"
             }`}
           >
-            {n === NORMAL ? "原" : n}
+            {n}
           </button>
         );
       })}
-      {/* A speed off the ladder can still be in force — the global default
-          moves in 0.05 steps and reaches values like 1.15. Three decimals, not
-          two: 1.001 rounded to 1.00 reads as normal speed while the card plays
-          fast. */}
+      {/* Three decimals, not two: 1.001 rounded to 1.00 reads as normal speed
+          while the card plays fast. */}
       {SPEEDS.some((n) => same(value, n)) ? null : (
-        <span className="ml-0.5 min-w-[2.2rem] rounded border border-accent px-1 py-0.5 text-center text-xs text-accent">
-          {Number(value.toFixed(3))}x
-        </span>
+        <LadderExtra>{Number(value.toFixed(3))}</LadderExtra>
       )}
     </div>
   );

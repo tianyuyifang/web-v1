@@ -1102,17 +1102,27 @@ export default function LivePage() {
                                     you which ladder is which. ml-auto while
                                     there is room, and the wrap above drops them
                                     onto their own line when there is not. */}
-                                <div className="ml-auto flex flex-col items-end gap-1">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-6 shrink-0 text-right text-[0.65rem] text-muted">变调</span>
+                                <div className="ml-auto flex flex-col items-end gap-1.5">
+                                  {/* Both rows start at the same x: the label
+                                      column is a fixed width, so the two
+                                      ladders line up under each other rather
+                                      than each beginning wherever its own
+                                      label happens to end. */}
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-7 shrink-0 text-right text-[0.65rem] text-muted">变调</span>
                                     {player.canShift ? (
                                       <LivePitchControl pitch={player.pitch} onChange={changePitch} />
                                     ) : (
-                                      <span className="text-[0.65rem] text-muted/60">准备中…</span>
+                                      // Holds the ladder's width while it is
+                                      // unavailable, so the tempo row below
+                                      // does not shift sideways when it lands.
+                                      <span className="flex h-6 items-center text-[0.65rem] text-muted/60">
+                                        准备中…
+                                      </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-6 shrink-0 text-right text-[0.65rem] text-muted">变速</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-7 shrink-0 text-right text-[0.65rem] text-muted">变速</span>
                                     <LiveSpeedControl speed={player.speed} onChange={changeSpeed} />
                                   </div>
                                 </div>

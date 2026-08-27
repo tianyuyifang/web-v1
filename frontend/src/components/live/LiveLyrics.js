@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
+import { parseWordLyric, alignToLrc, sweepProgress, evenProgress } from "@/lib/wordLyric";
 import { mappingAPI } from "@/lib/api";
 
 /**
@@ -211,6 +212,37 @@ function markPassage(gameLyric, parsed) {
   return places;
 }
 
+/**
+ * One line with the sung part filled in behind it.
+ *
+ * Two copies of the same text, one clipped to the progress point. That is what
+ * keeps the characters from moving: colouring them individually would reflow
+ * the line every few hundred milliseconds as weights changed, and a line that
+ * shifts under the eye is harder to read than one that does not move at all.
+ *
+ * The clipped copy sits on top and is revealed left to right, so the glyphs
+ * underneath never change position — only what is painted over them.
+ */
+function SweptLine({ text, progress }) {
+  const pct = Math.max(0, Math.min(100, progress * 100));
+  return (
+    <span className="relative inline-block whitespace-pre-wrap">
+      <span aria-hidden="true">{text}</span>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap text-accent"
+        // Not a transition: the value already updates every animation frame
+        // from the audio clock, and easing on top of that fights the music.
+        style={{ clipPath: `inset(0 ${100 - pct}% 0 0)` }}
+      >
+        {text}
+      </span>
+      {/* The readable copy for anything not looking at pixels. */}
+      <span className="sr-only">{text}</span>
+    </span>
+  );
+}
+
 export default function LiveLyrics({
   mappingId, gameLyric, current, onSeek, onTimesChange, onPassageTimes,
   override,
@@ -226,22 +258,43 @@ export default function LiveLyrics({
   const ovSource = override?.source || null;
   const ovId = override?.externalId || null;
 
+  const [words, setWords] = useState(null);
+
   useEffect(() => {
-    if (!mappingId) { setLrc(null); setLoading(false); return undefined; }
+    if (!mappingId) { setLrc(null); setWords(null); setLoading(false); return undefined; }
     let alive = true;
     setLoading(true);
     // While an alternative is being auditioned the words must be that
     // recording's: a cover is usually spotted by reading along, and the
     // original's words under someone else's take is exactly the wrong answer.
-    mappingAPI.lyrics(mappingId, ovSource && ovId ? { source: ovSource, externalId: ovId } : undefined)
-      .then((res) => { if (alive) setLrc(res.data.lyric || null); })
+    mappingAPI
+      .lyrics(mappingId, ovSource && ovId ? { source: ovSource, externalId: ovId } : undefined, true)
+      .then((res) => {
+        if (!alive) return;
+        setLrc(res.data.lyric || null);
+        // Absent for most NetEase tracks and a handful of QQ ones. The sweep
+        // falls back to an even pace rather than disappearing.
+        setWords(res.data.wordLyric || null);
+      })
       // A song without lyrics is ordinary, not a failure worth shouting about.
-      .catch(() => { if (alive) setLrc(null); })
+      .catch(() => { if (alive) { setLrc(null); setWords(null); } })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [mappingId, ovSource, ovId]);
 
   const parsed = useMemo(() => parseLRC(lrc), [lrc]);
+
+  /**
+   * Per-syllable timings, matched to the lines actually on screen.
+   *
+   * Aligned by text rather than by index: the LRC carries credits and blank
+   * spacers the word payload omits, so the two lists do not line up.
+   */
+  const wordLines = useMemo(() => parseWordLyric(words), [words]);
+  const wordByIndex = useMemo(
+    () => (wordLines ? alignToLrc(parsed, wordLines) : new Map()),
+    [parsed, wordLines]
+  );
   const timed = parsed.length > 0 && parsed[0].time !== -1;
 
   /**
@@ -432,7 +485,18 @@ export default function LiveLyrics({
                   : "text-[0.8rem] text-muted"
             }`}
           >
-            {line.text || " "}
+            {isActive && line.text
+              ? (
+                <SweptLine
+                  text={line.text}
+                  progress={
+                    wordByIndex.get(i)
+                      ? sweepProgress(wordByIndex.get(i), current)
+                      : evenProgress(line, parsed[i + 1], current, line.text.length)
+                  }
+                />
+              )
+              : (line.text || " ")}
           </div>
         );
       })}

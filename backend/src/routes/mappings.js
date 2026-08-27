@@ -541,7 +541,7 @@ router.get('/:id/preview', listenLimiter, async (req, res, next) => {
  * A song without lyrics is ordinary, not an error, and comes back as a null
  * lyric so the page can say so plainly.
  */
-async function resolveLyrics(source, externalId, res) {
+async function resolveLyrics(source, externalId, res, { withWords = false } = {}) {
   // A local song keeps its words in the songs table, already timed. Read live
   // rather than copied into the pool row: it costs 0.02ms more (measured) and
   // means editing a local lyric shows up in 唱卡 immediately, instead of after
@@ -560,11 +560,25 @@ async function resolveLyrics(source, externalId, res) {
   if (source === 'QQ' || source === 'NETEASE') {
     const platform = source === 'QQ' ? qq : netease;
     let r;
+    let word = null;
     try {
       // The fetch is allowed to throw through the store, so a platform outage
       // is not written down as "this song has no lyrics" — that would be
       // permanent, and the store never asks twice.
       r = await lyricStore.getOrFetch(source, externalId, () => platform.getLyric(externalId));
+      // Word timings, when the backfill found any and the caller wants them.
+      //
+      // Asked for rather than always sent: the review page shares this route
+      // and reads only the plain lyric, so an unconditional read would charge
+      // it for a column it never looks at. Never fetched on demand either --
+      // a song without them stays without them until the backfill runs again,
+      // rather than reaching for the platform mid-song.
+      if (withWords) {
+        word = await prisma.importedTrack.findFirst({
+          where: { source, externalId },
+          select: { wordLyric: true },
+        }).then((t) => t?.wordLyric || null).catch(() => null);
+      }
     } catch (err) {
       // Being throttled is the one failure that must not read as "no lyrics".
       // A 200 here tells the page everything is fine, so it keeps asking —
@@ -581,7 +595,11 @@ async function resolveLyrics(source, externalId, res) {
       // an error box over a card that still plays.
       return res.json({ lyric: null, translation: null });
     }
-    return res.json({ lyric: r.lyric, translation: r.translation });
+    // The field appears only when it was asked for, so a caller that did not
+    // ask sees exactly the response it always saw.
+    return res.json(withWords
+      ? { lyric: r.lyric, translation: r.translation, wordLyric: word }
+      : { lyric: r.lyric, translation: r.translation });
   }
   // LOCAL clips have their own lyrics route; anything else has none to give.
   return res.json({ lyric: null, translation: null });
@@ -615,7 +633,9 @@ router.get('/:id/lyrics', listenLimiter, async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
     const { source, externalId } = await resolveOverride(req, mapping);
-    return await resolveLyrics(source, externalId, res);
+    // `words=1` is the 唱卡 page asking for per-syllable timings. Absent, the
+    // response is exactly what it has always been.
+    return await resolveLyrics(source, externalId, res, { withWords: req.query.words === '1' });
   } catch (err) {
     next(err);
   }

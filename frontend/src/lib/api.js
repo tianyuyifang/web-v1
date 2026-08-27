@@ -349,11 +349,19 @@ export const mappingAPI = {
   // Takes the same optional {source, externalId} as preview: while an
   // alternative is being auditioned the words must be that recording's, not
   // the one the mapping still points at.
-  lyrics: (id, override) => api.get(
-    `/mappings/${id}/lyrics${override
-      ? `?source=${encodeURIComponent(override.source)}&externalId=${encodeURIComponent(override.externalId)}`
-      : ""}`
-  ),
+  // `words` asks for per-syllable timings as well. Opt-in because the review
+  // page shares this route and reads only the plain lyric — sending them
+  // always would charge it for a column it never looks at.
+  lyrics: (id, override, words) => {
+    const q = new URLSearchParams();
+    if (override) {
+      q.set("source", override.source);
+      q.set("externalId", override.externalId);
+    }
+    if (words) q.set("words", "1");
+    const qs = q.toString();
+    return api.get(`/mappings/${id}/lyrics${qs ? `?${qs}` : ""}`);
+  },
   trackLyrics: (trackId) => api.get(`/mappings/track/${trackId}/lyrics`),
   // Same thing for a pool track nobody has claimed yet — you have to hear it
   // before you can say it is the right one.

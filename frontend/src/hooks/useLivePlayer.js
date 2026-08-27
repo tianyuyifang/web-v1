@@ -99,13 +99,22 @@ export default function useLivePlayer() {
     return elRef.current ? elRef.current.currentTime || 0 : 0;
   }, [duration]);
 
-  // The shifted graph reports no timeupdate events, so drive the clock here.
+  /**
+   * The playhead, once per frame.
+   *
+   * The shifted graph reports no timeupdate events at all, so it has always
+   * needed this. The <audio> element does report them, but only about four
+   * times a second — fine for a clock reading and far too coarse for the
+   * karaoke sweep, which would advance in visible steps rather than moving.
+   * Reading currentTime once a frame costs nothing and makes both paths smooth.
+   */
   useEffect(() => {
     if (!isPlaying) return undefined;
     let alive = true;
     const tick = () => {
       if (!alive) return;
       if (shiftingRef.current) setCurrent(positionNow());
+      else if (elRef.current) setCurrent(elRef.current.currentTime || 0);
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);

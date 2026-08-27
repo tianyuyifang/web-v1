@@ -591,6 +591,27 @@ model ImportedTrack {
   /// forever. Null means never asked.
   lyricFetchedAt DateTime? @map("lyric_fetched_at") @db.Timestamptz
 
+  /// The same words with a time on every syllable, when the platform has them.
+  ///
+  /// Normalised on the way in rather than stored raw, because the two sources
+  /// disagree about everything except the information: QQ sends encrypted QRC
+  /// where the timing follows the text, NetEase sends YRC where it precedes
+  /// it. Keeping either shape would put that difference in front of the
+  /// player, which cares only about when each syllable starts.
+  ///
+  /// Separate from `lyric` rather than replacing it. Line-level lyrics exist
+  /// for effectively everything and word-level do not, so the fallback has to
+  /// remain — and the karaoke sweep is the only thing that needs this, while
+  /// everything else reads the plain one it always did.
+  wordLyric      String?   @map("word_lyric") @db.Text
+  /// When word-level lyrics were last asked for, answered or not.
+  ///
+  /// Its own clock, because it is asked for separately and much later: the
+  /// catalogue was fetched line-by-line long before this existed, so sharing
+  /// `lyricFetchedAt` would make every one of those rows look as though it had
+  /// already been asked.
+  wordLyricFetchedAt DateTime? @map("word_lyric_fetched_at") @db.Timestamptz
+
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
   /// Re-importing the same playlist updates rows instead of duplicating them.

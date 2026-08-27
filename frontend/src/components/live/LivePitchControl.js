@@ -1,6 +1,6 @@
 "use client";
 
-import { LADDER_BUTTON, LADDER_TINT, LadderExtra } from "./ladderStyle";
+import { LADDER_BUTTON, LADDER_TINT, LadderExtra, PITCH_STEPS } from "./ladderStyle";
 
 /**
  * Pitch for the 唱卡 card: every useful key in one row, one press each.
@@ -21,15 +21,12 @@ import { LADDER_BUTTON, LADDER_TINT, LadderExtra } from "./ladderStyle";
  * pages this feature has nothing to do with.
  */
 
-/** The keys worth one press, low to high. 0 is the way home. */
-const STEPS = [-6, -4, -2, 0, 2, 4, 6];
-
 export default function LivePitchControl({ pitch, onChange }) {
   const value = typeof pitch === "number" ? pitch : 0;
 
   return (
     <div className="flex items-center gap-1">
-      {STEPS.map((n) => {
+      {PITCH_STEPS.map((n) => {
         const active = value === n;
         return (
           <button
@@ -51,7 +48,7 @@ export default function LivePitchControl({ pitch, onChange }) {
       {/* An odd key can still be in force — a stored preference, or the global
           default, both of which move by one. It has no button, so it is shown
           here rather than left invisible while the row reads as unshifted. */}
-      {STEPS.includes(value) ? null : (
+      {PITCH_STEPS.includes(value) ? null : (
         <LadderExtra>{value > 0 ? `+${value}` : value}</LadderExtra>
       )}
     </div>

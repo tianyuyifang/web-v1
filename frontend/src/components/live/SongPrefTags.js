@@ -6,33 +6,35 @@ import { PRESET_COLORS } from "../player/ColorTag";
 /**
  * A singer's own marks on a 唱卡 card: colour flags and a note.
  *
- * Not ColorTag, though it shares that component's palette, its pipe-separated
- * storage and now its silhouette. ColorTag is pinned to the top-right corner
- * of a playlist row by absolute positioning and drops in with an animation;
- * this sits inline in a header line that already carries a title, a stage
- * label and a confirmation badge, where a corner-anchored flag would land on
- * top of them. What is worth sharing is the meaning — the same colour, the
- * same shape, the same thing.
+ * Not ColorTag, though it shares that component's palette and its
+ * pipe-separated storage. ColorTag is a bookmark pinned to the top-right
+ * corner of a playlist row by absolute positioning, and it drops in with an
+ * animation; this sits inline in a header line that already carries a title,
+ * a stage label and a confirmation badge, where a corner-anchored flag would
+ * land on top of them.
+ *
+ * Dots, not bookmarks. The silhouette was tried here and reads as clutter at
+ * this size — a bookmark is a shape you hang off an edge, and inline among
+ * text it just competes with the title. A dot is a mark, which is what these
+ * are. The colours still mean the same thing in both places, which is the
+ * part worth sharing.
  */
 
 /**
- * The same silhouette the playlist cards use, at the size this row allows.
+ * One colour mark.
  *
- * Copied rather than imported: ColorTag's is bound up with its absolute
- * corner positioning and its drop animation, neither of which belongs in a
- * flex row. The path is what carries the meaning, so that is what is shared.
+ * A ring rather than a border: it sits on top of the fill instead of eating
+ * into it, so a small dot keeps its full colour while still being separated
+ * from whatever it sits on. Without it a dark mark on a dark card has no edge
+ * at all.
  */
-function Bookmark({ color, size = 13 }) {
+function Dot({ color, className = "" }) {
   return (
-    <svg
-      width={size}
-      height={Math.round((size * 28) / 18)}
-      viewBox="0 0 18 28"
-      style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.35))" }}
+    <span
+      className={`h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/25 ${className}`}
+      style={{ background: color }}
       aria-hidden="true"
-    >
-      <path d="M0 0h18v23l-9-5-9 5V0z" fill={color} />
-    </svg>
+    />
   );
 }
 
@@ -69,12 +71,9 @@ export const SongPrefMarks = memo(function SongPrefMarks({ prefs }) {
         </span>
       ) : null}
       {colors.length ? (
-        // Hung from the top of the row, the way a bookmark sits on a page.
-        // -mt-1.5 lifts them into the row's padding so they read as attached
-        // to it rather than floating in the middle of the text line.
-        <span className="-mt-1.5 flex shrink-0 items-start gap-1 self-start">
+        <span className="flex shrink-0 items-center gap-1">
           {colors.map((c) => (
-            <Bookmark key={c} color={c} />
+            <Dot key={c} color={c} />
           ))}
         </span>
       ) : null}
@@ -135,8 +134,8 @@ export default function SongPrefEditor({ prefs, onChange, disabled }) {
       <div ref={paletteRef} className="relative flex items-center gap-1.5">
         <span className="text-[0.65rem] text-muted">标记</span>
 
-        {/* The same bookmarks the collapsed row shows, so the editor and the
-            row are visibly the same thing rather than two notations. */}
+        {/* The same marks the collapsed row shows, so the editor and the row
+            are visibly the same thing rather than two notations. */}
         {colors.map((c) => (
           <button
             key={c}
@@ -144,9 +143,9 @@ export default function SongPrefEditor({ prefs, onChange, disabled }) {
             disabled={disabled}
             onClick={() => toggleColor(c)}
             title="点击移除"
-            className="transition-transform hover:scale-110 disabled:opacity-40"
+            className="flex items-center transition-transform hover:scale-110 disabled:opacity-40"
           >
-            <Bookmark color={c} size={12} />
+            <Dot color={c} />
           </button>
         ))}
 
@@ -171,8 +170,8 @@ export default function SongPrefEditor({ prefs, onChange, disabled }) {
                 key={c}
                 type="button"
                 onClick={() => toggleColor(c)}
-                className={`h-3.5 w-3.5 rounded-full transition-transform hover:scale-125 ${
-                  colors.includes(c) ? "ring-2 ring-white/70" : "ring-1 ring-black/20"
+                className={`h-3 w-3 rounded-full transition-transform hover:scale-125 ${
+                  colors.includes(c) ? "ring-2 ring-white/70" : "ring-1 ring-black/25"
                 }`}
                 style={{ background: c }}
               />

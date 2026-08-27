@@ -14,12 +14,7 @@
  * rather than as a control and a separate readout.
  */
 
-const PITCH_MIN = -6;
-const PITCH_MAX = 6;
-/** Matches the player's own clamp, and the service's. */
-const SPEED_MIN = 0.5;
-const SPEED_MAX = 2;
-const SPEED_STEP = 0.05;
+import { PITCH_STEPS, SPEED_STEPS, sameValue, stepAlong } from "./ladderStyle";
 
 /**
  * Signed, so +2 and −2 are told apart without reading the sign twice.
@@ -33,16 +28,11 @@ function pitchLabel(n) {
 }
 
 /**
- * Two decimals, because the step is 0.05 and 1.1 would otherwise sit beside
- * 1.15 with a different width and make the column jump.
+ * Written as the ladder writes it — 1, not 1.00 — since the two are read
+ * together. The column has a fixed width, so nothing jumps.
  */
 function speedLabel(n) {
-  return (typeof n === "number" ? n : 1).toFixed(2);
-}
-
-/** Floating-point addition leaves 1.0500000000000003; the step is exact. */
-function roundStep(n) {
-  return Math.round(n * 100) / 100;
+  return String(typeof n === "number" ? n : 1);
 }
 
 const STEP_BUTTON = "flex h-6 w-6 shrink-0 items-center justify-center rounded-md "
@@ -82,14 +72,18 @@ export default function DefaultTuning({ defaults, onChange, disabled }) {
   const pitch = typeof defaults?.pitch === "number" ? defaults.pitch : 0;
   const speed = typeof defaults?.speed === "number" ? defaults.speed : 1;
 
+  // Walks the card's own ladders rather than counting in fixed increments, so
+  // a default can only ever be a value the card can show as selected. Stepping
+  // by one semitone would let the default reach -3, where the row underneath
+  // would light no button at all while the song played shifted.
   const stepPitch = (dir) => {
-    const next = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch + dir));
+    const next = stepAlong(PITCH_STEPS, pitch, dir);
     if (next !== pitch) onChange({ pitch: next });
   };
 
   const stepSpeed = (dir) => {
-    const next = roundStep(Math.max(SPEED_MIN, Math.min(SPEED_MAX, speed + dir * SPEED_STEP)));
-    if (next !== speed) onChange({ speed: next });
+    const next = stepAlong(SPEED_STEPS, speed, dir);
+    if (!sameValue(next, speed)) onChange({ speed: next });
   };
 
   return (
@@ -105,16 +99,16 @@ export default function DefaultTuning({ defaults, onChange, disabled }) {
           label="变调"
           value={pitchLabel(defaults?.pitch)}
           onStep={stepPitch}
-          canDown={pitch > PITCH_MIN}
-          canUp={pitch < PITCH_MAX}
+          canDown={pitch > PITCH_STEPS[0]}
+          canUp={pitch < PITCH_STEPS[PITCH_STEPS.length - 1]}
           disabled={disabled}
         />
         <Stepper
           label="变速"
           value={speedLabel(defaults?.speed)}
           onStep={stepSpeed}
-          canDown={speed > SPEED_MIN}
-          canUp={speed < SPEED_MAX}
+          canDown={speed > SPEED_STEPS[0]}
+          canUp={speed < SPEED_STEPS[SPEED_STEPS.length - 1]}
           disabled={disabled}
         />
       </div>

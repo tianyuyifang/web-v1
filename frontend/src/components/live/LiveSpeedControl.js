@@ -1,6 +1,6 @@
 "use client";
 
-import { LADDER_BUTTON, LadderExtra } from "./ladderStyle";
+import { LADDER_BUTTON, LADDER_TINT, LadderExtra } from "./ladderStyle";
 
 /**
  * Tempo for the 唱卡 card: every useful speed in one row, one press each.
@@ -44,8 +44,8 @@ export default function LiveSpeedControl({ speed, onChange }) {
             title={n === NORMAL ? "原速" : `${n} 倍速`}
             className={`${LADDER_BUTTON} ${
               active
-                ? "border-accent bg-accent/15 font-medium text-accent"
-                : "border-border text-muted hover:border-accent/60 hover:text-theme"
+                ? `border-accent font-medium text-accent ${LADDER_TINT}`
+                : "border-border text-muted hover:border-accent/50 hover:text-theme"
             }`}
           >
             {n}

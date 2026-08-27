@@ -1,6 +1,6 @@
 "use client";
 
-import { LADDER_BUTTON, LadderExtra } from "./ladderStyle";
+import { LADDER_BUTTON, LADDER_TINT, LadderExtra } from "./ladderStyle";
 
 /**
  * Pitch for the 唱卡 card: every useful key in one row, one press each.
@@ -40,8 +40,8 @@ export default function LivePitchControl({ pitch, onChange }) {
             title={n === 0 ? "原调" : `${n > 0 ? "升" : "降"} ${Math.abs(n)} 个半音`}
             className={`${LADDER_BUTTON} ${
               active
-                ? "border-accent bg-accent/15 font-medium text-accent"
-                : "border-border text-muted hover:border-accent/60 hover:text-theme"
+                ? `border-accent font-medium text-accent ${LADDER_TINT}`
+                : "border-border text-muted hover:border-accent/50 hover:text-theme"
             }`}
           >
             {n > 0 ? `+${n}` : n}

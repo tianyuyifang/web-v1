@@ -15,9 +15,28 @@
 /**
  * Wide enough for the longest label on either ladder (`1.05`, four glyphs) at
  * this size, which makes every button on both rows identical.
+ *
+ * `bg-background` rather than nothing: the open card is a surface darkened by
+ * a black wash, so a transparent button was the same colour as the card it sat
+ * on and read as text with a hairline round it. The background token is the
+ * darker of the two, so the row sits INTO the card rather than on top of it —
+ * and it is a token rather than a fixed colour, so it inverts with the theme
+ * instead of turning into a dark smear on the light one.
  */
-export const LADDER_BUTTON = "h-6 w-11 shrink-0 rounded-md border text-center "
-  + "font-mono text-[0.68rem] leading-none transition-colors";
+/**
+ * The fill behind a selected button.
+ *
+ * An inline style rather than `bg-accent/25`, which renders nothing at all:
+ * --accent is a plain hex, so Tailwind cannot derive an alpha channel from it
+ * and the slash utilities silently produce no rule. (The same is true of the
+ * `bg-accent/10` used elsewhere in the app -- it has never painted anything.)
+ * color-mix keeps the value tied to the token, so it still follows the theme.
+ */
+export const LADDER_TINT = "[background-color:color-mix(in_srgb,var(--accent)_22%,transparent)]";
+
+export const LADDER_BUTTON = "h-[1.35rem] w-[2.35rem] shrink-0 rounded "
+  + "border bg-background text-center font-mono text-[0.62rem] leading-none "
+  + "transition-colors";
 
 /**
  * The value in force when it has no button of its own.
@@ -32,7 +51,7 @@ export const LADDER_BUTTON = "h-6 w-11 shrink-0 rounded-md border text-center "
  */
 export function LadderExtra({ children }) {
   return (
-    <span className="ml-1 flex h-6 items-center rounded-md bg-accent/15 px-1.5 font-mono text-[0.68rem] leading-none text-accent">
+    <span className={`ml-1 flex h-[1.35rem] items-center rounded border border-accent/60 px-1.5 font-mono text-[0.62rem] leading-none text-accent ${LADDER_TINT}`}>
       {children}
     </span>
   );

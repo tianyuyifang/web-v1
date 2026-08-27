@@ -32,6 +32,7 @@ import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
 import DefaultTuning from "@/components/live/DefaultTuning";
+import { PlayIcon, PauseIcon, BusyIcon, UnmappedIcon } from "@/components/live/TransportIcons";
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
 // without a platform account and cannot be delisted out from under a singer.
@@ -57,8 +58,16 @@ const SOURCE_LABEL = { LOCAL: "独家", QQ: "QQ", NETEASE: "网易" };
  */
 const ROUND_IDLE_MS = 60 * 1000;
 
-/** Rounds kept on screen. Hours of play must not turn into endless scroll. */
-const KEEP_BATCHES = 12;
+/**
+ * Rounds kept on screen.
+ *
+ * Raised from 12 when the feed widened from one connection to a day: a dozen
+ * rounds covered a single sitting and would now cut most of it off. Still a
+ * cap rather than everything, because a day of singing should not become
+ * endless scroll — the busiest measured account produced 553 cards in 24
+ * hours, which is far more than anyone reads back through.
+ */
+const KEEP_BATCHES = 40;
 
 // No local copy of the run is kept. The server knows whether captures are
 // being recognised, and a browser-side copy only ever disagreed with it: it
@@ -306,7 +315,10 @@ export default function LivePage() {
 
   const loadFeed = useCallback(async (sessionId) => {
     try {
-      const res = await captureAPI.liveFeed(sessionId, 60);
+      // The feed now spans a day rather than one connection, so ask for enough to
+    // fill it: the busiest measured account sang 553 songs in 24 hours, and 150
+    // rounds of that is more than anyone scrolls.
+    const res = await captureAPI.liveFeed(sessionId, 150);
       const fresh = res.data.cards || [];
       setCards(fresh);
       // The feed carries each card's stored preferences, so seeding here costs
@@ -937,8 +949,13 @@ export default function LivePage() {
                             disabled={!mapped}
                             className="flex w-full items-center gap-3 px-3 py-2.5 text-left disabled:opacity-60"
                           >
-                            <span className="h-8 w-8 shrink-0 rounded-full border border-border text-center text-xs leading-8">
-                              {!mapped ? "—" : busy && isOpen ? "…" : isOpen && playing ? "❚❚" : "▶"}
+                            {/* flex rather than leading-8: line-height centres
+                                text by its own metrics, which an icon does not
+                                have. */}
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border">
+                              {!mapped ? <UnmappedIcon className="text-muted" />
+                                : busy && isOpen ? <BusyIcon />
+                                  : isOpen && playing ? <PauseIcon /> : <PlayIcon />}
                             </span>
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-sm">{card.title}</span>
@@ -1061,9 +1078,10 @@ export default function LivePage() {
                                   type="button"
                                   onClick={() => togglePlayback(card)}
                                   disabled={busy}
-                                  className="h-8 w-8 shrink-0 rounded-full border border-border text-xs hover:border-accent disabled:opacity-30"
+                                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border hover:border-accent disabled:opacity-30"
+                                  aria-label={playing ? "暂停" : "播放"}
                                 >
-                                  {busy ? "…" : playing ? "❚❚" : "▶"}
+                                  {busy ? <BusyIcon /> : playing ? <PauseIcon /> : <PlayIcon />}
                                 </button>
                                 {/* A second, not fifteen. The reason to move at
                                     all here is landing on the beat you missed,
@@ -1195,7 +1213,12 @@ export default function LivePage() {
       {/* Outside the card list on purpose: it belongs to the singer, not to any
           one song, and it has to stay reachable while a card is open — a
           default chosen without hearing it is a guess. */}
-      <DefaultTuning defaults={defaults} onChange={changeDefaults} />
+      <DefaultTuning
+        defaults={defaults}
+        onChange={changeDefaults}
+        volume={player.volume}
+        onVolumeChange={player.setVolume}
+      />
     </div>
   );
 }

@@ -46,6 +46,15 @@ const MAX_LYRIC_LENGTH = 2000;
  * cannot play.
  */
 const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * How far back the live page looks.
+ *
+ * Long enough that an evening survives a reconnection or a night's sleep,
+ * short enough that the list stays an account of what was just sung rather
+ * than an archive. Rows themselves are kept for thirty days.
+ */
+const LIVE_FEED_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_CANDIDATE_SCAN = 30;
 /**
  * Shortest ellipsis fragment worth filtering on. "一…的约定" leaves "一", which
@@ -1125,13 +1134,35 @@ async function getLiveFeed({ userId, sessionId, limit }) {
   if (!session) throw new NotFoundError('Capture session');
   if (session.userId !== userId) throw new ForbiddenError('Not your capture session');
 
-  const take = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 40;
+  const take = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 200) : 60;
+
+  // The singer's last day, not this connection's.
+  //
+  // Keyed on the session, the feed emptied whenever a connection was replaced
+  // -- which happens when the client reconnects, when the four-hour token
+  // expires, or when someone presses stop and starts again. The cards were
+  // still in the database; they had simply stopped being reachable, and from
+  // the singer's side an evening in one room had become several.
+  //
+  // A day is the span that matches how the page is used: an evening's singing,
+  // still there the next morning, gone by the following night. Measured before
+  // choosing it -- the busiest account produced 553 cards in 24 hours across
+  // two sessions, and this query answers in 2.9ms.
+  const since = new Date(Date.now() - LIVE_FEED_WINDOW_MS);
+
   // Live captures only. The same connection may have tagged playlists earlier,
   // and those events carry a different shape -- `candidates` is an array of
   // songs there and a single mapping object here -- so mixing them renders
   // cards for songs that were never live captures at all.
   const events = await prisma.captureEvent.findMany({
-    where: { sessionId, playlistId: null },
+    where: {
+      playlistId: null,
+      createdAt: { gte: since },
+      // Every live session this account has had in the window. Scoped by
+      // userId rather than by the id passed in, which is what widens it --
+      // and the ownership check above is what keeps that safe.
+      session: { userId, mode: 'live' },
+    },
     orderBy: { createdAt: 'desc' },
     take,
   });

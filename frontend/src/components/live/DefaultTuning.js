@@ -15,6 +15,7 @@
  */
 
 import { PITCH_STEPS, SPEED_STEPS, sameValue, stepAlong } from "./ladderStyle";
+import LiveVolumeControl from "./LiveVolumeControl";
 
 /**
  * Signed, so +2 and −2 are told apart without reading the sign twice.
@@ -68,7 +69,7 @@ function Stepper({ label, value, onStep, canDown, canUp, disabled }) {
   );
 }
 
-export default function DefaultTuning({ defaults, onChange, disabled }) {
+export default function DefaultTuning({ defaults, onChange, disabled, volume, onVolumeChange }) {
   const pitch = typeof defaults?.pitch === "number" ? defaults.pitch : 0;
   const speed = typeof defaults?.speed === "number" ? defaults.speed : 1;
 
@@ -111,6 +112,19 @@ export default function DefaultTuning({ defaults, onChange, disabled }) {
           canUp={speed < SPEED_STEPS[SPEED_STEPS.length - 1]}
           disabled={disabled}
         />
+
+        {/* Volume belongs here rather than on a card: it is one level for the
+            whole evening, not a property of a song. Separated by a rule
+            because it is the one row that takes effect immediately and is not
+            a default for something later. */}
+        {onVolumeChange ? (
+          <div className="mt-2 border-t border-border/60 pt-2">
+            <div className="flex items-center gap-1.5">
+              <span className="w-7 shrink-0 text-right text-[0.62rem] text-muted">音量</span>
+              <LiveVolumeControl volume={volume} onChange={onVolumeChange} />
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

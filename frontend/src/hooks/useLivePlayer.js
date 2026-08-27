@@ -24,6 +24,7 @@ export default function useLivePlayer() {
   const [duration, setDuration] = useState(0);
   const [speed, setSpeedState] = useState(1);
   const [pitch, setPitchState] = useState(0);
+  const [volume, setVolumeState] = useState(1);
   /**
    * The same two values, readable synchronously.
    *
@@ -41,6 +42,19 @@ export default function useLivePlayer() {
    */
   const speedRef = useRef(1);
   const pitchRef = useRef(0);
+  /**
+   * Output level, 0 to 1.
+   *
+   * A ref for the same reason as the two above -- `load` reads it while
+   * starting a track, which can happen before a state change has rendered --
+   * and state as well, because the slider renders from it.
+   *
+   * It has to reach two different places. Without a shift the sound comes from
+   * the <audio> element, which has its own `volume`; with one it comes through
+   * the SoundTouch graph, where the gain node is the only handle. Setting just
+   * one of them would make the control work until someone changed key.
+   */
+  const volumeRef = useRef(1);
   /** True once the buffer is decoded and pitch can actually be applied. */
   const [canShift, setCanShift] = useState(false);
 
@@ -157,6 +171,9 @@ export default function useLivePlayer() {
       gainRef.current = ctx.createGain();
       gainRef.current.connect(ctx.destination);
     }
+    // Built fresh on every shift, so it has to be told the level rather than
+    // inheriting the 1.0 a new node starts at.
+    gainRef.current.gain.value = volumeRef.current;
     shifter.connect(gainRef.current);
 
     shifterRef.current = shifter;
@@ -178,6 +195,7 @@ export default function useLivePlayer() {
     setCurrent(0);
     setDuration(0);
     el.playbackRate = speedRef.current;
+    el.volume = volumeRef.current;
     await el.play();
     setIsPlaying(true);
     // Deliberately not awaited: the point is that sound has already started.
@@ -251,6 +269,22 @@ export default function useLivePlayer() {
     }
   }, [element, isPlaying, positionNow, startShifted, teardownGraph]);
 
+  /**
+   * Set the output level, on whichever engine is currently sounding.
+   *
+   * Both are written every time rather than only the active one: the other may
+   * take over mid-song -- asking for a shifted key builds the graph, returning
+   * to the original hands playback back to the element -- and a level applied
+   * to only one of them would be lost at that moment.
+   */
+  const setVolume = useCallback((value) => {
+    const next = Math.max(0, Math.min(1, value));
+    volumeRef.current = next;
+    setVolumeState(next);
+    if (elRef.current) elRef.current.volume = next;
+    if (gainRef.current) gainRef.current.gain.value = next;
+  }, []);
+
   const setSpeed = useCallback((value) => {
     const next = Math.max(0.5, Math.min(2, value));
     speedRef.current = next;
@@ -281,7 +315,7 @@ export default function useLivePlayer() {
 
   return {
     load, toggle, seek, stop,
-    setPitch, setSpeed,
-    isPlaying, current, duration, pitch, speed, canShift,
+    setPitch, setSpeed, setVolume,
+    isPlaying, current, duration, pitch, speed, volume, canShift,
   };
 }

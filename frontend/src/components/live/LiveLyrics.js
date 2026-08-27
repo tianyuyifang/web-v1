@@ -227,10 +227,16 @@ function SweptLine({ text, progress }) {
   const pct = Math.max(0, Math.min(100, progress * 100));
   return (
     <span className="relative inline-block whitespace-pre-wrap">
+      {/* The words not yet sung, in the line's own dimmed colour. */}
       <span aria-hidden="true">{text}</span>
+      {/* The same words in the highlight colour, revealed left to right. Laid
+          over the first copy rather than replacing it, so the glyphs never
+          move: recolouring characters one at a time would reflow the line
+          every few hundred milliseconds, and a line that shifts under the eye
+          is harder to read than one that does not move at all. */}
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap text-accent"
+        className="pointer-events-none absolute left-0 top-0 whitespace-pre-wrap text-accent"
         // Not a transition: the value already updates every animation frame
         // from the audio clock, and easing on top of that fights the music.
         style={{ clipPath: `inset(0 ${100 - pct}% 0 0)` }}
@@ -477,7 +483,10 @@ export default function LiveLyrics({
               timed ? "cursor-pointer hover:bg-white/5" : ""
             } ${
               isActive
-                ? "text-[0.95rem] font-semibold text-accent"
+                // Deliberately NOT text-accent: the sweep supplies that, and a
+                // line already in the highlight colour leaves it nothing to
+                // reveal. The unsung part reads as dimmed against it.
+                ? "text-[0.95rem] font-semibold text-muted"
                 : inPassage
                   // The passage the game is showing: what the singer has to
                   // perform, and the reason this panel is open.

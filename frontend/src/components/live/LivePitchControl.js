@@ -1,63 +1,59 @@
 "use client";
 
 /**
- * Pitch control for the 唱卡 card, with a one-press way back to the original
- * key.
+ * Pitch for the 唱卡 card: every useful key in one row, one press each.
+ *
+ * It was a stepper, which meant six presses to reach the bottom of the range
+ * and six back. A singer who knows they sing two below has no reason to walk
+ * there a semitone at a time, and mid-song there is no time to.
+ *
+ * Even steps of two, because that is the resolution people actually choose in:
+ * the odd semitones exist on the ladder the card can hold, but nobody asks for
+ * +3 without having tried +2 and +4 first. An odd value arriving from a stored
+ * preference still shows correctly — it just has no button of its own.
  *
  * A copy of PitchControl rather than a prop on it. The shared one is rendered
  * by PlayerBox and by the playlist batch editor, where every change is written
  * straight to the database — so the same widget has to mean different things in
  * the two places, and a copy keeps that difference from ever leaking into
  * pages this feature has nothing to do with.
- *
- * Nothing here is saved. The live card shifts the audio it is playing and
- * forgets when the card closes, which is why the reset can be free of the
- * "would this write a row" question entirely.
  */
 
-const MIN = -6;
-const MAX = 6;
+/** The keys worth one press, low to high. 0 is the way home. */
+const STEPS = [-6, -4, -2, 0, 2, 4, 6];
 
 export default function LivePitchControl({ pitch, onChange }) {
-  const atOriginal = pitch === 0;
+  const value = typeof pitch === "number" ? pitch : 0;
 
   return (
-    <div className="flex items-center gap-1">
-      <button
-        type="button"
-        onClick={() => onChange(Math.max(MIN, pitch - 1))}
-        disabled={pitch <= MIN}
-        title="降一个半音"
-        className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-theme hover:bg-surface-hover disabled:opacity-30"
-      >
-        -
-      </button>
-      {/* The reading doubles as the way home. Getting back to the original key
-          meant counting presses back to zero, which is the one thing a singer
-          needs to do quickly mid-song: the shifted key is the experiment, the
-          original is where they started. */}
-      <button
-        type="button"
-        onClick={() => { if (!atOriginal) onChange(0); }}
-        aria-disabled={atOriginal}
-        title={atOriginal ? "原调" : "回到原调"}
-        className={`min-w-[2.5rem] rounded border px-1 py-0.5 text-center text-xs ${
-          atOriginal
-            ? "cursor-default border-transparent text-muted"
-            : "border-border text-accent hover:bg-surface-hover"
-        }`}
-      >
-        {atOriginal ? "原调" : pitch > 0 ? `+${pitch}` : pitch}
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange(Math.min(MAX, pitch + 1))}
-        disabled={pitch >= MAX}
-        title="升一个半音"
-        className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-theme hover:bg-surface-hover disabled:opacity-30"
-      >
-        +
-      </button>
+    <div className="flex items-center gap-0.5">
+      {STEPS.map((n) => {
+        const active = value === n;
+        return (
+          <button
+            key={n}
+            type="button"
+            onClick={() => { if (!active) onChange(n); }}
+            aria-pressed={active}
+            title={n === 0 ? "原调" : `${n > 0 ? "升" : "降"} ${Math.abs(n)} 个半音`}
+            className={`min-w-[1.6rem] rounded border px-1 py-0.5 text-center text-xs transition-colors ${
+              active
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border bg-background text-theme hover:bg-surface-hover"
+            }`}
+          >
+            {n === 0 ? "原" : n > 0 ? `+${n}` : n}
+          </button>
+        );
+      })}
+      {/* An odd key can still be in force — a stored preference, or the global
+          default, both of which move by one. It has no button, so it is shown
+          here rather than left invisible while the row reads as "original". */}
+      {STEPS.includes(value) ? null : (
+        <span className="ml-0.5 min-w-[1.8rem] rounded border border-accent px-1 py-0.5 text-center text-xs text-accent">
+          {value > 0 ? `+${value}` : value}
+        </span>
+      )}
     </div>
   );
 }

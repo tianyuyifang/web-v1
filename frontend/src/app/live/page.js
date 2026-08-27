@@ -1056,7 +1056,7 @@ export default function LivePage() {
                                 </span>
                               </div>
 
-                              <div className="mt-2 flex items-center gap-2">
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <button
                                   type="button"
                                   onClick={() => togglePlayback(card)}
@@ -1096,11 +1096,12 @@ export default function LivePage() {
                                     behind the first sound -- offering a control
                                     that silently does nothing would be worse
                                     than making it arrive late. */}
-                                {/* Stacked, and the two rows are the same three
-                                    buttons in the same places: down, back to
-                                    normal, up. Side by side they read as one
-                                    long strip of controls and the labels stop
-                                    telling you which is which. */}
+                                {/* Stacked, because each is now a row of
+                                    seven: side by side they would read as one
+                                    long strip and the labels would stop telling
+                                    you which ladder is which. ml-auto while
+                                    there is room, and the wrap above drops them
+                                    onto their own line when there is not. */}
                                 <div className="ml-auto flex flex-col items-end gap-1">
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-6 shrink-0 text-right text-[0.65rem] text-muted">变调</span>

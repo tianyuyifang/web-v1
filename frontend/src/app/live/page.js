@@ -32,6 +32,9 @@ import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
 import DefaultTuning from "@/components/live/DefaultTuning";
+import {
+  loadStoredQuality, storeQuality, loadStoredVocals, storeVocals,
+} from "@/components/live/LiveVolumeControl";
 import { PlayIcon, PauseIcon, BusyIcon, UnmappedIcon } from "@/components/live/TransportIcons";
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
@@ -201,6 +204,23 @@ export default function LivePage() {
    * original" stay apart, here as on the songs themselves.
    */
   const [defaults, setDefaults] = useState(null);
+
+  /**
+   * Which file plays: a quality tier, and whether to use the vocals-only
+   * track where the platform has one.
+   *
+   * Device settings like the volume, so localStorage rather than the account —
+   * and read on mount rather than initialised from it, because the server
+   * renders this first and has no localStorage to read.
+   */
+  const [quality, setQualityState] = useState("mp3_128");
+  const [vocalsOnly, setVocalsOnlyState] = useState(false);
+  /** Null until a card has been opened and the platform has answered. */
+  const [vocalsAvailable, setVocalsAvailable] = useState(null);
+  useEffect(() => {
+    setQualityState(loadStoredQuality());
+    setVocalsOnlyState(loadStoredVocals());
+  }, []);
   const prefKey = useCallback(
     (mapping) => (mapping ? `${mapping.source}:${mapping.externalId}` : null),
     []
@@ -440,7 +460,9 @@ export default function LivePage() {
 
     setBusy(true);
     try {
-      const res = await mappingAPI.preview(card.mapping.mappingId);
+      const res = await mappingAPI.preview(card.mapping.mappingId, undefined, {
+        tier: quality, vocalsOnly,
+      });
       const { url, reason, kind, songId } = res.data;
       if (kind === "unsupported") {
         setPlayError(`${SOURCE_LABEL[card.mapping.source] || card.mapping.source} 的播放还没做`);
@@ -470,7 +492,7 @@ export default function LivePage() {
     } finally {
       setBusy(false);
     }
-  }, [player]);
+  }, [player, quality, vocalsOnly]);
 
   /**
    * Navigating away is a close too.
@@ -621,6 +643,56 @@ export default function LivePage() {
       .saveSongPref(card.mapping.source, card.mapping.externalId, update)
       .catch(() => { /* as above */ });
   }, [openId, cards, prefs, prefKey, playerSetSpeed, playerSetPitch, player.canShift]);
+
+  /**
+   * Change which file plays, without stopping the one that is.
+   *
+   * Both settings pick a different audio file for the song already sounding,
+   * so applying them means a new URL mid-line. Assigning it to the playing
+   * element would cut the sound and restart it; instead the player loads the
+   * new file quietly and takes over at the same position, which the singer
+   * hears as the music simply continuing.
+   *
+   * Nothing playing is the easy case: the setting is stored and the next card
+   * to open uses it.
+   */
+  const applyPlaybackSetting = useCallback(async (next) => {
+    const card = openId ? cards.find((c) => c.eventId === openId) : null;
+    if (!card?.mapping || !playing) return;
+    try {
+      const res = await mappingAPI.preview(card.mapping.mappingId, undefined, next);
+      const { url, kind, songId } = res.data;
+      // A local song has no tiers and no separated vocals; it plays as it is.
+      if (kind === "local" && songId) return;
+      if (!url) {
+        // Asking for the vocals of a song that has none is an ordinary answer,
+        // not a failure — the checkbox goes back and says so.
+        if (next.vocalsOnly) {
+          setVocalsAvailable(false);
+          setVocalsOnlyState(false);
+          storeVocals(false);
+          setPlayError("这首歌没有纯人声轨");
+        }
+        return;
+      }
+      if (next.vocalsOnly) setVocalsAvailable(true);
+      await player.swapSource(url);
+    } catch (err) {
+      setPlayError(err.response?.data?.error?.message || "切换失败");
+    }
+  }, [openId, cards, playing, player]);
+
+  const changeQuality = useCallback((tier) => {
+    setQualityState(tier);
+    storeQuality(tier);
+    applyPlaybackSetting({ tier, vocalsOnly });
+  }, [vocalsOnly, applyPlaybackSetting]);
+
+  const changeVocalsOnly = useCallback((on) => {
+    setVocalsOnlyState(on);
+    storeVocals(on);
+    applyPlaybackSetting({ tier: quality, vocalsOnly: on });
+  }, [quality, applyPlaybackSetting]);
 
   /**
    * Colours and the note, which commit as they are made.
@@ -1218,6 +1290,11 @@ export default function LivePage() {
         onChange={changeDefaults}
         volume={player.volume}
         onVolumeChange={player.setVolume}
+        quality={quality}
+        onQualityChange={changeQuality}
+        vocalsOnly={vocalsOnly}
+        onVocalsChange={changeVocalsOnly}
+        vocalsAvailable={vocalsAvailable}
       />
     </div>
   );

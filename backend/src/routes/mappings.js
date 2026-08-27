@@ -9,6 +9,16 @@ const netease = require('../services/sources/neteaseLogin');
 const { getFreshCredential, renewAfterRejection } = require('../services/musicCredentialAccess');
 const credentials = require('../services/musicCredentialService');
 const urlCache = require('../services/playbackUrlCache');
+
+/**
+ * Which quality tiers a caller may ask for.
+ *
+ * A whitelist rather than a pass-through: the value arrives from the browser
+ * and becomes part of a filename sent to the platform. FLAC is offered but not
+ * defaulted -- it is three times the bytes, and shifting the key needs the
+ * whole file decoded, so it turns a one-second wait into several.
+ */
+const QQ_TIERS = new Set(['m4a', 'mp3_128', 'mp3_320', 'flac']);
 const lyricStore = require('../services/lyricStore');
 const unconfigured = require('../services/unconfiguredService');
 const artists = require('../services/dashedArtistService');
@@ -350,7 +360,11 @@ router.get('/:id/candidates', listenLimiter, markMappingEditor, async (req, res,
  * the browser, which fetches from the CDN directly; that audio never passes
  * through this server. A local song is the exception — see below.
  */
-async function resolvePreview(userId, source, externalId, res) {
+async function resolvePreview(userId, source, externalId, res, opts = {}) {
+  // Defaults chosen so a caller that passes nothing gets exactly what it got
+  // before: the review page shares this function and must not change.
+  const tier = QQ_TIERS.has(opts.tier) ? opts.tier : 'mp3_128';
+  const vocalsOnly = opts.vocalsOnly === true;
   if (source === 'LOCAL') {
     // A song we hold ourselves. No credential, no outbound call, no rate limit
     // to respect -- it is the fastest of the three sources and the only one
@@ -375,9 +389,16 @@ async function resolvePreview(userId, source, externalId, res) {
     return res.json({ kind: 'unsupported', url: null, reason: `${source} preview not implemented` });
   }
 
+  // One song now has several addressable audio files -- a quality tier, and a
+  // vocals-only track -- so the cache key has to carry which one this is, or
+  // asking for the vocals would be answered with the full mix resolved a
+  // moment earlier. Folded into the id rather than added as a parameter, so
+  // every other caller of the cache keeps the shape it has.
+  const variantKey = `${externalId}#${tier}${vocalsOnly ? ':v' : ''}`;
+
   // A URL resolved moments ago is still good, and re-asking costs a round trip
   // the listener waits through plus one more request against their account.
-  const cached = urlCache.get(userId, 'QQ', externalId);
+  const cached = urlCache.get(userId, 'QQ', variantKey);
   if (cached) return res.json({ kind: 'external', url: cached.url, reason: null, cached: true });
 
   // Renews first if the key is close to dying, so a review session does not
@@ -390,9 +411,13 @@ async function resolvePreview(userId, source, externalId, res) {
   }
 
   try {
-    const result = await qq.resolveUrl(externalId, {
-      cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey,
-    });
+    const result = vocalsOnly
+      ? await qq.resolveVocals(externalId, {
+        cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey,
+      })
+      : await qq.resolveUrl(externalId, {
+        cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey, tier,
+      });
 
     // The platform refusing every track, free ones included, means the key is
     // dead rather than the song being restricted. Renew once and try again —
@@ -401,11 +426,15 @@ async function resolvePreview(userId, source, externalId, res) {
     if (result.reason === 'credential-expired') {
       const renewed = await renewAfterRejection(userId);
       if (renewed) {
-        const retry = await qq.resolveUrl(externalId, {
-          cookie: renewed.cookie, uin: renewed.uin, musicKey: renewed.musicKey,
-        });
+        const retry = vocalsOnly
+          ? await qq.resolveVocals(externalId, {
+            cookie: renewed.cookie, uin: renewed.uin, musicKey: renewed.musicKey,
+          })
+          : await qq.resolveUrl(externalId, {
+            cookie: renewed.cookie, uin: renewed.uin, musicKey: renewed.musicKey, tier,
+          });
         if (retry.url) {
-          urlCache.set(userId, 'QQ', externalId, retry);
+          urlCache.set(userId, 'QQ', variantKey, retry);
           return res.json({ kind: 'external', url: retry.url, reason: retry.reason });
         }
       }
@@ -423,7 +452,7 @@ async function resolvePreview(userId, source, externalId, res) {
 
     // Only successes are cached; a failure may be a credential the user is
     // about to fix, and caching it would make that look permanent.
-    urlCache.set(userId, 'QQ', externalId, result);
+    urlCache.set(userId, 'QQ', variantKey, result);
     return res.json({ kind: 'external', url: result.url, reason: result.reason });
   } catch (err) {
     // A dead credential is the likeliest cause of a refusal here, and the user
@@ -524,7 +553,13 @@ router.get('/:id/preview', listenLimiter, async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
     const { source, externalId } = await resolveOverride(req, mapping);
-    return await resolvePreview(req.user.id, source, externalId, res);
+    // `tier` and `vocals` are the 唱卡 page asking for a particular file.
+    // Both are optional and validated downstream; absent, this behaves as it
+    // always has, which is what the review page's route relies on.
+    return await resolvePreview(req.user.id, source, externalId, res, {
+      tier: req.query.tier,
+      vocalsOnly: req.query.vocals === '1',
+    });
   } catch (err) {
     next(err);
   }

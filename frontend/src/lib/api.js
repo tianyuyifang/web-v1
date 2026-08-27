@@ -339,11 +339,19 @@ export const mappingAPI = {
   // An optional {source, externalId} names a different track, so a reviewer can
   // hear an alternative before approving it. The server checks the pair against
   // the imported pool rather than resolving whatever it is handed.
-  preview: (id, override) => api.get(
-    `/mappings/${id}/preview${override
-      ? `?source=${encodeURIComponent(override.source)}&externalId=${encodeURIComponent(override.externalId)}`
-      : ""}`
-  ),
+  // `opts` may carry a quality tier and a vocals-only flag. Both are optional
+  // and the review page passes neither, so its requests are unchanged.
+  preview: (id, override, opts) => {
+    const q = new URLSearchParams();
+    if (override) {
+      q.set("source", override.source);
+      q.set("externalId", override.externalId);
+    }
+    if (opts?.tier) q.set("tier", opts.tier);
+    if (opts?.vocalsOnly) q.set("vocals", "1");
+    const qs = q.toString();
+    return api.get(`/mappings/${id}/preview${qs ? `?${qs}` : ""}`);
+  },
   // Public on both platforms, so this answers even for a track the reviewer
   // cannot play — knowing the words is often how a cover is spotted.
   // Takes the same optional {source, externalId} as preview: while an

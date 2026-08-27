@@ -73,11 +73,14 @@ export default function useLivePlayer() {
   const shiftingRef = useRef(false);
   const rafRef = useRef(0);
 
-  const element = useCallback(() => {
-    if (elRef.current) return elRef.current;
-    const el = new Audio();
-    el.preload = "metadata";
-    el.crossOrigin = "anonymous";
+  /**
+   * Wire an element to the clock and the ended signal.
+   *
+   * Separate from creating one, because swapping to a different file of the
+   * same song replaces the element: the new one needs the same listeners, and
+   * defining them twice is how the two drift apart.
+   */
+  const attachElementListeners = useCallback((el) => {
     const sync = () => {
       if (shiftingRef.current) return; // the graph owns the clock now
       setCurrent(el.currentTime || 0);
@@ -86,9 +89,18 @@ export default function useLivePlayer() {
     el.addEventListener("timeupdate", sync);
     el.addEventListener("loadedmetadata", sync);
     el.addEventListener("ended", () => setIsPlaying(false));
-    elRef.current = el;
     return el;
   }, []);
+
+  const element = useCallback(() => {
+    if (elRef.current) return elRef.current;
+    const el = new Audio();
+    el.preload = "metadata";
+    el.crossOrigin = "anonymous";
+    attachElementListeners(el);
+    elRef.current = el;
+    return el;
+  }, [attachElementListeners]);
 
   /** Position in the track, wherever the sound is coming from. */
   const positionNow = useCallback(() => {
@@ -194,6 +206,86 @@ export default function useLivePlayer() {
     // tempo change instead of being rebuilt -- and a rebuild here restarts the
     // graph, which is audible.
   }, [teardownGraph]);
+
+  /**
+   * Change to a different file of the same song without a gap.
+   *
+   * Switching between the full mix and the vocals-only track, or between
+   * quality tiers, means a different URL for audio the singer is already in the
+   * middle of. Assigning it to the playing element would stop the sound, show a
+   * spinner and start again from wherever the buffer got to — a second of
+   * silence in the middle of a line.
+   *
+   * So a second element loads the new file quietly, seeks to where the first
+   * one is, and only then takes over. The swap happens on a frame where both
+   * are ready, so what the singer hears is the same music continuing.
+   *
+   * Falls back to a plain load if the new file will not play: better a gap
+   * than nothing.
+   */
+  const swapSource = useCallback(async (url) => {
+    const el = element();
+    if (!url || url === urlRef.current) return true;
+
+    // Nothing playing yet — there is no continuity to preserve.
+    if (!el.src || el.paused) {
+      urlRef.current = url;
+      el.src = url;
+      el.playbackRate = speedRef.current;
+      el.volume = volumeRef.current;
+      warmBuffer(url);
+      return true;
+    }
+
+    const at = shiftingRef.current ? positionNow() : (el.currentTime || 0);
+    const wasShifting = shiftingRef.current;
+
+    const next = new Audio();
+    next.preload = "auto";
+    next.crossOrigin = "anonymous";
+    next.src = url;
+    next.volume = volumeRef.current;
+    next.playbackRate = speedRef.current;
+
+    const ready = await new Promise((resolve) => {
+      let settled = false;
+      const done = (okay) => { if (!settled) { settled = true; resolve(okay); } };
+      // canplay rather than canplaythrough: enough to start, without waiting
+      // for the whole file — which for a 23MB vocals track is most of a minute.
+      next.addEventListener("canplay", () => done(true), { once: true });
+      next.addEventListener("error", () => done(false), { once: true });
+      // A cap, so a stalled CDN leaves the current audio playing rather than
+      // hanging the control that asked for the change.
+      setTimeout(() => done(false), 8000);
+      try { next.currentTime = at; } catch { /* set again below once seekable */ }
+      next.load();
+    });
+
+    if (!ready) { next.src = ""; return false; }
+
+    try { next.currentTime = at; } catch { /* streams that refuse a seek */ }
+    await next.play().catch(() => {});
+
+    // Hand over: the old element stops only once the new one is making sound.
+    const old = elRef.current;
+    elRef.current = next;
+    urlRef.current = url;
+    attachElementListeners(next);
+    if (old) { old.pause(); old.src = ""; }
+
+    // The decoded buffer belonged to the previous file.
+    teardownGraph();
+    decodeForRef.current = null;
+    bufferRef.current = null;
+    setCanShift(false);
+    warmBuffer(url);
+
+    // A shifted key was in force, and the graph it used is gone. It comes back
+    // when the new file finishes decoding, through the page's own effect.
+    if (wasShifting) shiftingRef.current = false;
+    setIsPlaying(true);
+    return true;
+  }, [element, positionNow, teardownGraph, warmBuffer, attachElementListeners]);
 
   /** Load a URL and start playing it through the element. */
   const load = useCallback(async (url) => {
@@ -323,7 +415,7 @@ export default function useLivePlayer() {
   }, [teardownGraph]);
 
   return {
-    load, toggle, seek, stop,
+    load, toggle, seek, stop, swapSource,
     setPitch, setSpeed, setVolume,
     isPlaying, current, duration, pitch, speed, volume, canShift,
   };

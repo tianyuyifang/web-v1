@@ -15,7 +15,7 @@
  */
 
 import { PITCH_STEPS, SPEED_STEPS, sameValue, stepAlong } from "./ladderStyle";
-import LiveVolumeControl from "./LiveVolumeControl";
+import LiveVolumeControl, { QUALITY_TIERS } from "./LiveVolumeControl";
 
 /**
  * Signed, so +2 and −2 are told apart without reading the sign twice.
@@ -69,7 +69,12 @@ function Stepper({ label, value, onStep, canDown, canUp, disabled }) {
   );
 }
 
-export default function DefaultTuning({ defaults, onChange, disabled, volume, onVolumeChange }) {
+export default function DefaultTuning({
+  defaults, onChange, disabled,
+  volume, onVolumeChange,
+  quality, onQualityChange,
+  vocalsOnly, onVocalsChange, vocalsAvailable,
+}) {
   const pitch = typeof defaults?.pitch === "number" ? defaults.pitch : 0;
   const speed = typeof defaults?.speed === "number" ? defaults.speed : 1;
 
@@ -123,6 +128,64 @@ export default function DefaultTuning({ defaults, onChange, disabled, volume, on
               <span className="w-7 shrink-0 text-right text-[0.62rem] text-muted">音量</span>
               <LiveVolumeControl volume={volume} onChange={onVolumeChange} />
             </div>
+          </div>
+        ) : null}
+
+        {/* Quality and the vocals track both change which file plays, so they
+            sit together and apart from the tuning above. Both take effect on
+            the song already playing — swapped in without a gap — since a
+            setting you cannot hear the effect of is one you cannot judge. */}
+        {onQualityChange ? (
+          <div className="mt-2 border-t border-border/60 pt-2">
+            <div className="mb-1 flex items-center gap-1.5">
+              <span className="w-7 shrink-0 text-right text-[0.62rem] text-muted">音质</span>
+              <div className="flex flex-wrap gap-1">
+                {QUALITY_TIERS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onQualityChange(t.id)}
+                    title={t.note || t.label}
+                    className={`rounded border px-1.5 py-0.5 text-[0.62rem] transition-colors disabled:opacity-30 ${
+                      quality === t.id
+                        ? "border-accent text-accent"
+                        : "border-border text-muted hover:border-accent/50 hover:text-theme"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Said where it is chosen, not discovered later by a slow shift. */}
+            {QUALITY_TIERS.find((t) => t.id === quality)?.note ? (
+              <p className="pl-9 text-[0.58rem] leading-snug text-muted/70">
+                {QUALITY_TIERS.find((t) => t.id === quality).note}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {onVocalsChange ? (
+          <div className="mt-2 border-t border-border/60 pt-2">
+            <label
+              className={`flex items-center gap-2 text-[0.65rem] ${
+                vocalsAvailable === false ? "opacity-40" : "cursor-pointer"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={!!vocalsOnly}
+                disabled={disabled || vocalsAvailable === false}
+                onChange={(e) => onVocalsChange(e.target.checked)}
+                className="h-3 w-3 accent-accent"
+              />
+              <span className="text-theme">只听人声</span>
+              <span className="text-muted/70">
+                {vocalsAvailable === false ? "这首没有" : "无原伴奏"}
+              </span>
+            </label>
           </div>
         ) : null}
       </div>

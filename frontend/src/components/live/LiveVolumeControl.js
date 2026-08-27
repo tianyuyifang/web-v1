@@ -16,6 +16,46 @@ import { useEffect, useState } from "react";
  */
 
 const KEY = "live_volume";
+const QUALITY_KEY = "live_quality";
+const VOCALS_KEY = "live_vocals";
+
+/**
+ * Quality tiers, worst to best.
+ *
+ * Time to first sound barely moves between them — playback is streamed, so a
+ * few tens of kilobytes is enough to start whatever the file's total size.
+ * What does move is shifting the key, which needs the whole track decoded:
+ * measured at 249ms for 128k against 1186ms for 320k on a fast connection, and
+ * proportionally worse on a home one. Hence the note on the last two.
+ */
+export const QUALITY_TIERS = [
+  { id: "mp3_128", label: "标准", note: "" },
+  { id: "mp3_320", label: "高品质", note: "变调稍慢" },
+  { id: "flac", label: "无损", note: "变调明显更慢" },
+];
+
+export function loadStoredQuality() {
+  if (typeof window === "undefined") return "mp3_128";
+  try {
+    const raw = window.localStorage.getItem(QUALITY_KEY);
+    return QUALITY_TIERS.some((t) => t.id === raw) ? raw : "mp3_128";
+  } catch {
+    return "mp3_128";
+  }
+}
+
+export function storeQuality(v) {
+  try { window.localStorage.setItem(QUALITY_KEY, String(v)); } catch { /* blocked */ }
+}
+
+export function loadStoredVocals() {
+  if (typeof window === "undefined") return false;
+  try { return window.localStorage.getItem(VOCALS_KEY) === "1"; } catch { return false; }
+}
+
+export function storeVocals(v) {
+  try { window.localStorage.setItem(VOCALS_KEY, v ? "1" : "0"); } catch { /* blocked */ }
+}
 
 /** Read once, defensively — a corrupt or hand-edited value must not break the page. */
 export function loadStoredVolume() {

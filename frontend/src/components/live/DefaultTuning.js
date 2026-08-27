@@ -1,161 +1,113 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
 /**
  * The key and tempo a song opens in when it has none of its own.
  *
- * Floating, because it belongs to the singer rather than to any one card, and
- * because it has to be reachable while a card is open — choosing a default by
- * ear means hearing it on the song in front of you.
+ * Floating and always open. It belongs to the singer rather than to any one
+ * card, and it has to be usable while a card is playing — choosing a default
+ * without hearing it is a guess. Hiding it behind a tap would put a click
+ * between the ear and the adjustment, which is the wrong way round for
+ * something tuned by listening.
  *
- * Collapsed to a small tab by default. Expanded it would sit over the cards it
- * exists to serve, and most of the time it has nothing to say: it is set once,
- * early, and then left alone.
+ * Two rows, laid out the same way: minus, the current value, plus. The value
+ * in the middle is what is actually in force, so the row reads as one thing
+ * rather than as a control and a separate readout.
  */
 
 const PITCH_MIN = -6;
 const PITCH_MAX = 6;
-const SPEEDS = [0.75, 0.9, 1, 1.1, 1.25];
+/** Matches the player's own clamp, and the service's. */
+const SPEED_MIN = 0.5;
+const SPEED_MAX = 2;
+const SPEED_STEP = 0.05;
 
-/** Signed, so +2 and -2 are told apart at a glance. */
+/** Signed, so +2 and −2 are told apart without reading the sign twice. */
 function pitchLabel(n) {
-  if (typeof n !== "number") return "原调";
-  return n === 0 ? "原调" : `${n > 0 ? "+" : ""}${n}`;
+  const v = typeof n === "number" ? n : 0;
+  return v === 0 ? "原调" : `${v > 0 ? "+" : "−"}${Math.abs(v)}`;
 }
 
+/**
+ * Two decimals, because the step is 0.05 and 1.1 would otherwise sit beside
+ * 1.15 with a different width and make the column jump.
+ */
 function speedLabel(n) {
-  return typeof n === "number" ? `${n}x` : "1x";
+  return `${(typeof n === "number" ? n : 1).toFixed(2)}x`;
+}
+
+/** Floating-point addition leaves 1.0500000000000003; the step is exact. */
+function roundStep(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function Stepper({ label, value, onStep, canDown, canUp, disabled }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="w-7 shrink-0 text-[0.65rem] text-muted">{label}</span>
+      <button
+        type="button"
+        disabled={disabled || !canDown}
+        onClick={() => onStep(-1)}
+        className="h-6 w-6 shrink-0 rounded border border-border text-xs leading-none text-muted hover:border-accent hover:text-theme disabled:opacity-30"
+      >
+        −
+      </button>
+      {/* Fixed width so the buttons hold still as the number changes. */}
+      <span className="w-14 text-center font-mono text-[0.72rem] text-theme">
+        {value}
+      </span>
+      <button
+        type="button"
+        disabled={disabled || !canUp}
+        onClick={() => onStep(1)}
+        className="h-6 w-6 shrink-0 rounded border border-border text-xs leading-none text-muted hover:border-accent hover:text-theme disabled:opacity-30"
+      >
+        +
+      </button>
+    </div>
+  );
 }
 
 export default function DefaultTuning({ defaults, onChange, disabled }) {
-  const [open, setOpen] = useState(false);
-  const boxRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const away = (e) => {
-      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
-  }, [open]);
-
   const pitch = typeof defaults?.pitch === "number" ? defaults.pitch : 0;
   const speed = typeof defaults?.speed === "number" ? defaults.speed : 1;
-  // Whether anything has actually been chosen, as opposed to sitting on the
-  // values that happen to be the originals. The tab says so, because "no
-  // default" and "a default of the original key" behave differently for songs
-  // set individually later.
-  const isSet = typeof defaults?.pitch === "number" || typeof defaults?.speed === "number";
 
-  const step = (delta) => {
-    const next = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch + delta));
+  const stepPitch = (dir) => {
+    const next = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch + dir));
     if (next !== pitch) onChange({ pitch: next });
+  };
+
+  const stepSpeed = (dir) => {
+    const next = roundStep(Math.max(SPEED_MIN, Math.min(SPEED_MAX, speed + dir * SPEED_STEP)));
+    if (next !== speed) onChange({ speed: next });
   };
 
   return (
     <div
-      ref={boxRef}
-      // Above the cards but below any dialog. Bottom-right on a desktop; on a
-      // phone it sits clear of the thumb rest at the bottom edge.
-      className="fixed bottom-4 right-4 z-30 sm:bottom-6 sm:right-6"
+      // Above the cards, below any dialog. Clear of the bottom edge on a phone
+      // so it does not sit under the thumb rest.
+      className="fixed bottom-4 right-4 z-30 rounded-xl border border-border bg-surface px-3 py-2.5 shadow-xl sm:bottom-6 sm:right-6"
     >
-      {open ? (
-        <div className="w-56 rounded-xl border border-border bg-surface p-3 shadow-xl">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[0.72rem] font-medium text-theme">默认调与速度</span>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded px-1 text-xs text-muted hover:text-theme"
-              title="收起"
-            >
-              ×
-            </button>
-          </div>
+      <div className="mb-2 text-[0.7rem] font-medium text-theme">全局设置</div>
 
-          {/* Said outright, because the rule is not guessable from the numbers:
-              a song adjusted on its own keeps what it was given. */}
-          <p className="mb-2.5 text-[0.62rem] leading-snug text-muted">
-            用在没有单独设过的歌上。单独设过的歌保持自己的设置。
-          </p>
-
-          <div className="mb-2 flex items-center gap-1.5">
-            <span className="w-7 shrink-0 text-[0.65rem] text-muted">变调</span>
-            <button
-              type="button"
-              disabled={disabled || pitch <= PITCH_MIN}
-              onClick={() => step(-1)}
-              className="h-6 w-6 rounded border border-border text-xs text-muted hover:border-accent hover:text-theme disabled:opacity-30"
-            >
-              −
-            </button>
-            <span className="w-10 text-center font-mono text-[0.72rem] text-theme">
-              {pitchLabel(defaults?.pitch)}
-            </span>
-            <button
-              type="button"
-              disabled={disabled || pitch >= PITCH_MAX}
-              onClick={() => step(1)}
-              className="h-6 w-6 rounded border border-border text-xs text-muted hover:border-accent hover:text-theme disabled:opacity-30"
-            >
-              +
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <span className="w-7 shrink-0 text-[0.65rem] text-muted">变速</span>
-            <div className="flex flex-wrap gap-1">
-              {SPEEDS.map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onChange({ speed: v })}
-                  className={`rounded border px-1.5 py-0.5 font-mono text-[0.65rem] transition-colors disabled:opacity-30 ${
-                    speed === v
-                      ? "border-accent text-accent"
-                      : "border-border text-muted hover:border-accent hover:text-theme"
-                  }`}
-                >
-                  {v}x
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {isSet ? (
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onChange({ pitch: null, speed: null })}
-              className="mt-2.5 w-full rounded border border-border py-1 text-[0.65rem] text-muted hover:border-accent hover:text-theme disabled:opacity-30"
-            >
-              取消默认
-            </button>
-          ) : null}
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className={`flex items-center gap-1.5 rounded-full border px-3 py-2 text-[0.7rem] shadow-lg transition-colors ${
-            isSet
-              ? "border-accent/60 bg-surface text-accent"
-              : "border-border bg-surface text-muted hover:text-theme"
-          }`}
-          title="设置默认的调与速度"
-        >
-          <span>默认</span>
-          <span className="font-mono">
-            {pitchLabel(defaults?.pitch)}
-            {typeof defaults?.speed === "number" && defaults.speed !== 1
-              ? ` · ${speedLabel(defaults.speed)}`
-              : ""}
-          </span>
-        </button>
-      )}
+      <div className="space-y-1.5">
+        <Stepper
+          label="变调"
+          value={pitchLabel(defaults?.pitch)}
+          onStep={stepPitch}
+          canDown={pitch > PITCH_MIN}
+          canUp={pitch < PITCH_MAX}
+          disabled={disabled}
+        />
+        <Stepper
+          label="变速"
+          value={speedLabel(defaults?.speed)}
+          onStep={stepSpeed}
+          canDown={speed > SPEED_MIN}
+          canUp={speed < SPEED_MAX}
+          disabled={disabled}
+        />
+      </div>
     </div>
   );
 }

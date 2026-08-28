@@ -40,34 +40,6 @@ const PAGE = 40;
  */
 const SOURCE_LABEL = { LOCAL: "独家", QQ: "QQ", NETEASE: "网易" };
 
-/**
- * Every row's fill, a step away from the page behind it.
- *
- * Every row, like the review page's list: each song is its own card, and the
- * open one is marked by an accent border rather than by being the only thing
- * with a background.
- *
- * Not `surface`, which is what that page uses. In the light and sepia themes
- * `surface` is *lighter* than the
- * background (#ffffff on #f0f0f5), so a surface card on this page measured a
- * 1.14 contrast ratio -- visible in theory, invisible in practice, which is
- * what "白色的，不明显" was describing.
- *
- * The obvious fixes both failed when measured. `surface-hover` goes the wrong
- * way in light themes (1.14 -> 1.07, since a light surface hovers lighter),
- * and mixing in the accent does the same (1.14 -> 1.02). Both assume dark, and
- * this app has four themes, two of each kind.
- *
- * Mixing the TEXT colour into the BACKGROUND works in all four, because text
- * is by definition the background's opposite: the card moves away from the
- * page whichever direction "away" happens to be. Measured: dark 1.36, light
- * 1.27, midnight 1.31, sepia 1.25 -- every one better than the 1.09-1.15 a
- * plain surface gave.
- */
-const CARD_FILL = "[background-color:color-mix(in_srgb,var(--text)_12%,var(--background))]";
-/** The same idea for the edge, further along so it reads as a boundary. */
-const CARD_EDGE = "[border-color:color-mix(in_srgb,var(--text)_28%,var(--background))]";
-
 function formatDuration(sec) {
   if (sec == null) return "—";
   const m = Math.floor(sec / 60);
@@ -85,8 +57,8 @@ function Row({ row, onSave, expanded, onToggle }) {
 
   return (
     <div
-      className={`rounded-lg border transition-colors ${CARD_FILL} ${
-        expanded ? "border-accent" : CARD_EDGE
+      className={`rounded-lg border bg-surface transition-colors ${
+        expanded ? "border-accent" : "border-border"
       }`}
     >
       {/* The review page's two-line pairing, borrowed wholesale: the platform

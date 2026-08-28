@@ -101,13 +101,24 @@ async function main() {
     });
 
     if (!songs.length) { problems.push([title, '本地曲库里没有这首歌']); continue; }
-    if (songs.length > 1) { problems.push([title, `本地有 ${songs.length} 首同名，需要人工指定`]); continue; }
 
-    const song = songs[0];
-    if (artistKey(song.artist) !== artistKey(artist)) {
-      problems.push([title, `歌手不符：期望「${artist}」，本地是「${song.artist}」`]);
+    // The artist is part of the request, so use it to choose rather than only
+    // to verify. Two songs called 手中沙 by different people are not ambiguous
+    // when one of them was named; refusing them both made the caller edit the
+    // catalogue to work around a question they had already answered.
+    const wanted = artistKey(artist);
+    const byArtist = songs.filter((x) => artistKey(x.artist) === wanted);
+
+    if (byArtist.length > 1) {
+      problems.push([title, `本地有 ${byArtist.length} 首「${title} — ${artist}」，需要人工指定`]);
       continue;
     }
+    if (!byArtist.length) {
+      problems.push([title, `歌手不符：期望「${artist}」，本地是「`
+        + songs.map((x) => x.artist).join('、') + '」']);
+      continue;
+    }
+    const song = byArtist[0];
 
     // Anything already in the pool wins, whatever its source -- see the header.
     const existing = await prisma.importedTrack.findMany({

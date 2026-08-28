@@ -68,16 +68,11 @@ const CARD_FILL = "[background-color:color-mix(in_srgb,var(--text)_12%,var(--bac
 /** The same idea for the edge, further along so it reads as a boundary. */
 const CARD_EDGE = "[border-color:color-mix(in_srgb,var(--text)_28%,var(--background))]";
 
-/** One side of a name pair. Always both, so the columns line up down the list. */
-function NameLine({ label, title, artist, dim }) {
-  return (
-    <span className={`block truncate text-[0.7rem] ${dim ? "text-muted/70" : "text-muted"}`}>
-      <span className="text-muted/60">{label}</span>
-      {" "}
-      {title || "—"}
-      {artist ? <span className="text-muted/80">{` · ${artist}`}</span> : null}
-    </span>
-  );
+function formatDuration(sec) {
+  if (sec == null) return "—";
+  const m = Math.floor(sec / 60);
+  const s = String(sec % 60).padStart(2, "0");
+  return `${m}:${s}`;
 }
 
 function Row({ row, onSave, expanded, onToggle }) {
@@ -96,25 +91,51 @@ function Row({ row, onSave, expanded, onToggle }) {
           : "border-transparent hover:border-border hover:bg-white/[0.02]"
       }`}
     >
+      {/* The review page's two-line pairing, borrowed wholesale: the platform
+          track on top because that is what actually plays, the game song
+          underneath in muted text. Both sides always shown, each behind its own
+          chip, so the chip labels the line it sits on rather than appearing to
+          label the text beside it. */}
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-start gap-3 px-3 py-2 text-left"
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
       >
         <span className="min-w-0 flex-1">
-          {/* Both names, always. Which one the singer remembers is not
-              predictable, and a line that appears only sometimes makes the
-              list harder to scan than one that is always there. */}
-          <NameLine label="QNI:" title={row.title} artist={row.artist} />
-          <NameLine
-            label={`${SOURCE_LABEL[row.source] || row.source}:`}
-            title={row.platformTitle}
-            artist={row.platformArtist}
-            dim
-          />
+          <span className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.82rem] leading-tight">
+            <span className="shrink-0 rounded bg-black/20 px-1 py-px text-[0.62rem] text-muted">
+              {SOURCE_LABEL[row.source] || row.source}
+            </span>
+            <span className="truncate font-medium">
+              {row.platformTitle || row.title}
+              <span className="text-muted"> — {row.platformArtist || "—"}</span>
+            </span>
+            <span className="shrink-0 text-[0.68rem] tabular-nums text-muted">
+              {formatDuration(row.durationSec)}
+            </span>
+          </span>
+
+          <span className="mt-px flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.68rem] leading-tight text-muted">
+            <span className="shrink-0 rounded bg-black/20 px-1 py-px text-[0.6rem]">QNI</span>
+            {/* 《》 is how 歌 P writes a title and never how 唱卡 does, so a row
+                still carrying them came in through the wrong channel. Stripped
+                for reading; the stored key is untouched. */}
+            <span className="truncate">
+              {String(row.title || "").replace(/^《|》$/g, "")}
+              {row.artist ? ` — ${row.artist}` : ""}
+            </span>
+            {/* The note reads on the closed row, the way the review page shows
+                its own: the whole point of writing one is seeing it later
+                without opening anything. */}
+            {prefs?.note ? (
+              <span className="truncate text-yellow-500/80" title={prefs.note}>
+                · {prefs.note}
+              </span>
+            ) : null}
+          </span>
         </span>
 
-        <span className="flex shrink-0 items-center gap-2 pt-0.5">
+        <span className="flex shrink-0 items-center gap-2">
           {colors.map((c) => (
             <span
               key={c}
@@ -135,7 +156,7 @@ function Row({ row, onSave, expanded, onToggle }) {
       </button>
 
       {expanded ? (
-        <div className="border-t border-border/60 px-3 py-2.5">
+        <div className="border-t border-border/60 px-2.5 py-2">
           <SongPrefEditor prefs={prefs} onChange={onSave} />
         </div>
       ) : null}
@@ -220,16 +241,18 @@ export default function SongLibrary() {
       {error ? <p className="mb-2 text-xs text-red-400">{error}</p> : null}
 
       {!searched && !loading ? (
-        <p className="py-8 text-center text-xs text-muted">
+        <div className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">
           搜索歌名或歌手，给歌先加上颜色和备注。
-        </p>
+        </div>
       ) : null}
 
       {searched && !rows.length && !loading ? (
-        <p className="py-8 text-center text-xs text-muted">没有找到已确认的歌。</p>
+        <div className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">
+          没有匹配的结果。
+        </div>
       ) : null}
 
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         {rows.map((row) => (
           <Row
             key={row.id}

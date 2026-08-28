@@ -32,11 +32,23 @@ const DEFAULT_TTL_MS = 10 * 60 * 1000;
 /**
  * Ceiling on entries held.
  *
- * A few hundred tracks is far more than one session browses, and the cap exists
- * so a long-running process cannot grow without bound. Eviction is oldest-first
- * by insertion, which a Map gives us for free.
+ * The cap exists so a long-running process cannot grow without bound; eviction
+ * is oldest-first by insertion, which a Map gives us for free.
+ *
+ * Sized for singers, not for one session. Entries are per user AND per track,
+ * so what matters is how many people are singing at once: ten people on the
+ * same song hold ten entries, not one. Projected from measured use — 3 people
+ * singing concurrently out of 11 active, one resolve per song, ~3.5 minutes a
+ * song against a 10-minute TTL — 500 entries starts evicting live URLs at
+ * roughly 800 users. Evicting one means re-resolving it, which is an avoidable
+ * outbound call carrying the account's credential, so the cap is the one thing
+ * here that turns growth into platform traffic.
+ *
+ * 5000 moves that point out of reach for any size this is likely to be, and
+ * costs almost nothing: measured at 399 bytes an entry, the whole cache is
+ * under 2MB against 1.1GB free on the host.
  */
-const MAX_ENTRIES = 500;
+const MAX_ENTRIES = 5000;
 
 const entries = new Map();
 

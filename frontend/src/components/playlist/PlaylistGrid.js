@@ -70,18 +70,23 @@ function SortableClip({ id, disabled, children }) {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`relative ${isDragging ? "z-10 opacity-40" : ""}`}
+      // pl-7 on phones only, matching the handle's width: the handle is
+      // absolutely positioned and so invisible to the row's own layout, and
+      // without the indent it sat exactly on top of the position number —
+      // which is the number the position box is typed against, so covering it
+      // made the other way of moving a clip harder to use.
+      className={`relative pl-7 sm:pl-0 ${isDragging ? "z-10 opacity-40" : ""}`}
     >
-      {/* Sits over the card's left edge, clear of the title. Hidden on sm+:
-          dragging is a phone affordance, and the desktop keeps the numeric
-          position box, which beats dragging across a 152-clip playlist. */}
+      {/* Hidden on sm+: dragging is a phone affordance, and the desktop keeps
+          the numeric position box, which beats dragging across a playlist
+          whose median length is 152. */}
       <button
         ref={setActivatorNodeRef}
         type="button"
         disabled={disabled}
         aria-label="拖动排序"
         title={disabled ? "清除筛选后可拖动排序" : "按住拖动"}
-        className={`absolute left-0 top-0 z-20 flex h-9 w-7 touch-none items-center justify-center rounded-r-md text-sm leading-none sm:hidden ${
+        className={`absolute left-0 top-0 z-20 flex h-9 w-7 touch-none items-center justify-center text-sm leading-none sm:hidden ${
           disabled ? "cursor-not-allowed text-muted/30" : "cursor-grab text-muted active:cursor-grabbing"
         }`}
         {...attributes}

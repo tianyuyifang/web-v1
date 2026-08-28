@@ -27,11 +27,19 @@ import { PRESET_COLORS } from "../player/ColorTag";
  * into it, so a small dot keeps its full colour while still being separated
  * from whatever it sits on. Without it a dark mark on a dark card has no edge
  * at all.
+ *
+ * White at 20%, not black at 25%. Black is invisible against a dark card --
+ * the case the ring exists for -- and on a light one it renders as #BFBFBF, a
+ * grey outline around a 10px dot, where 1px of ring is a fifth of what you
+ * see. White inverts both: it separates the dot from a dark card properly, and
+ * disappears into a white one, which needed no help to begin with. Seven
+ * accounts are on the dark theme, so the dark case is real and cannot just be
+ * dropped.
  */
 function Dot({ color, className = "" }) {
   return (
     <span
-      className={`h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/25 ${className}`}
+      className={`h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/20 ${className}`}
       style={{ background: color }}
       aria-hidden="true"
     />
@@ -171,7 +179,7 @@ export default function SongPrefEditor({ prefs, onChange, disabled }) {
                 type="button"
                 onClick={() => toggleColor(c)}
                 className={`h-3 w-3 rounded-full transition-transform hover:scale-125 ${
-                  colors.includes(c) ? "ring-2 ring-white/70" : "ring-1 ring-black/25"
+                  colors.includes(c) ? "ring-2 ring-white/70" : "ring-1 ring-white/20"
                 }`}
                 style={{ background: c }}
               />

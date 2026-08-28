@@ -109,7 +109,7 @@ function Row({ row, onSave, expanded, onToggle }) {
           {colors.map((c) => (
             <span
               key={c}
-              className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/25"
+              className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/20"
               style={{ background: c }}
             />
           ))}

@@ -41,14 +41,14 @@ const PAGE = 40;
 const SOURCE_LABEL = { LOCAL: "独家", QQ: "QQ", NETEASE: "网易" };
 
 /**
- * The OPEN row's fill, a step away from the page behind it.
+ * Every row's fill, a step away from the page behind it.
  *
- * Only the open one. A closed row stays flush with the page, so the list reads
- * as a list and the single card standing off it is the one being worked on --
- * giving every row a fill made the whole screen busy and stopped the open one
- * from meaning anything.
+ * Every row, like the review page's list: each song is its own card, and the
+ * open one is marked by an accent border rather than by being the only thing
+ * with a background.
  *
- * Not `surface`. In the light and sepia themes `surface` is *lighter* than the
+ * Not `surface`, which is what that page uses. In the light and sepia themes
+ * `surface` is *lighter* than the
  * background (#ffffff on #f0f0f5), so a surface card on this page measured a
  * 1.14 contrast ratio -- visible in theory, invisible in practice, which is
  * what "白色的，不明显" was describing.
@@ -85,10 +85,8 @@ function Row({ row, onSave, expanded, onToggle }) {
 
   return (
     <div
-      className={`rounded-lg border transition-colors ${
-        expanded
-          ? `${CARD_FILL} ${CARD_EDGE}`
-          : "border-transparent hover:border-border hover:bg-white/[0.02]"
+      className={`rounded-lg border transition-colors ${CARD_FILL} ${
+        expanded ? "border-accent" : CARD_EDGE
       }`}
     >
       {/* The review page's two-line pairing, borrowed wholesale: the platform
@@ -144,7 +142,7 @@ function Row({ row, onSave, expanded, onToggle }) {
             />
           ))}
           <span
-            className={`shrink-0 rounded px-1.5 py-0.5 text-[0.62rem] ${
+            className={`shrink-0 rounded px-1.5 py-0.5 text-[0.62rem] leading-tight ${
               marked
                 ? "bg-green-500/15 text-green-400"
                 : "bg-red-500/15 text-red-400"
@@ -235,7 +233,7 @@ export default function SongLibrary() {
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="搜索歌名或歌手"
-        className="mb-3 w-full rounded border border-border bg-surface px-3 py-1.5 text-sm outline-none placeholder:text-muted/60 focus:border-accent"
+        className="mb-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none placeholder:text-muted/60 focus:border-accent"
       />
 
       {error ? <p className="mb-2 text-xs text-red-400">{error}</p> : null}
@@ -264,13 +262,13 @@ export default function SongLibrary() {
         ))}
       </div>
 
-      {loading ? <p className="py-3 text-center text-xs text-muted">加载中…</p> : null}
+      {loading ? <p className="p-6 text-sm text-muted">加载中…</p> : null}
 
       {cursor && !loading ? (
         <button
           type="button"
           onClick={() => load(q.trim(), cursor)}
-          className="mt-2 w-full rounded border border-border py-1.5 text-xs text-muted hover:text-fg"
+          className="mt-2 w-full rounded-lg border border-border py-1.5 text-xs text-muted hover:text-fg"
         >
           加载更多
         </button>

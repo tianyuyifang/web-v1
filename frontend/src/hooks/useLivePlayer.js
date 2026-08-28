@@ -71,6 +71,23 @@ export default function useLivePlayer() {
   const decodeForRef = useRef(null);
   /** True while the SoundTouch graph is the one making sound. */
   const shiftingRef = useRef(false);
+  /**
+   * The graph that plays only the first two channels, and whether it is on.
+   *
+   * QQ's separated track is one file with four channels: the voice in 0 and 1,
+   * the backing in 2 and 3. An <audio> element downmixes all four, so the
+   * "vocals only" setting did nothing there — the backing came through with
+   * the voice. Web Audio can take the first pair alone, which is what this is.
+   *
+   * The shifted path needed no equivalent: SoundTouch reads channels 0 and 1
+   * and ignores the rest, which is why shifting the key already sounded right
+   * and not shifting it did not.
+   */
+  const vocalsSrcRef = useRef(null);
+  const vocalsOnRef = useRef(false);
+  const wantVocalsRef = useRef(false);
+  /** Set when a decode finishes and a vocals request is waiting on it. */
+  const pendingVocalsRef = useRef(false);
   const rafRef = useRef(0);
 
   /**
@@ -82,7 +99,8 @@ export default function useLivePlayer() {
    */
   const attachElementListeners = useCallback((el) => {
     const sync = () => {
-      if (shiftingRef.current) return; // the graph owns the clock now
+      // A Web Audio graph owns the clock while one is playing.
+      if (shiftingRef.current || vocalsOnRef.current) return;
       setCurrent(el.currentTime || 0);
       setDuration(el.duration || 0);
     };
@@ -104,7 +122,7 @@ export default function useLivePlayer() {
 
   /** Position in the track, wherever the sound is coming from. */
   const positionNow = useCallback(() => {
-    if (shiftingRef.current && ctxRef.current) {
+    if ((shiftingRef.current || vocalsOnRef.current) && ctxRef.current) {
       const elapsed = (ctxRef.current.currentTime - startedAtRef.current) * speedRef.current;
       return Math.min(offsetRef.current + elapsed, duration || Infinity);
     }
@@ -125,7 +143,7 @@ export default function useLivePlayer() {
     let alive = true;
     const tick = () => {
       if (!alive) return;
-      if (shiftingRef.current) setCurrent(positionNow());
+      if (shiftingRef.current || vocalsOnRef.current) setCurrent(positionNow());
       else if (elRef.current) setCurrent(elRef.current.currentTime || 0);
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -133,12 +151,19 @@ export default function useLivePlayer() {
     return () => { alive = false; cancelAnimationFrame(rafRef.current); };
   }, [isPlaying, positionNow]);
 
+  /** Stop whichever Web Audio graph is playing, leaving the element alone. */
   const teardownGraph = useCallback(() => {
     if (shifterRef.current) {
       try { shifterRef.current.disconnect(); } catch { /* already gone */ }
       shifterRef.current = null;
     }
     shiftingRef.current = false;
+    if (vocalsSrcRef.current) {
+      try { vocalsSrcRef.current.stop(); } catch { /* not started */ }
+      try { vocalsSrcRef.current.disconnect(); } catch { /* already gone */ }
+      vocalsSrcRef.current = null;
+    }
+    vocalsOnRef.current = false;
   }, []);
 
   /**
@@ -165,11 +190,78 @@ export default function useLivePlayer() {
       bufferRef.current = buf;
       if (!duration) setDuration(buf.duration);
       setCanShift(true);
+      // The wait is over for a vocals request made while this was decoding.
+      // Nothing to do if a shift is already playing: that path takes channels
+      // 0 and 1 by itself.
+      if (wantVocalsRef.current && !shiftingRef.current && !vocalsOnRef.current
+        && elRef.current && !elRef.current.paused) {
+        pendingVocalsRef.current = true;
+      }
     } catch {
       // CORS refused, or a codec the browser will not decode. Plain playback
       // still works; pitch simply stays unavailable for this track.
     }
   }, [duration]);
+
+  /**
+   * Play the decoded buffer's first two channels and nothing else.
+   *
+   * Only useful for QQ's separated track, where those two carry the voice.
+   * On an ordinary stereo file it is the file itself, so this is only ever
+   * started when the caller has asked for vocals.
+   *
+   * Needs the whole track decoded, which is the same wait pitch shifting has
+   * and for the same reason. The element keeps playing until then, so what the
+   * singer hears is the backing dropping away a second or two in rather than
+   * silence at the start.
+   */
+  const startVocalsOnly = useCallback(async (from) => {
+    const buf = bufferRef.current;
+    const ctx = ctxRef.current;
+    if (!buf || !ctx) return false;
+    if (ctx.state === "suspended") await ctx.resume();
+
+    teardownGraph();
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = speedRef.current;
+
+    if (!gainRef.current) {
+      gainRef.current = ctx.createGain();
+      gainRef.current.connect(ctx.destination);
+    }
+    gainRef.current.gain.value = volumeRef.current;
+
+    if (buf.numberOfChannels > 2) {
+      // Split, then take 0 and 1 and nothing else. Merging them back to a
+      // stereo pair rather than connecting the splitter straight to the gain,
+      // which would sum every channel and put the backing right back.
+      const splitter = ctx.createChannelSplitter(buf.numberOfChannels);
+      const merger = ctx.createChannelMerger(2);
+      src.connect(splitter);
+      splitter.connect(merger, 0, 0);
+      splitter.connect(merger, 1, 1);
+      merger.connect(gainRef.current);
+    } else {
+      // Two channels already — nothing to separate, and connecting a splitter
+      // here would be a pointless detour.
+      src.connect(gainRef.current);
+    }
+
+    src.onended = () => {
+      // Only when it truly ran out; a stop() during teardown clears the ref
+      // first, so this cannot fire for a graph being replaced.
+      if (vocalsSrcRef.current === src) setIsPlaying(false);
+    };
+
+    src.start(0, Math.max(0, Math.min(from || 0, buf.duration - 0.01)));
+    vocalsSrcRef.current = src;
+    vocalsOnRef.current = true;
+    offsetRef.current = from || 0;
+    startedAtRef.current = ctx.currentTime;
+    return true;
+  }, [teardownGraph]);
 
   /** Build the SoundTouch graph and start it at `from`. */
   const startShifted = useCallback(async (from) => {
@@ -306,7 +398,7 @@ export default function useLivePlayer() {
   const toggle = useCallback(async () => {
     const el = element();
     if (isPlaying) {
-      if (shiftingRef.current) {
+      if (shiftingRef.current || vocalsOnRef.current) {
         offsetRef.current = positionNow();
         teardownGraph();
         el.currentTime = offsetRef.current;
@@ -322,9 +414,14 @@ export default function useLivePlayer() {
     if (pitchRef.current !== 0 && bufferRef.current) {
       if (await startShifted(positionNow())) { setIsPlaying(true); return; }
     }
+    // Vocals with no shift: its own graph, since the element would downmix
+    // the backing channels back in.
+    if (wantVocalsRef.current && bufferRef.current) {
+      if (await startVocalsOnly(positionNow())) { setIsPlaying(true); return; }
+    }
     await el.play().catch(() => {});
     setIsPlaying(true);
-  }, [element, isPlaying, positionNow, startShifted, teardownGraph]);
+  }, [element, isPlaying, positionNow, startShifted, startVocalsOnly, teardownGraph]);
 
   const seek = useCallback(async (seconds) => {
     const at = Math.max(0, seconds);
@@ -334,9 +431,15 @@ export default function useLivePlayer() {
       setCurrent(at);
       return;
     }
+    // A buffer source cannot be moved; seeking means building a new one.
+    if (vocalsOnRef.current) {
+      await startVocalsOnly(at);
+      setCurrent(at);
+      return;
+    }
     el.currentTime = at;
     setCurrent(at);
-  }, [element, startShifted]);
+  }, [element, startShifted, startVocalsOnly]);
 
   /**
    * Pitch is what forces the switch between the two engines: an <audio>
@@ -352,9 +455,16 @@ export default function useLivePlayer() {
 
     if (shifterRef.current) {
       if (next === 0) {
-        // Back to the element, which is cheaper and seeks instantly.
         const at = positionNow();
         teardownGraph();
+        // Vocals-only has to be honoured on the way back down. The element
+        // downmixes all four channels, so handing playback to it here would
+        // quietly bring the backing track back — the setting would appear to
+        // switch itself off whenever someone returned to the original key.
+        if (wantVocalsRef.current && bufferRef.current && isPlaying) {
+          if (await startVocalsOnly(at)) return;
+        }
+        // Otherwise the element, which is cheaper and seeks instantly.
         const el = element();
         el.currentTime = at;
         if (isPlaying) await el.play().catch(() => {});
@@ -368,7 +478,7 @@ export default function useLivePlayer() {
       element().pause();
       await startShifted(at);
     }
-  }, [element, isPlaying, positionNow, startShifted, teardownGraph]);
+  }, [element, isPlaying, positionNow, startShifted, startVocalsOnly, teardownGraph]);
 
   /**
    * Set the output level, on whichever engine is currently sounding.
@@ -386,6 +496,42 @@ export default function useLivePlayer() {
     if (gainRef.current) gainRef.current.gain.value = next;
   }, []);
 
+  /**
+   * Play only the voice, once the decode makes that possible.
+   *
+   * Asked for rather than done immediately: separating channels needs the
+   * whole track decoded, which lands a second or two after the first sound.
+   * Until then the element keeps playing the full mix, so the singer hears the
+   * backing drop away rather than a silence at the start — the same trade the
+   * pitch control already makes, and for the same reason.
+   *
+   * Turning it off hands playback back to the element at the same position.
+   */
+  const setVocalsOnly = useCallback(async (on) => {
+    wantVocalsRef.current = !!on;
+
+    if (!on) {
+      if (!vocalsOnRef.current) return;
+      const at = positionNow();
+      teardownGraph();
+      const el = element();
+      el.currentTime = at;
+      el.volume = volumeRef.current;
+      el.playbackRate = speedRef.current;
+      if (isPlaying) await el.play().catch(() => {});
+      return;
+    }
+
+    // Shifting already plays channels 0 and 1 alone, so there is nothing to
+    // do while it is in force.
+    if (shiftingRef.current) return;
+    if (!bufferRef.current || !isPlaying) return;
+
+    const at = positionNow();
+    element().pause();
+    await startVocalsOnly(at);
+  }, [element, isPlaying, positionNow, startVocalsOnly, teardownGraph]);
+
   const setSpeed = useCallback((value) => {
     const next = Math.max(0.5, Math.min(2, value));
     speedRef.current = next;
@@ -402,6 +548,9 @@ export default function useLivePlayer() {
     }
     decodeForRef.current = null;
     bufferRef.current = null;
+    // Cleared with the rest: a request left standing would have the next card
+    // start in vocals mode without the page having asked for it.
+    pendingVocalsRef.current = false;
     setCanShift(false);
     setIsPlaying(false);
     setCurrent(0);
@@ -416,7 +565,7 @@ export default function useLivePlayer() {
 
   return {
     load, toggle, seek, stop, swapSource,
-    setPitch, setSpeed, setVolume,
+    setPitch, setSpeed, setVolume, setVocalsOnly,
     isPlaying, current, duration, pitch, speed, volume, canShift,
   };
 }

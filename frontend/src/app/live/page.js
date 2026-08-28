@@ -487,6 +487,8 @@ export default function LivePage() {
       }
       loadedFor.current = key;
       await player.load(url);
+      // Carried across cards: the setting belongs to the singer, not the song.
+      await player.setVocalsOnly(vocalsOnly);
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "播放失败");
     } finally {
@@ -677,6 +679,11 @@ export default function LivePage() {
       }
       if (next.vocalsOnly) setVocalsAvailable(true);
       await player.swapSource(url);
+      // The separated file carries the voice in channels 0 and 1 and the
+      // backing in 2 and 3, so choosing the file is only half of it — an
+      // <audio> element mixes all four back together. The player takes the
+      // first pair once the track has decoded.
+      await player.setVocalsOnly(next.vocalsOnly);
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "切换失败");
     }

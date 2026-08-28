@@ -3,6 +3,21 @@
 import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
 
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
 import { playlistsAPI } from "@/lib/api";
 import { clipMatchesFilters } from "@/lib/utils";
 import PlayerBox from "@/components/player/PlayerBox";
@@ -13,6 +28,71 @@ import LikeButton from "@/components/player/LikeButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import usePlayerStore from "@/store/playerStore";
+
+/**
+ * How long a finger must rest on the handle before a drag begins, and how far
+ * it may stray in that time.
+ *
+ * Not a platform standard — iOS reserves ~500ms for its long-press menu and
+ * Android 400-500ms, but those confirm an ambiguous gesture. Here the handle
+ * has already declared the intent, so waiting that long only feels slow.
+ * dnd-kit's own examples use 200ms; 250 sits just above that because a
+ * too-eager drag steals the scroll, which is the more common gesture on a
+ * list this long.
+ *
+ * The tolerance does most of the work: move more than this while waiting and
+ * it is a scroll, not a drag. That separates the two by what the finger does
+ * rather than by how patient the user is.
+ */
+const DRAG_DELAY_MS = 250;
+const DRAG_TOLERANCE_PX = 8;
+
+/**
+ * One draggable clip on a phone.
+ *
+ * The handle is a separate grip rather than the whole row: a card carries a
+ * play button and a heart, and a drag that starts anywhere would fire them by
+ * accident. Listeners go on the grip alone, so the rest of the row keeps
+ * behaving exactly as it did.
+ *
+ * `disabled` covers the filtered case. Positions are computed against the full
+ * list, so while a search or colour filter is on, the row above a clip on
+ * screen is not the row above it in the playlist, and a drop would land
+ * somewhere the user did not point at.
+ */
+function SortableClip({ id, disabled, children }) {
+  const {
+    attributes, listeners, setNodeRef, setActivatorNodeRef,
+    transform, transition, isDragging,
+  } = useSortable({ id, disabled });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`relative ${isDragging ? "z-10 opacity-40" : ""}`}
+    >
+      {/* Sits over the card's left edge, clear of the title. Hidden on sm+:
+          dragging is a phone affordance, and the desktop keeps the numeric
+          position box, which beats dragging across a 152-clip playlist. */}
+      <button
+        ref={setActivatorNodeRef}
+        type="button"
+        disabled={disabled}
+        aria-label="拖动排序"
+        title={disabled ? "清除筛选后可拖动排序" : "按住拖动"}
+        className={`absolute left-0 top-0 z-20 flex h-9 w-7 touch-none items-center justify-center rounded-r-md text-sm leading-none sm:hidden ${
+          disabled ? "cursor-not-allowed text-muted/30" : "cursor-grab text-muted active:cursor-grabbing"
+        }`}
+        {...attributes}
+        {...listeners}
+      >
+        ⠿
+      </button>
+      {children}
+    </div>
+  );
+}
 
 export default function PlaylistGrid({
   playlist,
@@ -118,6 +198,36 @@ export default function PlaylistGrid({
       // silent
     }
   }, [playlist, onReorder]);
+
+  // Dragging is disabled while a filter narrows the list: handleMove works in
+  // full-list indices, so a drop between two visible rows would move the clip
+  // to a position the user never saw.
+  const dragDisabled = Boolean(searchQuery || colorFilter);
+
+  const sensors = useSensors(
+    // Mouse/pen: only relevant because the same tree renders on desktop. The
+    // handle is hidden there, so this effectively never activates.
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: DRAG_DELAY_MS, tolerance: DRAG_TOLERANCE_PX },
+    })
+  );
+
+  const handleDragEnd = useCallback((event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    // Indices come from the playlist, not from what is on screen — the same
+    // basis handleMove uses, so dropping and typing a number agree.
+    const from = playlist.clips.findIndex((c) => c.clipId === active.id);
+    const to = playlist.clips.findIndex((c) => c.clipId === over.id);
+    if (from === -1 || to === -1) return;
+
+    // Reuses the existing move: the section label stays attached to its clip,
+    // exactly as it does when the position box is used. Two ways to move that
+    // disagreed about sections would be worse than either rule alone.
+    handleMove(active.id, from, to);
+  }, [playlist.clips, handleMove]);
 
   const gridClass = "grid gap-4 grid-cols-1 sm:grid-cols-[repeat(var(--cols),minmax(0,1fr))]";
   const gridStyle = { "--cols": columns };
@@ -564,24 +674,25 @@ export default function PlaylistGrid({
         </div>
         <div className={gridClass} style={gridStyle}>
           {row.map((pc) => (
-            <PlayerBox
-              key={pc.clipId}
-              playlistClip={pc}
-              playlistId={playlist.id}
-              editMode
-              highlighted={highlightedClipId === pc.clipId}
-              onUpdate={onClipUpdated}
-              onRemove={setRemoveConfirmClipId}
-              onSwap={handleSwapCarryingExpand}
-              position={pc.position + 1}
-              totalClips={playlist.clips.length}
-              onMove={handleMove}
-              allClips={playlist.clips}
-              clipIndex={pc.position}
-              collapsed={!expandedClipIds.has(pc.clipId)}
-              onToggleExpand={handleToggleExpand}
-              isOwner={playlist.isOwner}
-            />
+            <SortableClip key={pc.clipId} id={pc.clipId} disabled={dragDisabled}>
+              <PlayerBox
+                playlistClip={pc}
+                playlistId={playlist.id}
+                editMode
+                highlighted={highlightedClipId === pc.clipId}
+                onUpdate={onClipUpdated}
+                onRemove={setRemoveConfirmClipId}
+                onSwap={handleSwapCarryingExpand}
+                position={pc.position + 1}
+                totalClips={playlist.clips.length}
+                onMove={handleMove}
+                allClips={playlist.clips}
+                clipIndex={pc.position}
+                collapsed={!expandedClipIds.has(pc.clipId)}
+                onToggleExpand={handleToggleExpand}
+                isOwner={playlist.isOwner}
+              />
+            </SortableClip>
           ))}
         </div>
       </Fragment>
@@ -589,14 +700,40 @@ export default function PlaylistGrid({
   };
 
   // Full card grid view with sections
-  const gridContent = (
-    <div>
+  // One SortableContext over every clip in the playlist, not one per section:
+  // the sections are a visual grouping, and a drag has to be able to cross them
+  // — which is what makes a clip change section at all.
+  const sortableIds = useMemo(
+    () => playlist.clips.map((c) => c.clipId),
+    [playlist.clips]
+  );
+
+  const sections = (
+    <>
       {sectionGroups.map((section, si) => (
         <Fragment key={section.clipId || `section-${si}`}>
           {section.label && <SectionDivider label={section.label} clipId={section.clipId} />}
           {renderSectionClips(section.clips)}
         </Fragment>
       ))}
+    </>
+  );
+
+  const gridContent = (
+    <div>
+      {editMode ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+            {sections}
+          </SortableContext>
+        </DndContext>
+      ) : (
+        sections
+      )}
 
       {sectionPromptClipId && (
         <ConfirmDialog

@@ -452,8 +452,10 @@ export default {
   active: "当前",
 
   // Feedback
-  navUpdates: "日志",
-  updatesTitle: "更新",
+  // 导航栏叫「公告」——这一页主要是讲给用户听的通知，不是改动流水。
+  navUpdates: "公告",
+  // 和导航栏同名：点「公告」进来看到标题是「更新」会像走错了页面。
+  updatesTitle: "公告",
   updatesSubtitle: "最新变化与公告",
   updatesEmpty: "暂无更新。",
   updateCategoryFeature: "新功能",

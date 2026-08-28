@@ -87,6 +87,19 @@ router.get('/bandwidth', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/live-usage — who has been using 唱卡 this week
+//
+// No parameters: the window is fixed at seven days because that is what the
+// data supports. Capture events are pruned after thirty, so an adjustable
+// window would offer ranges it cannot actually answer.
+router.get('/live-usage', async (req, res, next) => {
+  try {
+    res.json(await adminService.getLiveUsage());
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/admin/users/:id/billing — update billing fields
 router.patch('/users/:id/billing', validate(updateBillingSchema), async (req, res, next) => {
   try {

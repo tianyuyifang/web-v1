@@ -7,6 +7,7 @@ import { adminAPI, feedbackAPI } from "@/lib/api";
 import useAuth from "@/hooks/useAuth";
 import UserTable from "@/components/admin/UserTable";
 import BandwidthPanel from "@/components/admin/BandwidthPanel";
+import LiveUsagePanel from "@/components/admin/LiveUsagePanel";
 import SignupPromoPanel from "@/components/admin/SignupPromoPanel";
 import UpdatesPanel from "@/components/admin/UpdatesPanel";
 import { useLanguage } from "@/components/layout/LanguageProvider";
@@ -82,6 +83,7 @@ export default function AdminPage() {
     { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.length },
     { key: "updates", label: t("updatesAdminSection"), dot: "bg-pink-400", count: null },
     { key: "bandwidth", label: t("bandwidthTitle"), dot: "bg-cyan-400", count: null },
+    { key: "liveUsage", label: "唱卡使用", dot: "bg-rose-400", count: null },
     { key: "tools", label: "管理员工具", dot: "bg-teal-400", count: null },
   ];
 
@@ -252,6 +254,8 @@ export default function AdminPage() {
       )}
 
       {activeTab === "bandwidth" && <BandwidthPanel />}
+
+      {activeTab === "liveUsage" && <LiveUsagePanel />}
 
       {activeTab === "tools" && (
         <div className="space-y-6">

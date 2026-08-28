@@ -193,6 +193,72 @@ async function getBandwidthStats(days = 30) {
 }
 
 /**
+ * Who has been using 唱卡, and how it is going for them right now.
+ *
+ * Read-only and computed on request: every number comes from rows the feature
+ * already writes while it runs, so there is nothing to keep up to date and no
+ * job to schedule. Opening the page is what refreshes it.
+ *
+ * Seven days, matching what capture data is kept for. The prune job drops
+ * capture events after thirty (cron, 03:30 daily), so a longer window would
+ * quietly show a shorter history than it claimed to -- a 90-day view that can
+ * only ever see 30 is worse than not offering one.
+ *
+ * "Last seen" is the last capture, not the last time they pressed 开始.
+ * Measured on live data those differ by nearly a day for a singer who opened a
+ * session and barely sang, and the session time made them look active when
+ * they were not. It also drops anyone who started a session and captured
+ * nothing at all, which is the honest answer to "who is using this".
+ *
+ * The one-hour columns split the way the singer's own screen does:
+ *
+ *   已确认  a reviewer signed this mapping off
+ *   待确认  it resolved and played, but nobody has vouched for the recording
+ *   未配置  the game showed a song we have no mapping for
+ *
+ * That split is read from the event's stored snapshot rather than by joining
+ * the mapping table now. It records what the singer actually saw at the time,
+ * which is what "how is it going" means; a later approval does not rewrite
+ * history.
+ */
+async function getLiveUsage() {
+  // count(*) is BigInt in Postgres and res.json cannot serialise that, so the
+  // cast happens here rather than being mapped over afterwards.
+  const rows = await prisma.$queryRaw`
+    SELECT u.id                                         AS "userId",
+           u.username,
+           MAX(e.created_at)                            AS "lastCaptureAt",
+           COUNT(*)::int                                AS "weekTotal",
+           COUNT(*) FILTER (
+             WHERE e.created_at > NOW() - INTERVAL '1 hour'
+               AND e.outcome = 'resolved'
+               AND (e.candidates->>'approved')::boolean IS TRUE
+           )::int                                       AS "hourConfirmed",
+           COUNT(*) FILTER (
+             WHERE e.created_at > NOW() - INTERVAL '1 hour'
+               AND e.outcome = 'resolved'
+               AND (e.candidates->>'approved')::boolean IS NOT TRUE
+           )::int                                       AS "hourPending",
+           COUNT(*) FILTER (
+             WHERE e.created_at > NOW() - INTERVAL '1 hour'
+               AND e.outcome = 'unmapped'
+           )::int                                       AS "hourUnmapped"
+      FROM capture_events e
+      JOIN capture_sessions s ON s.id = e.session_id
+      JOIN users u            ON u.id = s.user_id
+     WHERE s.mode = 'live'
+       AND e.created_at > NOW() - INTERVAL '7 days'
+     GROUP BY u.id, u.username
+     ORDER BY MAX(e.created_at) DESC
+  `;
+
+  // Timestamps go out as ISO strings and are formatted in the browser. The
+  // server runs on UTC; sending a preformatted time would show the admin
+  // 05:31 for a capture that happened at 13:31 where they are sitting.
+  return { days: 7, users: rows };
+}
+
+/**
  * Returns all playlists owned by the given user, for admin view-and-copy.
  * Shaped like playlistService.getUserPlaylists but from the admin's perspective:
  * the admin is never the owner, and may always copy.
@@ -314,4 +380,4 @@ async function resetPassword(id) {
   return { id: user.id, username: user.username, tempPassword };
 }
 
-module.exports = { listUsers, listPending, approveUser, makeGuest, demoteUser, deleteUser, getBandwidthStats, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword };
+module.exports = { listUsers, listPending, approveUser, makeGuest, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword };

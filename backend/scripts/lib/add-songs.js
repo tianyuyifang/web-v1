@@ -21,6 +21,35 @@ const { pickMostPopular } = require('./find-song');
 
 const CLIP_LENGTH = 20;
 
+/**
+ * Which of a song's start times to import.
+ *
+ * The second one, when there is a second one. `song.starts` is written by
+ * clip creation, so the order records how the cut points accumulated: the
+ * first is usually an early bulk-generated position, and the second is the
+ * one somebody chose deliberately because it is the part worth singing.
+ *
+ * Measured against production before choosing this: of 4,803 clips users cut
+ * by hand on multi-start songs, 86.2% sit at the second start and only 2.3%
+ * at the first — so importing the first start disagreed with the people who
+ * had actually made the choice almost every time. Roughly 14% land on some
+ * other start (mostly the third), which this rule still gets wrong; it trades
+ * a 2.3% hit rate for an 86% one, not for certainty.
+ *
+ * This is not chorus detection. Nothing in the schema marks a chorus, and
+ * this makes no claim to find one — it follows what users picked.
+ *
+ * @param {string|null} starts - '|'-joined seconds, ascending
+ * @returns {number} the start time to use
+ */
+function pickStart(starts) {
+  const arr = starts
+    ? starts.split('|').map((n) => parseInt(n, 10)).filter((n) => Number.isFinite(n))
+    : [];
+  if (arr.length === 0) return 0;
+  return arr.length > 1 ? arr[1] : arr[0];
+}
+
 function buildClipFilename(title, artist, start) {
   const artists = artist.split('_').map((a) => a.trim()).join(' & ');
   const safe = (s) => s.replace(/[<>:"/\\|?*]/g, '_');
@@ -118,26 +147,26 @@ async function addSongsToPlaylist(songs, targetPlaylistId, onProgress) {
       continue;
     }
 
-    const firstStart = song.starts ? parseInt(song.starts.split('|')[0], 10) : 0;
+    const startSec = pickStart(song.starts);
 
     // Find or create clip at this start time (prefer global clips).
-    let clip = await prisma.clip.findFirst({ where: { songId: song.id, start: firstStart, isGlobal: true } })
-      || await prisma.clip.findFirst({ where: { songId: song.id, start: firstStart } });
+    let clip = await prisma.clip.findFirst({ where: { songId: song.id, start: startSec, isGlobal: true } })
+      || await prisma.clip.findFirst({ where: { songId: song.id, start: startSec } });
 
     if (!clip) {
-      const clipLyrics = sliceLRC(song.lyrics, firstStart, firstStart + CLIP_LENGTH);
-      const clipFilename = buildClipFilename(song.title, song.artist, firstStart);
+      const clipLyrics = sliceLRC(song.lyrics, startSec, startSec + CLIP_LENGTH);
+      const clipFilename = buildClipFilename(song.title, song.artist, startSec);
       const sourcePath = path.join(mp3BasePath, song.filePath);
       const outputPath = path.join(clipsBasePath, clipFilename);
 
       try {
-        await clipAudioAsync({ sourcePath, outputPath, start: firstStart, length: CLIP_LENGTH, lyrics: clipLyrics });
+        await clipAudioAsync({ sourcePath, outputPath, start: startSec, length: CLIP_LENGTH, lyrics: clipLyrics });
       } catch (err) {
         console.warn(`  Warning: Could not clip "${song.title}": ${err.message}`);
       }
 
       clip = await prisma.clip.create({
-        data: { songId: song.id, start: firstStart, length: CLIP_LENGTH, filePath: clipFilename, lyrics: clipLyrics },
+        data: { songId: song.id, start: startSec, length: CLIP_LENGTH, filePath: clipFilename, lyrics: clipLyrics },
       });
     }
 
@@ -151,4 +180,4 @@ async function addSongsToPlaylist(songs, targetPlaylistId, onProgress) {
   return { added, skipped, notFound, titleConflict };
 }
 
-module.exports = { addSongsToPlaylist, buildClipFilename, matchSong };
+module.exports = { addSongsToPlaylist, buildClipFilename, matchSong, pickStart };

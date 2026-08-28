@@ -41,7 +41,12 @@ const PAGE = 40;
 const SOURCE_LABEL = { LOCAL: "独家", QQ: "QQ", NETEASE: "网易" };
 
 /**
- * The card's own fill, a step away from the page behind it.
+ * The OPEN row's fill, a step away from the page behind it.
+ *
+ * Only the open one. A closed row stays flush with the page, so the list reads
+ * as a list and the single card standing off it is the one being worked on --
+ * giving every row a fill made the whole screen busy and stopped the open one
+ * from meaning anything.
  *
  * Not `surface`. In the light and sepia themes `surface` is *lighter* than the
  * background (#ffffff on #f0f0f5), so a surface card on this page measured a
@@ -85,8 +90,10 @@ function Row({ row, onSave, expanded, onToggle }) {
 
   return (
     <div
-      className={`rounded-lg border transition-colors ${CARD_FILL} ${
-        expanded ? "border-accent" : CARD_EDGE
+      className={`rounded-lg border transition-colors ${
+        expanded
+          ? `${CARD_FILL} ${CARD_EDGE}`
+          : "border-transparent hover:border-border hover:bg-white/[0.02]"
       }`}
     >
       <button

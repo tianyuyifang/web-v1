@@ -100,6 +100,18 @@ router.get('/live-usage', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/tagging-usage — who is tagging songs, by hand or automatically
+//
+// Counted from likes, which both routes write identically, so the total covers
+// manual tagging and 自动打标 together. No parameters: ten days.
+router.get('/tagging-usage', async (req, res, next) => {
+  try {
+    res.json(await adminService.getTaggingUsage());
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/admin/users/:id/billing — update billing fields
 router.patch('/users/:id/billing', validate(updateBillingSchema), async (req, res, next) => {
   try {

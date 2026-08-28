@@ -270,6 +270,9 @@ export const adminAPI = {
   // feature already writes. No window parameter: capture events are pruned
   // after thirty days, so a longer range would show less than it claimed.
   getLiveUsage: () => api.get("/admin/live-usage"),
+  // Who is tagging songs into playlists, manually or through 自动打标. Counted
+  // from likes, which both routes write identically, so one number covers both.
+  getTaggingUsage: () => api.get("/admin/tagging-usage"),
   updateBilling: (id, data) => api.patch(`/admin/users/${id}/billing`, data),
   extendOneMonth: (id) => api.post(`/admin/users/${id}/extend`),
   resetPassword: (id) => api.post(`/admin/users/${id}/reset-password`),

@@ -24,6 +24,31 @@ const PAGE_SIZE = 40;
 const MAX_TAKE = 100;
 
 /**
+ * The search term, made safe to hand to Postgres.
+ *
+ * Two hazards, both found by testing rather than by reading the code:
+ *
+ *   A null byte is rejected by Postgres outright (22021, "invalid byte
+ *   sequence for encoding UTF8"), which surfaces as a 500 from a search box --
+ *   one pasted character takes the tab down.
+ *
+ *   `%` and `_` are LIKE wildcards and Prisma's `contains` does not escape
+ *   them. Typing a single `_` matched every confirmed song instead of none,
+ *   because `contains: '_'` means "any one character". Escaping is what makes
+ *   the box search for the character the singer actually typed.
+ *
+ * The backslash is Postgres's default LIKE escape, and it has to be escaped
+ * first -- doing it later would escape the escapes added before it.
+ */
+function clean(query) {
+  return String(query == null ? '' : query)
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x00/g, '')
+    .trim()
+    .replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/**
  * Confirmed mappings matching a search term.
  *
  * The term is matched against BOTH sides — what the game calls the song and
@@ -39,7 +64,7 @@ const MAX_TAKE = 100;
  * @param {string|null} opts.cursor id of the last row of the previous page
  */
 async function search(userId, { query = '', mine = false, cursor = null, take = PAGE_SIZE } = {}) {
-  const q = String(query || '').trim();
+  const q = clean(query);
   const limit = Math.min(Math.max(Number(take) || PAGE_SIZE, 1), MAX_TAKE);
 
   // "Show me everything" is not a real question against 1,900 rows, and an

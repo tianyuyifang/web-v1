@@ -41,7 +41,13 @@ function BookmarkInline({ color, size = 14 }) {
  * doing something unintended.
  */
 function isLocalImage(src) {
-  return typeof src === "string" && /^\/[\w./-]+\.(png|jpe?g|gif|webp|svg)$/i.test(src);
+  if (typeof src !== "string") return false;
+  // A single leading slash, and never two: "//host/x.png" is a
+  // protocol-relative URL that loads from another origin while looking local.
+  if (!src.startsWith("/") || src.startsWith("//")) return false;
+  // No traversal — a path names a file under public/, not a route out of it.
+  if (src.includes("..")) return false;
+  return /^\/[\w-]+(?:\/[\w-]+)*\.(png|jpe?g|gif|webp|svg)$/i.test(src);
 }
 
 /**

@@ -30,6 +30,39 @@ import SongPrefEditor from "./SongPrefTags";
 
 const PAGE = 40;
 
+/**
+ * What to call each source in front of a singer.
+ *
+ * The same three labels the cards and the review page use. Repeated rather
+ * than imported because the live page holds its copy as a module constant, and
+ * reaching into a page from a component would tie this file to that one's
+ * shape; three short strings are the cheaper duplication.
+ */
+const SOURCE_LABEL = { LOCAL: "独家", QQ: "QQ", NETEASE: "网易" };
+
+/**
+ * The card's own fill, a step away from the page behind it.
+ *
+ * Not `surface`. In the light and sepia themes `surface` is *lighter* than the
+ * background (#ffffff on #f0f0f5), so a surface card on this page measured a
+ * 1.14 contrast ratio -- visible in theory, invisible in practice, which is
+ * what "白色的，不明显" was describing.
+ *
+ * The obvious fixes both failed when measured. `surface-hover` goes the wrong
+ * way in light themes (1.14 -> 1.07, since a light surface hovers lighter),
+ * and mixing in the accent does the same (1.14 -> 1.02). Both assume dark, and
+ * this app has four themes, two of each kind.
+ *
+ * Mixing the TEXT colour into the BACKGROUND works in all four, because text
+ * is by definition the background's opposite: the card moves away from the
+ * page whichever direction "away" happens to be. Measured: dark 1.36, light
+ * 1.27, midnight 1.31, sepia 1.25 -- every one better than the 1.09-1.15 a
+ * plain surface gave.
+ */
+const CARD_FILL = "[background-color:color-mix(in_srgb,var(--text)_12%,var(--background))]";
+/** The same idea for the edge, further along so it reads as a boundary. */
+const CARD_EDGE = "[border-color:color-mix(in_srgb,var(--text)_28%,var(--background))]";
+
 /** One side of a name pair. Always both, so the columns line up down the list. */
 function NameLine({ label, title, artist, dim }) {
   return (
@@ -52,10 +85,8 @@ function Row({ row, onSave, expanded, onToggle }) {
 
   return (
     <div
-      className={`rounded-lg border transition-colors ${
-        expanded
-          ? "border-accent/50 bg-surface"
-          : "border-transparent hover:border-border hover:bg-white/[0.02]"
+      className={`rounded-lg border transition-colors ${CARD_FILL} ${
+        expanded ? "border-accent" : CARD_EDGE
       }`}
     >
       <button
@@ -69,7 +100,7 @@ function Row({ row, onSave, expanded, onToggle }) {
               list harder to scan than one that is always there. */}
           <NameLine label="QNI:" title={row.title} artist={row.artist} />
           <NameLine
-            label={`${row.source}:`}
+            label={`${SOURCE_LABEL[row.source] || row.source}:`}
             title={row.platformTitle}
             artist={row.platformArtist}
             dim

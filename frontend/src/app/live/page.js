@@ -31,6 +31,7 @@ import LiveLyrics from "@/components/live/LiveLyrics";
 import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
+import SongLibrary from "@/components/live/SongLibrary";
 import DefaultTuning from "@/components/live/DefaultTuning";
 import {
   loadStoredQuality, storeQuality, loadStoredVocals, storeVocals,
@@ -194,6 +195,11 @@ export default function LivePage() {
    * request of its own is needed on load.
    */
   const [prefs, setPrefs] = useState({});
+  // Which half of the page is showing. "cards" is what the game feeds; "library"
+  // is the same marks reachable without a game running. Held here rather than
+  // in the URL because it is a view toggle, not a place: a reload should put
+  // the singer back on the cards, which is where a running game needs them.
+  const [tab, setTab] = useState("cards");
   /**
    * The key and tempo a song opens in when it has none of its own.
    *
@@ -927,7 +933,10 @@ export default function LivePage() {
           <h1 className="text-lg font-medium">唱卡</h1>
           <p className="text-xs text-muted">游戏里出现的歌会自动出现在这里，点开即可播放。</p>
         </div>
-        {session ? (
+        {/* Starting and stopping belong to the cards, so the button follows
+            them. Leaving it visible over the library would offer to start a
+            game from a screen that has nothing to do with one. */}
+        {tab !== "cards" ? null : session ? (
           <button
             type="button"
             onClick={stop}
@@ -947,6 +956,27 @@ export default function LivePage() {
         )}
       </div>
 
+      {/* A running game keeps running while the library is open: switching tabs
+          hides the cards, it does not stop delivery. */}
+      <div className="mb-4 flex items-center gap-1 border-b border-border">
+        {[["cards", "唱卡"], ["library", "标记"]].map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`-mb-px border-b-2 px-3 py-1.5 text-sm transition-colors ${
+              tab === id
+                ? "border-accent text-fg"
+                : "border-transparent text-muted hover:text-fg"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "library" ? <SongLibrary defaults={defaults} /> : null}
+
       {error && (
         <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error}
@@ -955,14 +985,14 @@ export default function LivePage() {
 
       {/* The code is the whole point of the empty state: until it is typed into
           the client, nothing can arrive and the page would just look broken. */}
-      {session && pairCode && client !== "connected" && (
+      {tab === "cards" && session && pairCode && client !== "connected" && (
         <div className="mb-4 rounded border border-border bg-surface px-4 py-3">
           <div className="text-xs text-muted">在手机客户端里输入配对码</div>
           <div className="mt-1 font-mono text-2xl tracking-widest">{pairCode}</div>
         </div>
       )}
 
-      {session && (
+      {tab === "cards" && session && (
         <div className="mb-3 flex items-center gap-2 text-xs text-muted">
           <span
             className={`inline-block h-2 w-2 rounded-full ${
@@ -975,7 +1005,7 @@ export default function LivePage() {
         </div>
       )}
 
-      {!session ? (
+      {tab !== "cards" ? null : !session ? (
         <div className="rounded border border-border bg-surface px-4 py-10 text-center text-sm text-muted">
           点「开始」后，在客户端里输入配对码即可。
         </div>

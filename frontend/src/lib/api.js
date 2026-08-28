@@ -234,6 +234,17 @@ export const captureAPI = {
       keys.map((k) => `${k.source}:${k.externalId}`).join(",")
     )}`
   ),
+  // Confirmed songs, searchable, so a singer can set a key or a colour between
+  // games instead of during one. Reads our own database only -- no platform is
+  // called -- so browsing costs nothing outbound however long it goes on.
+  library: ({ q = "", mine = false, cursor = null, take } = {}) => {
+    const p = new URLSearchParams();
+    if (q) p.set("q", q);
+    if (mine) p.set("mine", "1");
+    if (cursor) p.set("cursor", cursor);
+    if (take) p.set("take", String(take));
+    return api.get(`/capture/library?${p.toString()}`);
+  },
   // A patch: fields left out are untouched, an explicit null clears one. The
   // card saves its key when it closes and its colours the moment they change,
   // so a whole-row write from either would discard the other.

@@ -35,6 +35,8 @@ const EMPTY_FORM = { title: "", body: "", category: "ANNOUNCEMENT" };
 const ANNOUNCEMENT_IMAGES = [
   { src: "/user_guide.jpg", label: "使用指南" },
   { src: "/playlist_menu.jpg", label: "歌单价目表" },
+  { src: "/user_guide_black_and_white.png", label: "使用指南黑白" },
+  { src: "/playlist_menu_black_and_white.png", label: "歌单价目表黑白" },
 ];
 
 export default function UpdatesPanel() {

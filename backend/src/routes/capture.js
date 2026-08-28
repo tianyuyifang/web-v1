@@ -1,8 +1,10 @@
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
+const { z } = require('zod');
 const prisma = require('../db/client');
 const captureService = require('../services/captureService');
 const songPrefService = require('../services/songPrefService');
+const songLibraryService = require('../services/songLibraryService');
 const { authMiddleware, requireApproved, requireActiveSession } = require('../middleware/auth');
 const captureAuth = require('../middleware/captureAuth');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
@@ -383,6 +385,48 @@ router.post('/events/:id/ignore', ...web, async (req, res, next) => {
 
 // GET /api/capture/prefs?keys=QQ:001abc,NETEASE:12345
 // Batched: the live page asks once for every recording on screen.
+const libraryQuery = z.object({
+  q: z.string().max(200).optional(),
+  mine: z.enum(['0', '1']).optional(),
+  cursor: z.string().uuid().optional(),
+  take: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+// GET /api/capture/library — search confirmed songs to mark ahead of time
+//
+// The reason this exists: a preference could only be set while its card was on
+// screen, so the thought "this one is too high for me" arrived at the one
+// moment there was no time to act on it. This lets the singer do it between
+// games instead.
+//
+// Same gate as the rest of 唱卡, deliberately: this is part of that feature,
+// not a separate one to be sold or granted on its own.
+//
+// No rate limit, because there is nothing to limit — the search reads our own
+// database and never calls a platform, so the cost of browsing is one indexed
+// query per keystroke against rows we already hold. Adding a limiter here
+// would only punish someone typing quickly.
+router.get('/library', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const parsed = libraryQuery.safeParse(req.query);
+    // A cursor that is not a uuid reaches Postgres as a malformed uuid and
+    // comes back as a 500 with the reason swallowed. Rejecting it here makes
+    // a stale or hand-edited link say so plainly instead.
+    if (!parsed.success) {
+      return res.status(400).json({ error: { message: '参数不合法' } });
+    }
+    const { q, mine, cursor, take } = parsed.data;
+    return res.json(await songLibraryService.search(req.user.id, {
+      query: q,
+      mine: mine === '1',
+      cursor: cursor || null,
+      take,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/prefs', ...web, requireCaptureAddOn, async (req, res, next) => {
   try {
     const raw = String(req.query.keys || '').trim();

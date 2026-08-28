@@ -387,7 +387,6 @@ router.post('/events/:id/ignore', ...web, async (req, res, next) => {
 // Batched: the live page asks once for every recording on screen.
 const libraryQuery = z.object({
   q: z.string().max(200).optional(),
-  mine: z.enum(['0', '1']).optional(),
   cursor: z.string().uuid().optional(),
   take: z.coerce.number().int().min(1).max(100).optional(),
 });
@@ -415,10 +414,9 @@ router.get('/library', ...web, requireCaptureAddOn, async (req, res, next) => {
     if (!parsed.success) {
       return res.status(400).json({ error: { message: '参数不合法' } });
     }
-    const { q, mine, cursor, take } = parsed.data;
+    const { q, cursor, take } = parsed.data;
     return res.json(await songLibraryService.search(req.user.id, {
       query: q,
-      mine: mine === '1',
       cursor: cursor || null,
       take,
     }));

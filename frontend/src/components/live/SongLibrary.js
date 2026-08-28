@@ -3,18 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { captureAPI } from "@/lib/api";
 import SongPrefEditor from "./SongPrefTags";
-import {
-  PITCH_STEPS, SPEED_STEPS, sameValue, LADDER_BUTTON, LADDER_TINT,
-} from "./ladderStyle";
 
 /**
  * Marking songs without waiting to meet them.
  *
- * Until now a key or a colour could only be set while a card was on screen,
+ * Until now a colour or a note could only be set while a card was on screen,
  * which put the decision at the worst possible moment: the song has started,
- * everyone is waiting, and the thought "this one is too high for me" is
- * exactly the thought there is no time to act on. It got forgotten, round
- * after round, for the same song.
+ * everyone is waiting, and the thought "this one needs a note" is exactly the
+ * thought there is no time to act on. It got forgotten, round after round, for
+ * the same song.
  *
  * So this is the same marks, reachable between games. What it deliberately is
  * NOT is a player: there is no listening here. Resolving audio is the one part
@@ -23,89 +20,63 @@ import {
  * minute of scrolling would outspend a whole game. Every field below is one
  * already in our own database, so however long someone browses, nothing
  * leaves.
+ *
+ * Colour and note only, for the same reason. Key and tempo are settled by ear
+ * against the song, and there is nothing to hear here; a number picked blind
+ * would be a guess written down as a decision. Both still work on the card,
+ * and anything already stored is left untouched -- this screen simply does not
+ * show them.
  */
 
 const PAGE = 40;
 
-/**
- * A ladder of keys or tempos.
- *
- * An unset song shows the value it will actually play at -- the singer's
- * global default -- rather than a blank, because a blank says nothing about
- * what happens when the song comes up, and adjusting from a real number is
- * easier than picking one from nothing. It is dimmed, so a glance still
- * separates songs that have been decided from songs merely following the
- * default.
- */
-function Ladder({ steps, value, isSet, onPick, format }) {
+/** One side of a name pair. Always both, so the columns line up down the list. */
+function NameLine({ label, title, artist, dim }) {
   return (
-    <div className="flex items-center gap-1">
-      {steps.map((s) => {
-        const on = sameValue(s, value);
-        return (
-          <button
-            key={s}
-            type="button"
-            onClick={() => onPick(s)}
-            className={`${LADDER_BUTTON} ${
-              on
-                ? `${LADDER_TINT} text-fg ${isSet ? "" : "opacity-45"}`
-                : "text-muted hover:text-fg"
-            }`}
-          >
-            {format(s)}
-          </button>
-        );
-      })}
-    </div>
+    <span className={`block truncate text-[0.7rem] ${dim ? "text-muted/70" : "text-muted"}`}>
+      <span className="text-muted/60">{label}</span>
+      {" "}
+      {title || "—"}
+      {artist ? <span className="text-muted/80">{` · ${artist}`}</span> : null}
+    </span>
   );
 }
 
-function Row({ row, defaults, onSave, expanded, onToggle }) {
+function Row({ row, onSave, expanded, onToggle }) {
   const prefs = row.prefs;
-  // "Set" means this song has its own value, not that the value differs from
-  // the default: choosing the default on purpose is a decision too, and the
-  // row should stop looking undecided once it has been made.
-  const pitchSet = typeof prefs?.pitch === "number";
-  const speedSet = typeof prefs?.speed === "number";
-  const pitch = pitchSet ? prefs.pitch : (defaults?.pitch ?? 0);
-  const speed = speedSet ? prefs.speed : (defaults?.speed ?? 1);
-
-  // Both sides of the name, because they disagree about a quarter of the time
-  // and which one the singer remembers is not predictable. The second line is
-  // dropped when it would only repeat the first, so the common case stays
-  // quiet.
-  const platformDiffers = row.platformTitle
-    && (row.platformTitle !== row.title || row.platformArtist !== row.artist);
-
   const colors = (prefs?.colorTag || "").split("|").filter(Boolean);
-  const marked = pitchSet || speedSet || prefs?.note || colors.length;
+  // A song counts as marked on the two things this screen can set. Key and
+  // tempo are deliberately not counted: they are set elsewhere, and a row
+  // showing 标记过 for something invisible here would be unexplainable.
+  const marked = Boolean(prefs?.note) || colors.length > 0;
 
   return (
-    <div className="border-b border-border/60 last:border-b-0">
+    <div
+      className={`rounded-lg border transition-colors ${
+        expanded
+          ? "border-accent/50 bg-surface"
+          : "border-transparent hover:border-border hover:bg-white/[0.02]"
+      }`}
+    >
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-1 py-2 text-left hover:bg-white/[0.02]"
+        className="flex w-full items-start gap-3 px-3 py-2 text-left"
       >
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
-            <span className="truncate text-sm">{row.title}</span>
-            <span className="shrink-0 truncate text-xs text-muted">{row.artist}</span>
-          </span>
-          {platformDiffers ? (
-            <span className="mt-0.5 block truncate text-[0.68rem] text-muted/70">
-              {row.source} · {row.platformTitle}
-              {row.platformArtist ? ` - ${row.platformArtist}` : ""}
-            </span>
-          ) : null}
+          {/* Both names, always. Which one the singer remembers is not
+              predictable, and a line that appears only sometimes makes the
+              list harder to scan than one that is always there. */}
+          <NameLine label="QNI:" title={row.title} artist={row.artist} />
+          <NameLine
+            label={`${row.source}:`}
+            title={row.platformTitle}
+            artist={row.platformArtist}
+            dim
+          />
         </span>
-        <span className="flex shrink-0 items-center gap-1.5">
-          {prefs?.note ? (
-            <span className="max-w-[8rem] truncate text-[0.68rem] text-muted" title={prefs.note}>
-              {prefs.note}
-            </span>
-          ) : null}
+
+        <span className="flex shrink-0 items-center gap-2 pt-0.5">
           {colors.map((c) => (
             <span
               key={c}
@@ -113,53 +84,20 @@ function Row({ row, defaults, onSave, expanded, onToggle }) {
               style={{ background: c }}
             />
           ))}
-          {marked ? null : <span className="text-[0.68rem] text-muted/50">未设置</span>}
+          <span
+            className={`shrink-0 rounded px-1.5 py-0.5 text-[0.62rem] ${
+              marked
+                ? "bg-green-500/15 text-green-400"
+                : "bg-red-500/15 text-red-400"
+            }`}
+          >
+            {marked ? "标记过" : "未标记"}
+          </span>
         </span>
       </button>
 
       {expanded ? (
-        <div className="space-y-2 px-1 pb-3 pt-1">
-          <div className="flex items-center gap-2">
-            <span className="w-8 shrink-0 text-[0.68rem] text-muted">变调</span>
-            <Ladder
-              steps={PITCH_STEPS}
-              value={pitch}
-              isSet={pitchSet}
-              onPick={(v) => onSave({ pitch: v })}
-              format={(s) => (s > 0 ? `+${s}` : String(s))}
-            />
-            {pitchSet ? (
-              <button
-                type="button"
-                onClick={() => onSave({ pitch: null })}
-                className="text-[0.68rem] text-muted hover:text-fg"
-              >
-                清除
-              </button>
-            ) : null}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="w-8 shrink-0 text-[0.68rem] text-muted">变速</span>
-            <Ladder
-              steps={SPEED_STEPS}
-              value={speed}
-              isSet={speedSet}
-              onPick={(v) => onSave({ speed: v })}
-              format={(s) => (sameValue(s, 1) ? "1" : String(s))}
-            />
-            {speedSet ? (
-              <button
-                type="button"
-                onClick={() => onSave({ speed: null })}
-                className="text-[0.68rem] text-muted hover:text-fg"
-              >
-                清除
-              </button>
-            ) : null}
-          </div>
-
-          {/* The same editor the card uses, so a colour means one thing. */}
+        <div className="border-t border-border/60 px-3 py-2.5">
           <SongPrefEditor prefs={prefs} onChange={onSave} />
         </div>
       ) : null}
@@ -167,9 +105,8 @@ function Row({ row, defaults, onSave, expanded, onToggle }) {
   );
 }
 
-export default function SongLibrary({ defaults }) {
+export default function SongLibrary() {
   const [q, setQ] = useState("");
-  const [mine, setMine] = useState(false);
   const [rows, setRows] = useState([]);
   const [cursor, setCursor] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -183,14 +120,12 @@ export default function SongLibrary({ defaults }) {
   // ends up showing results for a prefix of what is in the box.
   const runRef = useRef(0);
 
-  const load = useCallback(async (query, onlyMine, after = null) => {
+  const load = useCallback(async (query, after = null) => {
     const run = ++runRef.current;
     setLoading(true);
     setError("");
     try {
-      const res = await captureAPI.library({
-        q: query, mine: onlyMine, cursor: after, take: PAGE,
-      });
+      const res = await captureAPI.library({ q: query, cursor: after, take: PAGE });
       if (run !== runRef.current) return;
       setRows((prev) => (after ? [...prev, ...res.data.rows] : res.data.rows));
       setCursor(res.data.nextCursor);
@@ -207,14 +142,14 @@ export default function SongLibrary({ defaults }) {
   // burst of typing without feeling laggy.
   useEffect(() => {
     const term = q.trim();
-    if (!term && !mine) {
+    if (!term) {
       runRef.current += 1;      // cancel anything in flight
       setRows([]); setCursor(null); setSearched(false); setLoading(false);
       return undefined;
     }
-    const t = setTimeout(() => load(term, mine), 300);
+    const t = setTimeout(() => load(term), 300);
     return () => clearTimeout(t);
-  }, [q, mine, load]);
+  }, [q, load]);
 
   /**
    * Save one field and keep the row in step.
@@ -237,46 +172,30 @@ export default function SongLibrary({ defaults }) {
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="搜索歌名或歌手"
-          className="min-w-0 flex-1 rounded border border-border bg-surface px-3 py-1.5 text-sm outline-none placeholder:text-muted/60 focus:border-accent"
-        />
-        <button
-          type="button"
-          onClick={() => setMine((v) => !v)}
-          className={`shrink-0 rounded border px-2.5 py-1.5 text-xs transition-colors ${
-            mine
-              ? `border-accent ${LADDER_TINT} text-fg`
-              : "border-border text-muted hover:text-fg"
-          }`}
-        >
-          我标过的
-        </button>
-      </div>
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="搜索歌名或歌手"
+        className="mb-3 w-full rounded border border-border bg-surface px-3 py-1.5 text-sm outline-none placeholder:text-muted/60 focus:border-accent"
+      />
 
       {error ? <p className="mb-2 text-xs text-red-400">{error}</p> : null}
 
       {!searched && !loading ? (
         <p className="py-8 text-center text-xs text-muted">
-          搜索歌名或歌手，给歌先设好调、速度、颜色和备注。
+          搜索歌名或歌手，给歌先加上颜色和备注。
         </p>
       ) : null}
 
       {searched && !rows.length && !loading ? (
-        <p className="py-8 text-center text-xs text-muted">
-          {mine ? "还没有标记过的歌。" : "没有找到已确认的歌。"}
-        </p>
+        <p className="py-8 text-center text-xs text-muted">没有找到已确认的歌。</p>
       ) : null}
 
-      <div>
+      <div className="space-y-1.5">
         {rows.map((row) => (
           <Row
             key={row.id}
             row={row}
-            defaults={defaults}
             expanded={openId === row.id}
             onToggle={() => setOpenId((id) => (id === row.id ? null : row.id))}
             onSave={(patch) => save(row, patch)}
@@ -289,7 +208,7 @@ export default function SongLibrary({ defaults }) {
       {cursor && !loading ? (
         <button
           type="button"
-          onClick={() => load(q.trim(), mine, cursor)}
+          onClick={() => load(q.trim(), cursor)}
           className="mt-2 w-full rounded border border-border py-1.5 text-xs text-muted hover:text-fg"
         >
           加载更多

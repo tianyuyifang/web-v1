@@ -975,7 +975,7 @@ export default function LivePage() {
         ))}
       </div>
 
-      {tab === "library" ? <SongLibrary defaults={defaults} /> : null}
+      {tab === "library" ? <SongLibrary /> : null}
 
       {error && (
         <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">

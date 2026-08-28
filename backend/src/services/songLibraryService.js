@@ -1,6 +1,6 @@
 /**
- * The searchable side of 唱卡: every confirmed song, so a singer can set a key,
- * a tempo, a colour or a note without waiting to meet the song in a game.
+ * The searchable side of 唱卡: every confirmed song, so a singer can put a
+ * colour or a note on one without waiting to meet it in a game.
  *
  * Marking used to be possible only while a card was on screen, which meant the
  * thought "this one is too high for me" arrived at the one moment there was no
@@ -60,23 +60,19 @@ function clean(query) {
  * @param {string} userId whose preferences to attach
  * @param {object} opts
  * @param {string} opts.query free text; empty returns nothing
- * @param {boolean} opts.mine only rows this user has already marked
  * @param {string|null} opts.cursor id of the last row of the previous page
  */
-async function search(userId, { query = '', mine = false, cursor = null, take = PAGE_SIZE } = {}) {
+async function search(userId, { query = '', cursor = null, take = PAGE_SIZE } = {}) {
   const q = clean(query);
   const limit = Math.min(Math.max(Number(take) || PAGE_SIZE, 1), MAX_TAKE);
 
   // "Show me everything" is not a real question against 1,900 rows, and an
-  // empty box should not pull the whole table over a phone connection. The
-  // exception is the marked-only view, where the whole point is to see the
-  // list without remembering what is on it.
-  if (!q && !mine) return { rows: [], nextCursor: null };
+  // empty box should not pull the whole table over a phone connection.
+  if (!q) return { rows: [], nextCursor: null };
 
-  const where = { approved: true };
-
-  if (q) {
-    where.OR = [
+  const where = {
+    approved: true,
+    OR: [
       // Game side, raw and normalised. The normalised key is what makes a
       // search work across width and case differences the singer will not
       // think about while typing.
@@ -87,32 +83,8 @@ async function search(userId, { query = '', mine = false, cursor = null, take = 
       // of what the singer might remember.
       { platformTitle: { contains: q, mode: 'insensitive' } },
       { platformArtist: { contains: q, mode: 'insensitive' } },
-    ];
-  }
-
-  // Narrowing to marked rows means intersecting two tables that have no
-  // relation between them: preferences are keyed by (source, externalId), not
-  // by mapping id. Read the user's keys first and constrain on those, rather
-  // than reading every mapping and filtering in JS.
-  if (mine) {
-    const marked = await prisma.songPref.findMany({
-      where: { userId },
-      select: { source: true, externalId: true },
-      // Bounded so a user with thousands of marks cannot build an unbounded
-      // OR. Well past any real number of songs one person marks.
-      take: 2000,
-    });
-    // Excludes the global-default sentinel row, which is a stored key/tempo
-    // for the singer rather than a song, and would otherwise show up in the
-    // library as a track called __default__.
-    const pairs = marked.filter((m) => !(
-      m.source === songPrefs.DEFAULT_SOURCE && m.externalId === songPrefs.DEFAULT_EXTERNAL_ID
-    ));
-    if (!pairs.length) return { rows: [], nextCursor: null };
-    where.AND = [{
-      OR: pairs.map((m) => ({ source: m.source, externalId: m.externalId })),
-    }];
-  }
+    ],
+  };
 
   const rows = await prisma.songMapping.findMany({
     where,

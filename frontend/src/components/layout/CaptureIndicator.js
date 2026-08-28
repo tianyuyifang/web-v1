@@ -121,7 +121,11 @@ export default function CaptureIndicator() {
         className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted hover:bg-surface-hover hover:text-theme"
       >
         <span className={`inline-block h-2 w-2 rounded-full ${dotClass(connection)}`} />
-        <span className="hidden lg:inline">{statusText(connection)}</span>
+        {/* Always named. Below lg this was hidden, which left an 8px dot
+            carrying four distinct states by colour alone — on a phone, and in
+            any desktop window under 1024px, the control said nothing at all
+            unless you opened it. The nav has the width for two characters. */}
+        <span>{statusText(connection)}</span>
         {/* Named in both states, including "未开始".
 
             This used to hide itself when the target was none, on the reasoning
@@ -130,6 +134,9 @@ export default function CaptureIndicator() {
             meant the label was present exactly when things worked and absent
             exactly when they did not. The one moment it had something worth
             saying was the moment it said nothing. */}
+        {/* The destination stays lg-only: it is the longer of the two (a
+            playlist name), and the status above is what answers "is this
+            working". A narrow screen gets the state, not the essay. */}
         {connection && (
           <span className="hidden max-w-[10rem] truncate lg:inline text-muted/70">
             · {target}

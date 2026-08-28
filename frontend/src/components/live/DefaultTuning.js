@@ -3,19 +3,29 @@
 /**
  * The key and tempo a song opens in when it has none of its own.
  *
- * Floating and always open. It belongs to the singer rather than to any one
- * card, and it has to be usable while a card is playing — choosing a default
- * without hearing it is a guess. Hiding it behind a tap would put a click
- * between the ear and the adjustment, which is the wrong way round for
- * something tuned by listening.
+ * Floating. It belongs to the singer rather than to any one card, and it has
+ * to be usable while a card is playing — choosing a default without hearing it
+ * is a guess. On a desktop it stays open for that reason: a click between the
+ * ear and the adjustment is the wrong way round for something tuned by
+ * listening.
+ *
+ * On a phone it can be folded away, because there the cost runs the other way:
+ * five rows of controls pinned over a small screen cover the cards being
+ * tuned. Collapsed, it keeps the current key and tempo on the button, so the
+ * setting in force is still readable without opening anything.
  *
  * Two rows, laid out the same way: minus, the current value, plus. The value
  * in the middle is what is actually in force, so the row reads as one thing
  * rather than as a control and a separate readout.
  */
 
+import { useEffect, useState } from "react";
+
 import { PITCH_STEPS, SPEED_STEPS, sameValue, stepAlong } from "./ladderStyle";
 import LiveVolumeControl, { QUALITY_TIERS } from "./LiveVolumeControl";
+
+/** Remembered so the panel opens the way you left it, per device. */
+const COLLAPSE_KEY = "live-tuning-collapsed";
 
 /**
  * Signed, so +2 and −2 are told apart without reading the sign twice.
@@ -78,6 +88,29 @@ export default function DefaultTuning({
   const pitch = typeof defaults?.pitch === "number" ? defaults.pitch : 0;
   const speed = typeof defaults?.speed === "number" ? defaults.speed : 1;
 
+  // Starts open, then adopts the stored choice after mount. Reading storage
+  // during render would make the server and the first client paint disagree.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(COLLAPSE_KEY) === "1") setCollapsed(true);
+    } catch {
+      // private mode; the panel simply opens expanded
+    }
+  }, []);
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      } catch {
+        // nothing to do; the choice just will not survive a reload
+      }
+      return next;
+    });
+  };
+
   // Walks the card's own ladders rather than counting in fixed increments, so
   // a default can only ever be a value the card can show as selected. Stepping
   // by one semitone would let the default reach -3, where the row underneath
@@ -92,13 +125,54 @@ export default function DefaultTuning({
     if (!sameValue(next, speed)) onChange({ speed: next });
   };
 
+  // Collapsing is a phone concern only, so the folded button is rendered at
+  // `sm:hidden` and the full panel at `hidden sm:block` — a desktop gets the
+  // panel it always had, whatever this phone happened to store.
   return (
+    <>
+    {/* The folded button and the panel are both rendered; CSS decides which is
+        real. An early return on `collapsed` would have hidden the panel from
+        desktop as well, since the button itself is sm:hidden — a phone's
+        stored preference would have blanked a screen it does not apply to. */}
+    {collapsed && (
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-expanded="false"
+        title="展开全局设置"
+        className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-[0.7rem] shadow-xl sm:hidden"
+      >
+        <span className="font-medium text-theme">全局设置</span>
+        {/* The values ride on the button: folded away, this is the only place
+            the key and tempo in force can still be read. */}
+        <span className="text-muted">
+          {pitchLabel(defaults?.pitch)} · {speedLabel(defaults?.speed)}x
+        </span>
+        <span aria-hidden="true" className="text-muted">▲</span>
+      </button>
+    )}
+
     <div
       // Above the cards, below any dialog. Clear of the bottom edge on a phone
       // so it does not sit under the thumb rest.
-      className="fixed bottom-4 right-4 z-30 rounded-xl border border-border bg-surface px-3 py-2.5 shadow-xl sm:bottom-6 sm:right-6"
+      className={`fixed bottom-4 right-4 z-30 max-h-[70vh] overflow-y-auto rounded-xl border border-border bg-surface px-3 py-2.5 shadow-xl sm:bottom-6 sm:right-6 sm:max-h-none sm:overflow-visible ${
+        collapsed ? "hidden sm:block" : ""
+      }`}
     >
-      <div className="mb-2 text-[0.7rem] font-medium text-theme">全局设置</div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-[0.7rem] font-medium text-theme">全局设置</span>
+        {/* Phone only: on a desktop the panel has never needed folding away,
+            and a control that does nothing there would just be noise. */}
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          aria-expanded="true"
+          title="收起全局设置"
+          className="-my-1 -mr-1 px-1 py-1 text-[0.7rem] leading-none text-muted hover:text-theme sm:hidden"
+        >
+          ▼
+        </button>
+      </div>
 
       <div className="space-y-1.5">
         <Stepper
@@ -190,5 +264,6 @@ export default function DefaultTuning({
         ) : null}
       </div>
     </div>
+    </>
   );
 }

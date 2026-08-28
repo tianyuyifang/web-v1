@@ -204,6 +204,20 @@ async function getBandwidthStats(days = 30) {
  * quietly show a shorter history than it claimed to -- a 90-day view that can
  * only ever see 30 is worse than not offering one.
  *
+ * Which captures count as 唱卡 is decided by the EVENT, not by its session.
+ * A session's `mode` is rewritten every time the singer re-aims the connection
+ * (setTarget writes `mode: target === 'live' ? 'live' : 'playlist'`), so it
+ * says where captures are going NOW, not where each one came from -- switching
+ * to 歌P at the end of a night retroactively hid that night's 唱卡 use, and
+ * switching back pulled in 歌P captures that were never 唱卡 at all. Measured
+ * over one week: 10 sessions affected, filtering by session.mode returned 7639
+ * events where the truth was 4773.
+ *
+ * `capture_events.playlist_id` is fixed at capture time and is null exactly for
+ * 唱卡, which its own schema comment says outright. Checked against live data,
+ * the rows it selects carry only `resolved` and `unmapped` -- the two outcomes
+ * the 唱卡 path writes -- with none of the 歌P ones mixed in.
+ *
  * "Last seen" is the last capture, not the last time they pressed 开始.
  * Measured on live data those differ by nearly a day for a singer who opened a
  * session and barely sang, and the session time made them look active when
@@ -246,7 +260,7 @@ async function getLiveUsage() {
       FROM capture_events e
       JOIN capture_sessions s ON s.id = e.session_id
       JOIN users u            ON u.id = s.user_id
-     WHERE s.mode = 'live'
+     WHERE e.playlist_id IS NULL
        AND e.created_at > NOW() - INTERVAL '7 days'
      GROUP BY u.id, u.username
      ORDER BY MAX(e.created_at) DESC

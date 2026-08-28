@@ -32,12 +32,78 @@ function BookmarkInline({ color, size = 14 }) {
 }
 
 /**
- * Renders text with inline bookmark icons.
- * Replaces {colorName} or {#RRGGBB} with a colored bookmark SVG.
+ * An image written as ![](/file.png).
  *
- * Example: "My {red} playlist {blue}" renders as "My 🔖 playlist 🔖"
+ * Only same-origin paths are drawn. A src pointing at another host would let
+ * whoever writes the text pull in a picture nobody here controls, and would
+ * report every reader's visit to that host — so anything else is left as the
+ * literal text that was typed, which is visibly wrong rather than silently
+ * doing something unintended.
+ */
+function isLocalImage(src) {
+  return typeof src === "string" && /^\/[\w./-]+\.(png|jpe?g|gif|webp|svg)$/i.test(src);
+}
+
+/**
+ * Renders text with inline bookmark icons and images.
+ *
+ * Bookmarks: {colorName} or {#RRGGBB} become a coloured bookmark SVG.
+ *   "My {red} playlist" renders as "My 🔖 playlist"
+ * Images: ![](/file.png) becomes an <img>, on its own line.
+ *
+ * Images are matched first: their alt text could otherwise contain something
+ * that looks like a bookmark and be eaten before the image is recognised.
  */
 export default function RichText({ text, className }) {
+  if (!text) return null;
+
+  // Split on images first, then run the bookmark pass over the text between
+  // them — the two syntaxes are independent and must not consume each other.
+  const imageRe = /!\[([^\]]*)\]\(([^)\s]+)\)/g;
+  const blocks = [];
+  let imgLast = 0;
+  let imgMatch;
+  while ((imgMatch = imageRe.exec(text)) !== null) {
+    if (imgMatch.index > imgLast) {
+      blocks.push({ type: "text", value: text.slice(imgLast, imgMatch.index) });
+    }
+    blocks.push({
+      type: isLocalImage(imgMatch[2]) ? "image" : "text",
+      value: isLocalImage(imgMatch[2]) ? imgMatch[2] : imgMatch[0],
+      alt: imgMatch[1] || "",
+    });
+    imgLast = imgMatch.index + imgMatch[0].length;
+  }
+  if (imgLast < text.length) blocks.push({ type: "text", value: text.slice(imgLast) });
+
+  if (blocks.some((b) => b.type === "image")) {
+    return (
+      <span className={className}>
+        {blocks.map((b, i) =>
+          b.type === "image" ? (
+            <img
+              key={i}
+              src={b.value}
+              alt={b.alt}
+              // Block, so an image sits on its own line rather than wedged into
+              // a sentence, and capped so a large upload cannot run off a phone
+              // or push the announcement below the fold.
+              className="my-2 block h-auto max-w-[240px] rounded-lg border border-border"
+              loading="lazy"
+            />
+          ) : (
+            <RichTextInline key={i} text={b.value} />
+          )
+        )}
+      </span>
+    );
+  }
+
+  return <RichTextInline text={text} className={className} />;
+}
+
+/** The bookmark pass — the original behaviour, unchanged. */
+function RichTextInline({ text, className }) {
   if (!text) return null;
 
   const parts = [];

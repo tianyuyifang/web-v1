@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { updatesAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -21,6 +21,22 @@ function categoryLabel(t, category) {
 
 const EMPTY_FORM = { title: "", body: "", category: "ANNOUNCEMENT" };
 
+/**
+ * Pictures an announcement can use, listed rather than discovered: the browser
+ * cannot read a server directory, so this is the catalogue.
+ *
+ * The files live in frontend/public and ship with the code — no upload path,
+ * no separate backup, nothing to expire. Adding one means dropping the file in
+ * that folder and adding a line here.
+ *
+ * The buttons exist so nobody has to remember a filename or type the ![]()
+ * wrapper correctly; a typo there renders as literal text.
+ */
+const ANNOUNCEMENT_IMAGES = [
+  { src: "/user_guide.jpg", label: "使用指南" },
+  { src: "/playlist_menu.jpg", label: "歌单价目表" },
+];
+
 export default function UpdatesPanel() {
   const { t } = useLanguage();
   const [updates, setUpdates] = useState([]);
@@ -28,6 +44,7 @@ export default function UpdatesPanel() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const bodyRef = useRef(null);
   const [editingId, setEditingId] = useState(null); // null = create mode
   const [deleteTarget, setDeleteTarget] = useState(null);
 
@@ -98,6 +115,36 @@ export default function UpdatesPanel() {
     }
   }
 
+  /**
+   * Drops the image markup at the cursor, on its own line.
+   *
+   * Appending to the end would be simpler but wrong: an image usually belongs
+   * after a particular sentence, and moving it afterwards means editing raw
+   * markup by hand — exactly what these buttons exist to avoid.
+   */
+  const insertImage = useCallback((src) => {
+    const el = bodyRef.current;
+    const snippet = `![](${src})`;
+    setForm((f) => {
+      const body = f.body || "";
+      const at = el && typeof el.selectionStart === "number" ? el.selectionStart : body.length;
+      const before = body.slice(0, at);
+      const after = body.slice(at);
+      // Keep it on its own line without piling up blank lines when the cursor
+      // already sits at the start of one.
+      const lead = before && !before.endsWith("\n") ? "\n" : "";
+      const tail = after && !after.startsWith("\n") ? "\n" : "";
+      const next = `${before}${lead}${snippet}${tail}${after}`;
+      // Put the caret after what was inserted, so typing continues where the
+      // user was rather than jumping to the end of the box.
+      const caret = (before + lead + snippet).length;
+      requestAnimationFrame(() => {
+        if (el) { el.focus(); el.setSelectionRange(caret, caret); }
+      });
+      return { ...f, body: next };
+    });
+  }, []);
+
   return (
     <div>
       {error && (
@@ -121,12 +168,31 @@ export default function UpdatesPanel() {
         <div>
           <label className="mb-1 block text-xs text-muted">{t("updateFormBody")}</label>
           <textarea
+            ref={bodyRef}
             value={form.body}
             onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
             rows={4}
             className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-theme focus:outline-none focus:ring-2 focus:ring-primary"
             required
           />
+          {/* Thumbnails rather than names alone: with two QR codes that look
+              alike at a glance, the picture is the only quick way to tell
+              which one is about to be inserted. */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">插入图片：</span>
+            {ANNOUNCEMENT_IMAGES.map((img) => (
+              <button
+                key={img.src}
+                type="button"
+                onClick={() => insertImage(img.src)}
+                title={`插入 ${img.label}`}
+                className="flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs text-theme transition-colors hover:border-primary hover:bg-surface-hover"
+              >
+                <img src={img.src} alt="" className="h-6 w-6 rounded object-cover" />
+                {img.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div>

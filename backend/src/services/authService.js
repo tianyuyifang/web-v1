@@ -7,6 +7,7 @@ const { UnauthorizedError, ValidationError } = require('../utils/errors');
 const { deriveStatus } = require('../utils/billing');
 const { normalizeSessions, addSession, hasSession } = require('../utils/sessions');
 const { resolveSignupPromo } = require('./settingsService');
+const { ALL_ADD_ONS } = require('../utils/entitlements');
 
 const SALT_ROUNDS = 10;
 
@@ -55,6 +56,26 @@ async function register({ username, password }) {
       passwordHash,
       role: promo.active ? 'MEMBER' : 'GUEST',
       expiresAt: promo.active ? promo.expiresAt : null,
+      /**
+       * 唱卡 and 自动打标 from the first login, promotion or not.
+       *
+       * They were the reason to sign up and the one thing a new account could
+       * not do: entitlements defaulted to empty, so every account needed an
+       * admin to open the billing page and grant it by hand. Measured on the
+       * live data, 117 of 122 accounts had been granted it that way, and the
+       * newest one waited 457 seconds between registering and being able to
+       * use the site — the grant was effectively universal, just delayed and
+       * manual.
+       *
+       * ALL_ADD_ONS rather than the string: the two features share one
+       * entitlement today, and a third would otherwise have to be remembered
+       * here as well.
+       *
+       * This grants the feature, not the tier. A guest still holds a guest's
+       * limits — three playlists, no public lists — and an admin can still
+       * revoke this per account.
+       */
+      entitlements: [...ALL_ADD_ONS],
     },
     select: { id: true, username: true, role: true, preferences: true },
   });

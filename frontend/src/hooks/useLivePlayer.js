@@ -86,8 +86,15 @@ export default function useLivePlayer() {
   const vocalsSrcRef = useRef(null);
   const vocalsOnRef = useRef(false);
   const wantVocalsRef = useRef(false);
-  /** Set when a decode finishes and a vocals request is waiting on it. */
-  const pendingVocalsRef = useRef(false);
+  /**
+   * startVocalsOnly, reachable from warmBuffer above it.
+   *
+   * warmBuffer is what finishes the decode, and finishing the decode is the
+   * moment a waiting vocals request can finally be honoured — but the function
+   * that does it is defined below and closes over warmBuffer's siblings. A ref
+   * bridges the two without reordering the file or adding a dependency cycle.
+   */
+  const startVocalsOnlyRef = useRef(null);
   const rafRef = useRef(0);
 
   /**
@@ -190,12 +197,32 @@ export default function useLivePlayer() {
       bufferRef.current = buf;
       if (!duration) setDuration(buf.duration);
       setCanShift(true);
-      // The wait is over for a vocals request made while this was decoding.
+      // The wait is over for a vocals request made while this was decoding,
+      // which is the ordinary case rather than a corner: the page asks for
+      // vocals immediately after load(), and the decode lands a second or two
+      // later, so this is the only place that request can be honoured.
+      //
+      // Started here, not flagged for someone else to start. An earlier
+      // version set a pending flag that nothing ever read, so ticking 只听人声
+      // and opening a card played the full mix -- and shifting the key looked
+      // like the fix, because SoundTouch reads channels 0 and 1 and gets the
+      // voice by accident.
+      //
       // Nothing to do if a shift is already playing: that path takes channels
       // 0 and 1 by itself.
       if (wantVocalsRef.current && !shiftingRef.current && !vocalsOnRef.current
         && elRef.current && !elRef.current.paused) {
-        pendingVocalsRef.current = true;
+        const at = elRef.current.currentTime;
+        elRef.current.pause();
+        // Through a ref because startVocalsOnly is defined below this and
+        // closes over it; naming it directly would be a use-before-define.
+        const ok = await startVocalsOnlyRef.current?.(at);
+        if (!ok) {
+          // Falling back rather than leaving silence: a failed graph must not
+          // cost the singer the song.
+          elRef.current.currentTime = at;
+          await elRef.current.play().catch(() => {});
+        }
       }
     } catch {
       // CORS refused, or a codec the browser will not decode. Plain playback
@@ -262,6 +289,10 @@ export default function useLivePlayer() {
     startedAtRef.current = ctx.currentTime;
     return true;
   }, [teardownGraph]);
+
+  // Published for warmBuffer, which finishes the decode a second or two after
+  // the page asked for vocals and is the only place that request can be met.
+  startVocalsOnlyRef.current = startVocalsOnly;
 
   /** Build the SoundTouch graph and start it at `from`. */
   const startShifted = useCallback(async (from) => {
@@ -548,9 +579,6 @@ export default function useLivePlayer() {
     }
     decodeForRef.current = null;
     bufferRef.current = null;
-    // Cleared with the rest: a request left standing would have the next card
-    // start in vocals mode without the page having asked for it.
-    pendingVocalsRef.current = false;
     setCanShift(false);
     setIsPlaying(false);
     setCurrent(0);

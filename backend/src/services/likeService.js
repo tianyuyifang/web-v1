@@ -19,6 +19,24 @@ async function canToggleLike(userId, playlistId) {
 }
 
 /**
+ * Note that a song was tagged, for the admin usage view.
+ *
+ * Only the act of tagging. Untagging writes nothing and cancels nothing: a
+ * singer marks the songs they have sung and clears the playlist when the night
+ * ends, so counting the surviving likes measured how recently someone tidied
+ * up rather than how much they played.
+ *
+ * Deliberately not awaited and deliberately silent. This is bookkeeping for a
+ * page nobody is looking at right now, and a singer mid-game must never have a
+ * tag fail — or wait — because of it.
+ */
+function noteTag(userId, playlistId, clipId, auto) {
+  prisma.tagEvent
+    .create({ data: { userId, playlistId, clipId, auto } })
+    .catch(() => { /* usage stats are not worth failing a tag over */ });
+}
+
+/**
  * Shared toggle: one like per (playlistId, clipId).
  * Anyone with non-public access can toggle it on or off for everyone.
  */
@@ -38,6 +56,8 @@ async function toggleLike(userId, playlistId, clipId) {
     await prisma.like.create({
       data: { userId, playlistId, clipId },
     });
+    // On, by hand. The matching delete above records nothing on purpose.
+    noteTag(userId, playlistId, clipId, false);
     liked = true;
   }
 
@@ -78,6 +98,9 @@ async function ensureLiked(userId, playlistId, clipId) {
     if (err.code === 'P2002') return { liked: true, alreadyLiked: true };
     throw err;
   }
+  // On, automatically. Only this branch: the early returns above found the
+  // clip already marked, and nothing went from unmarked to marked there.
+  noteTag(userId, playlistId, clipId, true);
 
   broadcast(playlistId, 'like-update', { clipId, liked: true });
   return { liked: true, alreadyLiked: false };

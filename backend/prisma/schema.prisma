@@ -61,6 +61,7 @@ model User {
   playlists        Playlist[]
   clips            Clip[]
   likes            Like[]
+  tagEvents        TagEvent[]
   captureSessions  CaptureSession[]
   sharedPlaylists  PlaylistShare[]
   copyPermissions  PlaylistCopyPermission[]
@@ -247,6 +248,40 @@ model Like {
   @@unique([playlistId, clipId])
   @@index([playlistId])
   @@map("likes")
+}
+
+/// One act of tagging a song, kept whatever happens to the like afterwards.
+///
+/// `likes` answers "is this clip marked right now", which is what a playlist
+/// renders from — so unliking deletes the row and clearing a playlist deletes
+/// all of them. That makes it useless for "how much is this person using the
+/// site": one singer had tagged 3,704 songs in ten days and had 188 likes left,
+/// because tagging a set and clearing it afterwards is the normal way to play.
+/// The people using it most were the ones whose history vanished fastest.
+///
+/// So this is an append-only log of the act. Tagging the same song again the
+/// next night writes another row on purpose: it happened twice.
+///
+/// No foreign key to clip or playlist. Both are on purpose: deleting a song
+/// must not erase the fact that someone once tagged it, and the ids are kept
+/// only so a future question ("which songs get tagged most") stays answerable.
+/// userId does cascade — a deleted account should take its history with it.
+model TagEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  playlistId String   @map("playlist_id") @db.Uuid
+  clipId     String   @map("clip_id") @db.Uuid
+  /// Whether 自动打标 wrote this or the singer pressed it. Both count as
+  /// tagging; the split is worth keeping because it says which way they work.
+  auto       Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The admin view asks "who tagged, and when", newest first, per user.
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("tag_events")
 }
 
 model BandwidthLog {

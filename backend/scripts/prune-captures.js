@@ -99,6 +99,24 @@ async function main() {
   console.log(`\n\n删除 ${removed} 条，剩余 ${await prisma.captureEvent.count()} 条。`);
   console.log(`未配置队列 ${queueBefore[0].n} → ${queueAfter[0].n} 首`
     + `${queueBefore[0].n === queueAfter[0].n ? '（未变）' : ''}`);
+
+  // Tagging history, on the same clock and in the same job -- a second cron
+  // for one delete would be a second thing to remember. The admin view reads
+  // thirty days, so anything older answers no question anyone asks.
+  //
+  // No exception for anything: unlike a pending capture, a tag is a completed
+  // act with no decision waiting on it.
+  const tagStale = await prisma.tagEvent.count({ where: { createdAt: { lt: cutoff } } });
+  if (tagStale) {
+    if (APPLY) {
+      const r = await prisma.tagEvent.deleteMany({ where: { createdAt: { lt: cutoff } } });
+      console.log(`打标记录：删除 ${r.count} 条，剩余 ${await prisma.tagEvent.count()} 条。`);
+    } else {
+      console.log(`打标记录：将删除 ${tagStale} 条。`);
+    }
+  } else {
+    console.log(`打标记录：无需清理（共 ${await prisma.tagEvent.count()} 条）。`);
+  }
 }
 
 main()

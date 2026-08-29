@@ -275,57 +275,55 @@ async function getLiveUsage() {
 /**
  * Who has been tagging songs into playlists, by hand or through 自动打标.
  *
- * Counted from likes rather than from capture events, because capture events
- * only exist for people who ran 自动打标 at all. Measured over ten days, six of
- * the fourteen people tagging songs had never started it once -- they listen
- * and tag by hand -- so a capture-based count would have shown less than half
- * of the people actually using the site.
+ * Read from tag_events, an append-only log of the act, not from `likes`.
+ * `likes` records whether a clip is marked right now, which is what a playlist
+ * renders from -- so untagging deletes the row and clearing a playlist deletes
+ * all of them. Counting what survived measured how recently someone tidied up
+ * rather than how much they played: one singer had tagged 3,704 songs in ten
+ * days and had 188 likes left, and this view showed their last activity as
+ * five days earlier while they were tagging that same afternoon. The people
+ * playing most were the ones whose history vanished fastest.
  *
- * A like is written the same way from both routes: the manual button calls
- * toggleLike and 自动打标 calls ensureLiked, and both do
- * `like.create({ userId, playlistId, clipId })`. The rows are indistinguishable
- * afterwards, which is exactly what makes one count cover both.
+ * Tagging the same song on two nights counts twice, on purpose -- it happened
+ * twice. Untagging counts for nothing and cancels nothing.
  *
- * Own vs shared is decided by comparing the liker against the playlist's owner.
- * Both are worth seeing: tagging in someone else's shared playlist is how a
- * guest participates, and a column that lumped them together would hide that.
+ * Own vs shared compares the tagger against the playlist's owner. Tagging in
+ * someone else's shared playlist is how a guest takes part, and lumping the
+ * two together would hide that.
  *
- * The 自动打标 column says whether this person has run it at all in the window,
- * not whether some setting is on -- there is no such setting. Which songs get
- * liked automatically is decided per song by the match itself: an unambiguous
- * hit in the current playlist is liked on arrival, anything else waits for a
- * human. So the honest question is "does this person use it", and that is what
- * the column answers.
+ * The 自动打标 column says whether any of these tags were written
+ * automatically, not whether a setting is on -- there is no such setting.
+ * Which songs are tagged automatically is decided per song by the match: an
+ * unambiguous hit in the current playlist is tagged on arrival, anything else
+ * waits for a human.
  *
- * Ten days, and unlike the 唱卡 view this is not constrained by retention:
- * likes are never pruned. The capture flag beside it is, but only after thirty
- * days, so a ten-day window reads it safely.
+ * Thirty days, matching what the nightly prune keeps. The table is bounded by
+ * that rather than growing: measured at 689 tags a day, it settles near 20,000
+ * rows and about 3MB.
  */
 async function getTaggingUsage() {
   const rows = await prisma.$queryRaw`
-    SELECT u.id                                            AS "userId",
+    SELECT u.id                                              AS "userId",
            u.username,
-           MAX(l.created_at)                               AS "lastTagAt",
-           COUNT(*)::int                                   AS "total",
-           COUNT(*) FILTER (WHERE l.user_id = pl.user_id)::int  AS "ownCount",
-           COUNT(*) FILTER (WHERE l.user_id <> pl.user_id)::int AS "sharedCount",
-           EXISTS (
-             SELECT 1
-               FROM capture_events e
-               JOIN capture_sessions s ON s.id = e.session_id
-              WHERE s.user_id = u.id
-                AND e.playlist_id IS NOT NULL
-                AND e.created_at > NOW() - INTERVAL '10 days'
-           )                                               AS "usedCapture"
-      FROM likes l
-      JOIN users u      ON u.id = l.user_id
-      JOIN playlists pl ON pl.id = l.playlist_id
-     WHERE l.created_at > NOW() - INTERVAL '10 days'
+           MAX(t.created_at)                                 AS "lastTagAt",
+           COUNT(*)::int                                     AS "total",
+           COUNT(*) FILTER (WHERE t.user_id = pl.user_id)::int  AS "ownCount",
+           COUNT(*) FILTER (WHERE t.user_id <> pl.user_id)::int AS "sharedCount",
+           -- Whether they let 自动打标 do it, rather than a setting they turned
+           -- on: which songs are tagged automatically is decided per song by
+           -- the match, so the honest question is "does this person use it".
+           BOOL_OR(t.auto)                                   AS "usedCapture"
+      FROM tag_events t
+      JOIN users u      ON u.id = t.user_id
+      -- Left, not inner: a playlist can be deleted after the tagging happened,
+      -- and losing the playlist must not lose the fact that they were playing.
+      LEFT JOIN playlists pl ON pl.id = t.playlist_id
+     WHERE t.created_at > NOW() - INTERVAL '30 days'
      GROUP BY u.id, u.username
-     ORDER BY MAX(l.created_at) DESC
+     ORDER BY MAX(t.created_at) DESC
   `;
 
-  return { days: 10, users: rows };
+  return { days: 30, users: rows };
 }
 
 /**

@@ -609,4 +609,5 @@ export default {
   payOverdue: "逾期",
   logout: "退出登录",
   expiredBanner: "您的订阅已过期，请续费。",
+  expiringBanner: "您的订阅还有 {days} 天到期，请及时续费。",
 };

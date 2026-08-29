@@ -72,11 +72,27 @@ export default function AdminPage() {
   const pending = users.filter((u) => u.role === "PENDING" && !u.demotedAt);
   const revoked = users.filter((u) => u.role === "PENDING" && u.demotedAt);
   const guests = users.filter((u) => u.role === "GUEST");
-  const members = users.filter((u) => u.role === "MEMBER");
+  /**
+   * Past their paid-until date.
+   *
+   * Derived, never stored. Expiry changes nothing about what the account can
+   * do — no job downgrades anyone and no route checks the date — so writing a
+   * status would create a second source of truth that has to be kept in step
+   * with the date it was derived from. Computed here, extending someone's date
+   * moves them back to 成员 on the next load with nothing to undo.
+   *
+   * A member with no date set never expires, which is how an account that was
+   * never on a monthly footing is meant to behave.
+   */
+  const isExpired = (u) => u.expiresAt && new Date(u.expiresAt) <= new Date();
+
+  const members = users.filter((u) => u.role === "MEMBER" && !isExpired(u));
+  const expired = users.filter((u) => u.role === "MEMBER" && isExpired(u));
   const admins = users.filter((u) => u.role === "ADMIN");
 
   const tabs = [
     { key: "members", label: t("members"), dot: "bg-green-400", count: members.length },
+    { key: "expired", label: t("statusExpired"), dot: "bg-slate-400", count: expired.length },
     { key: "guests", label: t("guests"), dot: "bg-sky-400", count: guests.length },
     { key: "pending", label: t("pendingApproval"), dot: "bg-yellow-400", count: pending.length },
     { key: "revoked", label: t("revoked"), dot: "bg-orange-400", count: revoked.length },
@@ -184,6 +200,23 @@ export default function AdminPage() {
             <span className="ml-1 text-sm font-normal text-muted">({members.length})</span>
           </h2>
           <UserTable users={members} onRefresh={fetchUsers} controls />
+        </section>
+      )}
+
+      {activeTab === "expired" && (
+        <section className="rounded-xl border border-border bg-surface p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
+            <span className="inline-block h-2 w-2 rounded-full bg-slate-400" />
+            {t("statusExpired")}
+            <span className="ml-1 text-sm font-normal text-muted">({expired.length})</span>
+          </h2>
+          {/* Still members, and still able to do everything a member can —
+              expiry is a billing fact here, not a restriction. The same
+              controls as 成员 because extending a date is the usual next step. */}
+          <p className="mb-3 text-xs text-muted">
+            这些账号已过期，但功能不受影响。续期后会自动回到「{t("members")}」。
+          </p>
+          <UserTable users={expired} onRefresh={fetchUsers} controls />
         </section>
       )}
 

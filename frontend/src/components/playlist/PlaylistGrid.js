@@ -443,6 +443,19 @@ export default function PlaylistGrid({
 
   const colCount = columns || 3;
 
+  // Above the early returns below, not beside the JSX that uses it: this is a
+  // hook, and a hook skipped on some renders and not others changes the hook
+  // count between renders, which React rejects outright. Sitting down there it
+  // crashed the whole page whenever a filter matched nothing or batch mode
+  // opened — both of which return before reaching it.
+  // One SortableContext over every clip in the playlist, not one per section:
+  // the sections are a visual grouping, and a drag has to be able to cross them
+  // — which is what makes a clip change section at all.
+  const sortableIds = useMemo(
+    () => playlist.clips.map((c) => c.clipId),
+    [playlist.clips]
+  );
+
   if (filteredClips.length === 0) {
     return <p className="py-12 text-center text-sm text-muted">{t("noClipsFound")}</p>;
   }
@@ -705,14 +718,6 @@ export default function PlaylistGrid({
   };
 
   // Full card grid view with sections
-  // One SortableContext over every clip in the playlist, not one per section:
-  // the sections are a visual grouping, and a drag has to be able to cross them
-  // — which is what makes a clip change section at all.
-  const sortableIds = useMemo(
-    () => playlist.clips.map((c) => c.clipId),
-    [playlist.clips]
-  );
-
   const sections = (
     <>
       {sectionGroups.map((section, si) => (

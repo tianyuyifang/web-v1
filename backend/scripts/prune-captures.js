@@ -67,8 +67,26 @@ async function main() {
   console.log(`  超期但待处理   ${staleButPending}  ← 保留，等人工决定`);
   console.log(`  未配置队列     ${queueBefore[0].n} 首`);
 
+  // Tagging history, before the early returns below: those exit when there are
+  // no stale captures, and this table fills and empties on its own schedule.
+  // Putting it after them meant a night with nothing to prune here also
+  // skipped it entirely -- caught by planting a 40-day-old row and watching it
+  // survive.
+  //
+  // No exception for anything, unlike a pending capture: a tag is a completed
+  // act with no decision waiting on it.
+  const tagStale = await prisma.tagEvent.count({ where: { createdAt: { lt: cutoff } } });
+  if (!tagStale) {
+    console.log(`\n打标记录：无需清理（共 ${await prisma.tagEvent.count()} 条）。`);
+  } else if (!APPLY) {
+    console.log(`\n打标记录：将删除 ${tagStale} 条。`);
+  } else {
+    const r = await prisma.tagEvent.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    console.log(`\n打标记录：删除 ${r.count} 条，剩余 ${await prisma.tagEvent.count()} 条。`);
+  }
+
   if (!stale) {
-    console.log('\n没有要删除的。');
+    console.log('\n没有要删除的（捕获记录）。');
     return;
   }
   if (!APPLY) {
@@ -100,23 +118,6 @@ async function main() {
   console.log(`未配置队列 ${queueBefore[0].n} → ${queueAfter[0].n} 首`
     + `${queueBefore[0].n === queueAfter[0].n ? '（未变）' : ''}`);
 
-  // Tagging history, on the same clock and in the same job -- a second cron
-  // for one delete would be a second thing to remember. The admin view reads
-  // thirty days, so anything older answers no question anyone asks.
-  //
-  // No exception for anything: unlike a pending capture, a tag is a completed
-  // act with no decision waiting on it.
-  const tagStale = await prisma.tagEvent.count({ where: { createdAt: { lt: cutoff } } });
-  if (tagStale) {
-    if (APPLY) {
-      const r = await prisma.tagEvent.deleteMany({ where: { createdAt: { lt: cutoff } } });
-      console.log(`打标记录：删除 ${r.count} 条，剩余 ${await prisma.tagEvent.count()} 条。`);
-    } else {
-      console.log(`打标记录：将删除 ${tagStale} 条。`);
-    }
-  } else {
-    console.log(`打标记录：无需清理（共 ${await prisma.tagEvent.count()} 条）。`);
-  }
 }
 
 main()

@@ -379,7 +379,28 @@ function shapeCredential(data, knownLoginType = null) {
  * the shape is chosen from the stored login type rather than fixed.
  */
 function refreshParams(saved) {
-  const loginType = saved.loginType || (String(saved.musicKey || '').startsWith('W_X') ? 1 : 2);
+  const stored = saved.loginType || (String(saved.musicKey || '').startsWith('W_X') ? 1 : 2);
+
+  /**
+   * App-QR credentials renew as type 2, not as the type they logged in with.
+   *
+   * 6 is correct at login and refused at renewal: the platform answers 104400
+   * to every renewal announcing tmeLoginType 6, which read as "this login
+   * cannot be renewed" and sent users back to the QR code every three days.
+   *
+   * Established by changing one thing at a time against the live platform. On
+   * a credential that renews successfully, dropping refresh_token still
+   * succeeded (so the missing token was never the cause) while switching only
+   * the announced type to 6 failed; on an app-QR credential, type 1 was
+   * refused with 1000, type 6 with 104400, and type 2 returned a fresh
+   * musickey. Re-tested across every stored app-QR credential: 14 of 17
+   * renewed, the other three being long dead from users who stopped
+   * connecting.
+   *
+   * Only the renewal is remapped. Login still announces 6, which is what the
+   * app-QR exchange requires.
+   */
+  const loginType = stored === 6 ? 2 : stored;
 
   const common = {
     openid: saved.openid,
@@ -415,10 +436,14 @@ function refreshParams(saved) {
     };
   } else {
     /**
-     * Anything else — app QR is type 6 — sends the union of both shapes, which
-     * is what the reference client's default branch does. Sending the QQ shape
-     * here instead would also announce tmeLoginType 2, and the platform judges
-     * the credential by that.
+     * A login type we have not seen. App QR no longer arrives here — it is
+     * remapped to 2 above, which is the shape the platform actually accepts
+     * for it — so this is a genuine fallback rather than a case we rely on.
+     *
+     * It sends the union of both shapes, following the reference client's
+     * default branch. Worth knowing if it ever fires: the union was what app
+     * QR used to send, and the platform refused it, so a new type landing here
+     * should be measured rather than assumed to work.
      */
     param = {
       ...common,

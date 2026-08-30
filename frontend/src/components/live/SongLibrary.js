@@ -218,7 +218,7 @@ export default function SongLibrary() {
 
       {searched && !rows.length && !loading ? (
         <div className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">
-          没有匹配的结果。
+          没有匹配的结果。只有被Q你一下目前为止识别到过的唱卡才会出现在这里，请过段时间再来试试吧。
         </div>
       ) : null}
 

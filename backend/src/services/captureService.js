@@ -822,6 +822,26 @@ function cleanBatchId(raw) {
   return trimmed;
 }
 
+/**
+ * The singer's stored key, tempo, note and colours for one recording, carried
+ * on a pushed card the same way the feed carries them on fetched ones. Until
+ * this, a song recognised live arrived bare and its memory only surfaced
+ * after a reload -- the page merges `card.prefs` on arrival but nothing put
+ * it there. Failure degrades to "nothing remembered", exactly like the feed.
+ */
+async function prefsFor(userId, mapping) {
+  if (!mapping || !mapping.source || !mapping.externalId) return null;
+  try {
+    const map = await songPrefs.getMany(userId, [
+      { source: mapping.source, externalId: mapping.externalId },
+    ]);
+    return map.get(`${mapping.source}:${mapping.externalId}`) || null;
+  } catch (err) {
+    console.warn('[capture] song preferences unavailable for this card:', err.message);
+    return null;
+  }
+}
+
 async function ingestLive({ session, rawText, lyric, stage, batchId }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
@@ -939,6 +959,9 @@ async function ingestLive({ session, rawText, lyric, stage, batchId }) {
         stage: from,
         lyric: words,
         mapping: updated.candidates || null,
+        // The page replaces the card wholesale, so the marks ride along here
+        // too or a lyric update would wipe them off a card being looked at.
+        prefs: await prefsFor(session.userId, updated.candidates),
         createdAt: updated.createdAt,
       };
       broadcast(liveChannel(session.userId), 'live-card', payload);
@@ -1001,6 +1024,7 @@ async function ingestLive({ session, rawText, lyric, stage, batchId }) {
     lyric: words,
     outcome: event.outcome,
     mapping: resolved,
+    prefs: await prefsFor(session.userId, resolved),
     createdAt: event.createdAt,
   };
   broadcast(liveChannel(session.userId), 'live-card', payload);

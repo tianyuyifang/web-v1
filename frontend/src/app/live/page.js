@@ -978,15 +978,7 @@ export default function LivePage() {
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-medium">唱卡</h1>
-          {/* Temporary release notice, standing in for the usual one-line
-              subtitle until v3.3 adoption is broad — then the subtitle
-              returns. Bordered a shade brighter than the batch cards so it
-              reads as a notice without shouting. */}
-          <p className="mt-1.5 rounded-lg border border-border/80 bg-surface/60 px-3 py-2 text-xs leading-relaxed text-theme/90">
-            📢 打标工具更新（v3.3）：玩游戏的安卓手机可以边玩边识别了，不再需要第二台设备挂房间。到
-            <a href="/tools" className="mx-1 text-accent underline underline-offset-2">工具页</a>
-            下载最新版本，覆盖安装后重开一次无障碍开关即可。有问题请联系网站管理，也可以加入微信群获取最新信息。
-          </p>
+          <p className="text-xs text-muted">游戏里出现的歌会自动出现在这里，点开即可播放。</p>
         </div>
         {/* Starting and stopping belong to the cards, so the button follows
             them. Leaving it visible over the library would offer to start a
@@ -1061,8 +1053,14 @@ export default function LivePage() {
       )}
 
       {tab !== "cards" ? null : !session ? (
-        <div className="rounded border border-border bg-surface px-4 py-10 text-center text-sm text-muted">
-          点「开始」后，在客户端里输入配对码即可。
+        /* Temporary v3.3 release notice, in place of the pairing hint — this
+           block only exists while no run is on, so pressing 开始 clears it
+           and play is never interrupted. The hint returns once adoption is
+           broad (users all know the pairing steps by now). */
+        <div className="rounded border border-border bg-surface px-4 py-6 text-left text-sm leading-relaxed text-theme/90">
+          📢 打标工具更新（v3.3）：玩游戏的安卓手机可以边玩边识别了，不再需要第二台设备挂房间。到
+          <a href="/tools" className="mx-1 text-accent underline underline-offset-2">工具页</a>
+          下载最新版本，覆盖安装后重开一次无障碍开关即可。有问题请联系网站管理，也可以加入微信群获取最新信息。
         </div>
       ) : !batches.length ? (
         <div className="rounded border border-border bg-surface px-4 py-10 text-center text-sm text-muted">

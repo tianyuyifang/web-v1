@@ -583,7 +583,7 @@ export default {
   // 联系方式。改这里即可，三处引用（定价页、登录页、加订功能提示）
   // 都走同一个 ContactAdmins 组件。
   contactWechatLabel: "微信",
-  contactWechat1: "YY：wyy693087070",
+  contactWechat1: "YY：coffeezxb",
   contactWechat2: "CC：yinyuemeirendong",
   // 图标已经表明是哪个 app，所以正文不再重复「Qni：」前缀。
   contactQni: "搜索家族「Q你一下」",

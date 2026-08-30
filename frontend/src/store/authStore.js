@@ -16,8 +16,13 @@ const useAuthStore = create((set) => ({
     try {
       const res = await authAPI.me();
       set({ user: res.data.user, loading: false });
-    } catch {
-      clearToken();
+    } catch (err) {
+      // Only a verdict from the server means the token is bad. A boot during
+      // a backend restart or on a flaky mobile connection lands here too, and
+      // clearing the token for those turned every hiccup into a forced
+      // re-login; keeping it costs nothing — the next load simply tries again.
+      const status = err.response?.status;
+      if (status === 401 || status === 403) clearToken();
       set({ user: null, loading: false });
     }
   },

@@ -42,7 +42,11 @@ function maybeRefreshToken() {
   if (remainingMs < -60 * 60 * 1000) return;
 
   isRefreshing = true;
-  api.post("/auth/refresh", null, { timeout: 10000 })
+  // {} and not null: axios serialises null to the literal body "null", which
+  // the backend's strict JSON parser rejects with a 400 before the route ever
+  // runs. That single character silently broke refresh from the day it
+  // shipped, and every login hard-expired at 7 days.
+  api.post("/auth/refresh", {}, { timeout: 10000 })
     .then((res) => {
       if (res.data?.token) {
         setToken(res.data.token);

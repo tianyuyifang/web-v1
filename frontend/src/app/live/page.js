@@ -1125,13 +1125,34 @@ export default function LivePage() {
                                   </>
                                 )}
                               </span>
+                              {/* On a phone the marks get a line of their own
+                                  under the artist: inline they and the title
+                                  fought over ~230px and the note always won,
+                                  leaving the title an ellipsis. Both matter,
+                                  so neither yields — the row grows instead.
+                                  Rendered only when marks exist, so unmarked
+                                  cards keep exactly today's height. */}
+                              {mapped && (prefs[prefKey(card.mapping)]?.note
+                                || prefs[prefKey(card.mapping)]?.colorTag) ? (
+                                <span className="mt-0.5 flex min-w-0 items-center gap-1.5 sm:hidden">
+                                  <SongPrefMarks prefs={prefs[prefKey(card.mapping)]} />
+                                </span>
+                              ) : null}
                             </span>
                             {/* The singer's own marks, before the status
                                 badge: a note and colours are theirs, and the
                                 badge is the site's judgement of the recording.
                                 Renders nothing when the song has never been
-                                marked, so an untouched card is unchanged. */}
-                            {mapped ? <SongPrefMarks prefs={prefs[prefKey(card.mapping)]} /> : null}
+                                marked, so an untouched card is unchanged.
+                                Desktop only — the phone shows them on their
+                                own line above, where both they and the title
+                                fit whole. `contents` keeps them direct flex
+                                children of the row, exactly as before. */}
+                            {mapped ? (
+                              <span className="hidden sm:contents">
+                                <SongPrefMarks prefs={prefs[prefKey(card.mapping)]} />
+                              </span>
+                            ) : null}
                             {/* An unmapped song is the ordinary way a gap shows
                                 up, and an unconfirmed one still plays — both say
                                 what they are rather than looking like failures. */}

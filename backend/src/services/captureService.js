@@ -25,31 +25,29 @@ const MAX_LYRIC_LENGTH = 2000;
  * How far back a 唱卡 capture looks for the row it belongs to.
  *
  * A song sits on screen for seconds and is read many times, so captures have
- * to be deduplicated. What they must NOT be deduplicated against is a previous
- * round: the singer looks at the round in front of them, and a song offered
- * again there has to appear there. Sending them back through earlier rounds to
- * find it is the failure this window is tuned to avoid.
+ * to be deduplicated; the window decides how far back "the same showing"
+ * reaches.
  *
- * Deliberately the same 60s the page groups by (ROUND_IDLE_MS in live/page.js).
- * That page starts a new group when a card arrives more than 60s after the last
- * one, so matching the two makes the two questions the same question: anything
- * this window merges is inside the group the singer is looking at, and anything
- * it lets through is a group of its own. Any other value puts them out of step
- * — at two minutes, a song re-offered 90s later was swallowed although the page
- * had already opened a new group for it.
+ * Two minutes, by decision rather than by derivation. It was aligned to the
+ * page's 60s grouping for a while so that "merged" and "same on-screen group"
+ * meant the same thing — but a song re-offered between 60s and 2min then
+ * opened a second card, and repeats that close together turned out to be rare
+ * enough that the extra cards outnumbered the saves. When a repeat inside two
+ * minutes IS merged, its card sits in the immediately previous group, one
+ * fold away — a cheap find, against duplicate cards appearing routinely.
  *
- * Deriving the round from the client instead was built and measured, and does
- * not work: the picking screen is re-read during the performances with
- * different contents each time (one round's five songs produced five different
- * fingerprints), so a content-keyed round id splits a single round into
- * several. Time is the cruder signal and the correct one, because it is the
- * same signal the page already groups on.
+ * Keying on a round id reported by the client was also built and measured,
+ * and does not work: the picking screen is re-read during performances with
+ * different contents each time, so one round of five songs produced five
+ * different ids. The id is still recorded for future analysis, and ignored
+ * here.
  *
- * Errs toward showing a duplicate: too short shows one song as two cards, too
- * long loses it entirely. A duplicate card is a moment's confusion, a missing
- * card is a song the singer cannot play.
+ * The failure directions are still not equal: too short shows one song as two
+ * cards, too long loses it entirely — and a missing card is a song the singer
+ * cannot play. Two minutes stays well under the shortest measured genuine
+ * re-sing gap (825s), so nothing real is ever swallowed for good.
  */
-const DEDUPE_WINDOW_MS = 60 * 1000;
+const DEDUPE_WINDOW_MS = 2 * 60 * 1000;
 
 /**
  * How far back the live page looks.

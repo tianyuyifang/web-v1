@@ -595,7 +595,15 @@ async function resolveNeteasePreview(userId, externalId, res) {
    * the user cannot explain.
    */
   const ttl = result.expiresInSec ? result.expiresInSec * 500 : undefined;
-  urlCache.set(userId, 'NETEASE', externalId, result, ttl);
+  // Successes only, mirroring the QQ branch. A resolve that came back empty
+  // is usually the platform having a moment — the community APIs see the same
+  // null-url blips on songs that play fine — and caching it pinned that one
+  // blip up as "已下架" for ten minutes of retries. A genuinely dead song just
+  // gets re-asked at human clicking speed, which is what "possibly delisted"
+  // deserves anyway.
+  if (result?.url) {
+    urlCache.set(userId, 'NETEASE', externalId, result, ttl);
+  }
   return res.json({ kind: 'external', url: result.url, reason: result.reason });
 }
 

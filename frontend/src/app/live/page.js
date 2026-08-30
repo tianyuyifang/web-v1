@@ -451,6 +451,21 @@ export default function LivePage() {
   const playCard = useCallback(async (card) => {
     if (!card.mapping) return;
     setPlayError("");
+    /**
+     * Whether a separated vocal track exists is a fact about one recording, so
+     * it has to be forgotten when a different one is opened.
+     *
+     * It was not, and the checkbox is disabled while the answer is false — so
+     * the one control that could set it back to true was the one control the
+     * user could no longer reach. One song without a vocal track turned the
+     * feature off for the rest of the session, and only reloading the page
+     * brought it back. Reproduced by walking the state machine: song 1 fine,
+     * song 2 without vocals, songs 3 and 4 unreachable.
+     *
+     * Null rather than true: unknown until this song is asked about, which is
+     * also what lets the checkbox stay usable.
+     */
+    setVocalsAvailable(null);
 
     // The card's own recording, and the only one it has: a card plays one
     // song. That is what keeps a saved key honest -- the preference stored

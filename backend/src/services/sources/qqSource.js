@@ -471,8 +471,22 @@ async function resolveVocals(mid, { cookie, uin, musicKey } = {}) {
 
   const info = json?.req_1?.data?.midurlinfo?.[0];
   if (!info?.purl) {
-    const reason = info?.result === 104003 ? 'credential-expired' : 'unavailable';
-    return { url: null, reason, platformResult: info?.result ?? null, meta };
+    /**
+     * A refusal here is about this one track, not about the account.
+     *
+     * 104003 means the platform will not serve this file to this identity, and
+     * on the ordinary playback path — where it comes back for every song at
+     * once — that does mean the key has died. Here it does not: the separated
+     * track is a different file with its own permissions, and a song whose
+     * normal audio plays perfectly can still have its vocal stem withheld.
+     * Measured: 茉莉雨 plays at every quality tier while its vocal track is
+     * refused with exactly this code.
+     *
+     * Reporting it as an expired credential sent singers to the account page
+     * to rescan, which cannot help and did not — the same song still refused
+     * afterwards. Treated as absent instead, which is what it is from here.
+     */
+    return { url: null, reason: 'no-vocals', platformResult: info?.result ?? null, meta };
   }
   const url = `${cdn.hosts[0]}${info.purl}&fromtag=3`.replace(/^http:\/\//, 'https://');
   return { url, reason: null, meta };

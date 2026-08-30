@@ -74,17 +74,40 @@ async function requireActiveSession(req, res, next) {
       return next();
     }
     // No recorded sessions (hasn't logged in since migration) — skip check.
-    const list = Array.isArray(activeSessions) ? activeSessions : [];
+    let list = Array.isArray(activeSessions) ? activeSessions : [];
     if (list.length === 0) {
       return next();
     }
     if (!hasSession(list, req.user.sid)) {
-      return res.status(403).json({
-        error: {
-          code: 'SESSION_REPLACED',
-          message: 'Your account was logged in on another device',
-        },
+      // Never evict off the cache alone. A fresh login writes its session to
+      // the database, but a list cached seconds earlier doesn't have it, and
+      // kicking on that stale copy sent people who had just signed in
+      // straight back to the login page — deterministically, for up to 30
+      // seconds (261 times in the last two weeks of logs). A wrongful ALLOW
+      // for one TTL is the accepted tradeoff of this cache; a wrongful KICK
+      // was never meant to be. So the verdict that logs someone out must
+      // always come from the database, read now.
+      const fresh = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true, activeSessions: true },
       });
+      if (!fresh) {
+        return next(new UnauthorizedError('User not found'));
+      }
+      list = Array.isArray(fresh.activeSessions) ? fresh.activeSessions : [];
+      SESSION_CACHE.set(userId, {
+        role: fresh.role,
+        activeSessions: list,
+        expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
+      });
+      if (fresh.role !== 'ADMIN' && list.length > 0 && !hasSession(list, req.user.sid)) {
+        return res.status(403).json({
+          error: {
+            code: 'SESSION_REPLACED',
+            message: 'Your account was logged in on another device',
+          },
+        });
+      }
     }
     next();
   } catch (err) {

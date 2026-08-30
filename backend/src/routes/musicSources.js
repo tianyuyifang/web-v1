@@ -8,6 +8,7 @@ const qqLogin = require('../services/sources/qqLogin');
 const qqAppQr = require('../services/sources/qqAppQrLogin');
 const neteaseLogin = require('../services/sources/neteaseLogin');
 const access = require('../services/musicCredentialAccess');
+const noEtag = require('../middleware/noEtag');
 
 /**
  * The user's own QQ / NetEase credentials.
@@ -175,28 +176,6 @@ function readProvider(req) {
   return PROVIDERS[parsed.data];
 }
 
-/**
- * Suppress the ETag on the polling route.
- *
- * Express adds a weak ETag to every JSON response, and the poll answers
- * {"status":"waiting"} unchanged for as long as nobody scans. The browser then
- * revalidates and gets a 304, which by spec carries no body — so the caller
- * reads an undefined status and the on-screen state flickers between "waiting"
- * and nothing.
- *
- * Cache-Control: no-store does NOT fix this; measured, Express still generates
- * the ETag and still answers 304. Only removing the header does. It is stripped
- * here rather than via app.set('etag', false), because that setting is global
- * and would drop ETags from every other endpoint, where they are useful.
- */
-function noEtag(req, res, next) {
-  const end = res.end;
-  res.end = function patched(...args) {
-    res.removeHeader('ETag');
-    return end.apply(this, args);
-  };
-  next();
-}
 
 // POST /api/music-sources/qq/qrcode[?provider=wechat|qqmusic] — start a QR login
 router.post('/qq/qrcode', qrLimiter, async (req, res, next) => {

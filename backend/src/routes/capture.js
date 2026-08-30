@@ -9,6 +9,7 @@ const { authMiddleware, requireApproved, requireActiveSession } = require('../mi
 const captureAuth = require('../middleware/captureAuth');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
 const settingsService = require('../services/settingsService');
+const noEtag = require('../middleware/noEtag');
 
 /**
  * Auto-tagging is sold separately from membership. Entitlements are not in the
@@ -52,7 +53,7 @@ const pairLimiter = rateLimit({
 // Read from settings so shipping an APK needs no code change; see
 // settingsService.getClientVersion for why, and for the version history that
 // used to live here.
-router.get('/version', async (req, res, next) => {
+router.get('/version', noEtag, async (req, res, next) => {
   try {
     res.json(await settingsService.getClientVersion());
   } catch (err) {

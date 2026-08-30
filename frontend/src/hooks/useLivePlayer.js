@@ -95,6 +95,17 @@ export default function useLivePlayer() {
    * bridges the two without reordering the file or adding a dependency cycle.
    */
   const startVocalsOnlyRef = useRef(null);
+  /**
+   * startShifted, reachable from startVocalsOnly above its definition.
+   *
+   * Vocals at any speed other than 1.0 must play through SoundTouch: the raw
+   * splitter graph can only change speed via AudioBufferSourceNode.playbackRate,
+   * which shifts pitch with it — the spec has no preservesPitch there, by
+   * design (w3c/web-audio-api#2487). At 1.1x that is +1.7 semitones, which is
+   * what "纯人声连 key 都变了" was. SoundTouch reads the same channels 0 and 1,
+   * so it is the same voice, at pitch, at tempo.
+   */
+  const startShiftedRef = useRef(null);
   const rafRef = useRef(0);
 
   /**
@@ -243,6 +254,13 @@ export default function useLivePlayer() {
    * silence at the start.
    */
   const startVocalsOnly = useCallback(async (from) => {
+    // Anything but plain 1.0x-at-pitch belongs to SoundTouch — see the note on
+    // startShiftedRef. It reads channels 0 and 1 itself, so the voice arrives
+    // the same way, without the raw graph's pitch drift.
+    if (speedRef.current !== 1 || pitchRef.current !== 0) {
+      return startShiftedRef.current ? startShiftedRef.current(from) : false;
+    }
+
     const buf = bufferRef.current;
     const ctx = ctxRef.current;
     if (!buf || !ctx) return false;
@@ -252,7 +270,10 @@ export default function useLivePlayer() {
 
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.playbackRate.value = speedRef.current;
+    // Pinned, not read from the ref: this graph exists only for the 1.0 case
+    // now, and a rate that raced in between the check above and here would
+    // reintroduce the very shift the check exists to prevent.
+    src.playbackRate.value = 1;
 
     if (!gainRef.current) {
       gainRef.current = ctx.createGain();
@@ -329,6 +350,10 @@ export default function useLivePlayer() {
     // tempo change instead of being rebuilt -- and a rebuild here restarts the
     // graph, which is audible.
   }, [teardownGraph]);
+
+  // Published for startVocalsOnly and setSpeed, both of which sit above this
+  // definition and need it when a speed other than 1.0 is in play.
+  startShiftedRef.current = startShifted;
 
   /**
    * Change to a different file of the same song without a gap.
@@ -565,10 +590,30 @@ export default function useLivePlayer() {
 
   const setSpeed = useCallback((value) => {
     const next = Math.max(0.5, Math.min(2, value));
+
+    // Position before the ref moves. The vocals graph runs pinned at 1.0, so
+    // its clock is plain elapsed time — but only while the old rate is still
+    // the one that produced it. (positionNow would multiply by the ref this
+    // function is about to overwrite.)
+    const vocalsAtUnity = vocalsOnRef.current && !shifterRef.current;
+    const at = vocalsAtUnity && ctxRef.current
+      ? offsetRef.current + (ctxRef.current.currentTime - startedAtRef.current)
+      : 0;
+
     speedRef.current = next;
     setSpeedState(next);
-    if (shifterRef.current) shifterRef.current.tempo = next;
-    else if (elRef.current) elRef.current.playbackRate = next;
+    if (shifterRef.current) {
+      shifterRef.current.tempo = next;
+    } else if (vocalsAtUnity && next !== 1) {
+      // The raw vocals graph cannot change speed without changing pitch, so a
+      // tempo other than 1.0 means changing engines mid-note: SoundTouch picks
+      // up the same two channels at the same position, at pitch. Fire and
+      // forget, like setPitch — the singer's control must not await a graph
+      // rebuild.
+      startShiftedRef.current?.(at);
+    } else if (elRef.current) {
+      elRef.current.playbackRate = next;
+    }
   }, []);
 
   const stop = useCallback(() => {

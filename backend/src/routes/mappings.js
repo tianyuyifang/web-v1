@@ -399,7 +399,24 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
   // A URL resolved moments ago is still good, and re-asking costs a round trip
   // the listener waits through plus one more request against their account.
   const cached = urlCache.get(userId, 'QQ', variantKey);
-  if (cached) return res.json({ kind: 'external', url: cached.url, reason: null, cached: true });
+  if (cached) {
+    // The stored entry carries what actually played (usedTier / gotVocals /
+    // fellBack), and the page decides from those whether the singer's choice
+    // was honoured. Dropping them here made every repeat within the TTL read
+    // as "request not met": a song whose vocal stem had just played reported
+    // 这首没有 on the second click, and its 4-channel file went through the
+    // element as a full mix. First play right, every replay wrong — the worst
+    // shape for a bug, because it reads as the platform being flaky.
+    return res.json({
+      kind: 'external',
+      url: cached.url,
+      reason: null,
+      cached: true,
+      playedTier: cached.usedTier ?? null,
+      vocalsPlayed: !!cached.gotVocals,
+      fellBack: !!cached.fellBack,
+    });
+  }
 
   // Renews first if the key is close to dying, so a review session does not
   // stop working halfway through.
@@ -501,8 +518,13 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
     // next request for the same preference finds it rather than repeating the
     // whole ladder against the platform.
     if (result?.url) {
-      const playedKey = `${externalId}#${result.usedTier}${result.gotVocals ? ':v' : ''}`;
-      urlCache.set(userId, 'QQ', playedKey, result);
+      // Under the REQUEST key, not the played one. The lookup above uses the
+      // request key, so a fallback result stored under what actually played
+      // could never be found again — every replay of a downgraded song walked
+      // the whole ladder against the platform. Storing request-relative data
+      // under the request key also keeps a hit's fields true for the request
+      // that hits it: fellBack is relative to what was asked.
+      urlCache.set(userId, 'QQ', variantKey, result);
     }
     return res.json({
       kind: 'external',

@@ -50,6 +50,23 @@ const MAX_LYRIC_LENGTH = 2000;
 const DEDUPE_WINDOW_MS = 2 * 60 * 1000;
 
 /**
+ * How far back a performance looks for the picking card it belongs to.
+ *
+ * A separate window from DEDUPE_WINDOW_MS because they answer different
+ * questions. Two minutes is about picking repeats: how soon a re-offered song
+ * deserves a fresh card. But a performance is not a repeat — it is the SAME
+ * song coming home to the card its picking read already made — and in a
+ * five-song 两军对决 the third and fourth performances start three to five
+ * minutes after the picking burst. With one shared two-minute window they
+ * could not find their card, spawned a duplicate mid-round, and the page cut
+ * a new group right as the third song was being sung — reported by users,
+ * confirmed in the data (picking card at 11:16:43, its own performance
+ * arriving 129s later as a brand-new card). Five minutes covers a whole
+ * round, and stays under the shortest measured genuine re-sing gap (825s).
+ */
+const SINGING_ATTACH_WINDOW_MS = 5 * 60 * 1000;
+
+/**
  * How far back the live page looks.
  *
  * Long enough that an evening survives a reconnection or a night's sleep,
@@ -916,7 +933,8 @@ async function ingestLive({ session, rawText, lyric, stage, batchId }) {
   // The reported round is still stored, so the question can be revisited from
   // real data rather than from scratch.
   const batch = cleanBatchId(batchId);
-  const scope = { createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } };
+  const windowMs = from === 'singing' ? SINGING_ATTACH_WINDOW_MS : DEDUPE_WINDOW_MS;
+  const scope = { createdAt: { gte: new Date(Date.now() - windowMs) } };
 
   const existing = await prisma.captureEvent.findFirst({
     where: {

@@ -36,16 +36,20 @@ const MAX_LYRIC_LENGTH = 2000;
  * and was discarded, so it never produced a card again for the rest of the run
  * — the bug this window fixes.
  *
- * Five minutes, against measured gaps between consecutive captures of a median
- * of 0s and a 90th percentile of 141s. That is roughly twice the p90, so the
- * repeated reads within one round still collapse into one card.
+ * Two minutes, against measured gaps between consecutive captures of a median
+ * of 0s and a 90th percentile of 141s. Slightly under the p90, so a tail of
+ * same-round repeats now surfaces as a second card rather than collapsing.
  *
- * The failure directions are not equal, and this errs toward the cheap one: too
- * short shows one song as two cards, too long loses the song entirely. A
- * duplicate card is a moment's confusion; a missing card is a song the singer
- * cannot play.
+ * That is the direction to be wrong in. Too short shows one song as two cards;
+ * too long loses the song entirely. A duplicate card is a moment's confusion,
+ * a missing card is a song the singer cannot play.
+ *
+ * This is the fallback. A client that reports which round it is on gets exact
+ * de-duplication and never consults this window -- see BATCH_ID_MAX_LENGTH.
+ * The window remains for clients that do not, which is every build before the
+ * one that added it.
  */
-const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+const DEDUPE_WINDOW_MS = 2 * 60 * 1000;
 
 /**
  * How far back the live page looks.
@@ -451,10 +455,25 @@ function logNoTarget(session, text, wanted) {
 }
 
 /** Record that the capture client is alive, without ingesting anything. */
-async function touchSession(session) {
+async function touchSession(session, clientVersion) {
+  /**
+   * Which build is on the other end, when it says so.
+   *
+   * Written on the heartbeat the client already makes, so it costs no extra
+   * request. Only written when a usable number arrives: a build that reports
+   * nothing must leave whatever was recorded before rather than blanking it,
+   * or reconnecting with an old client would erase the newer answer.
+   */
+  const version = Number.isInteger(clientVersion) && clientVersion > 0
+    ? clientVersion
+    : null;
+
   await prisma.captureSession.update({
     where: { id: session.id },
-    data: { lastSeenAt: new Date() },
+    data: {
+      lastSeenAt: new Date(),
+      ...(version ? { clientVersion: version } : {}),
+    },
   });
   return { ok: true };
 }
@@ -788,7 +807,24 @@ function namesKnownArtist(candidate, known) {
  * table lookup only; hitting QQ or NetEase once per captured title is the
  * batch-prefetch pattern that got this machine rate-limited twice (item 53).
  */
-async function ingestLive({ session, rawText, lyric, stage }) {
+/**
+ * Longest client-supplied round id we will store.
+ *
+ * The value is opaque to us — it only ever has to be equal to itself — so the
+ * cap is about not letting a client write unbounded text into a column, not
+ * about any format we expect.
+ */
+const BATCH_ID_MAX_LENGTH = 64;
+
+/** A round id we are willing to key on, or null to fall back to the window. */
+function cleanBatchId(raw) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > BATCH_ID_MAX_LENGTH) return null;
+  return trimmed;
+}
+
+async function ingestLive({ session, rawText, lyric, stage, batchId }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
 
@@ -847,15 +883,25 @@ async function ingestLive({ session, rawText, lyric, stage }) {
   // -- writing this round's words over last round's, and leaving the new card
   // with none at all. Reproduced before this was written.
   //
-  // Newest-first is the whole rule now. Within five minutes there is one round,
-  // and its most recent row is the one this capture belongs to.
-  const since = new Date(Date.now() - DEDUPE_WINDOW_MS);
+  // Newest-first is the whole rule now: inside one round, the most recent row
+  // for this song is the one this capture belongs to.
+  //
+  // What counts as "one round" depends on what the client can tell us. A build
+  // that reports its round is matched on exactly that, and a song offered
+  // again in a later round is a new card however soon it comes back. A build
+  // that reports nothing falls back to the time window, which is the best
+  // approximation available without it.
+  const batch = cleanBatchId(batchId);
+  const scope = batch
+    ? { batchId: batch }
+    : { createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } };
+
   const existing = await prisma.captureEvent.findFirst({
     where: {
       sessionId: session.id,
       playlistId: null,
       rawText: text,
-      createdAt: { gte: since },
+      ...scope,
       // A performance attaches to whichever row is newest; a picking read only
       // ever matches another picking read. Without that asymmetry the picking
       // screen that opens the next round would attach to the performance that
@@ -933,6 +979,10 @@ async function ingestLive({ session, rawText, lyric, stage }) {
       rawText: text,
       stage: from,
       lyric: words,
+      // Stored so the next capture in this round can find this row. Without
+      // it the lookup above would match nothing and every read would open its
+      // own card.
+      batchId: batch,
       outcome: resolved ? 'resolved' : 'unmapped',
       candidates: resolved || undefined,
     },
@@ -1078,6 +1128,11 @@ async function getConnection(userId) {
     target: session.target,
     playlist: session.playlist || null,
     lastSeenAt: session.lastSeenAt,
+    // Which build is connected, or null from anything that predates reporting
+    // it. The route compares it against the current one — the version numbers
+    // live there, and a service that reached for them would be reading its own
+    // caller's configuration.
+    clientVersion: session.clientVersion ?? null,
     expiresAt: session.expiresAt,
     // Only while it is still redeemable — a spent or stale code on screen is
     // worse than none, since it is indistinguishable from a working one.

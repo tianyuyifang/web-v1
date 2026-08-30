@@ -155,6 +155,10 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
         // picking-screen captures with no words.
         lyric: req.body && req.body.lyric,
         stage: req.body && req.body.stage,
+        // Which round the client is on. Absent from every build before the
+        // one that added it, which is why de-duplication keeps its time
+        // window as a fallback rather than requiring this.
+        batchId: req.body && req.body.batchId,
       })
       : await captureService.ingestText({
         session: req.captureSession,
@@ -175,7 +179,14 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
 // reports a lost connection while capture is working fine.
 router.post('/heartbeat', captureAuth, async (req, res, next) => {
   try {
-    const result = await captureService.touchSession(req.captureSession);
+    // The client reports its own build here, on a request it already makes.
+    // Absent from every build before the one that added it, and absent is
+    // left as-is rather than written as null — reconnecting with an old
+    // client must not erase a newer answer.
+    const result = await captureService.touchSession(
+      req.captureSession,
+      req.body && req.body.clientVersion,
+    );
     // How the client learns which screens to scan. Carried on the heartbeat
     // rather than pushed, because the client already polls this and a second
     // channel would be one more thing to keep alive (item 13). Clients that
@@ -183,6 +194,9 @@ router.post('/heartbeat', captureAuth, async (req, res, next) => {
     res.json({
       ...result,
       mode: req.captureSession.mode,
+      // What the newest build is, so a client can tell the user it is behind
+      // without making a second request for it. Older clients ignore it.
+      latestVersion: CLIENT_VERSION.latest,
       // What the client actually needs: which screens are worth scanning, and
       // whether to scan at all. Older clients ignore both fields.
       target: req.captureSession.target,
@@ -270,7 +284,21 @@ router.post('/connect', ...web, requireCaptureAddOn, async (req, res, next) => {
 // mind; being disconnected answers null rather than 404.
 router.get('/connection', ...web, async (req, res, next) => {
   try {
-    res.json({ connection: await captureService.getConnection(req.user.id) });
+    const connection = await captureService.getConnection(req.user.id);
+    // Whether the connected client is behind. Decided here because the version
+    // numbers live here; the service only reports what it recorded.
+    //
+    // A client that reports nothing is not called outdated: every build before
+    // this one is silent, and telling those users to update on no evidence
+    // would be a guess shown as a fact.
+    res.json({
+      connection: connection && {
+        ...connection,
+        latestVersion: CLIENT_VERSION.latest,
+        outdated: typeof connection.clientVersion === 'number'
+          && connection.clientVersion < CLIENT_VERSION.latest,
+      },
+    });
   } catch (err) {
     next(err);
   }

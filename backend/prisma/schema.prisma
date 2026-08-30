@@ -372,6 +372,16 @@ model CaptureSession {
   /// the UI needs that to tell "emulator not running" apart from "nothing
   /// captured yet", which otherwise look identical.
   lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz
+  /// Which build of the capture client is on the other end.
+  ///
+  /// Nothing recorded this, so a report of odd behaviour could not be checked
+  /// against the version it came from — every diagnosis started by asking the
+  /// user, or by guessing. The client sends it on the heartbeat it already
+  /// makes, so this costs no extra request.
+  ///
+  /// Null until a build that reports it connects, which is what makes an old
+  /// client identifiable at all.
+  clientVersion Int? @map("client_version")
 
   user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   playlist Playlist?      @relation(fields: [playlistId], references: [id], onDelete: Cascade)
@@ -414,6 +424,19 @@ model CaptureEvent {
   /// "singing" (the one being performed). Null for captures made before the
   /// client reported it.
   stage         String?
+  /// Which round of songs this capture belongs to, as the client saw it.
+  ///
+  /// De-duplication wants the round that offered the song, and until a client
+  /// reported one there was nothing to key on: gaps within a round and gaps
+  /// between rounds are both 25-35 seconds, so a time window can only
+  /// approximate it. Deriving the round from `stage` was tried and does not
+  /// work — the picking/singing judgement flickers within a single round, and
+  /// splitting on it cut 339 captures into 69 "rounds", many of them zero
+  /// seconds long.
+  ///
+  /// Null for every build that predates this, which is why it stays optional
+  /// and why the time window has to remain as the fallback.
+  batchId       String?  @map("batch_id")
   candidates    Json?    @db.JsonB
   outcome       String
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz

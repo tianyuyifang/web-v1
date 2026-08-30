@@ -24,32 +24,32 @@ const MAX_LYRIC_LENGTH = 2000;
 /**
  * How far back a 唱卡 capture looks for the row it belongs to.
  *
- * A song sits on screen for seconds and is read many times, so captures have to
- * be deduplicated. The right key would be the round that picked it — but the
- * client does not report a round, and timestamps cannot recover one: gaps
- * within a round and gaps between rounds are both 25-35 seconds. So recency
- * stands in for it.
+ * A song sits on screen for seconds and is read many times, so captures have
+ * to be deduplicated. What they must NOT be deduplicated against is a previous
+ * round: the singer looks at the round in front of them, and a song offered
+ * again there has to appear there. Sending them back through earlier rounds to
+ * find it is the failure this window is tuned to avoid.
  *
- * Deduplicating across the whole session, which is what this used to do, was
- * wrong for the length a session actually runs. Measured: 100-225 songs over
- * two to four hours. A song offered again in a later round found its old row
- * and was discarded, so it never produced a card again for the rest of the run
- * — the bug this window fixes.
+ * Deliberately the same 60s the page groups by (ROUND_IDLE_MS in live/page.js).
+ * That page starts a new group when a card arrives more than 60s after the last
+ * one, so matching the two makes the two questions the same question: anything
+ * this window merges is inside the group the singer is looking at, and anything
+ * it lets through is a group of its own. Any other value puts them out of step
+ * — at two minutes, a song re-offered 90s later was swallowed although the page
+ * had already opened a new group for it.
  *
- * Two minutes, against measured gaps between consecutive captures of a median
- * of 0s and a 90th percentile of 141s. Slightly under the p90, so a tail of
- * same-round repeats now surfaces as a second card rather than collapsing.
+ * Deriving the round from the client instead was built and measured, and does
+ * not work: the picking screen is re-read during the performances with
+ * different contents each time (one round's five songs produced five different
+ * fingerprints), so a content-keyed round id splits a single round into
+ * several. Time is the cruder signal and the correct one, because it is the
+ * same signal the page already groups on.
  *
- * That is the direction to be wrong in. Too short shows one song as two cards;
- * too long loses the song entirely. A duplicate card is a moment's confusion,
- * a missing card is a song the singer cannot play.
- *
- * This is the fallback. A client that reports which round it is on gets exact
- * de-duplication and never consults this window -- see BATCH_ID_MAX_LENGTH.
- * The window remains for clients that do not, which is every build before the
- * one that added it.
+ * Errs toward showing a duplicate: too short shows one song as two cards, too
+ * long loses it entirely. A duplicate card is a moment's confusion, a missing
+ * card is a song the singer cannot play.
  */
-const DEDUPE_WINDOW_MS = 2 * 60 * 1000;
+const DEDUPE_WINDOW_MS = 60 * 1000;
 
 /**
  * How far back the live page looks.
@@ -886,15 +886,19 @@ async function ingestLive({ session, rawText, lyric, stage, batchId }) {
   // Newest-first is the whole rule now: inside one round, the most recent row
   // for this song is the one this capture belongs to.
   //
-  // What counts as "one round" depends on what the client can tell us. A build
-  // that reports its round is matched on exactly that, and a song offered
-  // again in a later round is a new card however soon it comes back. A build
-  // that reports nothing falls back to the time window, which is the best
-  // approximation available without it.
+  // Always the time window, even from a client that reports a round of its own.
+  // Keying on the client's round was built, shipped and measured against real
+  // play, and it splits a single round into several: the picking screen is
+  // re-read while the songs are being performed and holds different contents
+  // each time, so one round of five songs produced five different ids and the
+  // same song opened a card under more than one of them. The window is the
+  // cruder signal and the correct one, because the page groups on the same
+  // signal — see DEDUPE_WINDOW_MS.
+  //
+  // The reported round is still stored, so the question can be revisited from
+  // real data rather than from scratch.
   const batch = cleanBatchId(batchId);
-  const scope = batch
-    ? { batchId: batch }
-    : { createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } };
+  const scope = { createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) } };
 
   const existing = await prisma.captureEvent.findFirst({
     where: {

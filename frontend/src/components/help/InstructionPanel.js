@@ -2,7 +2,7 @@
 
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
-const GUIDE_URL = "https://my.feishu.cn/wiki/Z4e8wHIPLi4aIOkwcyucRb0wnMd?from=from_copylink";
+const GUIDE_URL = "https://323c0378a152499fad09a48ccb2dbdda.app.workbuddy.link/";
 
 export default function InstructionPanel() {
   const { t } = useLanguage();

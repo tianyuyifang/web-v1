@@ -218,12 +218,17 @@ export const captureAPI = {
   startLive: (opts = {}) => api.post("/capture/sessions", { mode: "live", ...opts }),
   // Open a connection with no destination. The pairing code it returns lasts
   // the whole game — changing destination moves the target, not the token.
-  connect: (opts = {}) => api.post("/capture/connect", opts),
+  // The 10s timeouts on the three control calls below: axios otherwise waits
+  // forever, and on a flaky connection a press of 自动打标/开始 hung in `busy`
+  // with no way out but a reload. Ten seconds turns a hang into an error the
+  // button can show and the user can retry.
+  connect: (opts = {}) => api.post("/capture/connect", opts, { timeout: 10000 }),
   // The current connection, or null. Polled by the nav indicator.
-  connection: () => api.get("/capture/connection"),
+  connection: () => api.get("/capture/connection", { timeout: 10000 }),
   // Point the open connection at a playlist, at 唱卡, or at nothing.
   setTarget: (target, playlistId) =>
-    api.patch("/capture/target", playlistId ? { target, playlistId } : { target }),
+    api.patch("/capture/target", playlistId ? { target, playlistId } : { target },
+      { timeout: 10000 }),
   liveFeed: (sessionId, limit) =>
     api.get(`/capture/sessions/${sessionId}/live${limit ? `?limit=${limit}` : ""}`),
 

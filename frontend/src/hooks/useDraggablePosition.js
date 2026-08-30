@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const DRAG_THRESHOLD = 5; // px before a press counts as a drag rather than a click
+const DRAG_THRESHOLD = 10; // px before a press counts as a drag rather than a click — was 5,
+// tighter than Android's own 8px touch slop, so ordinary finger jitter on a tap
+// read as a drag and the click that followed was swallowed by design.
 
 /**
  * Free-position drag for a fixed-position element, persisted in localStorage.

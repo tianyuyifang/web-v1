@@ -78,7 +78,7 @@ const useCaptureStore = create((set, get) => ({
       const ok = await get().connect();
       if (!ok) return false;
     }
-    try {
+    const point = async () => {
       const res = await captureAPI.setTarget(target, playlistId);
       set((s) => ({
         connection: {
@@ -95,7 +95,30 @@ const useCaptureStore = create((set, get) => ({
       // Pull the playlist name and liveness the server knows about.
       get().refresh();
       return true;
+    };
+    try {
+      return await point();
     } catch (err) {
+      // The session this store remembers can be dead while the memory of it
+      // survives: the tab sat in the background, the browser froze the poll
+      // that would have noticed, and the run expired on the server. Aiming a
+      // corpse then failed silently, and every further press repeated the
+      // same doomed call — users learned to mash the button until a poll
+      // happened to heal the store, or to reload the page. A 403/404 from
+      // the aim IS that notice, so take it: drop the corpse, open a fresh
+      // connection, and aim once more. One press heals itself.
+      const status = err.response?.status;
+      if (status === 403 || status === 404) {
+        set({ connection: null });
+        const ok = await get().connect();
+        if (!ok) return false;
+        try {
+          return await point();
+        } catch (err2) {
+          set({ error: err2.response?.data?.error?.message || "切换失败" });
+          return false;
+        }
+      }
       set({ error: err.response?.data?.error?.message || "切换失败" });
       return false;
     }

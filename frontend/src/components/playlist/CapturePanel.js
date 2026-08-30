@@ -571,8 +571,8 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
         // as well, so every drag frame started a 150ms tween and the button
         // lagged behind the cursor instead of tracking it.
         className={`fixed bottom-20 right-4 z-40 touch-none items-center gap-2 rounded-full border border-border bg-surface/95 py-2.5 pl-3.5 pr-4 text-sm font-medium text-theme shadow-lg backdrop-blur transition-colors hover:border-primary hover:text-primary hover:shadow-xl active:scale-95 disabled:opacity-50 sm:bottom-28 sm:inline-flex sm:cursor-grab sm:active:cursor-grabbing ${
-          hiddenOnPhone ? "hidden" : "inline-flex"
-        }`}
+          busy ? "animate-pulse" : ""
+        } ${hiddenOnPhone ? "hidden" : "inline-flex"}`}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -589,6 +589,17 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
         </svg>
         {t("captureStart")}
       </button>
+
+      {/* A failed start finally has somewhere to say so. The message used to
+          render only inside the panel — which opens on success — so every
+          failure was a press that visibly did nothing. Anchored near the
+          pill's default corner; a dragged pill still gets the message on
+          screen, just not adjacent. */}
+      {error && !busy && (
+        <div className="fixed bottom-32 right-4 z-40 max-w-[16rem] rounded border border-border bg-surface px-3 py-2 text-xs text-red-400 shadow-lg sm:bottom-40">
+          {error}
+        </div>
+      )}
 
       {showAddOnNotice && (
         <ConfirmDialog

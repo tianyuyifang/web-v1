@@ -34,7 +34,7 @@ import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
 import SongLibrary from "@/components/live/SongLibrary";
 import DefaultTuning from "@/components/live/DefaultTuning";
 import {
-  loadStoredQuality, storeQuality, loadStoredVocals, storeVocals,
+  loadStoredQuality, storeQuality, loadStoredVocals, storeVocals, QUALITY_TIERS,
 } from "@/components/live/LiveVolumeControl";
 import { PlayIcon, PauseIcon, BusyIcon, UnmappedIcon } from "@/components/live/TransportIcons";
 
@@ -448,6 +448,30 @@ export default function LivePage() {
    * songs and only one gets sung, so resolving all of them would spend platform
    * requests on songs nobody asked for — the pattern that gets an IP throttled.
    */
+  /**
+   * Say so when the file that played is not the one that was asked for.
+   *
+   * The platform withholds individual files, so a request for 无损 or 只听人声
+   * can come back as something lesser — and silence about that is its own
+   * fault: the singer chose a setting, heard a song, and had no way to know
+   * the setting had not applied. Naming what did play is what lets them decide
+   * whether it matters.
+   *
+   * Not an error, so it goes through the same line as one only because that is
+   * where the page already speaks. Empty when nothing was substituted.
+   */
+  const fallbackNotice = useCallback((data, asked) => {
+    if (!data?.fellBack) return "";
+    const name = (id) => QUALITY_TIERS.find((t) => t.id === id)?.label || id;
+    if (asked.vocalsOnly && !data.vocalsPlayed) {
+      return `这首歌没有纯人声，已用${name(data.playedTier)}音质播放`;
+    }
+    if (data.playedTier && data.playedTier !== asked.tier) {
+      return `这首歌没有${name(asked.tier)}，已用${name(data.playedTier)}播放`;
+    }
+    return "";
+  }, []);
+
   const playCard = useCallback(async (card) => {
     if (!card.mapping) return;
     setPlayError("");
@@ -508,8 +532,13 @@ export default function LivePage() {
       }
       loadedFor.current = key;
       await player.load(url);
-      // Carried across cards: the setting belongs to the singer, not the song.
-      await player.setVocalsOnly(vocalsOnly);
+      // What actually played, not what was asked for: the server may have had
+      // to substitute, and telling the player otherwise would have it separate
+      // channels on a file that has none.
+      await player.setVocalsOnly(res.data.vocalsPlayed === true);
+      // After the sound starts, so saying it never delays hearing it.
+      const note = fallbackNotice(res.data, { tier: quality, vocalsOnly });
+      if (note) setPlayError(note);
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "播放失败");
     } finally {
@@ -688,23 +717,26 @@ export default function LivePage() {
       // A local song has no tiers and no separated vocals; it plays as it is.
       if (kind === "local" && songId) return;
       if (!url) {
-        // Asking for the vocals of a song that has none is an ordinary answer,
-        // not a failure — the checkbox goes back and says so.
-        if (next.vocalsOnly) {
-          setVocalsAvailable(false);
-          setVocalsOnlyState(false);
-          storeVocals(false);
-          setPlayError("这首歌没有纯人声轨");
-        }
+        // Nothing on the server's ladder played, so this is not the vocal stem
+        // being absent — that now falls back to the full mix and returns a url.
+        // Reaching here means the song itself is unavailable, and turning the
+        // vocals setting off would hide that behind a change the singer did
+        // not make.
+        setPlayError("这首歌暂时播放不了");
         return;
       }
-      if (next.vocalsOnly) setVocalsAvailable(true);
+      // Whether this song actually had a vocal stem, as opposed to whether one
+      // was asked for. The server falls back rather than refusing, so a url
+      // coming back no longer means the request was met.
+      if (next.vocalsOnly) setVocalsAvailable(res.data.vocalsPlayed === true);
       await player.swapSource(url);
       // The separated file carries the voice in channels 0 and 1 and the
       // backing in 2 and 3, so choosing the file is only half of it — an
       // <audio> element mixes all four back together. The player takes the
       // first pair once the track has decoded.
-      await player.setVocalsOnly(next.vocalsOnly);
+      await player.setVocalsOnly(res.data.vocalsPlayed === true);
+      const note = fallbackNotice(res.data, next);
+      if (note) setPlayError(note);
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "切换失败");
     }

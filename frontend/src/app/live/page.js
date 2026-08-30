@@ -978,7 +978,15 @@ export default function LivePage() {
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-medium">唱卡</h1>
-          <p className="text-xs text-muted">游戏里出现的歌会自动出现在这里，点开即可播放。</p>
+          {/* Temporary release notice, standing in for the usual one-line
+              subtitle until v3.3 adoption is broad — then the subtitle
+              returns. Bordered a shade brighter than the batch cards so it
+              reads as a notice without shouting. */}
+          <p className="mt-1.5 rounded-lg border border-border/80 bg-surface/60 px-3 py-2 text-xs leading-relaxed text-theme/90">
+            📢 打标工具更新（v3.3）：玩游戏的安卓手机可以边玩边识别了，不再需要第二台设备挂房间。到
+            <a href="/tools" className="mx-1 text-accent underline underline-offset-2">工具页</a>
+            下载最新版本，覆盖安装后重开一次无障碍开关即可。有问题请联系网站管理，也可以加入微信群获取最新信息。
+          </p>
         </div>
         {/* Starting and stopping belong to the cards, so the button follows
             them. Leaving it visible over the library would offer to start a

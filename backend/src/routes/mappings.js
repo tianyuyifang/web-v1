@@ -410,50 +410,110 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
     });
   }
 
-  try {
-    const result = vocalsOnly
-      ? await qq.resolveVocals(externalId, {
-        cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey,
-      })
-      : await qq.resolveUrl(externalId, {
-        cookie: cred.cookie, uin: cred.uin, musicKey: cred.musicKey, tier,
-      });
+  /**
+   * Everything worth trying for this request, best first.
+   *
+   * A preference is not a requirement. The platform refuses individual files
+   * rather than whole accounts — measured: 有一种爱是为了分离 plays at mp3_128
+   * and is refused at flac, and 茉莉雨 plays at every tier while its vocal stem
+   * is refused — and asking for one and giving up made a singer who had chosen
+   * 无损 or 只听人声 unable to play a song that was available all along. They
+   * are standing at the microphone; a lesser version beats none.
+   *
+   * Vocals first when asked for, then the tiers from the chosen one down. The
+   * chosen tier leads even when it is not the highest, so nobody is handed a
+   * bigger file than they asked for.
+   */
+  const TIER_LADDER = ['flac', 'mp3_320', 'mp3_128', 'm4a'];
+  const from = TIER_LADDER.indexOf(tier);
+  const attempts = [
+    ...(vocalsOnly ? [{ vocals: true, tier }] : []),
+    ...(from >= 0 ? TIER_LADDER.slice(from) : [tier]).map((t) => ({ vocals: false, tier: t })),
+  ];
 
-    // The platform refusing every track, free ones included, means the key is
-    // dead rather than the song being restricted. Renew once and try again —
+  /** One attempt, with whichever credential the caller has in hand. */
+  const attempt = (c, a) => (a.vocals
+    ? qq.resolveVocals(externalId, { cookie: c.cookie, uin: c.uin, musicKey: c.musicKey })
+    : qq.resolveUrl(externalId, {
+      cookie: c.cookie, uin: c.uin, musicKey: c.musicKey, tier: a.tier,
+    }));
+
+  /**
+   * Walk the ladder until something plays.
+   *
+   * Stops at the first success and reports what it settled for, so the page
+   * can say the file differs from what was asked rather than pretending it
+   * does not. Returns the last refusal when nothing worked, because that is
+   * what tells the caller whether the account is the problem.
+   */
+  async function resolveWithFallback(c) {
+    let last = null;
+    for (const a of attempts) {
+      const r = await attempt(c, a);
+      if (r.url) {
+        return {
+          ...r,
+          usedTier: a.tier,
+          // Only ever downgrades, so either of these means the singer is
+          // hearing something other than what they picked.
+          fellBack: a.tier !== tier || (vocalsOnly && !a.vocals),
+          gotVocals: !!a.vocals,
+        };
+      }
+      last = r;
+      // A dead credential refuses everything, so walking the rest of the
+      // ladder would be several more requests against an account that has
+      // already said no.
+      if (r.reason === 'credential-expired' && a === attempts[attempts.length - 1]) break;
+    }
+    return last;
+  }
+
+  try {
+    let result = await resolveWithFallback(cred);
+
+    // Nothing on the ladder played and the platform blamed the identity, so
+    // this is the account rather than the song. Renew once and walk it again —
     // a key can die earlier than the platform said it would, and the user
     // should not have to rescan for something we can fix silently.
-    if (result.reason === 'credential-expired') {
+    if (!result?.url && result?.reason === 'credential-expired') {
       const renewed = await renewAfterRejection(userId);
-      if (renewed) {
-        const retry = vocalsOnly
-          ? await qq.resolveVocals(externalId, {
-            cookie: renewed.cookie, uin: renewed.uin, musicKey: renewed.musicKey,
-          })
-          : await qq.resolveUrl(externalId, {
-            cookie: renewed.cookie, uin: renewed.uin, musicKey: renewed.musicKey, tier,
-          });
-        if (retry.url) {
-          urlCache.set(userId, 'QQ', variantKey, retry);
-          return res.json({ kind: 'external', url: retry.url, reason: retry.reason });
-        }
+      if (renewed) result = await resolveWithFallback(renewed);
+
+      if (!result?.url) {
+        // Renewal did not help, so the chain really is broken. Said only here,
+        // after every alternative has been refused: reporting it on the first
+        // refusal sent singers to rescan an account that was working, because
+        // the platform answers the same code for one withheld file.
+        await credentials.recordCheck(userId, 'qq', { ok: false, error: 'musickey expired' })
+          .catch(() => { /* bookkeeping only */ });
+        return res.status(400).json({
+          error: {
+            message: 'QQ 音乐连接已失效，请到账号页重新扫码连接',
+            code: 'CREDENTIAL_EXPIRED',
+            platform: 'qq',
+          },
+        });
       }
-      // Renewal did not help, so the chain really is broken.
-      await credentials.recordCheck(userId, 'qq', { ok: false, error: 'musickey expired' })
-        .catch(() => { /* bookkeeping only */ });
-      return res.status(400).json({
-        error: {
-          message: 'QQ 音乐连接已失效，请到账号页重新扫码连接',
-          code: 'CREDENTIAL_EXPIRED',
-          platform: 'qq',
-        },
-      });
     }
 
-    // Only successes are cached; a failure may be a credential the user is
-    // about to fix, and caching it would make that look permanent.
-    urlCache.set(userId, 'QQ', variantKey, result);
-    return res.json({ kind: 'external', url: result.url, reason: result.reason });
+    // Cached under what actually played, not under what was asked for, so the
+    // next request for the same preference finds it rather than repeating the
+    // whole ladder against the platform.
+    if (result?.url) {
+      const playedKey = `${externalId}#${result.usedTier}${result.gotVocals ? ':v' : ''}`;
+      urlCache.set(userId, 'QQ', playedKey, result);
+    }
+    return res.json({
+      kind: 'external',
+      url: result?.url || null,
+      reason: result?.reason || null,
+      // What the singer is actually hearing, so the page can say so when it
+      // differs from what they chose.
+      playedTier: result?.usedTier || null,
+      vocalsPlayed: !!result?.gotVocals,
+      fellBack: !!result?.fellBack,
+    });
   } catch (err) {
     // A dead credential is the likeliest cause of a refusal here, and the user
     // can act on that — so it is reported as its own thing rather than as a

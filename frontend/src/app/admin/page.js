@@ -9,6 +9,7 @@ import UserTable from "@/components/admin/UserTable";
 import BandwidthPanel from "@/components/admin/BandwidthPanel";
 import LiveUsagePanel from "@/components/admin/LiveUsagePanel";
 import TaggingUsagePanel from "@/components/admin/TaggingUsagePanel";
+import CaptureClientPanel from "@/components/admin/CaptureClientPanel";
 import SignupPromoPanel from "@/components/admin/SignupPromoPanel";
 import UpdatesPanel from "@/components/admin/UpdatesPanel";
 import { useLanguage } from "@/components/layout/LanguageProvider";
@@ -102,6 +103,7 @@ export default function AdminPage() {
     { key: "bandwidth", label: t("bandwidthTitle"), dot: "bg-cyan-400", count: null },
     { key: "liveUsage", label: "唱卡使用", dot: "bg-rose-400", count: null },
     { key: "taggingUsage", label: "歌P使用", dot: "bg-amber-400", count: null },
+    { key: "captureClient", label: "App版本", dot: "bg-lime-400", count: null },
     { key: "tools", label: "管理员工具", dot: "bg-teal-400", count: null },
   ];
 
@@ -293,6 +295,8 @@ export default function AdminPage() {
       {activeTab === "liveUsage" && <LiveUsagePanel />}
 
       {activeTab === "taggingUsage" && <TaggingUsagePanel />}
+
+      {activeTab === "captureClient" && <CaptureClientPanel />}
 
       {activeTab === "tools" && (
         <div className="space-y-6">

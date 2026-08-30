@@ -124,8 +124,109 @@ async function setSignupPromo(input) {
   });
 }
 
+const CLIENT_VERSION_KEY = 'captureClientVersion';
+
+/**
+ * What the newest capture client is.
+ *
+ * Stored rather than hardcoded because it changes on a different clock from
+ * the code: shipping an APK means uploading a file and saying so, and having
+ * to edit a constant, commit, deploy and restart to finish that is a step easy
+ * to forget. Forgetting it is silently wrong — every client then compares
+ * itself against a stale number, decides it is current, and the update prompt
+ * never appears for anyone.
+ *
+ * The fallback is the last value that was in the code, so a database with
+ * nothing stored behaves exactly as before.
+ */
+// Latest shipped capture client. Bump minSupported when a change makes older
+// clients wrong rather than merely outdated — a qni control-id change, say,
+// where an old client silently captures nothing and the user assumes the tool
+// is broken.
+// v2 reworded the UI, v3 added the optional `side` field, v4 scans more often
+// and sends a heartbeat, v5 starts its sweep from onCreate, v6 finds the
+// candidate lists by id instead of walking the tree, v8 ties the client's
+// "already sent" set to the token instead of the process, and v9 reports each
+// title's row in the candidate list so the panel can line the two teams up the
+// way qni does.
+//
+// v8 is the only release where an older client is actually wrong rather than
+// merely limited: up to v7 that set was never cleared, so after switching
+// playlists or re-pairing, every title captured under the previous token was
+// skipped and the song silently never appeared. minSupported stays at 1 anyway
+// — an old client still captures everything on a fresh pairing, and cutting
+// users off mid-round is worse than the bug. The upgrade prompt covers it.
+// A pre-v9 client simply sends no row and the panel falls back to independent
+// columns.
+// v10 only sends a row for titles actually inside a candidate list: screens
+// without one returned 0 from getRowIndex() rather than -1, so nine unrelated
+// titles claimed row 0 and the panel showed one of them. The panel no longer
+// lets a repeated row overwrite anything either, so a v9 client is cosmetically
+// off at worst.
+// v17 reads the picking screen as one container again. Splitting it into two
+// lookups doubled the calls per scan and then cost a tree climb per song to
+// pair title with artist -- on an emulator, where a binder call is ~90x a
+// handset's, that turned the fastest path in the client into one of the
+// slowest. v16 added the artist pairing that v17 now gets for free.
+// v15 sends the words the game shows while a song is sung, and says which
+// screen each capture came from. Both were needed for the lyrics to survive at
+// all: picking and singing show the same title, so the performance -- the only
+// capture carrying lyrics -- was being discarded as a repeat.
+// v14 reaches the 唱卡 views by their own ids: the container it had been
+// asking for, singerDuelSingingAudienceHolder_cl_root, does not exist, so the
+// singing screen always fell through to the tree walk and 两军对决 -- which
+// alternates picking and singing every few seconds -- was never recognised. It
+// also notices when an over-the-top install leaves the accessibility service
+// switched on but no longer receiving events, which used to fail silently
+// while the app reported itself healthy.
+// v12 stops walking the whole tree on 歌 P screens. That walk never once
+// produced a title (14 of 14 came from the team lists) but cost 2-12s on the
+// main thread, blocking the events that arrived during it -- which is why tags
+// used to appear in bursts after a stall. Worst-case scan went 17.4s -> 0.6s.
+// v11 reads the delivery target off the heartbeat and scans only the round it
+// names. Up to v10 every round's titles were read and sent regardless, so 唱卡
+// songs were tagged into playlists during a 歌 P run -- 22 of 200 production
+// captures. minSupported stays at 1: an older client is wrong only while both
+// rounds are in play, and cutting users off mid-game is worse.
+const CLIENT_VERSION_DEFAULT = Object.freeze({
+  latest: 21,
+  minSupported: 1,
+  url: 'https://qnicheatsheet.com/qni-capture.apk',
+  latestName: '3.0',
+  releasedAt: '2026-08-22',
+});
+
+async function getClientVersion() {
+  const raw = await get(CLIENT_VERSION_KEY, null);
+  return { ...CLIENT_VERSION_DEFAULT, ...(raw || {}) };
+}
+
+/**
+ * A patch, so setting the version alone does not blank the download URL.
+ *
+ * `latest` is what every comparison runs on, so it is the one field checked
+ * rather than trusted: a string or a decimal here would make every client
+ * either permanently current or permanently outdated.
+ */
+async function setClientVersion(patch) {
+  const current = await getClientVersion();
+  const next = { ...current, ...(patch || {}) };
+
+  if (!Number.isInteger(next.latest) || next.latest < 1) {
+    throw new ValidationError({ latest: ['版本号必须是正整数'] });
+  }
+  if (!Number.isInteger(next.minSupported) || next.minSupported < 1) {
+    throw new ValidationError({ minSupported: ['最低支持版本必须是正整数'] });
+  }
+  await set(CLIENT_VERSION_KEY, next);
+  return next;
+}
+
 module.exports = {
   PROMO_KEY,
+  CLIENT_VERSION_KEY,
+  getClientVersion,
+  setClientVersion,
   getSignupPromo,
   resolveSignupPromo,
   setSignupPromo,

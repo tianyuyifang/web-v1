@@ -8,6 +8,7 @@ const songLibraryService = require('../services/songLibraryService');
 const { authMiddleware, requireApproved, requireActiveSession } = require('../middleware/auth');
 const captureAuth = require('../middleware/captureAuth');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
+const settingsService = require('../services/settingsService');
 
 /**
  * Auto-tagging is sold separately from membership. Entitlements are not in the
@@ -35,8 +36,7 @@ async function requireCaptureAddOn(req, res, next) {
   }
 }
 
-// --- unauthenticated: pairing ---
-
+// GET /api/capture/version — checked by the client at startup.
 // A 6-char code over a 31-char alphabet is ~900M combinations, but it is the
 // only credential on this route, so cap guesses hard.
 const pairLimiter = rateLimit({
@@ -47,67 +47,18 @@ const pairLimiter = rateLimit({
   message: { error: { message: 'Too many pairing attempts, try again later', status: 429 } },
 });
 
-// Latest shipped capture client. Bump minSupported when a change makes older
-// clients wrong rather than merely outdated — a qni control-id change, say,
-// where an old client silently captures nothing and the user assumes the tool
-// is broken.
-// v2 reworded the UI, v3 added the optional `side` field, v4 scans more often
-// and sends a heartbeat, v5 starts its sweep from onCreate, v6 finds the
-// candidate lists by id instead of walking the tree, v8 ties the client's
-// "already sent" set to the token instead of the process, and v9 reports each
-// title's row in the candidate list so the panel can line the two teams up the
-// way qni does.
-//
-// v8 is the only release where an older client is actually wrong rather than
-// merely limited: up to v7 that set was never cleared, so after switching
-// playlists or re-pairing, every title captured under the previous token was
-// skipped and the song silently never appeared. minSupported stays at 1 anyway
-// — an old client still captures everything on a fresh pairing, and cutting
-// users off mid-round is worse than the bug. The upgrade prompt covers it.
-// A pre-v9 client simply sends no row and the panel falls back to independent
-// columns.
-// v10 only sends a row for titles actually inside a candidate list: screens
-// without one returned 0 from getRowIndex() rather than -1, so nine unrelated
-// titles claimed row 0 and the panel showed one of them. The panel no longer
-// lets a repeated row overwrite anything either, so a v9 client is cosmetically
-// off at worst.
-// v17 reads the picking screen as one container again. Splitting it into two
-// lookups doubled the calls per scan and then cost a tree climb per song to
-// pair title with artist -- on an emulator, where a binder call is ~90x a
-// handset's, that turned the fastest path in the client into one of the
-// slowest. v16 added the artist pairing that v17 now gets for free.
-// v15 sends the words the game shows while a song is sung, and says which
-// screen each capture came from. Both were needed for the lyrics to survive at
-// all: picking and singing show the same title, so the performance -- the only
-// capture carrying lyrics -- was being discarded as a repeat.
-// v14 reaches the 唱卡 views by their own ids: the container it had been
-// asking for, singerDuelSingingAudienceHolder_cl_root, does not exist, so the
-// singing screen always fell through to the tree walk and 两军对决 -- which
-// alternates picking and singing every few seconds -- was never recognised. It
-// also notices when an over-the-top install leaves the accessibility service
-// switched on but no longer receiving events, which used to fail silently
-// while the app reported itself healthy.
-// v12 stops walking the whole tree on 歌 P screens. That walk never once
-// produced a title (14 of 14 came from the team lists) but cost 2-12s on the
-// main thread, blocking the events that arrived during it -- which is why tags
-// used to appear in bursts after a stall. Worst-case scan went 17.4s -> 0.6s.
-// v11 reads the delivery target off the heartbeat and scans only the round it
-// names. Up to v10 every round's titles were read and sent regardless, so 唱卡
-// songs were tagged into playlists during a 歌 P run -- 22 of 200 production
-// captures. minSupported stays at 1: an older client is wrong only while both
-// rounds are in play, and cutting users off mid-game is worse.
-const CLIENT_VERSION = {
-  latest: 21,
-  minSupported: 1,
-  url: 'https://qnicheatsheet.com/qni-capture.apk',
-  // Shown on the tools page. Update both when shipping a build, so the page
-  // cannot advertise a version the server does not actually serve.
-  latestName: '3.0',
-  releasedAt: '2026-08-22',
-};
-
 // GET /api/capture/version — checked by the client at startup.
-router.get('/version', (req, res) => res.json(CLIENT_VERSION));
+//
+// Read from settings so shipping an APK needs no code change; see
+// settingsService.getClientVersion for why, and for the version history that
+// used to live here.
+router.get('/version', async (req, res, next) => {
+  try {
+    res.json(await settingsService.getClientVersion());
+  } catch (err) {
+    next(err);
+  }
+});
 
 // POST /api/capture/pair — exchange a short code for the real token.
 // Deliberately unauthenticated: the capture client has no user credentials,
@@ -196,7 +147,7 @@ router.post('/heartbeat', captureAuth, async (req, res, next) => {
       mode: req.captureSession.mode,
       // What the newest build is, so a client can tell the user it is behind
       // without making a second request for it. Older clients ignore it.
-      latestVersion: CLIENT_VERSION.latest,
+      latestVersion: (await settingsService.getClientVersion()).latest,
       // What the client actually needs: which screens are worth scanning, and
       // whether to scan at all. Older clients ignore both fields.
       target: req.captureSession.target,
@@ -285,6 +236,7 @@ router.post('/connect', ...web, requireCaptureAddOn, async (req, res, next) => {
 router.get('/connection', ...web, async (req, res, next) => {
   try {
     const connection = await captureService.getConnection(req.user.id);
+    const { latest } = await settingsService.getClientVersion();
     // Whether the connected client is behind. Decided here because the version
     // numbers live here; the service only reports what it recorded.
     //
@@ -294,9 +246,9 @@ router.get('/connection', ...web, async (req, res, next) => {
     res.json({
       connection: connection && {
         ...connection,
-        latestVersion: CLIENT_VERSION.latest,
+        latestVersion: latest,
         outdated: typeof connection.clientVersion === 'number'
-          && connection.clientVersion < CLIENT_VERSION.latest,
+          && connection.clientVersion < latest,
       },
     });
   } catch (err) {

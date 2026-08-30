@@ -270,6 +270,10 @@ export const adminAPI = {
   // feature already writes. No window parameter: capture events are pruned
   // after thirty days, so a longer range would show less than it claimed.
   getLiveUsage: () => api.get("/admin/live-usage"),
+  // What the site advertises as the newest capture client. Stored server-side
+  // so shipping an APK does not need a code change.
+  getCaptureClient: () => api.get("/admin/capture-client"),
+  setCaptureClient: (patch) => api.put("/admin/capture-client", patch),
   // Who is tagging songs into playlists, manually or through 自动打标. Counted
   // from likes, which both routes write identically, so one number covers both.
   getTaggingUsage: () => api.get("/admin/tagging-usage"),

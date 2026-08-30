@@ -122,6 +122,29 @@ router.patch('/users/:id/billing', validate(updateBillingSchema), async (req, re
   }
 });
 
+// GET /api/admin/capture-client — what the site tells clients is the newest build
+router.get('/capture-client', async (req, res, next) => {
+  try {
+    res.json(await settingsService.getClientVersion());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/capture-client — record a newly shipped build
+//
+// Stored rather than edited in code: shipping an APK is an upload plus a
+// number, and requiring a commit and a restart to finish it is a step easy to
+// skip. Skipping it is silently wrong — every client then compares itself
+// against a stale number and decides it is current.
+router.put('/capture-client', async (req, res, next) => {
+  try {
+    res.json(await settingsService.setClientVersion(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/admin/users/:id/extend — extend subscription by one month
 router.post('/users/:id/extend', async (req, res, next) => {
   try {

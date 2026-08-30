@@ -85,6 +85,38 @@ async function main() {
     console.log(`\n打标记录：删除 ${r.count} 条，剩余 ${await prisma.tagEvent.count()} 条。`);
   }
 
+  /**
+   * Sessions, on a longer clock than everything else here.
+   *
+   * capture_events cascades from this table, so deleting a session takes its
+   * captures with it. Pruning sessions on the same 30-day line would therefore
+   * delete captures the 30-day rule had just decided to keep -- the cutoff has
+   * to sit strictly after it, and 45 days leaves a fortnight of margin.
+   *
+   * Worth doing at all because nothing has ever cleaned this table: measured at
+   * 39.4 rows a day, with 385 of 827 rows holding no captures whatsoever --
+   * pairings that were never used. It is small today (504kB) and this keeps it
+   * that way rather than fixing a problem.
+   */
+  const SESSION_KEEP_DAYS = Math.max(DAYS + 15, 45);
+  const sessionCutoff = new Date(Date.now() - SESSION_KEEP_DAYS * 86400000);
+  const sessStale = await prisma.captureSession.count({
+    where: { createdAt: { lt: sessionCutoff } },
+  });
+  if (!sessStale) {
+    console.log(`
+会话记录：无需清理（共 ${await prisma.captureSession.count()} 条，保留 ${SESSION_KEEP_DAYS} 天）。`);
+  } else if (!APPLY) {
+    console.log(`
+会话记录：将删除 ${sessStale} 条（${SESSION_KEEP_DAYS} 天前）。`);
+  } else {
+    const r = await prisma.captureSession.deleteMany({
+      where: { createdAt: { lt: sessionCutoff } },
+    });
+    console.log(`
+会话记录：删除 ${r.count} 条，剩余 ${await prisma.captureSession.count()} 条。`);
+  }
+
   if (!stale) {
     console.log('\n没有要删除的（捕获记录）。');
     return;

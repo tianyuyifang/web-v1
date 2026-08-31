@@ -35,10 +35,12 @@
  * The artist is checked, not merely recorded: it is compared through
  * artistKey, so 向蕙玲/陈随意 and 向蕙玲_陈随意 are the same two people.
  *
- * Idempotent: a title already in the pool is skipped and named, whatever its
- * source. That is the point -- a QQ or NetEase version already there is the
- * version 唱卡 has been using, and quietly adding a second one would change
- * which recording a song resolves to without anyone asking for it.
+ * Idempotent per recording: skipped only if THIS local song (LOCAL + its id)
+ * is already pooled, which is the table's real unique key. It does NOT skip on
+ * title — a QQ or NetEase "爱是不保留" already in the pool is a different
+ * recording from a LOCAL one the admin downloaded, and both should coexist, the
+ * way 唱卡 keeps every version of a title. (An earlier version skipped on title
+ * alone and wrongly refused an exclusive whose platform namesake was present.)
  */
 require('dotenv').config();
 
@@ -120,13 +122,19 @@ async function main() {
     }
     const song = byArtist[0];
 
-    // Anything already in the pool wins, whatever its source -- see the header.
-    const existing = await prisma.importedTrack.findMany({
-      where: { titleKey: titleKey(title) },
-      select: { source: true, artist: true },
+    // Skip only if THIS recording is already pooled — the pool row keyed on
+    // (LOCAL, this song's id), which is the table's real unique key. Matching
+    // on title alone was wrong: an exclusive is a LOCAL recording the admin
+    // downloaded and vouched for, and its id can never collide with a QQ or
+    // NetEase version of the same title, so a platform "爱是不保留" in the pool
+    // is no reason to skip the LOCAL 关心妍 one. Different source, different
+    // song — they coexist, which is exactly what 唱卡 wants.
+    const existing = await prisma.importedTrack.findUnique({
+      where: { source_externalId: { source: 'LOCAL', externalId: song.id } },
+      select: { source: true },
     });
-    if (existing.length) {
-      skipped.push([title, existing.map((e) => `${e.artist}(${e.source})`).join(', ')]);
+    if (existing) {
+      skipped.push([title, `已在池（${title} — ${artist}）`]);
       continue;
     }
 

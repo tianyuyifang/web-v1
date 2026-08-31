@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../db/client');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 const { addOneMonth } = require('../utils/billing');
-const { TIER_KEYS, getTiers, setTiers } = require('./settingsService');
+const { TIER_KEYS, getTiers, setTiers, getClientVersion } = require('./settingsService');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
 
 const SALT_ROUNDS = 10;
@@ -273,7 +273,17 @@ async function getLiveUsage() {
            COUNT(*) FILTER (
              WHERE e.created_at > NOW() - INTERVAL '24 hours'
                AND e.outcome = 'unmapped'
-           )::int                                       AS "hourUnmapped"
+           )::int                                       AS "hourUnmapped",
+           -- The APK version this user is on: the client_version their most
+           -- recent session reported. A correlated subquery rather than another
+           -- aggregate, so it does not disturb the counts above. NULL means an
+           -- old build from before version reporting existed (pre-v21).
+           (SELECT s2.client_version
+              FROM capture_sessions s2
+             WHERE s2.user_id = u.id
+               AND s2.created_at > NOW() - INTERVAL '7 days'
+             ORDER BY s2.created_at DESC
+             LIMIT 1)                                    AS "clientVersion"
       FROM capture_events e
       JOIN capture_sessions s ON s.id = e.session_id
       JOIN users u            ON u.id = s.user_id
@@ -283,10 +293,13 @@ async function getLiveUsage() {
      ORDER BY MAX(e.created_at) DESC
   `;
 
+  // The current latest version, so the table can mark who is behind it.
+  const cfg = await getClientVersion();
+
   // Timestamps go out as ISO strings and are formatted in the browser. The
   // server runs on UTC; sending a preformatted time would show the admin
   // 05:31 for a capture that happened at 13:31 where they are sitting.
-  return { days: 7, users: rows };
+  return { days: 7, users: rows, latestVersion: cfg.latest, latestName: cfg.latestName };
 }
 
 /**

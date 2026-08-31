@@ -173,12 +173,14 @@ export default function LiveUsagePanel() {
         <>
           <p className="mb-3 text-xs text-muted">
             过去 7 天有 {data.users.length} 人使用，按最近一次识别排序。
+            {data.latestVersion != null ? `　最新 APK：v${data.latestVersion}${data.latestName ? `（${data.latestName}）` : ""}` : ""}
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted">
                   <th className="pb-2 pr-4 font-medium">用户</th>
+                  <th className="pb-2 pr-4 font-medium">APK版本</th>
                   <th className="pb-2 pr-4 text-right font-medium">最近一次识别</th>
                   <th className="pb-2 pr-4 text-right font-medium">7 天识别</th>
                   {/* The three 24-hour columns are grouped under one idea, so
@@ -193,6 +195,23 @@ export default function LiveUsagePanel() {
                   <tr key={u.userId} className="border-b border-border/50">
                     <td className="py-2 pr-4 font-medium" style={{ color: "var(--text)" }}>
                       {u.username}
+                    </td>
+                    {/* APK version this user is on. null = a build from before
+                        version reporting (pre-v21), shown as 旧版 in red; a
+                        version below the latest is amber; the latest is green.
+                        Lets an admin see at a glance who still needs to update. */}
+                    <td className="py-2 pr-4">
+                      {u.clientVersion == null ? (
+                        <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[0.7rem] text-red-400">旧版</span>
+                      ) : u.clientVersion >= data.latestVersion ? (
+                        <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-[0.7rem] text-green-400">
+                          最新 v{u.clientVersion}
+                        </span>
+                      ) : (
+                        <span className="rounded bg-yellow-500/15 px-1.5 py-0.5 text-[0.7rem] text-yellow-500/90">
+                          v{u.clientVersion}
+                        </span>
+                      )}
                     </td>
                     <td
                       className="py-2 pr-4 text-right text-muted"

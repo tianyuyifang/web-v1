@@ -38,6 +38,7 @@ import {
   loadStoredQuality, storeQuality, loadStoredVocals, storeVocals, QUALITY_TIERS,
 } from "@/components/live/LiveVolumeControl";
 import { PlayIcon, PauseIcon, BusyIcon, UnmappedIcon } from "@/components/live/TransportIcons";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
 // without a platform account and cannot be delisted out from under a singer.
@@ -201,6 +202,11 @@ export default function LivePage() {
   // in the URL because it is a view toggle, not a place: a reload should put
   // the singer back on the cards, which is where a running game needs them.
   const [tab, setTab] = useState("cards");
+  // Shown when a member without the add-on reaches for a gated action. The
+  // page is visible to everyone now — the gate moved from a whole-page block
+  // to the individual entry points, so the feature is discoverable and the
+  // price reaches the people who would pay it, the same way 自动打标 does.
+  const [showAddOnNotice, setShowAddOnNotice] = useState(false);
   /**
    * The key and tempo a song opens in when it has none of its own.
    *
@@ -919,6 +925,12 @@ export default function LivePage() {
   }, [canApprove]);
 
   const start = useCallback(async () => {
+    // Explain the add-on rather than firing a request that will 403, the same
+    // as 自动打标. The button stays live so a member can find the feature.
+    if (!canCapture) {
+      setShowAddOnNotice(true);
+      return;
+    }
     setError("");
     setStarting(true);
     try {
@@ -937,7 +949,7 @@ export default function LivePage() {
     } finally {
       setStarting(false);
     }
-  }, [aim]);
+  }, [aim, canCapture]);
 
   const stop = useCallback(async () => {
     if (!session) return;
@@ -962,17 +974,10 @@ export default function LivePage() {
     return <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted">请先登录。</div>;
   }
 
-  // The add-on is the gate. Checked here as well as in the nav because the URL
-  // is guessable, though this only saves a wasted trip -- every route the page
-  // calls is gated on the server too.
-  if (!canCapture) {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <h1 className="mb-2 text-lg font-medium">唱卡</h1>
-        <p className="text-sm text-muted">唱卡是加订版功能，开通后即可使用。</p>
-      </div>
-    );
-  }
+  // The add-on gate is no longer a whole-page block: the page renders for any
+  // member so the feature can be seen and tried. Each gated action — 开始, and
+  // the 标记 / 已标记 tabs — checks canCapture itself and shows the add-on
+  // notice instead of firing a request the server would 403 anyway.
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
@@ -1023,8 +1028,15 @@ export default function LivePage() {
         ))}
       </div>
 
-      {tab === "library" ? <SongLibrary /> : null}
-      {tab === "marked" ? <MarkedSongs /> : null}
+      {/* 标记 / 已标记 read from gated routes, so a member without the add-on
+          sees the same notice here rather than an empty list from a 403. */}
+      {(tab === "library" || tab === "marked") && !canCapture ? (
+        <div className="rounded-xl border border-border bg-surface p-6 text-center text-sm text-muted">
+          这是加订版功能，开通后即可搜索曲库、给歌曲标记。
+        </div>
+      ) : null}
+      {tab === "library" && canCapture ? <SongLibrary /> : null}
+      {tab === "marked" && canCapture ? <MarkedSongs /> : null}
 
       {error && (
         <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">
@@ -1414,6 +1426,19 @@ export default function LivePage() {
         onVocalsChange={changeVocalsOnly}
         vocalsAvailable={vocalsAvailable}
       />
+
+      {showAddOnNotice ? (
+        // This page is hardcoded Chinese throughout, so the notice is too
+        // rather than reaching for the i18n hook it does not use. Same wording
+        // as 自动打标's dialog, in 唱卡 terms.
+        <ConfirmDialog
+          title="此功能属于加订版"
+          message="唱卡属于加订版功能（35 元 / 月，含全部加订功能）。请点击 账户 → 套餐与续费 查看详情。"
+          confirmLabel="知道了"
+          onConfirm={() => setShowAddOnNotice(false)}
+          onCancel={() => setShowAddOnNotice(false)}
+        />
+      ) : null}
     </div>
   );
 }

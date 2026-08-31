@@ -6,9 +6,10 @@ import { adminAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
-// The tier chip keys the member filter offers. "__none__" is the sentinel for
-// a user with no tier, so it can be filtered for like any real tier.
-const TIER_FILTER_KEYS = ["vip", "super_vip", "zhiyou", "normal", "__none__"];
+// The tier chip keys the member filter offers. Every member has a tier now
+// (promo-on signups and approvals both land on one, so there is no 无档位 to
+// filter for); "expired" is handled separately in passesFilters.
+const TIER_FILTER_KEYS = ["normal", "vip", "super_vip", "zhiyou"];
 
 export default function UserTable({ users, onRefresh, controls = false }) {
   const { t } = useLanguage();
@@ -130,12 +131,10 @@ export default function UserTable({ users, onRefresh, controls = false }) {
 
   function passesFilters(u) {
     // Tier filter, multi-select: with any tier chip on, show only users whose
-    // tier is among those picked (a union). No chip on means no filtering. A
-    // user with no tier is matched only by the explicit "无档位" chip.
+    // tier is among those picked (a union). No chip on means no filtering.
     const picked = TIER_FILTER_KEYS.filter((k) => activeFilters[k]);
     if (picked.length) {
-      const tierKey = u.tier || "__none__";
-      if (!picked.includes(tierKey)) return false;
+      if (!picked.includes(u.tier)) return false;
     }
     // 已过期: past the paid-until date. Derived, not a stored status — the same
     // rule the members list is built on. A member with no date never expires.
@@ -166,12 +165,11 @@ export default function UserTable({ users, onRefresh, controls = false }) {
     { key: "shared", label: t("sortShared") },
   ];
   const filterChips = [
+    { key: "expired", label: "已过期" },
+    { key: "normal", label: "普通" },
     { key: "vip", label: "VIP" },
     { key: "super_vip", label: "超级VIP" },
     { key: "zhiyou", label: "挚友" },
-    { key: "normal", label: "普通" },
-    { key: "__none__", label: "无档位" },
-    { key: "expired", label: "已过期" },
   ];
 
   return (

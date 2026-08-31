@@ -4,7 +4,7 @@ export default {
   // Navbar
   welcome: "欢迎，",
   you: "我",
-  navPlaylists: "播放列表",
+  navPlaylists: "歌单",
   navHelp: "帮助",
   navLive: "唱卡",
   helpTitle: "帮助",
@@ -82,33 +82,33 @@ export default {
   alreadyHaveAccount: "已有账号？",
 
   // Playlists page
-  playlists: "播放列表",
-  playlist: "个列表",
-  playlistsPlural: "个列表",
-  myPlaylists: "我的列表",
+  playlists: "歌单",
+  playlist: "个歌单",
+  playlistsPlural: "个歌单",
+  myPlaylists: "我的歌单",
   sharedPlaylists: "共享给我",
   publicPlaylists: "公开",
-  newPlaylist: "+ 新建列表",
-  searchPlaylists: "搜索播放列表...",
-  noPlaylistsMatch: "没有匹配的播放列表",
-  noPlaylistsYet: "还没有播放列表",
+  newPlaylist: "+ 新建歌单",
+  searchPlaylists: "搜索歌单...",
+  noPlaylistsMatch: "没有匹配的歌单",
+  noPlaylistsYet: "还没有歌单",
   createToStart: "创建一个开始使用吧。",
 
   // New Playlist
-  newPlaylistTitle: "新建播放列表",
+  newPlaylistTitle: "新建歌单",
   create: "创建",
   import: "导入",
   name: "名称",
-  namePlaceholder: "播放列表名称...",
+  namePlaceholder: "歌单名称...",
   descriptionOptional: "描述（可选）",
-  descriptionPlaceholder: "描述你的播放列表...",
+  descriptionPlaceholder: "描述你的歌单...",
   makePublic: "设为公开",
-  playlistNameRequired: "请输入播放列表名称",
+  playlistNameRequired: "请输入歌单名称",
   creating: "创建中...",
-  createPlaylist: "创建播放列表",
+  createPlaylist: "创建歌单",
   importing: "导入中...",
   importFailed: "导入失败",
-  createPlaylistFailed: "创建播放列表失败",
+  createPlaylistFailed: "创建歌单失败",
 
   // Visibility
   publicLabel: "公开",
@@ -135,22 +135,22 @@ export default {
   filterClips: "按标题、歌手或备注筛选...",
   filterByColor: "按颜色筛选",
   clearColorFilter: "清除",
-  deletePlaylistConfirm: "此操作不可撤销。播放列表中的所有片段、分享和喜欢将被永久删除。",
-  deletePlaylistTitle: "删除播放列表",
+  deletePlaylistConfirm: "此操作不可撤销。歌单中的所有片段、分享和喜欢将被永久删除。",
+  deletePlaylistTitle: "删除歌单",
   deleteClipTitle: "删除片段",
   deleteClipConfirm: "从数据库中永久删除此片段？此操作无法撤销。",
   cancel: "取消",
   confirm: "确认",
   makePublicTitle: "设为公开",
-  makePublicMessage: "所有人都将能查看和播放此播放列表。你可以随时改回私密。",
+  makePublicMessage: "所有人都将能查看和播放此歌单。你可以随时改回私密。",
   makePrivateTitle: "设为私密",
-  makePrivateMessage: "仅你和你分享的用户可以查看此播放列表。",
+  makePrivateMessage: "仅你和你分享的用户可以查看此歌单。",
 
   // Playlist header
   columnsPerRow: "每行显示",
   unlikeAll: "取消全部喜欢",
   unlikeAllTitle: "取消全部喜欢",
-  unlikeAllConfirm: "确定要取消该列表中所有片段的喜欢吗？",
+  unlikeAllConfirm: "确定要取消该歌单中所有片段的喜欢吗？",
   batch: "批量",
   // 批量控件的标签。t() 找不到 key 时返回 key 本身，所以
   // `t("speed") || "Speed"` 里的兜底永远轮不到 —— 这两条必须存在。
@@ -170,7 +170,7 @@ export default {
   addClip: "添加片段",
   share: "分享",
   delete: "删除",
-  copyPlaylist: "复制列表",
+  copyPlaylist: "复制歌单",
   // 游客限制
   guestLimitTitle: "游客功能受限",
   guestNoPublic: "游客不能将歌单设为公开。升级成会员后即可开放歌单给所有人。",
@@ -233,7 +233,7 @@ export default {
   noClipsFound: "没有找到片段。",
 
   // Add clip modal
-  addClipToPlaylist: "添加片段到列表",
+  addClipToPlaylist: "添加片段到歌单",
   searchSongs: "搜索歌曲...",
   noSongsFound: "没有找到歌曲。",
   importClips: "导入片段",
@@ -246,8 +246,8 @@ export default {
   importByKugou: "从酷狗导入",
   importByKugouDesc: "粘贴酷狗歌单 specialID（collection_3_{uid}_{listid}_0），自动匹配并导入歌曲",
   kugouPlaylistIdPlaceholder: "酷狗歌单 specialID...",
-  importByInternal: "从站内播放列表导入",
-  importByInternalDesc: "搜索播放列表以导入其所有片段",
+  importByInternal: "从站内歌单导入",
+  importByInternalDesc: "搜索歌单以导入其所有片段",
   importByFile: "从文件导入",
   importButton: "导入",
   importingClips: "导入中...",
@@ -268,7 +268,7 @@ export default {
 
   // Compare playlist
   comparePlaylist: "对比",
-  compareDesc: "将此播放列表中的歌曲与外部歌单进行对比，查找差异。",
+  compareDesc: "将此歌单中的歌曲与外部歌单进行对比，查找差异。",
   compareQQ: "QQ音乐歌单",
   compareQQDesc: "输入QQ音乐歌单ID进行对比",
   compareNetease: "网易云歌单",
@@ -289,10 +289,10 @@ export default {
   compareMatched: "完全匹配",
   compareArtistMismatch: "歌手不同",
   compareMissing: "缺少",
-  compareMissingTitle: "外部歌单有但本列表没有",
+  compareMissingTitle: "外部歌单有但本歌单没有",
   compareArtistMismatchTitle: "歌名匹配但歌手不同",
   compareLocalOnly: "仅本地",
-  compareLocalOnlyTitle: "本列表有但外部歌单没有",
+  compareLocalOnlyTitle: "本歌单有但外部歌单没有",
   compareAgain: "重新对比",
 
   // Clip switcher
@@ -302,19 +302,19 @@ export default {
   setGlobal: "设为所有人可见",
 
   // Share modal
-  sharePlaylist: "分享播放列表",
+  sharePlaylist: "分享歌单",
   viewAccess: "查看权限",
   searchUserShare: "搜索用户以分享...",
   noUsersInList: "列表为空。",
   remove: "移除",
-  batchRemoveConfirm: "从播放列表中移除 {count} 个片段？",
-  removeClipConfirm: "从播放列表中移除此片段？",
+  batchRemoveConfirm: "从歌单中移除 {count} 个片段？",
+  removeClipConfirm: "从歌单中移除此片段？",
   copyPermission: "复制权限",
   searchUserCopy: "搜索用户以授予复制权限...",
 
   // Batch share modal
   batchShare: "批量分享",
-  batchShareDesc: "选择播放列表以分享或授予复制权限给用户。",
+  batchShareDesc: "选择歌单以分享或授予复制权限给用户。",
   searchUserBatchShare: "搜索用户...",
   selectAll: "全选",
   deselectAll: "取消全选",
@@ -323,7 +323,7 @@ export default {
   batchShareNoChange: "没有需要更改的内容。",
 
   // Import modal
-  importPlaylist: "导入播放列表",
+  importPlaylist: "导入歌单",
 
   // Search bar
   search: "搜索...",
@@ -342,7 +342,7 @@ export default {
   setStartHere: "设为起始点",
   clipRange: "片段：",
   adding: "添加中...",
-  addToList: "添加到列表",
+  addToList: "添加到歌单",
   forceRegenerate: "强制重新生成",
   createClipFailed: "创建片段失败",
 
@@ -509,15 +509,15 @@ export default {
   // 工具
   navTools: "工具",
   tools: "工具",
-  toolsDiffDescription: "对比两个列表，查看片段差异。",
+  toolsDiffDescription: "对比两个歌单，查看片段差异。",
 
   // 对比工具
   diff: "片段对比",
-  diffBaseline: "原始列表 A",
-  diffCurrent: "当前列表 B",
+  diffBaseline: "原始歌单 A",
+  diffCurrent: "当前歌单 B",
   diffSwap: "交换",
   diffChange: "更换",
-  diffSelectPlaylist: "搜索列表…",
+  diffSelectPlaylist: "搜索歌单…",
   diffNewInB: "新增",
   diffModifiedInB: "已修改",
   diffRemovedFromB: "已删除",
@@ -527,18 +527,18 @@ export default {
   diffSummary: "新增 {n} · 修改 {m} · 删除 {k}",
   toolsDesktopOnly: "对比功能仅在平板或桌面端可用",
   diffSameError: "无法和自身对比",
-  diffEmpty: "请选择两个列表进行对比",
+  diffEmpty: "请选择两个歌单进行对比",
 
   // 合并工具
   merge: "合并",
   toolsMergeDescription: "一个非常强大的融合歌单的工具！强烈推荐！",
   toolsCaptureApk: "自动打标 App（安卓）",
   toolsCaptureApkDescription: "自动打标，解放双手，解放队友！",
-  mergeBaseline: "我的列表 (A)",
+  mergeBaseline: "我的歌单 (A)",
   mergeSource: "合并来源 (B)",
   mergeButton: "合并",
   mergeConfirmTitle: "确认合并",
-  mergeConfirmBody: "将创建新列表「{name}」，确认合并？",
+  mergeConfirmBody: "将创建新歌单「{name}」，确认合并？",
   mergeSuccessSummary: "已创建「{name}」：{added} 新增 · {merged} 合并 · {markedDifferent} 标记不同 · {markedDeleted} 标记删除",
   mergeOptionsTitle: "合并选项",
   mergeOpt_speed: "速度",

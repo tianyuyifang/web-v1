@@ -86,25 +86,21 @@ export default function LiveGuide() {
             <thead>
               <tr className="border-b border-border text-left text-muted">
                 <th className="py-1.5 pr-3 font-medium">分类</th>
-                <th className="py-1.5 pr-3 font-medium">说明</th>
-                <th className="py-1.5 font-medium">正确率</th>
+                <th className="py-1.5 font-medium">说明</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-border/50">
                 <td className="py-2 pr-3 align-top font-medium text-green-400">已确认</td>
-                <td className="py-2 pr-3">歌名、歌手与游戏显示完全一致</td>
-                <td className="py-2 tabular-nums">约 99%</td>
+                <td className="py-2">歌名、歌手与游戏显示完全一致</td>
               </tr>
               <tr className="border-b border-border/50">
                 <td className="py-2 pr-3 align-top font-medium text-yellow-500/90">未确认</td>
-                <td className="py-2 pr-3">歌名或歌手有一项不匹配，尚未人工核查</td>
-                <td className="py-2 tabular-nums">约 85%</td>
+                <td className="py-2">歌名或歌手有一项不匹配，尚未人工核查</td>
               </tr>
               <tr>
                 <td className="py-2 pr-3 align-top font-medium text-red-400">未配置</td>
-                <td className="py-2 pr-3">该歌曲暂未收录于曲库，无法播放；由后台自动收集，每 24 小时统一配置一轮</td>
-                <td className="py-2 tabular-nums">—</td>
+                <td className="py-2">该歌曲暂未收录于曲库，无法播放；由后台自动收集，每 24 小时统一配置一轮</td>
               </tr>
             </tbody>
           </table>

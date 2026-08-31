@@ -224,7 +224,7 @@ async function getBandwidthStats(days = 30) {
  * they were not. It also drops anyone who started a session and captured
  * nothing at all, which is the honest answer to "who is using this".
  *
- * The one-hour columns split the way the singer's own screen does:
+ * The 24-hour columns split the way the singer's own screen does:
  *
  *   已确认  a reviewer signed this mapping off
  *   待确认  it resolved and played, but nobody has vouched for the recording
@@ -244,17 +244,17 @@ async function getLiveUsage() {
            MAX(e.created_at)                            AS "lastCaptureAt",
            COUNT(*)::int                                AS "weekTotal",
            COUNT(*) FILTER (
-             WHERE e.created_at > NOW() - INTERVAL '1 hour'
+             WHERE e.created_at > NOW() - INTERVAL '24 hours'
                AND e.outcome = 'resolved'
                AND (e.candidates->>'approved')::boolean IS TRUE
            )::int                                       AS "hourConfirmed",
            COUNT(*) FILTER (
-             WHERE e.created_at > NOW() - INTERVAL '1 hour'
+             WHERE e.created_at > NOW() - INTERVAL '24 hours'
                AND e.outcome = 'resolved'
                AND (e.candidates->>'approved')::boolean IS NOT TRUE
            )::int                                       AS "hourPending",
            COUNT(*) FILTER (
-             WHERE e.created_at > NOW() - INTERVAL '1 hour'
+             WHERE e.created_at > NOW() - INTERVAL '24 hours'
                AND e.outcome = 'unmapped'
            )::int                                       AS "hourUnmapped"
       FROM capture_events e

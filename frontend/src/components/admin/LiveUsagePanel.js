@@ -181,9 +181,9 @@ export default function LiveUsagePanel() {
                   <th className="pb-2 pr-4 font-medium">用户</th>
                   <th className="pb-2 pr-4 text-right font-medium">最近一次识别</th>
                   <th className="pb-2 pr-4 text-right font-medium">7 天识别</th>
-                  {/* The three one-hour columns are grouped under one idea, so
+                  {/* The three 24-hour columns are grouped under one idea, so
                       the header says the window once rather than three times. */}
-                  <th className="pb-2 pr-3 text-right font-medium">1 小时 · 已确认</th>
+                  <th className="pb-2 pr-3 text-right font-medium">24 小时 · 已确认</th>
                   <th className="pb-2 pr-3 text-right font-medium">待确认</th>
                   <th className="pb-2 text-right font-medium">未配置</th>
                 </tr>

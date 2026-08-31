@@ -80,6 +80,11 @@ async function approveUser(id) {
       demotedAt: null,
       previousRole: null,
       expiresAt: addOneMonth(new Date()),
+      // Approving is how a promo-off signup gets in, and getting in means the
+      // paid tier — otherwise they would be a member with no tier and no
+      // 唱卡. Only fill it when absent, so approving someone an admin already
+      // placed on a specific tier (挚友, say) does not knock them back to VIP.
+      ...(user.tier ? {} : { tier: 'vip' }),
     },
     select: { id: true, username: true, role: true },
   });

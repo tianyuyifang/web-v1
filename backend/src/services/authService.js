@@ -7,7 +7,7 @@ const { UnauthorizedError, ValidationError } = require('../utils/errors');
 const { deriveStatus } = require('../utils/billing');
 const { normalizeSessions, addSession, hasSession } = require('../utils/sessions');
 const { resolveSignupPromo, getTiers } = require('./settingsService');
-const { ALL_ADD_ONS, ADD_ONS, hasAddOn } = require('../utils/entitlements');
+const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
 const CAPTURE = ADD_ONS.CAPTURE;
 
 const SALT_ROUNDS = 10;
@@ -40,43 +40,38 @@ async function register({ username, password }) {
   // outright instead of leaning on the schema default, which is still PENDING
   // — that is now where expired accounts land, not where new ones start.
   //
-  // …unless a signup promotion is running, which makes new accounts MEMBER
-  // with an expiry, the same shape an admin-approved member has. If reading
-  // the promotion fails, registration still succeeds as a guest: a broken
-  // campaign should not stop people signing up.
+  // …unless a signup promotion is running, which makes new accounts MEMBER on
+  // the VIP tier with an expiry, the same shape an admin-approved member has.
+  // If reading the promotion fails, registration still succeeds but the
+  // account waits for approval (promo-off behaviour): a broken campaign should
+  // not stop people signing up, nor let them straight in.
   let promo = { active: false, expiresAt: null };
   try {
     promo = await resolveSignupPromo();
   } catch (err) {
-    console.error('Signup promo lookup failed, defaulting to GUEST:', err.message);
+    // A failed lookup is treated as promo-off: the safe default is to make the
+    // account wait for approval, not to let it straight in.
+    console.error('Signup promo lookup failed, defaulting to approval-gated:', err.message);
   }
 
   const user = await prisma.user.create({
     data: {
       username,
       passwordHash,
-      role: promo.active ? 'MEMBER' : 'GUEST',
-      expiresAt: promo.active ? promo.expiresAt : null,
       /**
-       * 唱卡 and 自动打标 from the first login, promotion or not.
+       * Promotion decides whether a new account walks in or waits.
        *
-       * They were the reason to sign up and the one thing a new account could
-       * not do: entitlements defaulted to empty, so every account needed an
-       * admin to open the billing page and grant it by hand. Measured on the
-       * live data, 117 of 122 accounts had been granted it that way, and the
-       * newest one waited 457 seconds between registering and being able to
-       * use the site — the grant was effectively universal, just delayed and
-       * manual.
-       *
-       * ALL_ADD_ONS rather than the string: the two features share one
-       * entitlement today, and a third would otherwise have to be remembered
-       * here as well.
-       *
-       * This grants the feature, not the tier. A guest still holds a guest's
-       * limits — three playlists, no public lists — and an admin can still
-       * revoke this per account.
+       *   promo on  → MEMBER on the VIP tier, live immediately with 唱卡. The
+       *     tier grants the add-on, so nothing is stuffed into entitlements —
+       *     permissions come from one place now.
+       *   promo off → PENDING. The account cannot log in until an admin
+       *     approves it, which is where GUEST used to sit; there is no reason
+       *     to mint a half-limited guest role for that any more, and approval
+       *     puts them on VIP too (see approveUser).
        */
-      entitlements: [...ALL_ADD_ONS],
+      role: promo.active ? 'MEMBER' : 'PENDING',
+      tier: promo.active ? 'vip' : null,
+      expiresAt: promo.active ? promo.expiresAt : null,
     },
     select: { id: true, username: true, role: true, preferences: true },
   });

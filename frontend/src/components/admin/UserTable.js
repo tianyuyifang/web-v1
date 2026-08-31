@@ -3,7 +3,6 @@
 import { useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { adminAPI } from "@/lib/api";
-import { ALL_ADD_ONS } from "@/lib/addOns";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
@@ -36,7 +35,6 @@ export default function UserTable({ users, onRefresh, controls = false }) {
       paymentStatus: user.paymentStatus || "",
       billingNotes: user.billingNotes || "",
       deviceLimit: user.deviceLimit != null ? String(user.deviceLimit) : "",
-      entitlements: user.entitlements || [],
       tier: user.tier || "",
     };
   }
@@ -63,13 +61,15 @@ export default function UserTable({ users, onRefresh, controls = false }) {
 
   async function saveBilling(user) {
     const d = draftFor(user);
+    // entitlements is deliberately not sent: the add-on is tier-driven now and
+    // the editor no longer edits it, so a save touches only billing fields and
+    // the device-limit override.
     await perform(user.id, () => adminAPI.updateBilling(user.id, {
       expiresAt: d.expiresAt ? new Date(d.expiresAt + "T00:00:00.000Z").toISOString() : null,
       monthlyFee: d.monthlyFee === "" ? null : d.monthlyFee,
       paymentStatus: d.paymentStatus || null,
       billingNotes: d.billingNotes || null,
       deviceLimit: d.deviceLimit === "" ? null : parseInt(d.deviceLimit, 10),
-      entitlements: d.entitlements,
     }));
     setBillingDraft((prev) => { const n = { ...prev }; delete n[user.id]; return n; });
   }
@@ -365,7 +365,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                       </label>
                     )}
                     <label className="flex flex-col text-xs text-muted">
-                      设备上限（破例）
+                      设备上限
                       <input
                         type="number"
                         step="1"
@@ -374,7 +374,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         onChange={(e) => setDraft(user.id, { deviceLimit: e.target.value })}
                         className="mt-0.5 w-24 rounded border border-border bg-background px-2 py-1 text-sm text-theme"
                         placeholder="跟档位"
-                        title="留空 = 跟随档位；填数字 = 单独破例，用户仍在原档"
+                        title="留空 = 跟随档位；填数字 = 给这个用户单独设"
                       />
                     </label>
                     <label className="flex flex-col text-xs text-muted">
@@ -399,37 +399,21 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         className="mt-0.5 w-full rounded border border-border bg-background px-2 py-1 text-sm text-theme"
                       />
                     </label>
-                    {/* Two lines: the box is the per-user OVERRIDE (a hand-set
-                        grant on top of the tier), and below it the effective
-                        state — because a VIP holds 加订 from the tier with the
-                        box empty, which used to read as "no add-on". */}
-                    <div className="flex flex-col gap-0.5 text-xs text-muted">
-                      <label className="flex items-center gap-2"
-                        title="勾选 = 强制给加订（破例，档位之外）；不勾 = 跟随档位">
-                        <input
-                          type="checkbox"
-                          checked={draftFor(user).entitlements.length > 0}
-                          onChange={(e) =>
-                            setDraft(user.id, {
-                              entitlements: e.target.checked ? [...ALL_ADD_ONS] : [],
-                            })
-                          }
-                          className="h-3.5 w-3.5 rounded border-border accent-primary"
-                        />
-                        加订（破例）
-                      </label>
-                      <span className="pl-6 text-[0.65rem]">
-                        {user.role === "ADMIN" ? (
-                          <span className="text-green-400">管理员 · 全部功能</span>
-                        ) : user.hasCapture ? (
-                          <span className="text-green-400">
-                            当前有加订{user.hasCaptureOverride ? "（破例）" : `（来自${{ normal: "普通", vip: "VIP", super_vip: "超级VIP", zhiyou: "挚友" }[user.tier] || "档位"}档）`}
-                          </span>
-                        ) : (
-                          <span className="text-muted/70">当前无加订</span>
-                        )}
-                      </span>
-                    </div>
+                    {/* Add-on is decided entirely by the tier — a VIP/超级VIP/挚友
+                        has it, 普通 does not. So this is a read-only reflection
+                        of the tier's state, not an editable field: to change
+                        it, change the tier. Disabled and label-only. */}
+                    <label className="flex items-center gap-2 text-xs text-muted"
+                      title="加订由档位决定，改档位即可">
+                      <input
+                        type="checkbox"
+                        checked={user.role === "ADMIN" || !!user.hasCapture}
+                        disabled
+                        readOnly
+                        className="h-3.5 w-3.5 rounded border-border accent-primary opacity-70"
+                      />
+                      加订
+                    </label>
                     <button
                       onClick={() => saveBilling(user)}
                       disabled={loading[user.id]}

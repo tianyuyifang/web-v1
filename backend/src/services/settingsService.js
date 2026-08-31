@@ -196,6 +196,65 @@ const CLIENT_VERSION_DEFAULT = Object.freeze({
   releasedAt: '2026-08-22',
 });
 
+// --- Membership tiers ---------------------------------------------------
+//
+// A tier bundles the two things an admin used to set one user at a time: the
+// add-on and the device limit. A member holds a tier, and their权限 are read
+// from the tier's current values — change 挚友's device limit here and every
+// 挚友 moves at once ("live tiers"), which is the whole point of the feature.
+//
+// The four keys are fixed (the ladder is a product decision, not data), but
+// each tier's capture flag and device limit are editable from the admin page
+// and stored under TIERS_KEY. A per-user override still wins over the tier —
+// that lives on the user row (deviceLimit / entitlements), not here.
+const TIERS_KEY = 'membershipTiers';
+const TIER_KEYS = Object.freeze(['normal', 'vip', 'super_vip', 'zhiyou']);
+const TIER_LABELS = Object.freeze({
+  normal: '普通', vip: 'VIP', super_vip: '超级VIP', zhiyou: '挚友',
+});
+const TIERS_DEFAULT = Object.freeze({
+  normal:    { capture: false, deviceLimit: 3 },
+  vip:       { capture: true,  deviceLimit: 3 },
+  super_vip: { capture: true,  deviceLimit: 5 },
+  zhiyou:    { capture: true,  deviceLimit: 8 },
+});
+
+async function getTiers() {
+  const raw = await get(TIERS_KEY, null);
+  // Merge per-tier so a stored config missing a newly-added tier still fills
+  // it from the default rather than returning undefined for it.
+  const out = {};
+  for (const k of TIER_KEYS) {
+    out[k] = { ...TIERS_DEFAULT[k], ...((raw && raw[k]) || {}) };
+  }
+  return out;
+}
+
+/**
+ * A patch keyed by tier, so setting one tier's device limit does not blank
+ * the others. Each tier value is validated: capture is a boolean, deviceLimit
+ * a positive integer, because these drive who can 唱卡 and how many devices
+ * they may hold — a bad value would silently lock people out or open the door.
+ */
+async function setTiers(patch) {
+  const current = await getTiers();
+  const next = {};
+  for (const k of TIER_KEYS) {
+    const p = (patch && patch[k]) || {};
+    const capture = p.capture !== undefined ? p.capture : current[k].capture;
+    const deviceLimit = p.deviceLimit !== undefined ? p.deviceLimit : current[k].deviceLimit;
+    if (typeof capture !== 'boolean') {
+      throw new ValidationError({ [k]: ['加订必须是 true 或 false'] });
+    }
+    if (!Number.isInteger(deviceLimit) || deviceLimit < 1) {
+      throw new ValidationError({ [k]: ['设备上限必须是正整数'] });
+    }
+    next[k] = { capture, deviceLimit };
+  }
+  await set(TIERS_KEY, next);
+  return next;
+}
+
 async function getClientVersion() {
   const raw = await get(CLIENT_VERSION_KEY, null);
   return { ...CLIENT_VERSION_DEFAULT, ...(raw || {}) };
@@ -230,4 +289,10 @@ module.exports = {
   getSignupPromo,
   resolveSignupPromo,
   setSignupPromo,
+  TIERS_KEY,
+  TIER_KEYS,
+  TIER_LABELS,
+  TIERS_DEFAULT,
+  getTiers,
+  setTiers,
 };

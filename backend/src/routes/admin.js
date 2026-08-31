@@ -135,6 +135,35 @@ router.patch('/users/:id/billing', validate(updateBillingSchema), async (req, re
   }
 });
 
+// PATCH /api/admin/users/:id/tier — one-click: put a user on a membership tier
+router.patch('/users/:id/tier', async (req, res, next) => {
+  try {
+    const tier = req.body && req.body.tier === null ? null : String(req.body && req.body.tier || '');
+    const user = await adminService.setUserTier(req.params.id, tier || null);
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/tiers — the editable tier config (add-on + device limit each)
+router.get('/tiers', async (req, res, next) => {
+  try {
+    res.json(await adminService.getTierConfig());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/tiers — patch one or more tiers' config
+router.put('/tiers', async (req, res, next) => {
+  try {
+    res.json(await adminService.setTierConfig(req.body || {}));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/admin/capture-client — what the site tells clients is the newest build
 router.get('/capture-client', async (req, res, next) => {
   try {

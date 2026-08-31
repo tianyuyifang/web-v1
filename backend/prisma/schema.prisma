@@ -43,10 +43,16 @@ model User {
   // and a member who stopped paying both end up PENDING but need different
   // wording, and the role alone cannot tell them apart.
   previousRole    Role?      @map("previous_role")
-  // Paid add-ons this user holds, e.g. ["capture"]. A list rather than a
-  // column per feature: the next add-on is a new string, not a migration.
-  // Guests get every add-on free, so this only ever gates members.
+  // Paid add-ons this user holds, e.g. ["capture"]. Since membership tiers
+  // arrived this is a per-user OVERRIDE, not the primary source: a non-empty
+  // list wins, an empty list defers to the tier's add-ons. Guests get every
+  // add-on free, so this only ever matters for members.
   entitlements    String[]   @default([])
+  // Which membership tier this user holds (normal / vip / super_vip / zhiyou),
+  // or null for accounts that predate tiers or never got one. The tier decides
+  // add-ons and device limit from its editable config; a per-user override
+  // (entitlements above, deviceLimit below) still wins when set.
+  tier            String?    @map("tier")
   /// Lets this user approve song mappings. A flag rather than a role because
   /// it cuts across the existing ladder: it is granted to a couple of trusted
   /// people, and every ADMIN has it implicitly. One wrong approval is

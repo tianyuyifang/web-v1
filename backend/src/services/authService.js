@@ -6,8 +6,9 @@ const prisma = require('../db/client');
 const { UnauthorizedError, ValidationError } = require('../utils/errors');
 const { deriveStatus } = require('../utils/billing');
 const { normalizeSessions, addSession, hasSession } = require('../utils/sessions');
-const { resolveSignupPromo } = require('./settingsService');
-const { ALL_ADD_ONS } = require('../utils/entitlements');
+const { resolveSignupPromo, getTiers } = require('./settingsService');
+const { ALL_ADD_ONS, ADD_ONS, hasAddOn } = require('../utils/entitlements');
+const CAPTURE = ADD_ONS.CAPTURE;
 
 const SALT_ROUNDS = 10;
 
@@ -97,9 +98,12 @@ async function login({ username, password }) {
   // racing on the same account can't clobber each other's array. Evicts the
   // oldest device when the new login would exceed the user's device limit.
   // ADMIN is unrestricted (Infinity => no trimming).
+  // Read once, outside the lock: the tier config is a settings row, not part
+  // of the per-user race the transaction guards.
+  const tiers = await getTiers();
   const updated = await prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw`
-      SELECT active_sessions, role, device_limit
+      SELECT active_sessions, role, device_limit, tier
       FROM users WHERE id = ${user.id}::uuid FOR UPDATE`;
     const locked = rows[0];
     // Fall back to 1 if the global default is missing/invalid, so a config gap
@@ -107,9 +111,16 @@ async function login({ username, password }) {
     const globalDefault = Number.isInteger(config.defaultDeviceLimit) && config.defaultDeviceLimit >= 1
       ? config.defaultDeviceLimit
       : 1;
+    // Three tiers of answer, narrowest first: a per-user override wins, else
+    // the membership tier's current device limit, else the global default.
+    // The override is what lets an admin lift one friend above their tier
+    // without moving them out of it.
+    const tierLimit = locked.tier && tiers[locked.tier]
+      ? tiers[locked.tier].deviceLimit : null;
     const limit = locked.role === 'ADMIN'
       ? Infinity
-      : (locked.device_limit != null ? locked.device_limit : globalDefault);
+      : (locked.device_limit != null ? locked.device_limit
+        : (tierLimit != null ? tierLimit : globalDefault));
     const list = addSession(normalizeSessions(locked.active_sessions), sessionId, nowIso, limit);
     return tx.user.update({
       where: { id: user.id },
@@ -175,11 +186,19 @@ async function getMe(userId) {
     select: {
       id: true, username: true, role: true, preferences: true,
       expiresAt: true, monthlyFee: true, previousRole: true,
-      entitlements: true,
+      entitlements: true, tier: true,
       canEditMapping: true,
     },
   });
   if (!user) return null;
+  // The EFFECTIVE add-ons, resolving the tier and the per-user override the
+  // same way the server gate does, so the page's canCapture stays a plain
+  // membership check without needing to know about tiers. A tier that grants
+  // 加订 adds 'capture'; a hand-set override list still wins on its own.
+  const tiers = await getTiers();
+  const effectiveEntitlements = hasAddOn(user, CAPTURE, tiers)
+    ? Array.from(new Set([...(user.entitlements || []), CAPTURE]))
+    : (user.entitlements || []);
   return {
     id: user.id,
     username: user.username,
@@ -190,9 +209,11 @@ async function getMe(userId) {
     // Lets the disabled-account page say why: an expired guest and a lapsed
     // member both sit in PENDING but need different wording.
     previousRole: user.previousRole,
-    // Paid add-ons. Guests hold none of their own but get them all for free,
-    // so the UI asks hasAddOn() rather than reading this list directly.
-    entitlements: user.entitlements || [],
+    // Effective add-ons: the per-user override merged with whatever the tier
+    // grants, so the page reads one list and never has to know about tiers.
+    entitlements: effectiveEntitlements,
+    // The tier itself, for the account page to show which one they hold.
+    tier: user.tier || null,
     // Whether this account may decide song mappings. Sent so the pages that
     // offer those decisions can leave them out rather than show buttons that
     // fail: 唱卡 is open to every add-on holder, but only editors confirm a

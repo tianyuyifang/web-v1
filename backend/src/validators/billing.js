@@ -27,6 +27,10 @@ const updateBillingSchema = z.object({
   // permission nothing will ever check — it would read as granted in the
   // admin UI while the feature stayed locked.
   entitlements: z.array(z.enum(KNOWN_ADD_ONS)).optional(),
+  // Membership tier, or null to clear it. The service validates the value
+  // against the known keys; kept loose here so a new tier does not need a
+  // validator change too.
+  tier: z.string().nullable().optional(),
 });
 
 module.exports = { updateBillingSchema };

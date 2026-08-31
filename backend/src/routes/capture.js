@@ -22,9 +22,10 @@ async function requireCaptureAddOn(req, res, next) {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { role: true, entitlements: true },
+      select: { role: true, entitlements: true, tier: true },
     });
-    if (!hasAddOn(user, ADD_ONS.CAPTURE)) {
+    const tiers = await settingsService.getTiers();
+    if (!hasAddOn(user, ADD_ONS.CAPTURE, tiers)) {
       return res.status(403).json({
         error: {
           code: 'ADD_ON_REQUIRED',

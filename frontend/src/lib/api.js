@@ -299,6 +299,12 @@ export const adminAPI = {
   // from likes, which both routes write identically, so one number covers both.
   getTaggingUsage: () => api.get("/admin/tagging-usage"),
   updateBilling: (id, data) => api.patch(`/admin/users/${id}/billing`, data),
+  // One-click: put a user on a membership tier. Leaves per-user overrides
+  // (deviceLimit / entitlements) alone — the tier decides the rest.
+  setUserTier: (id, tier) => api.patch(`/admin/users/${id}/tier`, { tier }),
+  // The editable tier config: each tier's 加订 flag and device limit.
+  getTiers: () => api.get("/admin/tiers"),
+  setTiers: (patch) => api.put("/admin/tiers", patch),
   extendOneMonth: (id) => api.post(`/admin/users/${id}/extend`),
   resetPassword: (id) => api.post(`/admin/users/${id}/reset-password`),
   getSignupPromo: () => api.get("/admin/signup-promo"),

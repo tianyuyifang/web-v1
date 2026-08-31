@@ -1,7 +1,8 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../db/client');
-const { NotFoundError, ForbiddenError } = require('../utils/errors');
+const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 const { addOneMonth } = require('../utils/billing');
+const { TIER_KEYS, getTiers, setTiers } = require('./settingsService');
 
 const SALT_ROUNDS = 10;
 
@@ -29,6 +30,7 @@ async function listUsers() {
       id: true, username: true, role: true, createdAt: true,
       expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
       deviceLimit: true, demotedAt: true, previousRole: true, entitlements: true,
+      tier: true,
       _count: { select: { playlists: true, sharedPlaylists: true } },
     },
     orderBy: { createdAt: 'desc' },
@@ -416,7 +418,7 @@ async function listUserPlaylists(userId) {
 const BILLING_SELECT = {
   id: true, username: true, role: true,
   expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
-  deviceLimit: true, entitlements: true,
+  deviceLimit: true, entitlements: true, tier: true,
 };
 
 /**
@@ -435,8 +437,31 @@ async function updateBilling(id, data) {
   if ('billingNotes' in data) patch.billingNotes = data.billingNotes;
   if ('deviceLimit' in data) patch.deviceLimit = data.deviceLimit;
   if ('entitlements' in data) patch.entitlements = data.entitlements;
+  // A membership tier. Validated against the known keys so a typo cannot park
+  // a user on a tier that resolves to nothing; null clears it back to no tier.
+  if ('tier' in data) {
+    if (data.tier !== null && !TIER_KEYS.includes(data.tier)) {
+      throw new ValidationError({ tier: ['未知的档位'] });
+    }
+    patch.tier = data.tier;
+  }
 
   return prisma.user.update({ where: { id }, data: patch, select: BILLING_SELECT });
+}
+
+/**
+ * Put a user on a tier, the one-click path the admin list uses. Setting the
+ * tier is all it does: the per-user overrides are left alone, so a friend who
+ * had an extra device or two keeps them and simply now reads as their tier
+ * plus that override. To drop the overrides too, updateBilling clears them.
+ */
+async function setUserTier(id, tier) {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new NotFoundError('User');
+  if (tier !== null && !TIER_KEYS.includes(tier)) {
+    throw new ValidationError({ tier: ['未知的档位'] });
+  }
+  return prisma.user.update({ where: { id }, data: { tier }, select: BILLING_SELECT });
 }
 
 /**
@@ -476,4 +501,9 @@ async function resetPassword(id) {
   return { id: user.id, username: user.username, tempPassword };
 }
 
-module.exports = { listUsers, listPending, approveUser, makeGuest, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, getLiveMarks, getTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword };
+// Tier config lives in settingsService; re-exported here so the admin route
+// has one service to talk to for everything on that page.
+async function getTierConfig() { return getTiers(); }
+async function setTierConfig(patch) { return setTiers(patch); }
+
+module.exports = { listUsers, listPending, approveUser, makeGuest, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, getLiveMarks, getTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword, setUserTier, getTierConfig, setTierConfig };

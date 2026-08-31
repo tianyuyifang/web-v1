@@ -33,8 +33,25 @@ export default function UserTable({ users, onRefresh, controls = false }) {
       billingNotes: user.billingNotes || "",
       deviceLimit: user.deviceLimit != null ? String(user.deviceLimit) : "",
       entitlements: user.entitlements || [],
+      tier: user.tier || "",
     };
   }
+
+  // Tier is a one-click change of its own, not part of the billing save: it
+  // decides add-on and device limit from its config, and setting it should not
+  // require also pressing 保存 on the money fields beside it.
+  async function changeTier(user, tier) {
+    setDraft(user.id, { tier });
+    await perform(user.id, () => adminAPI.setUserTier(user.id, tier || null));
+  }
+
+  const TIER_OPTIONS = [
+    ["", "无档位"],
+    ["normal", "普通"],
+    ["vip", "VIP"],
+    ["super_vip", "超级VIP"],
+    ["zhiyou", "挚友"],
+  ];
 
   function setDraft(userId, patch) {
     setBillingDraft((prev) => ({ ...prev, [userId]: { ...draftFor({ id: userId, ...users.find((u) => u.id === userId) }), ...patch } }));
@@ -241,6 +258,14 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                 >
                   {user.role}
                 </span>
+                {/* Tier beside the role: the role is the ladder, the tier is
+                    what they bought. Only shown when set and not for admins,
+                    who hold everything regardless. */}
+                {user.tier && user.role !== "ADMIN" ? (
+                  <span className="ml-1 inline-flex rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
+                    {{ normal: "普通", vip: "VIP", super_vip: "超级VIP", zhiyou: "挚友" }[user.tier] || user.tier}
+                  </span>
+                ) : null}
               </td>
               <td className="py-3 pr-4 text-muted">
                 {new Date(user.createdAt).toLocaleDateString()}
@@ -320,8 +345,24 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         className="mt-0.5 w-24 rounded border border-border bg-background px-2 py-1 text-sm text-theme"
                       />
                     </label>
+                    {user.role !== "ADMIN" && (
+                      <label className="flex flex-col text-xs text-muted">
+                        档位
+                        <select
+                          value={draftFor(user).tier}
+                          onChange={(e) => changeTier(user, e.target.value)}
+                          disabled={loading[user.id]}
+                          className="mt-0.5 rounded border border-primary/40 bg-background px-2 py-1 text-sm font-medium text-theme"
+                          title="选档位即改加订与设备上限（下方两项是个人破例，留空则跟随档位）"
+                        >
+                          {TIER_OPTIONS.map(([v, label]) => (
+                            <option key={v} value={v}>{label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <label className="flex flex-col text-xs text-muted">
-                      {t("deviceLimitLabel")}
+                      设备上限（破例）
                       <input
                         type="number"
                         step="1"
@@ -329,8 +370,8 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         value={draftFor(user).deviceLimit}
                         onChange={(e) => setDraft(user.id, { deviceLimit: e.target.value })}
                         className="mt-0.5 w-24 rounded border border-border bg-background px-2 py-1 text-sm text-theme"
-                        placeholder="1"
-                        title={t("deviceLimitHint")}
+                        placeholder="跟档位"
+                        title="留空 = 跟随档位；填数字 = 单独破例，用户仍在原档"
                       />
                     </label>
                     <label className="flex flex-col text-xs text-muted">
@@ -359,7 +400,8 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         per feature: it is sold as a bundle, so granting part
                         of it would not match anything the user can buy. A new
                         add-on joins ALL_ADD_ONS and needs no change here. */}
-                    <label className="flex items-center gap-2 text-xs text-muted">
+                    <label className="flex items-center gap-2 text-xs text-muted"
+                      title="勾选 = 强制给加订（破例，档位之外）；不勾 = 跟随档位">
                       <input
                         type="checkbox"
                         checked={draftFor(user).entitlements.length > 0}
@@ -370,7 +412,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         }
                         className="h-3.5 w-3.5 rounded border-border accent-primary"
                       />
-                      {t("addOnsLabel")}
+                      加订（破例）
                     </label>
                     <button
                       onClick={() => saveBilling(user)}

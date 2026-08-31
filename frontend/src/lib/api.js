@@ -279,6 +279,7 @@ export const adminAPI = {
   // feature already writes. No window parameter: capture events are pruned
   // after thirty days, so a longer range would show less than it claimed.
   getLiveUsage: () => api.get("/admin/live-usage"),
+  getLiveMarks: () => api.get("/admin/live-marks"),
   // What the site advertises as the newest capture client. Stored server-side
   // so shipping an APK does not need a code change.
   getCaptureClient: () => api.get("/admin/capture-client"),

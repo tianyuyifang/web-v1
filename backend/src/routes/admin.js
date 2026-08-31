@@ -100,6 +100,19 @@ router.get('/live-usage', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/live-marks — every singer's saved song marks, whole history
+//
+// One aggregate over song_prefs' current state, computed when asked. The
+// table IS the history — one row per singer per recording, no time axis —
+// so there is no window to choose and nothing to store.
+router.get('/live-marks', async (req, res, next) => {
+  try {
+    res.json(await adminService.getLiveMarks());
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/admin/tagging-usage — who is tagging songs, by hand or automatically
 //
 // Counted from likes, which both routes write identically, so the total covers

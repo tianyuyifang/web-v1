@@ -44,6 +44,13 @@ export default function LiveUsagePanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // The marks table gets its own state: switching sub-tabs must not blank the
+  // usage numbers behind it, and each view refreshes independently.
+  const [view, setView] = useState("usage");
+  const [marks, setMarks] = useState(null);
+  const [marksLoading, setMarksLoading] = useState(false);
+  const [marksError, setMarksError] = useState("");
+
   const load = useCallback(() => {
     setLoading(true);
     adminAPI.getLiveUsage()
@@ -53,6 +60,34 @@ export default function LiveUsagePanel() {
   }, []);
 
   useEffect(load, [load]);
+
+  const loadMarks = useCallback(() => {
+    setMarksLoading(true);
+    adminAPI.getLiveMarks()
+      .then((res) => { setMarks(res.data); setMarksError(""); })
+      .catch((err) => setMarksError(err.response?.data?.error?.message || "读取失败"))
+      .finally(() => setMarksLoading(false));
+  }, []);
+
+  // Fetched when first looked at, not on mount: the usage view is what the
+  // tab opens on, and the marks query should cost nothing until wanted.
+  useEffect(() => {
+    if (view === "marks" && !marks) loadMarks();
+  }, [view, marks, loadMarks]);
+
+  const subTab = (key, label) => (
+    <button
+      type="button"
+      onClick={() => setView(key)}
+      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+        view === key
+          ? "bg-background text-theme"
+          : "text-muted hover:text-theme"
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <section className="rounded-xl border border-border bg-surface p-5">
@@ -66,15 +101,67 @@ export default function LiveUsagePanel() {
             reload, which also throws away whichever tab you were on. */}
         <button
           type="button"
-          onClick={load}
-          disabled={loading}
+          onClick={view === "usage" ? load : loadMarks}
+          disabled={view === "usage" ? loading : marksLoading}
           className="shrink-0 rounded-full bg-background px-2.5 py-0.5 text-xs font-medium text-muted transition-colors hover:text-theme disabled:opacity-40"
         >
           刷新
         </button>
       </div>
 
-      {loading && !data ? (
+      <div className="mb-4 flex items-center gap-1">
+        {subTab("usage", "唱卡使用记录")}
+        {subTab("marks", "唱卡标记统计")}
+      </div>
+
+      {view === "marks" ? (
+        marksLoading && !marks ? (
+          <div className="flex justify-center py-4">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          </div>
+        ) : marksError ? (
+          <p className="text-sm text-red-400">{marksError}</p>
+        ) : !marks || marks.users.length === 0 ? (
+          <p className="text-sm text-muted">还没有人保存过标记。</p>
+        ) : (
+          <>
+            <p className="mb-3 text-xs text-muted">
+              全历史现存标记，共 {marks.users.length} 人
+              · {marks.users.reduce((s, u) => s + u.total, 0)} 条，按总数排序。
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted">
+                    <th className="pb-2 pr-4 font-medium">用户</th>
+                    <th className="pb-2 pr-4 text-right font-medium">总数</th>
+                    <th className="pb-2 pr-4 text-right font-medium">变速</th>
+                    <th className="pb-2 pr-4 text-right font-medium">变调</th>
+                    <th className="pb-2 pr-4 text-right font-medium">备注</th>
+                    <th className="pb-2 text-right font-medium">标签</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {marks.users.map((u) => (
+                    <tr key={u.username} className="border-b border-border/50">
+                      <td className="py-2 pr-4 font-medium" style={{ color: "var(--text)" }}>
+                        {u.username}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums">{u.total}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums"><Count n={u.speed} /></td>
+                      <td className="py-2 pr-4 text-right tabular-nums"><Count n={u.pitch} /></td>
+                      <td className="py-2 pr-4 text-right tabular-nums"><Count n={u.note} /></td>
+                      <td className="py-2 text-right tabular-nums"><Count n={u.color} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )
+      ) : null}
+
+      {view !== "usage" ? null : loading && !data ? (
         <div className="flex justify-center py-4">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </div>

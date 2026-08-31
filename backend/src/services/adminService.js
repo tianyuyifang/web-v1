@@ -287,6 +287,34 @@ async function getLiveUsage() {
  * Tagging the same song on two nights counts twice, on purpose -- it happened
  * twice. Untagging counts for nothing and cancels nothing.
  *
+ * Every singer's saved song marks, whole-history by nature: song_prefs IS the
+ * archive — one row per singer per recording, updated in place, no time
+ * dimension — so this is one aggregate over current state, computed when the
+ * tab is opened and stored nowhere. It counts what is saved now, not edits
+ * ever made: a mark the singer cleared (or forgetTracks removed with a song)
+ * is gone from here too, which is what "保存的记录" means.
+ *
+ * The LOCAL/__default__ sentinel row holds a singer's global key and tempo,
+ * describes the singer rather than any song, and would inflate every count by
+ * one — excluded.
+ */
+async function getLiveMarks() {
+  const rows = await prisma.$queryRaw`
+    SELECT u.username,
+           COUNT(*)::int             AS total,
+           COUNT(sp.speed)::int      AS speed,
+           COUNT(sp.pitch)::int      AS pitch,
+           COUNT(sp.note)::int       AS note,
+           COUNT(sp.color_tag)::int  AS color
+      FROM song_prefs sp
+      JOIN users u ON u.id = sp.user_id
+     WHERE NOT (sp.source = 'LOCAL' AND sp.external_id = '__default__')
+     GROUP BY u.username
+     ORDER BY total DESC, u.username ASC`;
+  return { users: rows };
+}
+
+/**
  * Own vs shared compares the tagger against the playlist's owner. Tagging in
  * someone else's shared playlist is how a guest takes part, and lumping the
  * two together would hide that.
@@ -448,4 +476,4 @@ async function resetPassword(id) {
   return { id: user.id, username: user.username, tempPassword };
 }
 
-module.exports = { listUsers, listPending, approveUser, makeGuest, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, getTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword };
+module.exports = { listUsers, listPending, approveUser, makeGuest, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, getLiveMarks, getTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword };

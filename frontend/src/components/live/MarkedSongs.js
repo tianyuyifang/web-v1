@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { captureAPI } from "@/lib/api";
 import { PRESET_COLORS } from "../player/ColorTag";
-import SongPrefEditor from "./SongPrefTags";
+import SongPrefEditor, { SongPrefMarks } from "./SongPrefTags";
 
 /**
  * The 已标记 tab: the songs this singer put a note or a colour on. A place to
@@ -44,7 +44,6 @@ function formatDuration(sec) {
  * no 未标记 badge, since every row here is marked by definition.
  */
 function MarkedRow({ row, expanded, onToggle, onSave }) {
-  const colors = (row.prefs?.colorTag || "").split("|").filter(Boolean);
   return (
     <div
       className={`rounded-lg border bg-surface transition-colors ${
@@ -76,22 +75,22 @@ function MarkedRow({ row, expanded, onToggle, onSave }) {
               {String(row.title || "").replace(/^《|》$/g, "") || "（歌曲已下架）"}
               {row.artist ? ` — ${row.artist}` : ""}
             </span>
-            {row.prefs?.note ? (
-              <span className="truncate text-yellow-500/80" title={row.prefs.note}>
-                · {row.prefs.note}
-              </span>
-            ) : null}
+          </span>
+
+          {/* On a phone the marks drop to their own line under the two title
+              rows, the same fix the live card uses: inline, a long note and the
+              title fought over a narrow row. Desktop keeps them inline on the
+              right (below), where there is room. */}
+          <span className="mt-1 flex items-center gap-1.5 sm:hidden">
+            <SongPrefMarks prefs={row.prefs} />
           </span>
         </span>
 
-        <span className="flex shrink-0 items-center gap-2">
-          {colors.map((c) => (
-            <span
-              key={c}
-              className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/20"
-              style={{ background: c }}
-            />
-          ))}
+        {/* The note and colours, borrowed from the live card so the two tabs
+            show a marked song the same way: note in muted text, colours after
+            it. Desktop only — the phone shows them on their own line above. */}
+        <span className="hidden shrink-0 items-center gap-2 sm:flex">
+          <SongPrefMarks prefs={row.prefs} />
         </span>
       </button>
 

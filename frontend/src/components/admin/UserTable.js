@@ -7,6 +7,10 @@ import { ALL_ADD_ONS } from "@/lib/addOns";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
+// The tier chip keys the member filter offers. "__none__" is the sentinel for
+// a user with no tier, so it can be filtered for like any real tier.
+const TIER_FILTER_KEYS = ["vip", "super_vip", "zhiyou", "normal", "__none__"];
+
 export default function UserTable({ users, onRefresh, controls = false }) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -21,7 +25,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
   const [billingDraft, setBillingDraft] = useState({});
   const [sortKey, setSortKey] = useState("registered"); // registered | expiration | owned | shared
   const [sortDir, setSortDir] = useState("desc"); // asc | desc
-  const [activeFilters, setActiveFilters] = useState({}); // { expired, expiringSoon, noPlaylists }
+  const [activeFilters, setActiveFilters] = useState({}); // { vip, super_vip, zhiyou, normal, __none__ }
 
   function draftFor(user) {
     const d = billingDraft[user.id];
@@ -125,16 +129,13 @@ export default function UserTable({ users, onRefresh, controls = false }) {
   };
 
   function passesFilters(u) {
-    if (activeFilters.expired) {
-      if (!(u.expiresAt && new Date(u.expiresAt).getTime() < Date.now())) return false;
-    }
-    if (activeFilters.expiringSoon) {
-      if (!u.expiresAt) return false;
-      const ms = new Date(u.expiresAt).getTime() - Date.now();
-      if (!(ms >= 0 && ms <= 30 * 24 * 60 * 60 * 1000)) return false;
-    }
-    if (activeFilters.noPlaylists) {
-      if ((u.ownedCount ?? 0) !== 0) return false;
+    // Tier filter, multi-select: with any tier chip on, show only users whose
+    // tier is among those picked (a union). No chip on means no filtering. A
+    // user with no tier is matched only by the explicit "无档位" chip.
+    const picked = TIER_FILTER_KEYS.filter((k) => activeFilters[k]);
+    if (picked.length) {
+      const tierKey = u.tier || "__none__";
+      if (!picked.includes(tierKey)) return false;
     }
     return true;
   }
@@ -160,9 +161,11 @@ export default function UserTable({ users, onRefresh, controls = false }) {
     { key: "shared", label: t("sortShared") },
   ];
   const filterChips = [
-    { key: "expired", label: t("filterExpired") },
-    { key: "expiringSoon", label: t("filterExpiringSoon") },
-    { key: "noPlaylists", label: t("filterNoPlaylists") },
+    { key: "vip", label: "VIP" },
+    { key: "super_vip", label: "超级VIP" },
+    { key: "zhiyou", label: "挚友" },
+    { key: "normal", label: "普通" },
+    { key: "__none__", label: "无档位" },
   ];
 
   return (

@@ -274,14 +274,20 @@ async function getLiveUsage() {
              WHERE e.created_at > NOW() - INTERVAL '24 hours'
                AND e.outcome = 'unmapped'
            )::int                                       AS "hourUnmapped",
-           -- The APK version this user is on: the client_version their most
-           -- recent session reported. A correlated subquery rather than another
-           -- aggregate, so it does not disturb the counts above. NULL means an
-           -- old build from before version reporting existed (pre-v21).
+           -- The APK version this user is on: their most recent NON-NULL
+           -- version report. A session's client_version is written only when
+           -- the client heartbeats a version, and stays null otherwise — a
+           -- freshly opened session, or an old build (pre-v21) that never
+           -- reports one. Taking the latest session outright therefore showed
+           -- 小芳 as 旧版 whenever her newest session had not reported yet,
+           -- though she was on v24. Skipping the nulls takes the last version
+           -- she actually reported; a user who has never reported one has no
+           -- non-null row and correctly comes back null (旧版).
            (SELECT s2.client_version
               FROM capture_sessions s2
              WHERE s2.user_id = u.id
                AND s2.created_at > NOW() - INTERVAL '7 days'
+               AND s2.client_version IS NOT NULL
              ORDER BY s2.created_at DESC
              LIMIT 1)                                    AS "clientVersion"
       FROM capture_events e

@@ -1222,9 +1222,25 @@ export default function LivePage() {
                                   role="presentation"
                                   onClick={(e) => {
                                     const r = e.currentTarget.getBoundingClientRect();
-                                    if (duration > 0) {
-                                      player.seek(((e.clientX - r.left) / r.width) * duration);
+                                    if (duration <= 0 || r.width <= 0) return;
+                                    const clickTime = ((e.clientX - r.left) / r.width) * duration;
+                                    // Snap to a passage marker when the click lands
+                                    // near one: the 10px dots are hard to hit,
+                                    // especially on a phone, so a click within
+                                    // ~24px of a marker seeks to the marker itself
+                                    // rather than to where the finger happened to
+                                    // land. Nearest marker wins; nothing snaps if
+                                    // none is close, so scrubbing elsewhere is
+                                    // unaffected.
+                                    const SNAP_PX = 24;
+                                    const snapSec = (SNAP_PX / r.width) * duration;
+                                    let target = clickTime;
+                                    let best = snapSec;
+                                    for (const t of passageTimes) {
+                                      const d = Math.abs(t - clickTime);
+                                      if (d <= best) { best = d; target = t; }
                                     }
+                                    player.seek(Math.max(0, target));
                                   }}
                                   className="group relative h-1.5 flex-1 cursor-pointer rounded-full bg-black/30"
                                 >
@@ -1242,20 +1258,18 @@ export default function LivePage() {
                                       each is marked and the first is filled —
                                       that is the one the lyrics scrolled to.
 
-                                      Each stops the click reaching the bar
-                                      underneath, which would seek to wherever
-                                      the pointer happened to land rather than
-                                      to the passage itself. */}
+                                      Pure visual markers now: clicks pass through
+                                      to the bar, whose handler snaps a nearby
+                                      click to the closest marker. A 10px dot was
+                                      its own click target before, but too small
+                                      to hit reliably — the snap makes landing near
+                                      it enough, so the dots no longer need to
+                                      catch the click themselves. */}
                                   {duration > 0 && passageTimes.map((t, i) => (
-                                    <button
+                                    <div
                                       key={t}
-                                      type="button"
-                                      title={`跳到这段 ${formatClock(t)}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        player.seek(t);
-                                      }}
-                                      className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background transition-transform hover:scale-125 ${
+                                      aria-hidden="true"
+                                      className={`pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background ${
                                         i === 0 ? "bg-yellow-400" : "bg-yellow-400/50"
                                       }`}
                                       style={{ left: `${Math.min(100, (t / duration) * 100)}%` }}

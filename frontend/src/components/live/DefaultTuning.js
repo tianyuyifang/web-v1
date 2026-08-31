@@ -125,22 +125,18 @@ export default function DefaultTuning({
     if (!sameValue(next, speed)) onChange({ speed: next });
   };
 
-  // Collapsing is a phone concern only, so the folded button is rendered at
-  // `sm:hidden` and the full panel at `hidden sm:block` — a desktop gets the
-  // panel it always had, whatever this phone happened to store.
+  // Collapsing works on every device: when collapsed, the folded button
+  // shows and the panel is hidden; when expanded, the reverse. The stored
+  // preference now applies everywhere, phone and desktop alike.
   return (
     <>
-    {/* The folded button and the panel are both rendered; CSS decides which is
-        real. An early return on `collapsed` would have hidden the panel from
-        desktop as well, since the button itself is sm:hidden — a phone's
-        stored preference would have blanked a screen it does not apply to. */}
     {collapsed && (
       <button
         type="button"
         onClick={toggleCollapsed}
         aria-expanded="false"
         title="展开全局设置"
-        className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-[0.7rem] shadow-xl sm:hidden"
+        className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-[0.7rem] shadow-xl sm:bottom-6 sm:right-6"
       >
         <span className="font-medium text-theme">全局设置</span>
         {/* The values ride on the button: folded away, this is the only place
@@ -156,19 +152,19 @@ export default function DefaultTuning({
       // Above the cards, below any dialog. Clear of the bottom edge on a phone
       // so it does not sit under the thumb rest.
       className={`fixed bottom-4 right-4 z-30 max-h-[70vh] overflow-y-auto rounded-xl border border-border bg-surface px-3 py-2.5 shadow-xl sm:bottom-6 sm:right-6 sm:max-h-none sm:overflow-visible ${
-        collapsed ? "hidden sm:block" : ""
+        collapsed ? "hidden" : ""
       }`}
     >
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="text-[0.7rem] font-medium text-theme">全局设置</span>
-        {/* Phone only: on a desktop the panel has never needed folding away,
-            and a control that does nothing there would just be noise. */}
+        {/* Collapsible on every device now: folding the panel away is useful
+            on a desktop too when it sits over the cards. */}
         <button
           type="button"
           onClick={toggleCollapsed}
           aria-expanded="true"
           title="收起全局设置"
-          className="-my-1 -mr-1 px-1 py-1 text-[0.7rem] leading-none text-muted hover:text-theme sm:hidden"
+          className="-my-1 -mr-1 px-1 py-1 text-[0.7rem] leading-none text-muted hover:text-theme"
         >
           ▼
         </button>

@@ -399,24 +399,37 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         className="mt-0.5 w-full rounded border border-border bg-background px-2 py-1 text-sm text-theme"
                       />
                     </label>
-                    {/* One switch for the whole 加订版 tier rather than a box
-                        per feature: it is sold as a bundle, so granting part
-                        of it would not match anything the user can buy. A new
-                        add-on joins ALL_ADD_ONS and needs no change here. */}
-                    <label className="flex items-center gap-2 text-xs text-muted"
-                      title="勾选 = 强制给加订（破例，档位之外）；不勾 = 跟随档位">
-                      <input
-                        type="checkbox"
-                        checked={draftFor(user).entitlements.length > 0}
-                        onChange={(e) =>
-                          setDraft(user.id, {
-                            entitlements: e.target.checked ? [...ALL_ADD_ONS] : [],
-                          })
-                        }
-                        className="h-3.5 w-3.5 rounded border-border accent-primary"
-                      />
-                      加订（破例）
-                    </label>
+                    {/* Two lines: the box is the per-user OVERRIDE (a hand-set
+                        grant on top of the tier), and below it the effective
+                        state — because a VIP holds 加订 from the tier with the
+                        box empty, which used to read as "no add-on". */}
+                    <div className="flex flex-col gap-0.5 text-xs text-muted">
+                      <label className="flex items-center gap-2"
+                        title="勾选 = 强制给加订（破例，档位之外）；不勾 = 跟随档位">
+                        <input
+                          type="checkbox"
+                          checked={draftFor(user).entitlements.length > 0}
+                          onChange={(e) =>
+                            setDraft(user.id, {
+                              entitlements: e.target.checked ? [...ALL_ADD_ONS] : [],
+                            })
+                          }
+                          className="h-3.5 w-3.5 rounded border-border accent-primary"
+                        />
+                        加订（破例）
+                      </label>
+                      <span className="pl-6 text-[0.65rem]">
+                        {user.role === "ADMIN" ? (
+                          <span className="text-green-400">管理员 · 全部功能</span>
+                        ) : user.hasCapture ? (
+                          <span className="text-green-400">
+                            当前有加订{user.hasCaptureOverride ? "（破例）" : `（来自${{ normal: "普通", vip: "VIP", super_vip: "超级VIP", zhiyou: "挚友" }[user.tier] || "档位"}档）`}
+                          </span>
+                        ) : (
+                          <span className="text-muted/70">当前无加订</span>
+                        )}
+                      </span>
+                    </div>
                     <button
                       onClick={() => saveBilling(user)}
                       disabled={loading[user.id]}
@@ -431,15 +444,6 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                         billing fields you skim. */}
                     {user.role !== "ADMIN" && (
                       <div className="flex w-full flex-wrap items-center gap-2 border-t border-border pt-2">
-                        {user.role !== "GUEST" && (
-                          <button
-                            onClick={() => perform(user.id, () => adminAPI.makeGuest(user.id))}
-                            disabled={loading[user.id]}
-                            className="rounded-md border border-sky-500/30 px-3 py-1 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-500/10 disabled:opacity-50"
-                          >
-                            {t("makeGuest")}
-                          </button>
-                        )}
                         {user.role !== "PENDING" && (
                           <button
                             onClick={() => setRevokeTarget(user)}

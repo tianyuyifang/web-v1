@@ -73,7 +73,6 @@ export default function AdminPage() {
   // the field existed have no stamp, so they read as new applicants.
   const pending = users.filter((u) => u.role === "PENDING" && !u.demotedAt);
   const revoked = users.filter((u) => u.role === "PENDING" && u.demotedAt);
-  const guests = users.filter((u) => u.role === "GUEST");
   /**
    * Past their paid-until date.
    *
@@ -95,7 +94,6 @@ export default function AdminPage() {
   const tabs = [
     { key: "members", label: t("members"), dot: "bg-green-400", count: members.length },
     { key: "expired", label: t("statusExpired"), dot: "bg-slate-400", count: expired.length },
-    { key: "guests", label: t("guests"), dot: "bg-sky-400", count: guests.length },
     { key: "pending", label: t("pendingApproval"), dot: "bg-yellow-400", count: pending.length },
     { key: "revoked", label: t("revoked"), dot: "bg-orange-400", count: revoked.length },
     { key: "admins", label: t("admins"), dot: "bg-purple-400", count: admins.length },
@@ -174,16 +172,6 @@ export default function AdminPage() {
         </section>
       )}
 
-      {activeTab === "guests" && (
-        <section className="rounded-xl border border-border bg-surface p-5">
-          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
-            <span className="inline-block h-2 w-2 rounded-full bg-sky-400" />
-            {t("guests")}
-            <span className="ml-1 text-sm font-normal text-muted">({guests.length})</span>
-          </h2>
-          <UserTable users={guests} onRefresh={fetchUsers} controls />
-        </section>
-      )}
 
       {activeTab === "revoked" && (
         <section className="rounded-xl border border-border bg-surface p-5">

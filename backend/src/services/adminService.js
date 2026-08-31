@@ -3,6 +3,7 @@ const prisma = require('../db/client');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 const { addOneMonth } = require('../utils/billing');
 const { TIER_KEYS, getTiers, setTiers } = require('./settingsService');
+const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
 
 const SALT_ROUNDS = 10;
 
@@ -35,11 +36,20 @@ async function listUsers() {
     },
     orderBy: { createdAt: 'desc' },
   });
+  // The tier config, read once, so each row can say whether the account
+  // actually holds 加订 — from a per-user override OR its tier. The admin page
+  // otherwise could only see the override box, which is empty for a VIP whose
+  // add-on comes from the tier, and reads as "no add-on" when there is one.
+  const tiers = await getTiers();
   // Flatten counts: ownedCount = playlists this user owns; sharedCount = playlists shared WITH them.
   return users.map(({ _count, ...u }) => ({
     ...u,
     ownedCount: _count.playlists,
     sharedCount: _count.sharedPlaylists,
+    // The effective add-on, resolving override + tier the same way the gate
+    // does. hasCaptureOverride is the box's own state (the per-user grant).
+    hasCapture: hasAddOn(u, ADD_ONS.CAPTURE, tiers),
+    hasCaptureOverride: Array.isArray(u.entitlements) && u.entitlements.includes(ADD_ONS.CAPTURE),
   }));
 }
 

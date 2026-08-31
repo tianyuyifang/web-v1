@@ -33,6 +33,7 @@ import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
 import SongLibrary from "@/components/live/SongLibrary";
 import MarkedSongs from "@/components/live/MarkedSongs";
+import LiveGuide from "@/components/live/LiveGuide";
 import DefaultTuning from "@/components/live/DefaultTuning";
 import {
   loadStoredQuality, storeQuality, loadStoredVocals, storeVocals, QUALITY_TIERS,
@@ -1067,20 +1068,11 @@ export default function LivePage() {
       )}
 
       {tab !== "cards" ? null : !session ? (
-        /* Temporary v3.3 release notice, in place of the pairing hint — this
-           block only exists while no run is on, so pressing 开始 clears it
-           and play is never interrupted. Deliberately dressed exactly like
-           the hint it replaces (centred, muted, roomy): the news should read
-           as the page speaking in its usual voice, not as a banner. The hint
-           returns once adoption is broad. */
-        <div className="rounded border border-border bg-surface px-5 py-8 text-left text-sm text-muted">
-          <p>📢 打标工具更新（v3.3）：</p>
-          <p className="mt-3 leading-7">
-            玩游戏的安卓手机可以边玩边识别了，不再需要第二台设备挂房间。到
-            <a href="/tools" className="mx-1 underline underline-offset-2">工具页</a>
-            下载最新版本，覆盖安装后重开一次无障碍开关即可。有问题请联系网站管理，也可以加入微信群获取最新信息。
-          </p>
-        </div>
+        /* The 唱卡 how-to, in place of the pairing hint. Shown only while no
+           run is on, so pressing 开始 clears it and play is never interrupted.
+           Five collapsible sections, all collapsed by default — reference
+           material to open when wanted, not a banner. */
+        <LiveGuide />
       ) : !batches.length ? (
         <div className="rounded border border-border bg-surface px-4 py-10 text-center text-sm text-muted">
           还没有捕捉到歌曲。

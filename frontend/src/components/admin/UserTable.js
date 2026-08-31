@@ -26,6 +26,7 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
   const [sortKey, setSortKey] = useState("registered"); // registered | expiration | owned | shared
   const [sortDir, setSortDir] = useState("desc"); // asc | desc
   const [activeFilters, setActiveFilters] = useState({}); // { vip, super_vip, zhiyou, normal, __none__ }
+  const [search, setSearch] = useState(""); // username substring, member tab only
 
   function draftFor(user) {
     const d = billingDraft[user.id];
@@ -150,6 +151,10 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
   };
 
   function passesFilters(u) {
+    // Name search: a case-insensitive username substring, ANDed with the chips
+    // below. Empty search matches everyone, so it costs nothing when unused.
+    const q = search.trim().toLowerCase();
+    if (q && !u.username.toLowerCase().includes(q)) return false;
     // Tier filter, multi-select: with any tier chip on, show only users whose
     // tier is among those picked (a union). No chip on means no filtering.
     const picked = TIER_FILTER_KEYS.filter((k) => activeFilters[k]);
@@ -202,6 +207,28 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
 
       {controls && (
         <div className="mb-4 flex flex-wrap items-center gap-3">
+          {/* Name search: narrows the visible rows to a username substring,
+              combined with the sort and tier chips below. Purely client-side —
+              the member list is already loaded, so this is instant. */}
+          <div className="relative">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("searchMembersPlaceholder")}
+              className="w-48 rounded border border-border bg-background px-2 py-1 pr-6 text-sm text-theme placeholder:text-muted"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                aria-label={t("clearSearch")}
+                title={t("clearSearch")}
+                className="absolute right-1 top-1/2 -translate-y-1/2 px-1 text-muted hover:text-theme"
+              >
+                ×
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted">{t("sortByLabel")}</span>
             <select
@@ -261,7 +288,7 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
           {displayUsers.length === 0 && (
             <tr>
               <td colSpan={7} className="py-4 text-center text-sm text-muted">
-                {t("noUsersInGroup")}
+                {search.trim() ? t("noMembersMatch") : t("noUsersInGroup")}
               </td>
             </tr>
           )}

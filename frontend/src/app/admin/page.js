@@ -51,6 +51,16 @@ export default function AdminPage() {
     }
   }, []);
 
+  // Merge one updated user into the list in place, instead of refetching all of
+  // them. Saving a member's billing kept the row where it is — the whole table
+  // reloaded and the expanded editor collapsed, dropping the admin back to the
+  // top of a long list after every single save. The billing endpoints return a
+  // partial user (BILLING_SELECT), so fields the list needs but the endpoint
+  // omits — ownedCount, hasCapture, … — are carried over from the existing row.
+  const patchUser = useCallback((updated) => {
+    setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, ...updated } : u)));
+  }, []);
+
   useEffect(() => {
     if (authLoading) return;
     if (!user || !isAdmin) {
@@ -168,7 +178,7 @@ export default function AdminPage() {
             {t("members")}
             <span className="ml-1 text-sm font-normal text-muted">({members.length})</span>
           </h2>
-          <UserTable users={members} onRefresh={fetchUsers} controls />
+          <UserTable users={members} onRefresh={fetchUsers} onUserUpdated={patchUser} controls />
         </section>
       )}
 

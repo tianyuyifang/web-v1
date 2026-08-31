@@ -11,7 +11,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 // filter for); "expired" is handled separately in passesFilters.
 const TIER_FILTER_KEYS = ["normal", "vip", "super_vip", "zhiyou"];
 
-export default function UserTable({ users, onRefresh, controls = false }) {
+export default function UserTable({ users, onRefresh, onUserUpdated, controls = false }) {
   const { t } = useLanguage();
   const router = useRouter();
   const [loading, setLoading] = useState({});
@@ -45,7 +45,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
   // require also pressing 保存 on the money fields beside it.
   async function changeTier(user, tier) {
     setDraft(user.id, { tier });
-    await perform(user.id, () => adminAPI.setUserTier(user.id, tier || null));
+    await performInPlace(user.id, () => adminAPI.setUserTier(user.id, tier || null));
   }
 
   const TIER_OPTIONS = [
@@ -65,7 +65,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
     // entitlements is deliberately not sent: the add-on is tier-driven now and
     // the editor no longer edits it, so a save touches only billing fields and
     // the device-limit override.
-    await perform(user.id, () => adminAPI.updateBilling(user.id, {
+    await performInPlace(user.id, () => adminAPI.updateBilling(user.id, {
       expiresAt: d.expiresAt ? new Date(d.expiresAt + "T00:00:00.000Z").toISOString() : null,
       monthlyFee: d.monthlyFee === "" ? null : d.monthlyFee,
       paymentStatus: d.paymentStatus || null,
@@ -76,7 +76,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
   }
 
   async function extend(user) {
-    await perform(user.id, () => adminAPI.extendOneMonth(user.id));
+    await performInPlace(user.id, () => adminAPI.extendOneMonth(user.id));
     setBillingDraft((prev) => { const n = { ...prev }; delete n[user.id]; return n; });
   }
 
@@ -110,6 +110,26 @@ export default function UserTable({ users, onRefresh, controls = false }) {
     try {
       await action();
       onRefresh();
+    } catch (err) {
+      setError(err.response?.data?.error?.message || t("actionFailed"));
+    } finally {
+      setLoading((prev) => ({ ...prev, [userId]: false }));
+    }
+  }
+
+  // Like perform, but for edits that leave the user in this same tab (billing,
+  // tier, extend): merge the returned user in place instead of refetching the
+  // whole list, so the row stays put, the editor stays open, and the admin can
+  // move straight to the next one. Falls back to onRefresh if no merge callback
+  // was given (tabs that do not pass one) or the endpoint returned no user.
+  async function performInPlace(userId, action) {
+    setLoading((prev) => ({ ...prev, [userId]: true }));
+    setError("");
+    try {
+      const res = await action();
+      const updated = res && res.data && res.data.user;
+      if (updated && onUserUpdated) onUserUpdated(updated);
+      else onRefresh();
     } catch (err) {
       setError(err.response?.data?.error?.message || t("actionFailed"));
     } finally {

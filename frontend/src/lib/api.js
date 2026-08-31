@@ -253,6 +253,17 @@ export const captureAPI = {
     if (take) p.set("take", String(take));
     return api.get(`/capture/library?${p.toString()}`);
   },
+  // The singer's own marked songs — notes and colours only. Filters stack:
+  // hasNote and any colours are an intersection, plus a keyword over names.
+  marked: ({ q = "", hasNote = false, colors = [], offset = 0, take } = {}) => {
+    const p = new URLSearchParams();
+    if (q) p.set("q", q);
+    if (hasNote) p.set("hasNote", "1");
+    for (const c of colors) p.append("color", c);
+    if (offset) p.set("offset", String(offset));
+    if (take) p.set("take", String(take));
+    return api.get(`/capture/marked?${p.toString()}`);
+  },
   // A patch: fields left out are untouched, an explicit null clears one. The
   // card saves its key when it closes and its colours the moment they change,
   // so a whole-row write from either would discard the other.

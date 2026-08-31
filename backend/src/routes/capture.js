@@ -5,6 +5,7 @@ const prisma = require('../db/client');
 const captureService = require('../services/captureService');
 const songPrefService = require('../services/songPrefService');
 const songLibraryService = require('../services/songLibraryService');
+const markedSongsService = require('../services/markedSongsService');
 const { authMiddleware, requireApproved, requireActiveSession } = require('../middleware/auth');
 const captureAuth = require('../middleware/captureAuth');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
@@ -399,6 +400,43 @@ router.get('/library', ...web, requireCaptureAddOn, async (req, res, next) => {
     return res.json(await songLibraryService.search(req.user.id, {
       query: q,
       cursor: cursor || null,
+      take,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const markedQuery = z.object({
+  q: z.string().max(200).optional(),
+  // A checkbox arrives as the string "1"; anything else reads as off.
+  hasNote: z.string().optional(),
+  // Repeated ?color= params, or one comma-joined value — accept both and let
+  // the service validate each to a hex colour.
+  color: z.union([z.string(), z.array(z.string())]).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  take: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+// GET /api/capture/marked — the singer's own marked songs (notes and colours)
+//
+// The 已标记 tab: a look back over what this singer put a note or a colour on,
+// filterable by 有备注 and by colour. Same 唱卡 gate as the library, and the
+// same property that makes browsing free — it reads only rows we already hold
+// for this user and never calls a platform.
+router.get('/marked', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const parsed = markedQuery.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: { message: '参数不合法' } });
+    }
+    const { q, hasNote, color, offset, take } = parsed.data;
+    const colors = color == null ? [] : (Array.isArray(color) ? color : [color]);
+    return res.json(await markedSongsService.search(req.user.id, {
+      query: q,
+      hasNote: hasNote === '1',
+      colors,
+      offset: offset || 0,
       take,
     }));
   } catch (err) {

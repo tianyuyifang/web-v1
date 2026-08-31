@@ -32,6 +32,7 @@ import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
 import SongLibrary from "@/components/live/SongLibrary";
+import MarkedSongs from "@/components/live/MarkedSongs";
 import DefaultTuning from "@/components/live/DefaultTuning";
 import {
   loadStoredQuality, storeQuality, loadStoredVocals, storeVocals, QUALITY_TIERS,
@@ -1006,7 +1007,7 @@ export default function LivePage() {
       {/* A running game keeps running while the library is open: switching tabs
           hides the cards, it does not stop delivery. */}
       <div className="mb-4 flex items-center gap-1 border-b border-border">
-        {[["cards", "唱卡"], ["library", "标记"]].map(([id, label]) => (
+        {[["cards", "唱卡"], ["library", "标记"], ["marked", "已标记"]].map(([id, label]) => (
           <button
             key={id}
             type="button"
@@ -1023,6 +1024,7 @@ export default function LivePage() {
       </div>
 
       {tab === "library" ? <SongLibrary /> : null}
+      {tab === "marked" ? <MarkedSongs /> : null}
 
       {error && (
         <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">

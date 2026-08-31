@@ -68,34 +68,23 @@ export default function AdminPage() {
     );
   }
 
-  // Both lists are PENDING; demotedAt is what separates someone an admin
-  // revoked from someone who has never been approved. Revocations from before
-  // the field existed have no stamp, so they read as new applicants.
-  const pending = users.filter((u) => u.role === "PENDING" && !u.demotedAt);
-  const revoked = users.filter((u) => u.role === "PENDING" && u.demotedAt);
-  /**
-   * Past their paid-until date.
-   *
-   * Derived, never stored. Expiry changes nothing about what the account can
-   * do — no job downgrades anyone and no route checks the date — so writing a
-   * status would create a second source of truth that has to be kept in step
-   * with the date it was derived from. Computed here, extending someone's date
-   * moves them back to 成员 on the next load with nothing to undo.
-   *
-   * A member with no date set never expires, which is how an account that was
-   * never on a monthly footing is meant to behave.
-   */
-  const isExpired = (u) => u.expiresAt && new Date(u.expiresAt) <= new Date();
+  // One 待审核 list now: everyone who is PENDING, whether a fresh applicant or
+  // a member an admin revoked. They are the same role and the same approval
+  // brings them in; a revoked one is only tagged (曾是会员) in the table so the
+  // difference is still visible. All their data is untouched by the revoke and
+  // returns on approval.
+  const pending = users.filter((u) => u.role === "PENDING");
 
-  const members = users.filter((u) => u.role === "MEMBER" && !isExpired(u));
-  const expired = users.filter((u) => u.role === "MEMBER" && isExpired(u));
+  // Expired is a member past their paid-until date — derived, never stored, so
+  // extending a date silently un-expires them. They are still members and now
+  // live in the 成员 tab, filterable by 已过期 rather than split into a tab of
+  // their own (which also read confusingly as a second "已过期" beside 待审核).
+  const members = users.filter((u) => u.role === "MEMBER");
   const admins = users.filter((u) => u.role === "ADMIN");
 
   const tabs = [
     { key: "members", label: t("members"), dot: "bg-green-400", count: members.length },
-    { key: "expired", label: t("statusExpired"), dot: "bg-slate-400", count: expired.length },
     { key: "pending", label: t("pendingApproval"), dot: "bg-yellow-400", count: pending.length },
-    { key: "revoked", label: t("revoked"), dot: "bg-orange-400", count: revoked.length },
     { key: "admins", label: t("admins"), dot: "bg-purple-400", count: admins.length },
     { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.length },
     { key: "updates", label: t("updatesAdminSection"), dot: "bg-pink-400", count: null },
@@ -172,18 +161,6 @@ export default function AdminPage() {
         </section>
       )}
 
-
-      {activeTab === "revoked" && (
-        <section className="rounded-xl border border-border bg-surface p-5">
-          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
-            <span className="inline-block h-2 w-2 rounded-full bg-orange-400" />
-            {t("revoked")}
-            <span className="ml-1 text-sm font-normal text-muted">({revoked.length})</span>
-          </h2>
-          <UserTable users={revoked} onRefresh={fetchUsers} />
-        </section>
-      )}
-
       {activeTab === "members" && (
         <section className="rounded-xl border border-border bg-surface p-5">
           <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
@@ -192,23 +169,6 @@ export default function AdminPage() {
             <span className="ml-1 text-sm font-normal text-muted">({members.length})</span>
           </h2>
           <UserTable users={members} onRefresh={fetchUsers} controls />
-        </section>
-      )}
-
-      {activeTab === "expired" && (
-        <section className="rounded-xl border border-border bg-surface p-5">
-          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
-            <span className="inline-block h-2 w-2 rounded-full bg-slate-400" />
-            {t("statusExpired")}
-            <span className="ml-1 text-sm font-normal text-muted">({expired.length})</span>
-          </h2>
-          {/* Still members, and still able to do everything a member can —
-              expiry is a billing fact here, not a restriction. The same
-              controls as 成员 because extending a date is the usual next step. */}
-          <p className="mb-3 text-xs text-muted">
-            这些账号已过期，但功能不受影响。续期后会自动回到「{t("members")}」。
-          </p>
-          <UserTable users={expired} onRefresh={fetchUsers} controls />
         </section>
       )}
 

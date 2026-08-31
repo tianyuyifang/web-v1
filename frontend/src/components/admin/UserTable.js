@@ -137,6 +137,11 @@ export default function UserTable({ users, onRefresh, controls = false }) {
       const tierKey = u.tier || "__none__";
       if (!picked.includes(tierKey)) return false;
     }
+    // 已过期: past the paid-until date. Derived, not a stored status — the same
+    // rule the members list is built on. A member with no date never expires.
+    if (activeFilters.expired) {
+      if (!(u.expiresAt && new Date(u.expiresAt).getTime() <= Date.now())) return false;
+    }
     return true;
   }
 
@@ -166,6 +171,7 @@ export default function UserTable({ users, onRefresh, controls = false }) {
     { key: "zhiyou", label: "挚友" },
     { key: "normal", label: "普通" },
     { key: "__none__", label: "无档位" },
+    { key: "expired", label: "已过期" },
   ];
 
   return (
@@ -267,6 +273,15 @@ export default function UserTable({ users, onRefresh, controls = false }) {
                 {user.tier && user.role !== "ADMIN" ? (
                   <span className="ml-1 inline-flex rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
                     {{ normal: "普通", vip: "VIP", super_vip: "超级VIP", zhiyou: "挚友" }[user.tier] || user.tier}
+                  </span>
+                ) : null}
+                {/* A PENDING user with a demotion stamp was a member the admin
+                    revoked, not a fresh applicant — flagged so the two are
+                    told apart now that they share the 待审核 tab. Their data is
+                    intact and returns on approval. */}
+                {user.role === "PENDING" && user.demotedAt ? (
+                  <span className="ml-1 inline-flex rounded-full bg-orange-500/15 px-2 py-0.5 text-xs font-medium text-orange-400">
+                    曾是会员
                   </span>
                 ) : null}
               </td>

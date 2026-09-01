@@ -482,21 +482,27 @@ export default function LiveLyrics({
             className={`rounded px-1.5 py-1 leading-snug transition-all ${
               timed ? "cursor-pointer hover:bg-white/5" : ""
             } ${
+              // The pale tint marks the whole passage the game is showing —
+              // what the singer has to perform — and stays on every line of it,
+              // including the one currently being sung. Kept separate from the
+              // size/colour choice below so the line being sung keeps its tint
+              // rather than trading it for the sweep.
+              inPassage ? "bg-yellow-500/10" : ""
+            } ${
               isActive
-                // Deliberately NOT text-accent: the sweep supplies that, and a
-                // line already in the highlight colour leaves it nothing to
-                // reveal. The unsung part reads as dimmed against it.
+                // The line being sung: larger and swept, not tinted-by-colour —
+                // the sweep supplies the highlight, and a line already in the
+                // highlight colour would leave it nothing to reveal. The unsung
+                // part reads as dimmed against it.
                 ? "text-[0.95rem] font-semibold text-muted"
                 : inPassage
-                  // The passage the game is showing: what the singer has to
-                  // perform, and the reason this panel is open. The pale tint
-                  // marks it in every theme; the words themselves stay yellow
-                  // on the dark grounds (dark / high-contrast), where yellow
-                  // reads well, but drop to the muted grey on the light grounds
-                  // (light / warm), where the yellow washed out against the
-                  // pale panel. dark: keys off the .dark class the dark grounds
-                  // carry and the light ones do not.
-                  ? "text-[0.8rem] bg-yellow-500/10 text-muted dark:text-yellow-500/90"
+                  // A passage line not currently sung: the words stay yellow on
+                  // the dark grounds (dark / high-contrast), where yellow reads
+                  // well, but drop to the muted grey on the light grounds
+                  // (light / warm), where the yellow washed out against the pale
+                  // panel. dark: keys off the .dark class the dark grounds carry
+                  // and the light ones do not.
+                  ? "text-[0.8rem] text-muted dark:text-yellow-500/90"
                   : "text-[0.8rem] text-muted"
             }`}
           >

@@ -1194,7 +1194,12 @@ export default function LivePage() {
                           </button>
 
                           {isOpen && mapped && (
-                            <div className="border-t border-border/40 bg-black/10 px-3 py-3">
+                            // The expanded area sits a touch darker than the
+                            // card. On the dark grounds that tenth of black is
+                            // right; on the light ones it read as a heavy grey,
+                            // so it is halved there. dark: keys off the .dark
+                            // class the dark grounds carry and the light do not.
+                            <div className="border-t border-border/40 bg-black/5 px-3 py-3 dark:bg-black/10">
                               {playError && (
                                 <div className="mb-2 text-xs text-red-400">{playError}</div>
                               )}

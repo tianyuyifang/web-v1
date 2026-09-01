@@ -243,10 +243,19 @@ async function updateClipCustomization(playlistId, clipId, data) {
   if (data.comment !== undefined) updateData.comment = data.comment;
   if (data.sectionLabel !== undefined) updateData.sectionLabel = data.sectionLabel;
 
-  return prisma.playlistClip.update({
-    where: { playlistId_clipId: { playlistId, clipId } },
-    data: updateData,
-  });
+  const [updated] = await prisma.$transaction([
+    prisma.playlistClip.update({
+      where: { playlistId_clipId: { playlistId, clipId } },
+      data: updateData,
+    }),
+    // Touch the parent so its updatedAt reflects this edit. PlaylistClip has no
+    // updatedAt of its own, so without this a change to a clip's speed/pitch/
+    // tag/note leaves no timestamp anywhere — which "last active" needs. The
+    // date is set explicitly because an empty `data:{}` does NOT fire @updatedAt
+    // in Prisma — that attribute only refreshes when some field actually changes.
+    prisma.playlist.update({ where: { id: playlistId }, data: { updatedAt: new Date() } }),
+  ]);
+  return updated;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +315,13 @@ const ops = updates
       });
     })
     .filter(Boolean);
-  if (ops.length > 0) await prisma.$transaction(ops);
+  if (ops.length > 0) {
+    // Touch the parent in the same transaction so its updatedAt records the
+    // edit — PlaylistClip carries no updatedAt of its own, and an empty data
+    // object would not fire @updatedAt (see updateClipCustomization).
+    ops.push(prisma.playlist.update({ where: { id: playlistId }, data: { updatedAt: new Date() } }));
+    await prisma.$transaction(ops);
+  }
 }
 
 async function swapClip(playlistId, oldClipId, newClipId) {

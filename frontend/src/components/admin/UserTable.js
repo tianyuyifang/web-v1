@@ -11,6 +11,23 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 // filter for); "expired" is handled separately in passesFilters.
 const TIER_FILTER_KEYS = ["normal", "vip", "super_vip", "zhiyou"];
 
+// Relative time for the 最近使用 column. "3 天前" answers "is this account still
+// in use" at a glance; the exact instant is on the cell's title. Computed from
+// two absolute times, so it needs no timezone.
+function timeAgo(iso) {
+  const then = new Date(iso).getTime();
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return "刚刚";
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months} 个月前`;
+  return `${Math.round(months / 12)} 年前`;
+}
+
 export default function UserTable({ users, onRefresh, onUserUpdated, controls = false }) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -148,6 +165,9 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
     expiration: (u) => (u.expiresAt ? new Date(u.expiresAt).getTime() : -Infinity),
     owned: (u) => u.ownedCount ?? 0,
     shared: (u) => u.sharedCount ?? 0,
+    // Never-active users sort to the bottom of a descending sort (the default),
+    // which is where "who has not used it" belongs when scanning most-recent-first.
+    lastActive: (u) => (u.lastActiveAt ? new Date(u.lastActiveAt).getTime() : -Infinity),
   };
 
   function passesFilters(u) {
@@ -185,6 +205,7 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
 
   const sortOptions = [
     { key: "registered", label: t("sortRegistered") },
+    { key: "lastActive", label: t("sortLastActive") },
     { key: "expiration", label: t("sortExpiration") },
     { key: "owned", label: t("sortOwned") },
     { key: "shared", label: t("sortShared") },
@@ -278,6 +299,7 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
             <th className="pb-2 pr-4">{t("username")}</th>
             <th className="pb-2 pr-4">{t("role")}</th>
             <th className="pb-2 pr-4">{t("joined")}</th>
+            {controls && <th className="pb-2 pr-4">{t("lastActiveColumn")}</th>}
             <th className="pb-2 pr-4">{t("expiresColumn")}</th>
             <th className="pb-2 pr-4">{t("ownedColumn")}</th>
             <th className="pb-2 pr-4">{t("sharedColumn")}</th>
@@ -287,7 +309,7 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
         <tbody>
           {displayUsers.length === 0 && (
             <tr>
-              <td colSpan={7} className="py-4 text-center text-sm text-muted">
+              <td colSpan={controls ? 8 : 7} className="py-4 text-center text-sm text-muted">
                 {search.trim() ? t("noMembersMatch") : t("noUsersInGroup")}
               </td>
             </tr>
@@ -339,6 +361,19 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
                   </div>
                 )}
               </td>
+              {/* Most recent moment the user changed their own data —唱卡, 听歌流量,
+                  建/改歌单或片段, 点赞, 打标, 反馈… Member tab only (controls), the
+                  one place ranking accounts by activity is the point. Relative,
+                  because "who is still around vs gone" is the question; exact
+                  time on hover. A dash for accounts that never did anything. */}
+              {controls && (
+                <td
+                  className="py-3 pr-4 text-muted"
+                  title={user.lastActiveAt ? new Date(user.lastActiveAt).toLocaleString() : ""}
+                >
+                  {user.lastActiveAt ? timeAgo(user.lastActiveAt) : "—"}
+                </td>
+              )}
               <td className="py-3 pr-4 text-muted">
                 {user.expiresAt ? new Date(user.expiresAt).toLocaleDateString() : "—"}
               </td>
@@ -379,7 +414,7 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
             </tr>
               {expandedId === user.id && (
               <tr className="border-b border-border/50 last:border-0">
-                <td colSpan={7} className="pb-3">
+                <td colSpan={controls ? 8 : 7} className="pb-3">
                   <div className="flex flex-wrap items-end gap-2 rounded-lg bg-background/60 px-3 py-2">
                     <label className="flex flex-col text-xs text-muted">
                       {t("expiresColumn")}

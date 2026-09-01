@@ -41,11 +41,45 @@ async function listUsers() {
   // otherwise could only see the override box, which is empty for a VIP whose
   // add-on comes from the tier, and reads as "no add-on" when there is one.
   const tiers = await getTiers();
+
+  // Last-active time per user, in one pass rather than per-row. "Active" is the
+  // most recent moment the user changed data of their own: a MAX over every
+  // table that carries a userId and a timestamp. playlists.updated_at already
+  // covers creating or editing a playlist AND editing a clip's speed/pitch/
+  // tag/note (those touch the parent, see playlistService), so playlist_clips
+  // needs no separate row here. Login time is deliberately left out — it lives
+  // in an activeSessions JSON blob and means "came back", not "used something".
+  //
+  // Each table is aggregated to one row per user in its OWN subquery BEFORE the
+  // join. Joining the raw tables and grouping afterwards multiplies rows across
+  // tables (a user with 100 clips and 50 likes yields 5000 rows) — measured at
+  // ~7s on a tiny dataset. Per-table pre-aggregation keeps every join 1:1.
+  const activityRows = await prisma.$queryRaw`
+    SELECT u.id AS "userId",
+      GREATEST(
+        cs.t, pl.t, bl.t, lk.t, te.t, fb.t, ps.t, pcp.t, cl.t, sp.t
+      ) AS "lastActiveAt"
+    FROM users u
+      LEFT JOIN (SELECT user_id, MAX(last_seen_at) t FROM capture_sessions GROUP BY user_id) cs ON cs.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(updated_at) t FROM playlists GROUP BY user_id) pl ON pl.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(date::timestamptz) t FROM bandwidth_logs GROUP BY user_id) bl ON bl.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(created_at) t FROM likes GROUP BY user_id) lk ON lk.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(created_at) t FROM tag_events GROUP BY user_id) te ON te.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(created_at) t FROM feedback GROUP BY user_id) fb ON fb.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(created_at) t FROM playlist_shares GROUP BY user_id) ps ON ps.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(created_at) t FROM playlist_copy_permissions GROUP BY user_id) pcp ON pcp.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(created_at) t FROM clips GROUP BY user_id) cl ON cl.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(updated_at) t FROM song_prefs GROUP BY user_id) sp ON sp.user_id = u.id`;
+  const lastActive = new Map(activityRows.map((r) => [r.userId, r.lastActiveAt]));
+
   // Flatten counts: ownedCount = playlists this user owns; sharedCount = playlists shared WITH them.
   return users.map(({ _count, ...u }) => ({
     ...u,
     ownedCount: _count.playlists,
     sharedCount: _count.sharedPlaylists,
+    // Most recent moment this user changed their own data, or null if they
+    // never have (a freshly-approved account that has not done anything yet).
+    lastActiveAt: lastActive.get(u.id) || null,
     // The effective add-on, resolving override + tier the same way the gate
     // does. hasCaptureOverride is the box's own state (the per-user grant).
     hasCapture: hasAddOn(u, ADD_ONS.CAPTURE, tiers),

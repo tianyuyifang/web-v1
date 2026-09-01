@@ -39,7 +39,8 @@ export default function LiveGuide() {
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <Section title="使用步骤" open={openKey === "steps"} onToggle={() => toggle("steps")}>
         <ol className="list-decimal space-y-2 pl-5">
-          <li>在页面右上角工具栏下载【自动打标 APK】，安装至用于游玩 QNI 的安卓手机或模拟器。</li>
+          <li>在页面右上角工具栏下载【自动打标 APK】，安装至安卓手机或电脑上的安卓模拟器。</li>
+          <li>在账户页面的音乐账号扫码登录 QQ 音乐和网易云音乐。</li>
           <li>在该设备的系统设置中，为 APK 开启 <strong className="text-theme">无障碍权限</strong>，并开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>（各品牌名称不同），以避免系统在后台关闭 APK。</li>
           <li>使用任意听歌设备打开 Q你一下网页（推荐 Chrome 或默认浏览器），在右上角列表中点击「未连接」，获取配对码。</li>
           <li>在安卓手机 / 模拟器的 APK 中输入配对码。连接成功后，使用该设备进入 QNI 观战或对局，识别开始。</li>

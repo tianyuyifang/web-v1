@@ -12,6 +12,24 @@ const CAPTURE = ADD_ONS.CAPTURE;
 
 const SALT_ROUNDS = 10;
 
+// Music-source credentials (QQ / NetEase cookies) live under this key inside a
+// user's preferences JSON. They are written only by musicCredentialService and
+// read only server-side for outbound calls, so they must never leave the
+// server: the browser has no use for them, and sending them made a client's
+// copy of preferences carry a login credential it could then overwrite (see
+// updatePreferences) or leak.
+const CREDENTIAL_KEY = 'musicSources';
+
+// The preferences object as the browser should see it: everything except the
+// stored credentials. Returned wherever a user's preferences go to the client.
+function publicPreferences(preferences) {
+  if (!preferences || typeof preferences !== 'object') return preferences;
+  if (preferences[CREDENTIAL_KEY] === undefined) return preferences;
+  const clone = { ...preferences };
+  delete clone[CREDENTIAL_KEY];
+  return clone;
+}
+
 async function hashPassword(plain) {
   return bcrypt.hash(plain, SALT_ROUNDS);
 }
@@ -134,7 +152,7 @@ async function login({ username, password }) {
       id: updated.id,
       username: updated.username,
       role: updated.role,
-      preferences: updated.preferences,
+      preferences: publicPreferences(updated.preferences),
       // A disabled account is told why at the login screen, and that depends
       // on what it was before.
       previousRole: updated.previousRole,
@@ -161,7 +179,7 @@ async function changeUsername(userId, { newUsername, currentPassword }) {
     data: { username: newUsername },
     select: { id: true, username: true, role: true, preferences: true },
   });
-  return updated;
+  return { ...updated, preferences: publicPreferences(updated.preferences) };
 }
 
 async function changePassword(userId, { currentPassword, newPassword }) {
@@ -198,7 +216,7 @@ async function getMe(userId) {
     id: user.id,
     username: user.username,
     role: user.role,
-    preferences: user.preferences,
+    preferences: publicPreferences(user.preferences),
     expiresAt: user.expiresAt,
     monthlyFee: user.monthlyFee == null ? null : Number(user.monthlyFee),
     // Lets the disabled-account page say why: an expired guest and a lapsed
@@ -220,12 +238,32 @@ async function getMe(userId) {
 }
 
 async function updatePreferences(userId, preferences) {
+  // Server-side shallow merge over what is stored, rather than trusting the
+  // client's whole object. The theme editor is the only caller and it only
+  // means to change theme/palette/style/language; merging leaves every other
+  // key — the credentials above included — exactly as the database has it.
+  const current = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { preferences: true },
+  });
+  const base = (current && current.preferences) || {};
+
+  // Defensive: the credential key is never accepted from a preferences write.
+  // The stored value always wins, no matter what a client sends.
+  const incoming = { ...(preferences || {}) };
+  delete incoming[CREDENTIAL_KEY];
+
+  const merged = { ...base, ...incoming };
+  if (base[CREDENTIAL_KEY] !== undefined) merged[CREDENTIAL_KEY] = base[CREDENTIAL_KEY];
+
   const user = await prisma.user.update({
     where: { id: userId },
-    data: { preferences },
+    data: { preferences: merged },
     select: { id: true, username: true, role: true, preferences: true },
   });
-  return user;
+  // Credentials stay in the database (merged kept them) but never go back to
+  // the browser.
+  return { ...user, preferences: publicPreferences(user.preferences) };
 }
 
 /**

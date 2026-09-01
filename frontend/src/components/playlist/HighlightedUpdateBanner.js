@@ -59,28 +59,33 @@ export default function HighlightedUpdateBanner() {
 
   if (!update) return null;
 
+  // Reads as the same card as the playlist panels below it: bg-surface with a
+  // border, and text-theme so the words are dark on the light themes and light
+  // on the dark ones. It used to be a coloured gradient with white text, which
+  // rode the user's chosen palette; a neutral surface keeps the background tied
+  // to the light/dark choice alone, and matches the panels it sits above.
   return (
-    <div className="relative mb-6 flex items-start gap-4 rounded-2xl bg-gradient-to-br from-primary to-primary-hover p-5 pr-10 shadow-lg shadow-primary/30 ring-1 ring-white/10">
+    <div className="relative mb-6 flex items-start gap-4 rounded-2xl border border-border bg-surface p-5 pr-10 shadow-lg">
       {/* Announcement icon */}
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20 text-xl">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xl">
         📢
       </div>
       <div className="min-w-0 flex-1">
         <div className="mb-1.5 flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-white/25 px-2.5 py-0.5 text-xs font-semibold text-white">
+          <span className="rounded-full bg-yellow-500/15 px-2.5 py-0.5 text-xs font-semibold text-yellow-500">
             {categoryLabel(t, update.category)}
           </span>
-          <span className="text-xs text-white/70">{new Date(update.createdAt).toLocaleDateString()}</span>
+          <span className="text-xs text-muted">{new Date(update.createdAt).toLocaleDateString()}</span>
         </div>
-        <h2 className="mb-1 text-lg font-bold text-white">{update.title}</h2>
-        <div className="whitespace-pre-line text-sm text-white/90">
+        <h2 className="mb-1 text-lg font-bold text-theme">{update.title}</h2>
+        <div className="whitespace-pre-line text-sm text-theme">
           <RichText text={update.body} />
         </div>
       </div>
       <button
         onClick={dismiss}
         aria-label="Dismiss"
-        className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+        className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-hover hover:text-theme"
       >
         ✕
       </button>

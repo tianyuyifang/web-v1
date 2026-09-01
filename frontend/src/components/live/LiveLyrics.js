@@ -421,7 +421,7 @@ export default function LiveLyrics({
     }
     return (
       <div className="max-h-56 overflow-y-auto px-1 py-2 text-[0.8rem] leading-relaxed text-muted">
-        <div className="mb-1 text-[0.65rem] text-amber-300/90">游戏给出的片段（无完整歌词）</div>
+        <div className="mb-1 text-[0.65rem] text-yellow-500/80">游戏给出的片段（无完整歌词）</div>
         {gameLyric.split(/[\n\/]+/).map((l, i) => (
           <div key={i} className="py-0.5">{l.trim()}</div>
         ))}
@@ -490,12 +490,7 @@ export default function LiveLyrics({
                 : inPassage
                   // The passage the game is showing: what the singer has to
                   // perform, and the reason this panel is open.
-                  // Warm gold, not the old yellow-500: on the dark grey ground
-                  // the muted yellow washed out — too little luminance contrast
-                  // and too close in hue to the grey text beside it. A brighter,
-                  // more saturated amber with a solider tint behind it reads as
-                  // a warm highlight that advances against the cool grey.
-                  ? "text-[0.8rem] bg-amber-400/15 text-amber-300"
+                  ? "text-[0.8rem] bg-yellow-500/10 text-yellow-500/90"
                   : "text-[0.8rem] text-muted"
             }`}
           >

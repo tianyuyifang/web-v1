@@ -258,6 +258,33 @@ export default function DefaultTuning({
             </label>
           </div>
         ) : null}
+
+        {/* Keyboard shortcuts for the open card's player. Desktop only —
+            hidden below sm entirely, since a phone has no keyboard to press
+            and this panel folds away there anyway. The whole panel is where a
+            desktop singer's controls already live, so the keys that do the
+            same job belong beside them. */}
+        <div className="mt-2 hidden border-t border-border/60 pt-2 sm:block">
+          <p className="mb-1 text-[0.6rem] font-medium text-muted/80">键盘快捷键</p>
+          <div className="space-y-0.5 text-[0.6rem] leading-relaxed text-muted/70">
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded border border-border px-1 font-mono text-theme">A</kbd>
+              <span>/</span>
+              <kbd className="rounded border border-border px-1 font-mono text-theme">D</kbd>
+              <span className="text-muted/50">或</span>
+              <kbd className="rounded border border-border px-1 font-mono text-theme">←</kbd>
+              <span>/</span>
+              <kbd className="rounded border border-border px-1 font-mono text-theme">→</kbd>
+              <span className="ml-0.5">微调 1 秒</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded border border-border px-1 font-mono text-theme">W</kbd>
+              <span>/</span>
+              <kbd className="rounded border border-border px-1 font-mono text-theme">S</kbd>
+              <span className="ml-0.5">上 / 下一句歌词</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     </>

@@ -70,7 +70,7 @@ function relative(iso) {
   return `${Math.floor(m / 60)} 小时前`;
 }
 
-export default function CaptureIndicator() {
+export default function CaptureIndicator({ compact = false }) {
   const { connection, refresh, connect, stop, disconnect, loading, error } =
     useCaptureStore();
   const [open, setOpen] = useState(false);
@@ -124,8 +124,16 @@ export default function CaptureIndicator() {
         {/* Always named. Below lg this was hidden, which left an 8px dot
             carrying four distinct states by colour alone — on a phone, and in
             any desktop window under 1024px, the control said nothing at all
-            unless you opened it. The nav has the width for two characters. */}
-        <span>{statusText(connection)}</span>
+            unless you opened it. The nav has the width for two characters.
+
+            In compact mode (the mobile top bar, where it sits beside 歌单/唱卡
+            and the hamburger) the words drop below 360px so the row can never
+            wrap on the very smallest phones — the coloured dot still carries
+            the state, and tapping opens the panel that spells it out. 360 keeps
+            the words on iPhone SE (375) and essentially every phone in use. */}
+        <span className={compact ? "hidden min-[360px]:inline" : ""}>
+          {statusText(connection)}
+        </span>
         {/* Named in both states, including "未开始".
 
             This used to hide itself when the target was none, on the reasoning

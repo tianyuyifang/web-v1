@@ -84,14 +84,23 @@ export default function Navbar() {
               {navLink("/account", t("navAccount"))}
             </div>
 
-            {/* Mobile hamburger */}
-            <button
-              onClick={() => setMobileOpen((o) => !o)}
-              className="rounded-md p-2 text-muted hover:bg-surface-hover hover:text-theme md:hidden"
-              aria-label="Menu"
-            >
-              {mobileOpen ? "✕" : "☰"}
-            </button>
+            {/* Mobile: the two most-used destinations pulled out of the
+                hamburger, plus the capture status light, so switching between
+                歌单 and 唱卡 mid-game is one tap and the connection dot is
+                always in view rather than two taps deep. Everything else stays
+                in the menu. Desktop is untouched — this whole row is md:hidden. */}
+            <div className="flex items-center gap-1 md:hidden">
+              {canCapture && <CaptureIndicator compact />}
+              {navLink("/playlists", t("navPlaylists"))}
+              {canCapture && navLink("/live", t("navLive"))}
+              <button
+                onClick={() => setMobileOpen((o) => !o)}
+                className="rounded-md p-2 text-muted hover:bg-surface-hover hover:text-theme"
+                aria-label="Menu"
+              >
+                {mobileOpen ? "✕" : "☰"}
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -102,14 +111,10 @@ export default function Navbar() {
           <div className="mb-2 text-sm text-muted">
             {t("welcome")} <span className="font-medium" style={{ color: "var(--text)" }}>{user?.username}</span>
           </div>
-          {canCapture && (
-            <div className="mb-1">
-              <CaptureIndicator />
-            </div>
-          )}
+          {/* 歌单 / 唱卡 and the capture indicator now live in the top bar
+              itself on mobile (see above), so they are deliberately not
+              repeated here — the menu holds only the less-frequent pages. */}
           <div className="flex flex-col gap-1">
-            {navLink("/playlists", t("navPlaylists"))}
-            {canCapture && navLink("/live", t("navLive"))}
             {navLink("/tools", t("navTools"))}
             {navLink("/updates", t("navUpdates"))}
             {navLink("/help", t("navHelp"))}

@@ -65,7 +65,7 @@ export default function HighlightedUpdateBanner() {
   // rode the user's chosen palette; a neutral surface keeps the background tied
   // to the light/dark choice alone, and matches the panels it sits above.
   return (
-    <div className="relative mb-6 flex items-start gap-4 rounded-2xl border border-border bg-surface p-5 pr-10 shadow-lg">
+    <div className="relative mb-6 flex items-start gap-4 rounded-2xl border border-border bg-surface p-5 pr-10">
       {/* Announcement icon */}
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xl">
         📢

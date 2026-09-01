@@ -421,7 +421,7 @@ export default function LiveLyrics({
     }
     return (
       <div className="max-h-56 overflow-y-auto px-1 py-2 text-[0.8rem] leading-relaxed text-muted">
-        <div className="mb-1 text-[0.65rem] text-yellow-500/80">游戏给出的片段（无完整歌词）</div>
+        <div className="mb-1 text-[0.65rem] text-muted dark:text-yellow-500/80">游戏给出的片段（无完整歌词）</div>
         {gameLyric.split(/[\n\/]+/).map((l, i) => (
           <div key={i} className="py-0.5">{l.trim()}</div>
         ))}
@@ -489,8 +489,14 @@ export default function LiveLyrics({
                 ? "text-[0.95rem] font-semibold text-muted"
                 : inPassage
                   // The passage the game is showing: what the singer has to
-                  // perform, and the reason this panel is open.
-                  ? "text-[0.8rem] bg-yellow-500/10 text-yellow-500/90"
+                  // perform, and the reason this panel is open. The pale tint
+                  // marks it in every theme; the words themselves stay yellow
+                  // on the dark grounds (dark / high-contrast), where yellow
+                  // reads well, but drop to the muted grey on the light grounds
+                  // (light / warm), where the yellow washed out against the
+                  // pale panel. dark: keys off the .dark class the dark grounds
+                  // carry and the light ones do not.
+                  ? "text-[0.8rem] bg-yellow-500/10 text-muted dark:text-yellow-500/90"
                   : "text-[0.8rem] text-muted"
             }`}
           >

@@ -622,16 +622,18 @@ export default function LivePage() {
         tier: quality, vocalsOnly,
       });
       const resolveMs = Date.now() - tOpen;
-      // One reading per card opened: the sink clears itself, so a card played
-      // twice does not report the second, already-decoded time as if it were
-      // the first.
+      // Every timing the player takes for this card comes back through here,
+      // labelled by kind: `play` is the wait before sound, `ready` the wait
+      // before the key can be shifted, `pitch`/`vocals` how long an adjustment
+      // took and whether it was even possible yet. Context the player cannot
+      // know — which song, which quality — is added on the way out.
       player.perfRef.current = (legs) => {
-        player.perfRef.current = null;
         captureAPI.perf({
           ...legs,
           resolveMs,
           source: card.mapping.source,
           tier: quality,
+          vocalsOnly: vocalsOnly ? 1 : 0,
         });
       };
       const { url, reason, kind, songId } = res.data;
@@ -837,8 +839,15 @@ export default function LivePage() {
   const applyPlaybackSetting = useCallback(async (next) => {
     const card = openId ? cards.find((c) => c.eventId === openId) : null;
     if (!card?.mapping || !playing) return;
+    // Temporary: a quality or vocals switch fetches a different file for a song
+    // already sounding, so the singer waits through a second resolve and a
+    // second load with the music still playing. How long that takes is its own
+    // question, separate from opening a card.
+    const tSwap = Date.now();
+    let tResolved = tSwap;
     try {
       const res = await mappingAPI.preview(card.mapping.mappingId, undefined, next);
+      tResolved = Date.now();
       const { url, kind, songId } = res.data;
       // A local song has no tiers and no separated vocals; it plays as it is.
       if (kind === "local" && songId) return;
@@ -856,6 +865,20 @@ export default function LivePage() {
       // coming back no longer means the request was met.
       if (next.vocalsOnly) setVocalsAvailable(res.data.vocalsPlayed === true);
       await player.swapSource(url);
+      // Guarded: this sits inside the try that governs the swap, so a
+      // synchronous throw from the reporting call — which its own .catch()
+      // cannot intercept — would skip the setVocalsOnly below and leave the
+      // singer with the backing track they just turned off.
+      try {
+        captureAPI.perf({
+          kind: "swap",
+          resolveMs: tResolved - tSwap,
+          ms: Date.now() - tSwap,
+          source: card.mapping.source,
+          tier: next.tier || quality,
+          vocalsOnly: next.vocalsOnly ? 1 : 0,
+        });
+      } catch { /* a measurement is never worth a wrong track */ }
       // The separated file carries the voice in channels 0 and 1 and the
       // backing in 2 and 3, so choosing the file is only half of it — an
       // <audio> element mixes all four back together. The player takes the

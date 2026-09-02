@@ -364,6 +364,16 @@ router.post('/perf', ...web, async (req, res, next) => {
       ? Math.round(v) : null);
     console.log('[perf] ' + JSON.stringify({
       user: req.user.username,
+      // Which moment this is: `play` the wait before sound, `ready` the wait
+      // before the key can be shifted, `pitch`/`vocals` an adjustment, `swap`
+      // a change of quality on a song already playing.
+      kind: typeof b.kind === 'string' ? b.kind.slice(0, 12) : null,
+      ms: ms(b.ms),
+      // Whether the decode had landed when an adjustment was asked for. A key
+      // change made before it does nothing, which reads as a broken control.
+      ready: typeof b.ready === 'boolean' ? (b.ready ? 1 : 0) : null,
+      // Signed: a key change can be downward, and -6 is not an error.
+      to: typeof b.to === 'number' && Number.isFinite(b.to) ? Math.round(b.to) : null,
       resolveMs: ms(b.resolveMs),
       downloadMs: ms(b.downloadMs),
       decodeMs: ms(b.decodeMs),
@@ -371,6 +381,7 @@ router.post('/perf', ...web, async (req, res, next) => {
       durationSec: ms(b.durationSec),
       source: typeof b.source === 'string' ? b.source.slice(0, 16) : null,
       tier: typeof b.tier === 'string' ? b.tier.slice(0, 16) : null,
+      vocalsOnly: ms(b.vocalsOnly),
       // Which device found it slow. The whole question is why some phones are
       // fine and others are not, and that cannot be answered without knowing
       // which is which. Truncated; nothing else about the singer is recorded.

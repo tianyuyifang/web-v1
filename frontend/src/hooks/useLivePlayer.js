@@ -116,6 +116,20 @@ export default function useLivePlayer() {
   const perfRef = useRef(null);
 
   /**
+   * Temporary: one way out for every timing this file takes.
+   *
+   * Wrapped so a broken sink can never cost a play — the whole point of
+   * measuring the experience is not to change it. The page installs the sink
+   * on perfRef; with none installed this is a no-op.
+   */
+  const report = useCallback((kind, data) => {
+    try {
+      const sink = perfRef.current;
+      if (sink) sink({ kind, ...data });
+    } catch { /* a measurement is never worth an interruption */ }
+  }, []);
+
+  /**
    * Wire an element to the clock and the ended signal.
    *
    * Separate from creating one, because swapping to a different file of the
@@ -227,18 +241,15 @@ export default function useLivePlayer() {
       bufferRef.current = buf;
       if (!duration) setDuration(buf.duration);
       setCanShift(true);
-      // Reported after the singer can already shift the key, so measuring it
-      // never delays it. Wrapped because a broken sink must not cost a play.
-      try {
-        if (perfRef.current) {
-          perfRef.current({
-            downloadMs: tDownloaded - tStart,
-            decodeMs: Date.now() - tDownloaded,
-            bytes,
-            durationSec: Math.round(buf.duration),
-          });
-        }
-      } catch { /* measurement must never break playback */ }
+      // Timings taken here but reported at the end of this block: the vocals
+      // hand-off below is what a singer who ticked 只听人声 is waiting through,
+      // and nothing that only measures should sit in front of it.
+      const legs = {
+        downloadMs: tDownloaded - tStart,
+        decodeMs: Date.now() - tDownloaded,
+        bytes,
+        durationSec: Math.round(buf.duration),
+      };
       // The wait is over for a vocals request made while this was decoding,
       // which is the ordinary case rather than a corner: the page asks for
       // vocals immediately after load(), and the decode lands a second or two
@@ -266,11 +277,12 @@ export default function useLivePlayer() {
           await elRef.current.play().catch(() => {});
         }
       }
+      report('ready', legs);
     } catch {
       // CORS refused, or a codec the browser will not decode. Plain playback
       // still works; pitch simply stays unavailable for this track.
     }
-  }, [duration]);
+  }, [duration, report]);
 
   /**
    * Play the decoded buffer's first two channels and nothing else.
@@ -476,11 +488,16 @@ export default function useLivePlayer() {
     setDuration(0);
     el.playbackRate = speedRef.current;
     el.volume = volumeRef.current;
+    // Temporary: the moment sound actually starts. Everything before this is
+    // the singer waiting; everything after happens while the song is already
+    // playing and costs them nothing.
+    const tPlay = Date.now();
     await el.play();
+    try { report('play', { ms: Date.now() - tPlay }); } catch { /* never break playback */ }
     setIsPlaying(true);
     // Deliberately not awaited: the point is that sound has already started.
     warmBuffer(url);
-  }, [element, teardownGraph, warmBuffer]);
+  }, [element, teardownGraph, warmBuffer, report]);
 
   const toggle = useCallback(async () => {
     const el = element();
@@ -533,7 +550,7 @@ export default function useLivePlayer() {
    * element cannot do it at all, so asking for any shift moves playback onto
    * the decoded graph, and returning to zero moves it back.
    */
-  const setPitch = useCallback(async (value) => {
+  const applyPitch = useCallback(async (value) => {
     const next = Math.max(-6, Math.min(6, value));
     // Ref first: everything below, and anything that runs before the next
     // render, has to see the value being asked for rather than the last one.
@@ -568,6 +585,24 @@ export default function useLivePlayer() {
   }, [element, isPlaying, positionNow, startShifted, startVocalsOnly, teardownGraph]);
 
   /**
+   * Temporary wrapper around the above. Timing it from the outside covers
+   * every one of its several exits without a line being added to any of them.
+   *
+   * `ready` is the answer to the complaint behind all of this: a key change
+   * asked for before the decode has landed does nothing at all, and the singer
+   * reads that as a broken control rather than as being early.
+   */
+  const setPitch = useCallback(async (value) => {
+    const tPitch = Date.now();
+    const wasReady = Boolean(bufferRef.current);
+    try {
+      return await applyPitch(value);
+    } finally {
+      report('pitch', { ms: Date.now() - tPitch, ready: wasReady, to: value });
+    }
+  }, [applyPitch, report]);
+
+  /**
    * Set the output level, on whichever engine is currently sounding.
    *
    * Both are written every time rather than only the active one: the other may
@@ -594,7 +629,7 @@ export default function useLivePlayer() {
    *
    * Turning it off hands playback back to the element at the same position.
    */
-  const setVocalsOnly = useCallback(async (on) => {
+  const applyVocalsOnly = useCallback(async (on) => {
     wantVocalsRef.current = !!on;
 
     if (!on) {
@@ -618,6 +653,17 @@ export default function useLivePlayer() {
     element().pause();
     await startVocalsOnly(at);
   }, [element, isPlaying, positionNow, startVocalsOnly, teardownGraph]);
+
+  /** Temporary wrapper — see setPitch for why it wraps rather than inlines. */
+  const setVocalsOnly = useCallback(async (on) => {
+    const tVocals = Date.now();
+    const wasReady = Boolean(bufferRef.current);
+    try {
+      return await applyVocalsOnly(on);
+    } finally {
+      report('vocals', { ms: Date.now() - tVocals, ready: wasReady, to: on ? 1 : 0 });
+    }
+  }, [applyVocalsOnly, report]);
 
   const setSpeed = useCallback((value) => {
     const next = Math.max(0.5, Math.min(2, value));

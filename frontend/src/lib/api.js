@@ -456,12 +456,31 @@ export const mappingAPI = {
 };
 
 /**
+ * Identifies this page — not this user, and not this 唱卡 session.
+ *
+ * The server retires an existing live stream when a new one arrives under the
+ * same key, so that a page reconnecting does not leave a heartbeat running
+ * against a socket nobody reads. Keyed on the session alone, a singer watching
+ * from a laptop and a phone had both pages presenting one key, and each
+ * connection evicted the other — which made that page reconnect, evicting the
+ * first right back. Measured in production as a reconnect every ~6s, with cards
+ * lost in every gap.
+ *
+ * Held in module scope, so it survives reconnects within the page and differs
+ * between tabs. A random value is enough: it only ever has to be unequal to
+ * another page's.
+ */
+const pageStreamId = Math.random().toString(36).slice(2, 10);
+
+/**
  * Stream for a live run. Separate from the playlist stream because a live
  * session has no playlist to key on — the server keys these by user.
  */
 export const getLiveSSEUrl = (sessionId) => {
   const { base, token } = streamBase();
-  return `${base}/sse/capture/live/${sessionId}${token ? `?token=${token}` : ""}`;
+  const params = new URLSearchParams({ clientId: pageStreamId });
+  if (token) params.set("token", token);
+  return `${base}/sse/capture/live/${sessionId}?${params.toString()}`;
 };
 
 export const getLikesSSEUrl = (playlistId) => {

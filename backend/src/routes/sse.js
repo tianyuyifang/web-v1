@@ -60,14 +60,28 @@ router.get('/capture/live/:sessionId', async (req, res, next) => {
     // Nothing is leaked by allowing it: the channel is derived from the
     // authenticated user, so an idle subscription simply receives nothing.
 
-    // Keyed by session: the 唱卡 page reconnects on its own whenever it
-    // suspects the stream has gone quiet (a backgrounded phone, a network
+    // Keyed by session *and page*: the 唱卡 page reconnects on its own whenever
+    // it suspects the stream has gone quiet (a backgrounded phone, a network
     // switch), and each reconnect must retire the one before it rather than
     // leave a heartbeat running against a socket nobody reads.
+    //
+    // The page half matters as much as the session half. Keyed on the session
+    // alone, a singer following along on a laptop and a phone had both pages
+    // under one key, so each connection evicted the other — and being evicted
+    // is what makes a page reconnect, which evicted the first right back. That
+    // loop ran at roughly one reconnect every 6s in production and lost every
+    // card pushed into a gap. It is the same shape as the July regression on
+    // the playlist stream above, where two subscribers shared a key.
+    //
+    // An absent or malformed clientId falls back to a per-connection value, so
+    // an older page (or a probe) never collides with anything — it simply opts
+    // out of de-duplication, which is the safe direction.
+    const rawClientId = String(req.query.clientId || '');
+    const clientId = /^[A-Za-z0-9]{1,32}$/.test(rawClientId) ? rawClientId : null;
     addClient(
       captureService.liveChannel(req.user.id),
       res,
-      `live:${req.params.sessionId}`,
+      clientId ? `live:${req.params.sessionId}:${clientId}` : undefined,
     );
   } catch (err) {
     next(err);

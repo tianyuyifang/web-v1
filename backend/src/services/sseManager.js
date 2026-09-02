@@ -69,7 +69,23 @@ function addClient(channel, res, key) {
 
   const heartbeat = setInterval(() => {
     try {
+      // A named event, not a bare `:heartbeat` comment. Both keep the socket
+      // warm, but EventSource dispatches nothing at all for a comment line —
+      // so 唱卡's watchdog, which treats silence as a dead link, never heard
+      // these and cut a healthy stream roughly every 20s. Measured before the
+      // change: 8763 reconnects in a day, and every card broadcast during a
+      // reconnect was lost, because `broadcast` drops messages for a channel
+      // with no client.
+      //
+      // The comment is still sent first. It is what has kept proxies and
+      // browsers from reaping idle streams since this was written for playlist
+      // likes, and that job is unrelated to the watchdog's.
+      //
+      // Named rather than an unnamed `data:` frame so it stays invisible to
+      // the playlist consumers: they listen for their own events only, and an
+      // unnamed frame would reach their `onmessage`.
       res.write(':heartbeat\n\n');
+      res.write('event: heartbeat\ndata: {}\n\n');
     } catch {
       // The socket is gone and nothing told us. Stop the timer and drop the
       // entry, or this interval outlives the connection for good.

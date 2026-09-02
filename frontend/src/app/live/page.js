@@ -465,6 +465,11 @@ export default function LivePage() {
           /* a malformed frame is not worth tearing the stream down for */
         }
       });
+      // The server's keep-alive, and the only traffic on a stream that is
+      // healthy but idle between songs. Without listening for it the watchdog
+      // below saw silence on a working connection and rebuilt it every ~20s,
+      // losing any card pushed while it was down.
+      es.addEventListener("heartbeat", seen);
       // An error the browser *does* report: let EventSource retry on its own,
       // and let the watchdog step in if that retry never lands.
       es.addEventListener("error", seen);

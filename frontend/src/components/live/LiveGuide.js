@@ -113,13 +113,28 @@ export default function LiveGuide() {
           <div>
             <p className="font-medium text-theme">Q1：识别过程中偶尔漏歌（极限抢唱 / 两军对决缺少一首歌、唱卡有时未出现）？</p>
             <p className="mt-1">请依次自查：</p>
-            <ul className="mt-1.5 list-disc space-y-1.5 pl-5">
-              <li>确认安卓手机 / 模拟器已为自动打标 APK 开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>，避免 APK 被系统在后台限流；</li>
-              <li>检查自动打标 APP 是否已更新至最新版本；</li>
-              <li>如果是用手机打开的 Q你一下网页，请确认听歌设备上的 Q你一下网页 <strong className="text-theme">保持在前台</strong>。切换页面有概率导致数据传输中断，为听歌设备的浏览器同样开启后台高耗电 / 高性能模式，可减少此类问题；</li>
-              <li>检查浏览器缓存情况，可以关闭浏览器、清除后台后再打开，重新配对；</li>
-              <li>如果上述检查都没有作用，可以联系管理员进一步排查原因。</li>
-            </ul>
+            {/* Ordered, because the first step is also the diagnosis: whether a
+                refresh brings the songs back says which side to look at next —
+                the phone doing the recognising, or the browser showing it. */}
+            <ol className="mt-1.5 list-decimal space-y-2.5 pl-5">
+              <li>在 Q你一下网页上手动刷新页面，查看刚刚缺漏的歌是否显示出来。</li>
+              <li>
+                <span className="font-medium text-theme">若仍缺歌</span>：检查安卓设备（手机 / 模拟器）
+                <ul className="mt-1.5 list-disc space-y-1.5 pl-5">
+                  <li>确认安卓手机 / 模拟器已为自动打标 APK 开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>，避免 APK 被系统在后台限流；</li>
+                  <li>检查自动打标 APP 是否已更新至最新版本。</li>
+                </ul>
+              </li>
+              <li>
+                <span className="font-medium text-theme">若不再缺歌</span>：检查听歌设备（Q你一下网页），避免需要手动频繁刷新
+                <ul className="mt-1.5 list-disc space-y-1.5 pl-5">
+                  <li>如果是用手机打开的网页，请确认网页是否一直 <strong className="text-theme">保持在前台</strong>。切换页面有概率导致数据传输中断，此类问题一般可以通过刷新网页得到解决；</li>
+                  <li>关掉浏览器的省电 / 流量节省模式，给浏览器也开「后台高耗电 / 高性能」；</li>
+                  <li>如果始终出现此类不及时显示的问题，可以考虑更换浏览器，推荐使用 <strong className="text-theme">Chrome 或系统自带浏览器</strong>。想追求更好的体验，可以考虑用电脑或平板使用网页。</li>
+                </ul>
+              </li>
+            </ol>
+            <p className="mt-2.5">如果上述检查都没有作用，可以联系管理员进一步排查原因。</p>
           </div>
           <div>
             <p className="font-medium text-theme">Q2：变调、高音质、去伴奏等功能出现卡顿或延时？</p>

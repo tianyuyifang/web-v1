@@ -613,10 +613,27 @@ export default function LivePage() {
     }
 
     setBusy(true);
+    // Temporary: the three legs of the wait before the key can be shifted —
+    // resolving an address, downloading the file, decoding it. Timed on the
+    // devices that actually find this slow, because the cure differs per leg.
+    const tOpen = Date.now();
     try {
       const res = await mappingAPI.preview(card.mapping.mappingId, undefined, {
         tier: quality, vocalsOnly,
       });
+      const resolveMs = Date.now() - tOpen;
+      // One reading per card opened: the sink clears itself, so a card played
+      // twice does not report the second, already-decoded time as if it were
+      // the first.
+      player.perfRef.current = (legs) => {
+        player.perfRef.current = null;
+        captureAPI.perf({
+          ...legs,
+          resolveMs,
+          source: card.mapping.source,
+          tier: quality,
+        });
+      };
       const { url, reason, kind, songId } = res.data;
       if (kind === "unsupported") {
         setPlayError(`${SOURCE_LABEL[card.mapping.source] || card.mapping.source} 的播放还没做`);

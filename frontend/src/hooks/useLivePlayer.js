@@ -107,6 +107,13 @@ export default function useLivePlayer() {
    */
   const startShiftedRef = useRef(null);
   const rafRef = useRef(0);
+  /**
+   * Temporary sink for the download/decode timings, set by the page.
+   *
+   * A ref rather than a hook argument so nothing about how this player is
+   * created changes — the measurement is meant to come back out again.
+   */
+  const perfRef = useRef(null);
 
   /**
    * Wire an element to the clock and the ended signal.
@@ -196,10 +203,22 @@ export default function useLivePlayer() {
     decodeForRef.current = url;
     setCanShift(false);
     bufferRef.current = null;
+    // Temporary instrumentation. Shifting the key is slow on some phones and
+    // fine on others, and the two halves of this wait have different cures: a
+    // slow download wants the file fetched earlier, a slow decode wants a
+    // different decoder or less audio to chew through. Which one dominates has
+    // only been guessed at, so it is measured here — on the devices that
+    // actually have the problem — rather than reasoned about. Remove once the
+    // readings have answered it.
+    const tStart = Date.now();
+    let tDownloaded = tStart;
+    let bytes = 0;
     try {
       const res = await fetch(url, { mode: "cors" });
       if (!res.ok) return;
       const raw = await res.arrayBuffer();
+      tDownloaded = Date.now();
+      bytes = raw.byteLength;
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!ctxRef.current) ctxRef.current = new Ctx();
       const buf = await ctxRef.current.decodeAudioData(raw);
@@ -208,6 +227,18 @@ export default function useLivePlayer() {
       bufferRef.current = buf;
       if (!duration) setDuration(buf.duration);
       setCanShift(true);
+      // Reported after the singer can already shift the key, so measuring it
+      // never delays it. Wrapped because a broken sink must not cost a play.
+      try {
+        if (perfRef.current) {
+          perfRef.current({
+            downloadMs: tDownloaded - tStart,
+            decodeMs: Date.now() - tDownloaded,
+            bytes,
+            durationSec: Math.round(buf.duration),
+          });
+        }
+      } catch { /* measurement must never break playback */ }
       // The wait is over for a vocals request made while this was decoding,
       // which is the ordinary case rather than a corner: the page asks for
       // vocals immediately after load(), and the decode lands a second or two
@@ -640,5 +671,7 @@ export default function useLivePlayer() {
     load, toggle, seek, stop, swapSource,
     setPitch, setSpeed, setVolume, setVocalsOnly,
     isPlaying, current, duration, pitch, speed, volume, canShift,
+    // Temporary — see perfRef.
+    perfRef,
   };
 }

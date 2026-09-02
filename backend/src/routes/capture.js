@@ -345,6 +345,43 @@ router.post('/events/:id/approve', ...web, async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/capture/perf — temporary: where the wait before a key change goes.
+ *
+ * Shifting the key needs the whole track downloaded and decoded, and that is
+ * slow on some phones while a desktop barely notices. The cure differs per
+ * leg — an early fetch for a slow download, a different decoder or less audio
+ * for a slow decode — and which one dominates has only been guessed at. These
+ * are the real numbers, from the devices that actually have the problem.
+ *
+ * Logged rather than stored: a night of readings settles the question and a
+ * table would outlive its usefulness. Remove this route with the client side.
+ */
+router.post('/perf', ...web, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const ms = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0
+      ? Math.round(v) : null);
+    console.log('[perf] ' + JSON.stringify({
+      user: req.user.username,
+      resolveMs: ms(b.resolveMs),
+      downloadMs: ms(b.downloadMs),
+      decodeMs: ms(b.decodeMs),
+      bytes: ms(b.bytes),
+      durationSec: ms(b.durationSec),
+      source: typeof b.source === 'string' ? b.source.slice(0, 16) : null,
+      tier: typeof b.tier === 'string' ? b.tier.slice(0, 16) : null,
+      // Which device found it slow. The whole question is why some phones are
+      // fine and others are not, and that cannot be answered without knowing
+      // which is which. Truncated; nothing else about the singer is recorded.
+      ua: String(req.headers['user-agent'] || '').slice(0, 160),
+    }));
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/capture/events/:id/ignore — dismiss without liking
 router.post('/events/:id/ignore', ...web, async (req, res, next) => {
   try {

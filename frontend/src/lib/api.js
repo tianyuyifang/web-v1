@@ -274,6 +274,10 @@ export const captureAPI = {
   // The key and tempo to open a song in when it has none of its own. The live
   // feed returns these alongside the cards, so there is no matching read here.
   saveSongPrefDefaults: (fields) => api.put("/capture/prefs/defaults", fields),
+  // Temporary: how long each half of the wait before a key change takes, on the
+  // device actually doing it. Fire-and-forget — a reading that fails to send is
+  // worth nothing and must cost the singer nothing.
+  perf: (data) => api.post("/capture/perf", data).catch(() => {}),
 };
 
 // --- Admin ---

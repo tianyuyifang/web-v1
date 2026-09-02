@@ -27,7 +27,10 @@ router.get('/playlists/:id/likes', async (req, res, next) => {
 
     if (!canView) return res.status(403).end();
 
-    addClient(playlistId, res);
+    // Keyed by viewer: one live stream per person per playlist. A refresh or a
+    // reconnect replaces its own previous stream instead of stacking another
+    // one behind it, which is what made heartbeat timers accumulate.
+    addClient(playlistId, res, `user:${userId}`);
   } catch (err) {
     next(err);
   }
@@ -54,7 +57,15 @@ router.get('/capture/live/:sessionId', async (req, res, next) => {
     // Nothing is leaked by allowing it: the channel is derived from the
     // authenticated user, so an idle subscription simply receives nothing.
 
-    addClient(captureService.liveChannel(req.user.id), res);
+    // Keyed by session: the 唱卡 page reconnects on its own whenever it
+    // suspects the stream has gone quiet (a backgrounded phone, a network
+    // switch), and each reconnect must retire the one before it rather than
+    // leave a heartbeat running against a socket nobody reads.
+    addClient(
+      captureService.liveChannel(req.user.id),
+      res,
+      `live:${req.params.sessionId}`,
+    );
   } catch (err) {
     next(err);
   }

@@ -76,6 +76,19 @@ const ROUND_IDLE_MS = 60 * 1000;
  */
 const KEEP_BATCHES = 40;
 
+/**
+ * How long the stream may stay silent before it is presumed dead.
+ *
+ * The server sends a heartbeat comment every 10s, so silence past this is not
+ * a quiet evening — it is a socket that stopped delivering without either end
+ * being told. Set with the singer in mind rather than the network: a card that
+ * takes 15s to appear is late, a card that never appears is the bug this
+ * replaces.
+ */
+const SSE_SILENCE_MS = 15000;
+/** Checked several times per timeout so the deadline is met, not lapped. */
+const SSE_WATCHDOG_MS = 5000;
+
 // No local copy of the run is kept. The server knows whether captures are
 // being recognised, and a browser-side copy only ever disagreed with it: it
 // existed solely in the tab that pressed 开始识别, so every other way of
@@ -399,29 +412,109 @@ export default function LivePage() {
     return () => { alive = false; };
   }, [loadFeed, refreshConnection]);
 
-  // The stream. Reconnects are handled by EventSource itself; the refetch on
-  // open is what fills in anything missed while it was down.
+  /**
+   * The stream, and the two things that keep it honest.
+   *
+   * EventSource reconnects itself when it *notices* a break, and the refetch on
+   * open fills in whatever arrived while it was down. The failure this page
+   * kept hitting is the case where it never notices: a phone freezes the tab,
+   * a network hands over from wifi to mobile, or iOS 18 leaves readyState at
+   * OPEN with the socket already gone. No error fires, so no reconnect, so no
+   * refetch — and every card pushed from then on is written into a socket
+   * nobody reads. The singer sees the feed stop, and a manual refresh brings
+   * all of it back, because the cards were in the database the whole time.
+   *
+   * So the page stops trusting the connection to report its own death:
+   *
+   *  - the server sends a comment every 10s, and anything arriving on the
+   *    stream (a card, a heartbeat, the opening ':ok') counts as proof of life.
+   *    Silence past SSE_SILENCE_MS means the link is gone whatever readyState
+   *    claims, and the stream is torn down and rebuilt.
+   *  - coming back to the tab reconnects immediately rather than waiting out
+   *    that timeout. Leaving to look a song up in a music app and returning is
+   *    the ordinary way this page is used, not an edge case.
+   */
   useEffect(() => {
     if (!session) return undefined;
-    const es = new EventSource(getLiveSSEUrl(session.id));
-    es.addEventListener("open", () => loadFeed(session.id));
-    es.addEventListener("live-card", (e) => {
-      try {
-        upsert(JSON.parse(e.data));
-      } catch {
-        /* a malformed frame is not worth tearing the stream down for */
+    let es = null;
+    let watchdog = null;
+    let closed = false;
+    let lastMessageAt = Date.now();
+
+    const connect = () => {
+      if (closed) return;
+      if (es) {
+        try { es.close(); } catch { /* already gone */ }
       }
-    });
-    return () => es.close();
+      lastMessageAt = Date.now();
+      es = new EventSource(getLiveSSEUrl(session.id));
+      // Any traffic at all is proof the link is alive — heartbeats included,
+      // which is the whole point of the server sending them.
+      const seen = () => { lastMessageAt = Date.now(); };
+      es.addEventListener("message", seen);
+      es.addEventListener("open", () => {
+        seen();
+        // Whatever was pushed while this was down is still in the database.
+        loadFeed(session.id);
+      });
+      es.addEventListener("live-card", (e) => {
+        seen();
+        try {
+          upsert(JSON.parse(e.data));
+        } catch {
+          /* a malformed frame is not worth tearing the stream down for */
+        }
+      });
+      // An error the browser *does* report: let EventSource retry on its own,
+      // and let the watchdog step in if that retry never lands.
+      es.addEventListener("error", seen);
+    };
+
+    connect();
+
+    // Checked more often than the timeout it enforces, so a dead link is found
+    // within a few seconds of the deadline rather than a whole period later.
+    watchdog = setInterval(() => {
+      if (closed) return;
+      if (Date.now() - lastMessageAt > SSE_SILENCE_MS) connect();
+    }, SSE_WATCHDOG_MS);
+
+    // Back on screen: reconnect now instead of waiting for the watchdog, and
+    // let the reconnect's own open handler pull in what was missed.
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || closed) return;
+      loadFeed(session.id);
+      connect();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("online", onVisible);
+
+    return () => {
+      closed = true;
+      clearInterval(watchdog);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.removeEventListener("online", onVisible);
+      if (es) { try { es.close(); } catch { /* already gone */ } }
+    };
   }, [session, upsert, loadFeed]);
 
   /**
-   * Poll for liveness.
+   * Poll for liveness, and for cards this page never received.
    *
-   * Deliberately not inferred from the SSE connection: that only proves the
-   * browser can reach the server, which says nothing about whether the capture
-   * client is still running.
+   * Liveness is deliberately not inferred from the SSE connection: that only
+   * proves the browser can reach the server, which says nothing about whether
+   * the capture client is still running.
+   *
+   * The count is the second half of the safety net around the stream. The
+   * watchdog asks "is the link alive"; this asks the question that actually
+   * matters — "does the server have cards I do not?" — and answers it without
+   * having to detect anything about the connection at all. Both windows are
+   * the same 15s, so a card lost to any cause surfaces within one of them.
    */
+  const cardCountRef = useRef(0);
+  cardCountRef.current = cards.length;
   useEffect(() => {
     if (!session) return undefined;
     let stop = false;
@@ -430,6 +523,12 @@ export default function LivePage() {
         const res = await captureAPI.status(session.id);
         if (stop) return;
         setClient(res.data.client);
+        // Held fewer than the server has: something was pushed while this page
+        // was not listening. The feed is the authority, so take it whole.
+        const serverCount = res.data.liveEventCount;
+        if (typeof serverCount === "number" && serverCount > cardCountRef.current) {
+          loadFeed(session.id);
+        }
         // Closed elsewhere, or aimed at something else: either way this page
         // is no longer the destination, so stop showing a live run.
         if (res.data.ended || res.data.target !== "live") {
@@ -442,7 +541,9 @@ export default function LivePage() {
     tick();
     const id = setInterval(tick, 15000);
     return () => { stop = true; clearInterval(id); };
-  }, [session]);
+    // cards is read through a ref rather than depended on: the poll must keep
+    // its own cadence, not restart every time a card arrives.
+  }, [session, loadFeed]);
 
   const stopAudio = useCallback(() => {
     player.stop();

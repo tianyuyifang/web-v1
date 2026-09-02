@@ -74,6 +74,10 @@ const SINGING_ATTACH_WINDOW_MS = 5 * 60 * 1000;
  * than an archive. Rows themselves are kept for thirty days.
  */
 const LIVE_FEED_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Most cards one feed request can return. Shared with getStatus's count, so
+ *  the page's "am I missing cards" comparison comes from one ceiling, not two. */
+const LIVE_FEED_MAX_TAKE = 200;
 const MAX_CANDIDATE_SCAN = 30;
 /**
  * Shortest ellipsis fragment worth filtering on. "一…的约定" leaves "一", which
@@ -1128,11 +1132,31 @@ async function getStatus({ userId, sessionId }) {
     client = age <= STALE_AFTER_MS ? 'connected' : 'stale';
   }
 
+  // How many cards the feed would return right now.
+  //
+  // The page compares this against what it is holding, and refetches when the
+  // two disagree — which is how a card lost to a stream that died without
+  // saying so gets noticed at all. Deliberately the SAME window and filter as
+  // getLiveFeed, and capped the same way: a mismatch has to mean "you are
+  // missing something", not "you are past the limit".
+  const since = new Date(Date.now() - LIVE_FEED_WINDOW_MS);
+  const liveEvents = await prisma.captureEvent.count({
+    where: {
+      playlistId: null,
+      createdAt: { gte: since },
+      session: { userId, mode: 'live' },
+    },
+  });
+
   return {
     client,
     lastSeenAt: session.lastSeenAt,
     ended: Boolean(session.endedAt),
     expiresAt: session.expiresAt,
+    // Capped at the feed's own ceiling so the page's comparison stays valid
+    // once a singer passes it — beyond the cap the feed cannot grow, and an
+    // uncapped count here would read as "permanently missing cards".
+    liveEventCount: Math.min(liveEvents, LIVE_FEED_MAX_TAKE),
     // Liveness alone is no longer the whole answer: a connection can be alive
     // and pointed somewhere else entirely, which a panel would otherwise show
     // as a healthy run that never receives anything.
@@ -1233,7 +1257,8 @@ async function getLiveFeed({ userId, sessionId, limit }) {
   if (!session) throw new NotFoundError('Capture session');
   if (session.userId !== userId) throw new ForbiddenError('Not your capture session');
 
-  const take = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 200) : 60;
+  const take = Number.isInteger(limit) && limit > 0
+    ? Math.min(limit, LIVE_FEED_MAX_TAKE) : 60;
 
   // The singer's last day, not this connection's.
   //

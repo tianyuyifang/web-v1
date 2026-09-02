@@ -27,10 +27,13 @@ router.get('/playlists/:id/likes', async (req, res, next) => {
 
     if (!canView) return res.status(403).end();
 
-    // Keyed by viewer: one live stream per person per playlist. A refresh or a
-    // reconnect replaces its own previous stream instead of stacking another
-    // one behind it, which is what made heartbeat timers accumulate.
-    addClient(playlistId, res, `user:${userId}`);
+    // Deliberately unkeyed: a playlist page legitimately holds more than one
+    // stream on this endpoint at once — the likes hook opens one and the
+    // 自动打标 panel opens its own beside it. Keying these by viewer made each
+    // new one retire the other, so whichever connected last worked and the
+    // other went silent until a refresh swapped them over. De-duplication is
+    // for 唱卡, where a reconnecting page really is replacing itself.
+    addClient(playlistId, res);
   } catch (err) {
     next(err);
   }

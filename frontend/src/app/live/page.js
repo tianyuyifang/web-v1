@@ -40,6 +40,7 @@ import {
 } from "@/components/live/LiveVolumeControl";
 import { PlayIcon, PauseIcon, BusyIcon, UnmappedIcon } from "@/components/live/TransportIcons";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { isCardWorthShowing, keepShowableCards } from "@/lib/liveCards";
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
 // without a platform account and cannot be delisted out from under a singer.
@@ -348,6 +349,11 @@ export default function LivePage() {
    * makes that harmless instead of showing the song twice.
    */
   const upsert = useCallback((card) => {
+    // A half-read capture never reaches the list — see isCardWorthShowing. It
+    // has to be filtered here rather than at render, because the rounds are
+    // built from this list: left in, one of these opens a round of its own and
+    // folds away the round the singer is reading.
+    if (!isCardWorthShowing(card)) return;
     setCards((prev) => [card, ...prev.filter((c) => c.eventId !== card.eventId)]);
     // A pushed card carries no preferences -- ingest answers before it could
     // read them -- so a song already marked keeps the marks the feed seeded.
@@ -366,7 +372,9 @@ export default function LivePage() {
     // fill it: the busiest measured account sang 553 songs in 24 hours, and 150
     // rounds of that is more than anyone scrolls.
     const res = await captureAPI.liveFeed(sessionId, 150);
-      const fresh = res.data.cards || [];
+      // Filtered on the way in, exactly as pushed cards are: a refetch must not
+      // put back what a push already left out, or every reconnect would undo it.
+      const fresh = keepShowableCards(res.data.cards || []);
       setCards(fresh);
       // The feed carries each card's stored preferences, so seeding here costs
       // no extra request. Merged rather than replaced: a card the singer just

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import useAuth from "@/hooks/useAuth";
 import { useLanguage } from "@/components/layout/LanguageProvider";
@@ -11,7 +10,6 @@ export default function HelpPage() {
   const { t } = useLanguage();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState("instruction"); // instruction | feedback
 
   if (authLoading) {
     return (
@@ -26,37 +24,24 @@ export default function HelpPage() {
     return null;
   }
 
-  const tabs = [
-    { key: "instruction", label: t("helpTabInstruction") },
-    { key: "feedback", label: t("helpTabFeedback") },
-  ];
-
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
       <h1 className="mb-4 text-2xl font-bold" style={{ color: "var(--text)" }}>
         {t("helpTitle")}
       </h1>
 
-      {/* Underline tab bar */}
-      <div className="mb-6 flex flex-wrap gap-x-5 gap-y-1 border-b border-border">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            aria-pressed={activeTab === tab.key}
-            className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === tab.key
-                ? "border-primary text-primary"
-                : "border-transparent text-muted hover:text-theme"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Stacked rather than tabbed. Feedback behind a tab was a page nobody
+          opened: reaching it meant knowing to look, and the one thing this
+          page exists to collect was the thing hidden. Both fit on a screen —
+          the guide is a single card — so nothing is gained by hiding one. */}
+      <InstructionPanel />
 
-      {activeTab === "instruction" && <InstructionPanel />}
-      {activeTab === "feedback" && <FeedbackPanel />}
+      <section className="mt-10 border-t border-border pt-8">
+        <h2 className="mb-4 text-lg font-semibold text-theme">
+          {t("helpTabFeedback")}
+        </h2>
+        <FeedbackPanel />
+      </section>
     </div>
   );
 }

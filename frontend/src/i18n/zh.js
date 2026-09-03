@@ -8,7 +8,6 @@ export default {
   navHelp: "帮助",
   navLive: "唱卡",
   helpTitle: "帮助",
-  helpTabInstruction: "使用说明",
   helpTabFeedback: "反馈",
   helpInstructionCardTitle: "使用指南",
   helpInstructionCardDesc: "在我们的文档站点查看完整的图文使用指南。",

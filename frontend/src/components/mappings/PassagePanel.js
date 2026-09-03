@@ -2,34 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mappingAPI } from "@/lib/api";
-
-/**
- * The real lines one answer entry covers.
- *
- * An entry is a line index, or a list of them where the platform wrote as
- * several lines what the game showed as one; -1 means no counterpart.
- */
-function entryLines(v) {
-  if (Array.isArray(v)) return v.filter((n) => n >= 0);
-  return v >= 0 ? [v] : [];
-}
-
-/** One entry: a line index, a non-empty list of them, or -1. */
-function entryOk(e) {
-  return Number.isInteger(e)
-    || (Array.isArray(e) && e.length > 0 && e.every(Number.isInteger));
-}
-
-/**
- * An answer is one placement, or a list of them — a passage is usually sung
- * more than once. Unambiguous: a placement's entries are numbers or lists of
- * numbers, so [[63,64],65] can only be one placement whose first line spans two.
- */
-function placementsOf(answer) {
-  if (!Array.isArray(answer) || !answer.length) return [];
-  const several = answer.every((p) => Array.isArray(p) && p.length && p.every(entryOk));
-  return several ? answer : [answer];
-}
+// Shared with the 唱卡 page: both must read an answer the same way, or the page
+// marks lines the reviewer never approved.
+import { entryLines, placementsOf } from "@/lib/passageAnswer";
 
 /** How a placement is written in the box: 63+64,65,66 */
 function placementText(place) {
@@ -221,7 +196,7 @@ export default function PassagePanel() {
         <ul className="space-y-3">
           {items.map((row) => {
             const open = openId === row.id;
-            const places = placementsOf(row.answer);
+            const places = placementsOf(row.answer, row.gameLines.length);
             // The first occurrence is what the row shows line by line; the rest
             // are summarised, since they repeat the same words.
             const answer = places[0] || [];

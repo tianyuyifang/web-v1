@@ -19,6 +19,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import { parseWordLyric, alignToLrc, sweepProgress, evenProgress } from "@/lib/wordLyric";
 import { mappingAPI } from "@/lib/api";
+import { placementsOf } from "@/lib/passageAnswer";
 
 /**
  * How much of a line must survive to call it the same line.
@@ -365,22 +366,14 @@ export default function LiveLyrics({
       // A stored answer is one placement, or a list of them — a passage is
       // usually sung more than once, and the page marks every occurrence and
       // draws a dot per occurrence, so an answer naming only the first would
-      // quietly take the rest away.
+      // quietly take the rest away. Which it is takes reading; see
+      // `passageAnswer` for why, and for the rule that decides it.
       //
-      // Told apart by whether every element is itself a placement. Unambiguous:
-      // a placement's entries are numbers or lists of numbers, never lists of
-      // lists, so `[[63,64],65]` can only be one placement whose first line
-      // spans two — the case the matcher cannot see, where the platform writes
-      // 「你是一只飞鸟」 plus 「飞上我的树梢」 for one game line.
-      const entryOk = (e) => Number.isInteger(e)
-        || (Array.isArray(e) && e.length && e.every(Number.isInteger));
-      const several = verified.every((p) => Array.isArray(p) && p.length && p.every(entryOk));
-      const placements = several ? verified : [verified];
       // Each placement flattens to the lines it covers, in one place: a place
       // is an occurrence, so splitting a placement's continuation lines into a
       // place of their own would invent an occurrence and put a dot in the
       // middle of the real one.
-      const flat = placements
+      const flat = placementsOf(verified, lines.length)
         .filter((p) => p.length === lines.length)
         .map((p) => p.flatMap((v) => (Array.isArray(v) ? v : [v])));
       if (flat.length && lines.length) return flat;

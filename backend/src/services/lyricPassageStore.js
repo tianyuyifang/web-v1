@@ -61,16 +61,41 @@ function entryOk(v) {
  * occurrence and draws a dot per occurrence on the progress bar, so an answer
  * naming only the first would quietly take those away.
  *
- * One placement is written as a flat array (`[12, 13, 14]`); several as an
- * array of those (`[[12,13,14],[40,41,42]]`). The two are told apart by whether
- * the first element is itself a placement, which is unambiguous because a
- * placement's own entries are numbers or lists of numbers, never lists of lists.
+ * One placement is written as a flat array (`[12, 13, 14]`); several as an array
+ * of those (`[[12,13,14],[40,41,42]]`).
+ *
+ * Neither the count nor the nesting alone tells them apart, and some answers are
+ * genuinely readable both ways. `[[5,6],[22,23]]` for a two-line passage is
+ * either two placements of two lines, or one placement whose two lines each span
+ * two real lines. `[[4,5],[5,6,7],[7,8],…]` — 「第一天」, written one-to-many
+ * throughout — is six entries that look exactly like six placements.
+ *
+ * Contiguity resolves it, because it is the one rule a wrong reading breaks. As
+ * one placement, `[[5,6],[22,23]]` covers 5,6,22,23 with a hole in it; as two,
+ * each is a run. So try each reading and keep the one that holds together.
+ *
+ * When both readings hold, one placement wins, because a single run of adjacent
+ * lines is the stronger claim. 「我想你要走了」 is stored `[[11,12],[13,14]]` for
+ * two game lines: 「你要告别了把话说好了」 is line [11] plus line [12], and
+ * 11-14 is one continuous passage the singer moves through once. Read as two
+ * placements it would put two dots on the progress bar for one occurrence.
  */
-function placementsOf(answer) {
+function runOk(place, lineCount) {
+  if (!Array.isArray(place) || !place.length) return false;
+  if (lineCount != null && place.length !== lineCount) return false;
+  if (!place.every(entryOk)) return false;
+  const used = coveredLines(place);
+  if (!used.length) return true;
+  return used[used.length - 1] - used[0] === used.length - 1;
+}
+
+function placementsOf(answer, lineCount) {
   if (!Array.isArray(answer) || !answer.length) return [];
-  // Several placements iff every element is itself a well-formed placement.
-  // A placement's entries are numbers or lists of numbers, so an element that
-  // is a list of those can only be a placement — there is no third reading.
+  if (runOk(answer, lineCount)) return [answer];
+  if (answer.every((p) => runOk(p, lineCount))) return answer;
+  // Neither reading holds. Return the one the author most likely meant, so a
+  // caller reporting the problem reports it against that; both are unusable.
+  if (lineCount != null && answer.length === lineCount) return [answer];
   const several = answer.every((p) => Array.isArray(p) && p.length && p.every(entryOk));
   return several ? answer : [answer];
 }
@@ -85,27 +110,16 @@ function placementsOf(answer) {
  */
 function isUsable(answer, lineCount) {
   if (!Array.isArray(answer) || !answer.length) return false;
-  const placements = placementsOf(answer);
-
-  return placements.every((place) => {
-    if (!Array.isArray(place)) return false;
-    if (lineCount != null && place.length !== lineCount) return false;
-    if (!place.every(entryOk)) return false;
-
-    // The lines a placement covers must be adjacent. A passage is sung as a
-    // run, so the real lines under it are a block — the matcher enforces this
-    // too, and it is the one rule that tells a genuine placement from a
-    // coincidence.
-    //
-    // Checked here because it caught a real mistake: where the platform wrote
-    // as two lines what the game showed as one, answers were recorded pointing
-    // only at the first, leaving the second unhighlighted and the run with a
-    // hole in it. Six of the first twenty-seven were wrong that way — which is
-    // what the list form of an entry exists to express.
-    const used = coveredLines(place);
-    if (!used.length) return true;
-    return used[used.length - 1] - used[0] === used.length - 1;
-  });
+  // Every placement must be a run of its own — `runOk` is the same check
+  // `placementsOf` used to choose the reading, so an answer is usable exactly
+  // when one of its two readings held.
+  //
+  // Contiguity is worth this much machinery because it caught a real mistake:
+  // where the platform wrote as two lines what the game showed as one, answers
+  // were recorded pointing only at the first, leaving the second unhighlighted
+  // and the run with a hole in it. Six of the first twenty-seven were wrong
+  // that way — which is what the list form of an entry exists to express.
+  return placementsOf(answer, lineCount).every((place) => runOk(place, lineCount));
 }
 
 /**

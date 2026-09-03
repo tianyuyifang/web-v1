@@ -68,11 +68,30 @@ async function put(status, answer, verifiedBy = 'ai') {
     'every placement covers the whole passage');
   assert.ok(store.isUsable([[[5, 6], 7, 8], [[22, 23], 24, 25]], 3),
     'placements may each carry a one-to-many line');
-  // The two shapes are told apart without ambiguity: a placement's entries are
-  // numbers or lists of numbers, so [[63,64],65] can only be one placement.
-  assert.deepStrictEqual(store.placementsOf([[63, 64], 65]), [[[63, 64], 65]]);
-  assert.deepStrictEqual(store.placementsOf([[5, 6], [22, 23]]), [[5, 6], [22, 23]]);
+  // The two shapes are told apart by the game's line count, not by nesting.
+  // A placement has exactly one entry per game line.
+  assert.deepStrictEqual(store.placementsOf([[63, 64], 65], 2), [[[63, 64], 65]]);
+  assert.deepStrictEqual(store.placementsOf([[5, 6], [22, 23]], 2), [[5, 6], [22, 23]]);
   console.log('  ✓ several occurrences are kept apart, each a run of its own');
+
+  // Counting is what settles it, because nesting alone cannot. Where every game
+  // line spans two platform lines — 「第一天」 is written that way throughout —
+  // one placement nests exactly like a list of placements. Read as six
+  // occurrences of a six-line passage, each "occurrence" is two lines long and
+  // the whole answer is thrown away, marking nothing.
+  const 第一天 = [[4, 5], [5, 6, 7], [7, 8], [9, 10], [10, 11, 12], [12, 13]];
+  assert.strictEqual(store.placementsOf(第一天, 6).length, 1,
+    'six entries for a six-line passage is one placement, however it nests');
+  assert.ok(store.isUsable(第一天, 6));
+
+  // Where both readings are contiguous, one placement wins: a single run is the
+  // stronger claim. 「我想你要走了」 stores this for two game lines, and lines
+  // 11-14 are one passage — 「你要告别了把话说好了」 is [11] plus [12]. Read as
+  // two placements it would draw two progress-bar dots for one occurrence.
+  assert.strictEqual(store.placementsOf([[11, 12], [13, 14]], 2).length, 1);
+  // The same shape with a gap between the pairs can only be two occurrences.
+  assert.strictEqual(store.placementsOf([[5, 6], [22, 23]], 2).length, 2);
+  console.log('  ✓ contiguity, not nesting, decides how many occurrences an answer names');
 
   // ---- against the database ----------------------------------------------
   await prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT } });

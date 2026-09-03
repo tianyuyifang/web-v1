@@ -39,10 +39,10 @@ export default function LiveGuide() {
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <Section title="使用步骤" open={openKey === "steps"} onToggle={() => toggle("steps")}>
         <ol className="list-decimal space-y-2 pl-5">
-          <li>在页面右上角工具栏下载【自动打标 APK】，安装至安卓手机或电脑上的安卓模拟器。</li>
-          <li>在账户页面的音乐账号扫码登录 QQ 音乐和网易云音乐。</li>
-          <li>在该设备的系统设置中，为 APK 开启 <strong className="text-theme">无障碍权限</strong>，并开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>（各品牌名称不同），以避免系统在后台关闭 APK。</li>
-          <li>使用任意听歌设备打开 Q你一下网页（推荐 Chrome 或默认浏览器），在右上角列表中点击「未连接」，获取配对码。</li>
+          <li>在 Q你一下的工具栏中下载【自动打标 APK】，安装至安卓手机或电脑上的安卓模拟器。</li>
+          <li>在该安卓设备的系统设置中，为 APK 开启 <strong className="text-theme">无障碍权限</strong>，并开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>（各品牌名称不同），以避免系统在后台关闭 APK。</li>
+          <li>使用听歌设备打开 Q你一下网页（推荐 Safari 或其他默认浏览器），在账户页面的音乐账号扫码登录 QQ 音乐和网易云音乐。</li>
+          <li>在听歌设备网页右上角列表中点击「未连接」，获取配对码。</li>
           <li>在安卓手机 / 模拟器的 APK 中输入配对码。连接成功后，使用该设备进入 QNI 观战或对局，识别开始。</li>
         </ol>
       </Section>
@@ -115,26 +115,26 @@ export default function LiveGuide() {
             <p className="mt-1">请依次自查：</p>
             {/* Ordered, because the first step is also the diagnosis: whether a
                 refresh brings the songs back says which side to look at next —
-                the phone doing the recognising, or the browser showing it. */}
+                the phone doing the recognising, or the browser showing them. */}
             <ol className="mt-1.5 list-decimal space-y-2.5 pl-5">
-              <li>在 Q你一下网页上手动刷新页面，查看刚刚缺漏的歌是否显示出来。</li>
+              <li>手动刷新页面，查看刚刚缺漏的歌是否能显示出来。</li>
               <li>
-                <span className="font-medium text-theme">若仍缺歌</span>：检查安卓设备（手机 / 模拟器）
+                <span className="font-medium text-theme">若仍未显示</span>：检查安卓设备（手机 / 模拟器）
                 <ul className="mt-1.5 list-disc space-y-1.5 pl-5">
                   <li>确认安卓手机 / 模拟器已为自动打标 APK 开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>，避免 APK 被系统在后台限流；</li>
                   <li>检查自动打标 APP 是否已更新至最新版本。</li>
+                  <li>确认安卓手机是否在同步运行 QNI / Q你一下，会不会在性能上出现卡顿。</li>
                 </ul>
               </li>
               <li>
-                <span className="font-medium text-theme">若不再缺歌</span>：检查听歌设备（Q你一下网页），避免需要手动频繁刷新
+                <span className="font-medium text-theme">若刷新后能出现缺漏歌曲</span>：
                 <ul className="mt-1.5 list-disc space-y-1.5 pl-5">
-                  <li>如果是用手机打开的网页，请确认网页是否一直 <strong className="text-theme">保持在前台</strong>。切换页面有概率导致数据传输中断，此类问题一般可以通过刷新网页得到解决；</li>
-                  <li>关掉浏览器的省电 / 流量节省模式，给浏览器也开「后台高耗电 / 高性能」；</li>
-                  <li>如果始终出现此类不及时显示的问题，可以考虑更换浏览器，推荐使用 <strong className="text-theme">Chrome 或系统自带浏览器</strong>。想追求更好的体验，可以考虑用电脑或平板使用网页。</li>
+                  <li>如果始终出现此类不及时显示的问题，可以考虑更换浏览器，推荐使用 <strong className="text-theme">Safari 或系统自带浏览器</strong>。想追求更好的体验，可以考虑用电脑或平板使用网页。</li>
                 </ul>
               </li>
             </ol>
             <p className="mt-2.5">如果上述检查都没有作用，可以联系管理员进一步排查原因。</p>
+            <p className="mt-2.5">上述功能的处理速度与设备性能、网络状况相关，整体表现排序为：<strong className="text-theme">电脑优于手机，安卓优于苹果</strong>。此外，部分浏览器存在限流，建议使用 <strong className="text-theme">Safari 或 Chrome 或系统自带浏览器</strong> 打开网页，尽量勿通过微信 / QQ 内直接打开。</p>
           </div>
           <div>
             <p className="font-medium text-theme">Q2：变调、高音质、去伴奏等功能出现卡顿或延时？</p>

@@ -120,6 +120,15 @@ export default function PlaylistGrid({
   const [sectionPromptClipId, setSectionPromptClipId] = useState(null);
   const [expandedClipIds, setExpandedClipIds] = useState(new Set());
 
+  // The clips array behind a stable getter. Editing any clip rebuilds the
+  // array, and handing the new reference to every PlayerBox defeated their
+  // memo() all at once — one colour change re-rendered the whole grid. The
+  // two readers (neighbourhood preload, reorder-by-position) only consult the
+  // list inside an event or effect, where the ref is already current.
+  const clipsRef = useRef(playlist.clips);
+  clipsRef.current = playlist.clips;
+  const getAllClips = useCallback(() => clipsRef.current, []);
+
   // Derive playing clipId from the active player (format: "playlistId-clipId")
   const activePlayerId = usePlayerStore((s) => s.activePlayerId);
   const playingClipId = useMemo(() => {
@@ -187,7 +196,7 @@ export default function PlaylistGrid({
   }, [playlist.id, onClipRemoved]);
 
   const handleMove = useCallback(async (clipId, fromIndex, toIndex) => {
-    const clips = [...playlist.clips];
+    const clips = [...clipsRef.current];
     const clampedTo = Math.max(0, Math.min(clips.length - 1, toIndex));
     if (fromIndex === clampedTo) return;
 
@@ -202,7 +211,9 @@ export default function PlaylistGrid({
     } catch {
       // silent
     }
-  }, [playlist, onReorder]);
+    // playlist.id, not playlist: the object is rebuilt on every clip edit, and
+    // a new onMove per render re-rendered every card in edit mode.
+  }, [playlist.id, onReorder]);
 
   // Dragging is disabled while a filter narrows the list: handleMove works in
   // full-list indices, so a drop between two visible rows would move the clip
@@ -663,7 +674,7 @@ export default function PlaylistGrid({
               highlighted={highlightedClipId === pc.clipId}
               onUpdate={onClipUpdated}
               position={pc.position + 1}
-              allClips={playlist.clips}
+              getAllClips={getAllClips}
               clipIndex={pc.position}
               collapsed={!expandedClipIds.has(pc.clipId)}
               onToggleExpand={handleToggleExpand}
@@ -704,7 +715,7 @@ export default function PlaylistGrid({
                 position={pc.position + 1}
                 totalClips={playlist.clips.length}
                 onMove={handleMove}
-                allClips={playlist.clips}
+                getAllClips={getAllClips}
                 clipIndex={pc.position}
                 collapsed={!expandedClipIds.has(pc.clipId)}
                 onToggleExpand={handleToggleExpand}

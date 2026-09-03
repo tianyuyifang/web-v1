@@ -35,7 +35,7 @@ export default memo(function PlayerBox({
   position,
   totalClips,
   onMove,
-  allClips,
+  getAllClips,
   clipIndex,
   collapsed,
   onToggleExpand,
@@ -115,10 +115,19 @@ export default memo(function PlayerBox({
 
   // Neighborhood preload: when this clip starts playing, queue the next N
   // clips in the playlist (if the parent provided the clip list + index).
+  //
+  // The list arrives through a stable getter rather than as the array itself.
+  // Every clip edit rebuilds the playlist's clips array, and as a prop that
+  // new reference defeated memo() on every card at once — one colour change
+  // re-rendered a median playlist of 131 players. The preload only ever reads
+  // the list at the moment playback starts, so a getter loses nothing and the
+  // read is fresher for it.
   useEffect(() => {
-    if (!isPlaying || !Array.isArray(allClips) || clipIndex == null) return;
-    enqueueNeighborhood(allClips, clipIndex, NEIGHBORHOOD_COUNT);
-  }, [isPlaying, allClips, clipIndex]);
+    if (!isPlaying || typeof getAllClips !== "function" || clipIndex == null) return;
+    const clips = getAllClips();
+    if (!Array.isArray(clips)) return;
+    enqueueNeighborhood(clips, clipIndex, NEIGHBORHOOD_COUNT);
+  }, [isPlaying, getAllClips, clipIndex]);
 
   // Hover preload: fire on mouse enter over the play button.
   const handlePlayButtonHover = useCallback(() => {

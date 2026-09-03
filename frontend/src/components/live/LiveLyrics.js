@@ -322,10 +322,34 @@ export default function LiveLyrics({
    */
   const [verified, setVerified] = useState(null);
 
+  // Which recording the words on screen belong to. The fetch below also runs
+  // when only `gameLyric` changes — the passage answer is keyed on it — and
+  // that case must not blank the box: the words are the same words, and the
+  // singer is mid-song. Measured before this existed, one song was fetched up
+  // to twelve times as recognition updated the passage, and every fetch swapped
+  // the lyrics for 「歌词加载中…」 for a beat — seen from the stage as flicker.
+  const recordingRef = useRef(null);
+
   useEffect(() => {
-    if (!mappingId) { setLrc(null); setWords(null); setVerified(null); setLoading(false); return undefined; }
+    if (!mappingId) {
+      recordingRef.current = null;
+      setLrc(null); setWords(null); setVerified(null); setLoading(false);
+      return undefined;
+    }
     let alive = true;
-    setLoading(true);
+    const recording = `${mappingId}|${ovSource || ""}|${ovId || ""}`;
+    const sameSong = recordingRef.current === recording;
+    recordingRef.current = recording;
+    // A new recording clears the box and says so; the same recording refreshes
+    // quietly behind the words already showing. The checked answer is dropped
+    // either way: it belongs to the previous passage, and when the two happen
+    // to have the same line count it would survive the length check and mark
+    // the wrong lines until the fresh one lands. The matcher covers the gap.
+    if (!sameSong) {
+      setLrc(null); setWords(null);
+      setLoading(true);
+    }
+    setVerified(null);
     // While an alternative is being auditioned the words must be that
     // recording's: a cover is usually spotted by reading along, and the
     // original's words under someone else's take is exactly the wrong answer.
@@ -346,7 +370,10 @@ export default function LiveLyrics({
         setVerified(Array.isArray(res.data.passageMatch) ? res.data.passageMatch : null);
       })
       // A song without lyrics is ordinary, not a failure worth shouting about.
-      .catch(() => { if (alive) { setLrc(null); setWords(null); setVerified(null); } })
+      // A failed quiet refresh keeps the words it already has: they are the
+      // right words, and clearing them for a passage lookup would trade a
+      // readable lyric for an empty box.
+      .catch(() => { if (alive && !sameSong) { setLrc(null); setWords(null); setVerified(null); } })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [mappingId, ovSource, ovId, gameLyric]);

@@ -129,16 +129,15 @@ export default function LiveGuide() {
               <li>
                 <span className="font-medium text-theme">若刷新后能出现缺漏歌曲</span>：
                 <ul className="mt-1.5 list-disc space-y-1.5 pl-5">
-                  <li>如果始终出现此类不及时显示的问题，可以考虑更换浏览器，推荐使用 <strong className="text-theme">Safari 或系统自带浏览器</strong>。想追求更好的体验，可以考虑用电脑或平板使用网页。</li>
+                  <li>如果始终出现此类不及时显示的问题，可以考虑更换浏览器，推荐使用 <strong className="text-theme">Safari、Chrome 或系统自带浏览器</strong>。想追求更好的体验，可以考虑用电脑或平板使用网页。</li>
                 </ul>
               </li>
             </ol>
             <p className="mt-2.5">如果上述检查都没有作用，可以联系管理员进一步排查原因。</p>
-            <p className="mt-2.5">上述功能的处理速度与设备性能、网络状况相关，整体表现排序为：<strong className="text-theme">电脑优于手机，安卓优于苹果</strong>。此外，部分浏览器存在限流，建议使用 <strong className="text-theme">Safari 或 Chrome 或系统自带浏览器</strong> 打开网页，尽量勿通过微信 / QQ 内直接打开。</p>
           </div>
           <div>
             <p className="font-medium text-theme">Q2：变调、高音质、去伴奏等功能出现卡顿或延时？</p>
-            <p className="mt-1">上述功能的处理速度与设备性能、网络状况相关，整体表现排序为：<strong className="text-theme">电脑优于手机，安卓优于苹果</strong>。此外，部分浏览器存在限流，建议使用 <strong className="text-theme">Chrome 或系统自带浏览器</strong> 打开网页，尽量勿通过微信 / QQ 内直接打开。</p>
+            <p className="mt-1">上述功能的处理速度与设备性能、网络状况相关，整体表现排序为：<strong className="text-theme">电脑优于手机，安卓优于苹果</strong>。此外，部分浏览器存在限流，建议使用 <strong className="text-theme">Safari、Chrome 或系统自带浏览器</strong> 打开网页，尽量勿通过微信 / QQ 内直接打开。</p>
           </div>
           <div>
             <p className="font-medium text-theme">Q3：刚打开唱卡功能时，无法立刻读取数据？</p>

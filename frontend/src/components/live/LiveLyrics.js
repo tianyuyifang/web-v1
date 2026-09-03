@@ -362,18 +362,28 @@ export default function LiveLyrics({
     if (Array.isArray(verified)) {
       const lines = String(gameLyric || '')
         .split(/[\n\/]+/).map((l) => l.trim()).filter(Boolean);
-      if (verified.length === lines.length && lines.length) {
-        // A stored entry may be a list, for the case the matcher cannot see:
-        // the platform writing as two lines what the game shows as one, where
-        // 「你是一只飞鸟飞上我的树梢」 is 「你是一只飞鸟」 plus 「飞上我的树梢」.
-        //
-        // Every covered line goes into ONE place. A place is an occurrence of
-        // the passage — the progress bar draws a dot per place, and the scroll
-        // target is the first — so putting the continuation lines in a place of
-        // their own would invent a second occurrence and a dot that jumps to
-        // the middle of the first.
-        return [verified.flatMap((v) => (Array.isArray(v) ? v : [v]))];
-      }
+      // A stored answer is one placement, or a list of them — a passage is
+      // usually sung more than once, and the page marks every occurrence and
+      // draws a dot per occurrence, so an answer naming only the first would
+      // quietly take the rest away.
+      //
+      // Told apart by whether every element is itself a placement. Unambiguous:
+      // a placement's entries are numbers or lists of numbers, never lists of
+      // lists, so `[[63,64],65]` can only be one placement whose first line
+      // spans two — the case the matcher cannot see, where the platform writes
+      // 「你是一只飞鸟」 plus 「飞上我的树梢」 for one game line.
+      const entryOk = (e) => Number.isInteger(e)
+        || (Array.isArray(e) && e.length && e.every(Number.isInteger));
+      const several = verified.every((p) => Array.isArray(p) && p.length && p.every(entryOk));
+      const placements = several ? verified : [verified];
+      // Each placement flattens to the lines it covers, in one place: a place
+      // is an occurrence, so splitting a placement's continuation lines into a
+      // place of their own would invent an occurrence and put a dot in the
+      // middle of the real one.
+      const flat = placements
+        .filter((p) => p.length === lines.length)
+        .map((p) => p.flatMap((v) => (Array.isArray(v) ? v : [v])));
+      if (flat.length && lines.length) return flat;
     }
     return markPassage(gameLyric, parsed);
   }, [verified, gameLyric, parsed]);

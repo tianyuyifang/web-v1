@@ -54,6 +54,28 @@ function entryOk(v) {
 }
 
 /**
+ * An answer is one placement, or a list of them.
+ *
+ * A passage is usually sung more than once — 58% of measured passages occur at
+ * least twice, a chorus commonly three or four times. The page marks every
+ * occurrence and draws a dot per occurrence on the progress bar, so an answer
+ * naming only the first would quietly take those away.
+ *
+ * One placement is written as a flat array (`[12, 13, 14]`); several as an
+ * array of those (`[[12,13,14],[40,41,42]]`). The two are told apart by whether
+ * the first element is itself a placement, which is unambiguous because a
+ * placement's own entries are numbers or lists of numbers, never lists of lists.
+ */
+function placementsOf(answer) {
+  if (!Array.isArray(answer) || !answer.length) return [];
+  // Several placements iff every element is itself a well-formed placement.
+  // A placement's entries are numbers or lists of numbers, so an element that
+  // is a list of those can only be a placement — there is no third reading.
+  const several = answer.every((p) => Array.isArray(p) && p.length && p.every(entryOk));
+  return several ? answer : [answer];
+}
+
+/**
  * Is this a usable answer for a passage of this many lines?
  *
  * Checked on the way out as well as on the way in. A row whose length no longer
@@ -62,22 +84,28 @@ function entryOk(v) {
  * is worse than highlighting none. Rejecting it here falls back to the matcher.
  */
 function isUsable(answer, lineCount) {
-  if (!Array.isArray(answer)) return false;
-  if (lineCount != null && answer.length !== lineCount) return false;
-  if (!answer.every(entryOk)) return false;
+  if (!Array.isArray(answer) || !answer.length) return false;
+  const placements = placementsOf(answer);
 
-  // The lines it covers must be adjacent. A passage is sung as a run, so the
-  // real lines under it are a block — the matcher enforces this too, and it is
-  // the one rule that tells a genuine placement from a coincidence.
-  //
-  // Checked here because it caught a real mistake: where the platform wrote as
-  // two lines what the game showed as one, answers were recorded pointing only
-  // at the first, leaving the second unhighlighted and the run with a hole in
-  // it. Six of the first twenty-seven were wrong that way — which is what the
-  // list form above exists to express.
-  const used = coveredLines(answer);
-  if (!used.length) return true;
-  return used[used.length - 1] - used[0] === used.length - 1;
+  return placements.every((place) => {
+    if (!Array.isArray(place)) return false;
+    if (lineCount != null && place.length !== lineCount) return false;
+    if (!place.every(entryOk)) return false;
+
+    // The lines a placement covers must be adjacent. A passage is sung as a
+    // run, so the real lines under it are a block — the matcher enforces this
+    // too, and it is the one rule that tells a genuine placement from a
+    // coincidence.
+    //
+    // Checked here because it caught a real mistake: where the platform wrote
+    // as two lines what the game showed as one, answers were recorded pointing
+    // only at the first, leaving the second unhighlighted and the run with a
+    // hole in it. Six of the first twenty-seven were wrong that way — which is
+    // what the list form of an entry exists to express.
+    const used = coveredLines(place);
+    if (!used.length) return true;
+    return used[used.length - 1] - used[0] === used.length - 1;
+  });
 }
 
 /**
@@ -112,4 +140,4 @@ async function getApproved(source, externalId, gameLyric, lineCount) {
   }
 }
 
-module.exports = { hashPassage, isUsable, getApproved, coveredLines };
+module.exports = { hashPassage, isUsable, getApproved, coveredLines, placementsOf };

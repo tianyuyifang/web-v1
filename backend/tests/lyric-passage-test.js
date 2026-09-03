@@ -57,6 +57,23 @@ async function put(status, answer, verifiedBy = 'ai') {
   assert.ok(!store.isUsable([45, 47, 50, 53], 4));
   console.log('  ✓ an answer with a gap in it is refused');
 
+  // A passage is usually sung more than once — 58% of measured passages occur
+  // at least twice. An answer may therefore name several placements, and each
+  // must be a run of its own; the gaps between them are the verses in between.
+  assert.ok(store.isUsable([[5, 6, 7], [22, 23, 24]], 3), 'a chorus sung twice');
+  assert.ok(store.isUsable([[5, 6], [22, 23], [40, 41]], 2), 'or three times');
+  assert.ok(!store.isUsable([[5, 6, 7], [22, 24, 25]], 3),
+    'a gap inside one placement is still a gap');
+  assert.ok(!store.isUsable([[5, 6, 7], [22, 23]], 3),
+    'every placement covers the whole passage');
+  assert.ok(store.isUsable([[[5, 6], 7, 8], [[22, 23], 24, 25]], 3),
+    'placements may each carry a one-to-many line');
+  // The two shapes are told apart without ambiguity: a placement's entries are
+  // numbers or lists of numbers, so [[63,64],65] can only be one placement.
+  assert.deepStrictEqual(store.placementsOf([[63, 64], 65]), [[[63, 64], 65]]);
+  assert.deepStrictEqual(store.placementsOf([[5, 6], [22, 23]]), [[5, 6], [22, 23]]);
+  console.log('  ✓ several occurrences are kept apart, each a run of its own');
+
   // ---- against the database ----------------------------------------------
   await prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT } });
 

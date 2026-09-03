@@ -41,7 +41,19 @@ function hashPassage(gameLyric) {
 function isUsable(answer, lineCount) {
   if (!Array.isArray(answer)) return false;
   if (lineCount != null && answer.length !== lineCount) return false;
-  return answer.every((v) => Number.isInteger(v) && v >= -1);
+  if (!answer.every((v) => Number.isInteger(v) && v >= -1)) return false;
+
+  // The lines it covers must be adjacent. A passage is sung as a run, so the
+  // real lines under it are a block — the matcher enforces this too, and it is
+  // the one rule that tells a genuine placement from a coincidence.
+  //
+  // Checked here because it caught a real mistake: where the platform wrote as
+  // two lines what the game showed as one, answers were recorded pointing only
+  // at the first, leaving the second unhighlighted and the run with a hole in
+  // it. Six of the first twenty-seven were wrong that way.
+  const used = [...new Set(answer.filter((v) => v >= 0))].sort((a, b) => a - b);
+  if (!used.length) return true;
+  return used[used.length - 1] - used[0] === used.length - 1;
 }
 
 /**

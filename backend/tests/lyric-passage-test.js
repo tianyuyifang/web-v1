@@ -45,6 +45,18 @@ async function put(status, answer, verifiedBy = 'ai') {
   assert.ok(!store.isUsable(null, 1));
   console.log('  ✓ an ill-fitting answer is refused');
 
+  // Contiguity. A passage is sung as a run, so the lines under it are a block.
+  // This caught six of the first twenty-seven answers, all the same mistake:
+  // where the platform wrote as two lines what the game showed as one, only the
+  // first was recorded, leaving a hole in the run and the second line unmarked.
+  assert.ok(store.isUsable([12, 13, 14], 3));
+  assert.ok(store.isUsable([7, 7, 8], 3), 'two game lines may share one real line');
+  assert.ok(store.isUsable([14, 12, 13], 3), 'the game shuffles; the block is what matters');
+  assert.ok(store.isUsable([5, -1, 6], 3), 'an unplaced line does not break the run');
+  assert.ok(!store.isUsable([11, 13], 2), 'a gap means these are not one passage');
+  assert.ok(!store.isUsable([45, 47, 50, 53], 4));
+  console.log('  ✓ an answer with a gap in it is refused');
+
   // ---- against the database ----------------------------------------------
   await prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT } });
 

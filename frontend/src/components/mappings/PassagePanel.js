@@ -70,16 +70,40 @@ export default function PassagePanel() {
       // stored answer stands and only the status changes.
       let answer;
       if (raw !== undefined && next !== "unmatchable") {
-        answer = raw.split(",").map((s) => Number(s.trim()));
+        // Checked here rather than left to the server, because half-typed text
+        // is the ordinary state of an input: a trailing comma, or a pause after
+        // one, parses to NaN and came back as an unexplained failure.
+        const parts = raw.split(",").map((s) => s.trim()).filter((s) => s !== "");
+        const nums = parts.map(Number);
+        if (nums.some((n) => !Number.isInteger(n) || n < -1)) {
+          setError("答案只能是整数，用逗号分隔（-1 表示不标）");
+          return;
+        }
+        if (nums.length !== row.gameLines.length) {
+          setError(`答案要有 ${row.gameLines.length} 个数字，现在是 ${nums.length} 个`);
+          return;
+        }
+        answer = nums;
       }
-      await mappingAPI.decidePassage(row.id, { status: next, ...(answer ? { answer } : {}) });
-      // The row leaves this list because it left this status.
-      setItems((prev) => prev.filter((r) => r.id !== row.id));
-      setCounts((prev) => ({
-        ...prev,
-        [row.status]: Math.max(0, (prev[row.status] || 0) - 1),
-        [next]: (prev[next] || 0) + 1,
-      }));
+      const res = await mappingAPI.decidePassage(row.id, {
+        status: next, ...(answer ? { answer } : {}),
+      });
+      if (next === status) {
+        // Still belongs on this tab — saving an edit without changing state.
+        // Removing it here would read as the row having been lost.
+        setItems((prev) => prev.map((r) => (
+          r.id === row.id
+            ? { ...r, answer: res.data.answer, status: res.data.status, verifiedBy: res.data.verifiedBy }
+            : r
+        )));
+      } else {
+        setItems((prev) => prev.filter((r) => r.id !== row.id));
+        setCounts((prev) => ({
+          ...prev,
+          [row.status]: Math.max(0, (prev[row.status] || 0) - 1),
+          [next]: (prev[next] || 0) + 1,
+        }));
+      }
       setDrafts((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
     } catch (err) {
       setError(err.response?.data?.error?.message || "保存失败");

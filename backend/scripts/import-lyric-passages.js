@@ -55,6 +55,14 @@ function check(entry, i) {
   if (entry.status === 'approved' && entry.answer.every((v) => v < 0)) {
     return `${at} an approved answer that places nothing is unmatchable, not approved`;
   }
+  // The lines an answer covers must be adjacent — a passage is sung as a run.
+  // Six of the first twenty-seven answers failed this, all the same way: where
+  // the platform wrote as two lines what the game showed as one, only the first
+  // was recorded, so the run had a hole and the second line went unmarked.
+  const used = [...new Set(entry.answer.filter((v) => v >= 0))].sort((a, b) => a - b);
+  if (used.length && used[used.length - 1] - used[0] !== used.length - 1) {
+    return `${at} answer covers ${used.join(',')} — a passage is sung as a run, so the lines must be adjacent`;
+  }
   return null;
 }
 

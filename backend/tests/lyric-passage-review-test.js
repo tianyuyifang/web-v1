@@ -55,11 +55,11 @@ async function seed(status, answer, verifiedBy = 'ai') {
   // ---- the checks that stop a misaligned answer ---------------------------
   await assert.rejects(
     () => review.decide(row.id, { status: 'approved', answer: [5, 6] }),
-    /3 integers/, 'an answer must cover every game line',
+    /3 个数字/, 'an answer must cover every game line',
   );
   await assert.rejects(
     () => review.decide(row.id, { status: 'approved', answer: [5, 6, 'x'] }),
-    /3 integers/, 'an answer must be integers',
+    /3 个数字/, 'an answer must be integers',
   );
   await assert.rejects(
     () => review.decide(row.id, { status: 'approved', answer: [-1, -1, -1] }),

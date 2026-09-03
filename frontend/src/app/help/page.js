@@ -37,6 +37,10 @@ export default function HelpPage() {
       <InstructionPanel />
 
       <section className="mt-10 border-t border-border pt-8">
+        {/* Matches 使用指南 inside the card above: these are the page's two
+            sections and should look like a pair. They were 18px and 16px,
+            which reads as a hierarchy that is not there. Both sit below
+            the 2xl page title, so the levels stay distinct. */}
         <h2 className="mb-4 text-lg font-semibold text-theme">
           {t("helpTabFeedback")}
         </h2>

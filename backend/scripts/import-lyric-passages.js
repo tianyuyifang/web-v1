@@ -23,7 +23,9 @@
 require('dotenv').config();
 const fs = require('fs');
 const prisma = require('../src/db/client');
-const { hashPassage, isUsable, coveredLines } = require('../src/services/lyricPassageStore');
+const {
+  hashPassage, isUsable, coveredLines, placementsOf,
+} = require('../src/services/lyricPassageStore');
 
 const STATUSES = new Set(['approved', 'pending', 'unmatchable']);
 const SOURCES = new Set(['LOCAL', 'QQ', 'NETEASE']);
@@ -42,18 +44,27 @@ function check(entry, i) {
   if (!STATUSES.has(entry.status)) return `${at} status must be approved|pending|unmatchable`;
   if (!Array.isArray(entry.answer)) return `${at} answer must be an array`;
 
+  // Length, shape and contiguity all come from the store, so the importer and
+  // the page cannot drift apart on what a usable answer is. An answer is one
+  // placement or several — a passage is usually sung more than once — and each
+  // is one entry per game line: a line index, a list of them where the platform
+  // wrote as several lines what the game showed as one, or -1 for none.
+  //
+  // Checking the top-level length here would be wrong, because for several
+  // placements it is the number of occurrences, not of lines.
   const n = lineCount(entry.gameLyric);
-  if (entry.answer.length !== n) {
-    return `${at} answer has ${entry.answer.length} entries for ${n} game lines`;
-  }
-  // Shape and contiguity both come from the store, so the importer and the page
-  // cannot drift apart on what a usable answer is. An entry is a line index, or
-  // a list of them where the platform wrote as several lines what the game
-  // showed as one, or -1 for a line with no counterpart.
   if (!isUsable(entry.answer, n)) {
-    const used = coveredLines(entry.answer);
-    if (used.length && used[used.length - 1] - used[0] !== used.length - 1) {
-      return `${at} answer covers ${used.join(',')} — a passage is sung as a run, so the lines must be adjacent`;
+    // Report against each placement: flattening the whole answer would show the
+    // verses between occurrences as a gap in one of them.
+    for (const place of placementsOf(entry.answer, n)) {
+      if (!Array.isArray(place) || place.length !== n) {
+        const got = Array.isArray(place) ? place.length : 'a non-list';
+        return `${at} a placement has ${got} entries for ${n} game lines`;
+      }
+      const used = coveredLines(place);
+      if (used.length && used[used.length - 1] - used[0] !== used.length - 1) {
+        return `${at} a placement covers ${used.join(',')} — a passage is sung as a run, so the lines must be adjacent`;
+      }
     }
     return `${at} answer entries must be a line index, a non-empty list of them, or -1`;
   }

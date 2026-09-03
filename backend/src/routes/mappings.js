@@ -20,6 +20,8 @@ const urlCache = require('../services/playbackUrlCache');
  */
 const QQ_TIERS = new Set(['m4a', 'mp3_128', 'mp3_320', 'flac']);
 const lyricStore = require('../services/lyricStore');
+const passages = require('../services/lyricPassageStore');
+const passageReview = require('../services/lyricPassageReview');
 const unconfigured = require('../services/unconfiguredService');
 const artists = require('../services/dashedArtistService');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
@@ -666,7 +668,7 @@ router.get('/:id/preview', listenLimiter, async (req, res, next) => {
  * A song without lyrics is ordinary, not an error, and comes back as a null
  * lyric so the page can say so plainly.
  */
-async function resolveLyrics(source, externalId, res, { withWords = false } = {}) {
+async function resolveLyrics(source, externalId, res, { withWords = false, extra = null } = {}) {
   // A local song keeps its words in the songs table, already timed. Read live
   // rather than copied into the pool row: it costs 0.02ms more (measured) and
   // means editing a local lyric shows up in 唱卡 immediately, instead of after
@@ -676,7 +678,7 @@ async function resolveLyrics(source, externalId, res, { withWords = false } = {}
       where: { id: String(externalId) },
       select: { lyrics: true },
     }).catch(() => null);
-    return res.json({ lyric: song?.lyrics || null, translation: null });
+    return res.json({ lyric: song?.lyrics || null, translation: null, ...(extra || {}) });
   }
 
   // Served from the pool row when it has been asked before. This is the whole
@@ -718,16 +720,16 @@ async function resolveLyrics(source, externalId, res, { withWords = false } = {}
       }
       // Anything else is this one song having a bad minute, which is not worth
       // an error box over a card that still plays.
-      return res.json({ lyric: null, translation: null });
+      return res.json({ lyric: null, translation: null, ...(extra || {}) });
     }
     // The field appears only when it was asked for, so a caller that did not
     // ask sees exactly the response it always saw.
     return res.json(withWords
-      ? { lyric: r.lyric, translation: r.translation, wordLyric: word }
-      : { lyric: r.lyric, translation: r.translation });
+      ? { lyric: r.lyric, translation: r.translation, wordLyric: word, ...(extra || {}) }
+      : { lyric: r.lyric, translation: r.translation, ...(extra || {}) });
   }
   // LOCAL clips have their own lyrics route; anything else has none to give.
-  return res.json({ lyric: null, translation: null });
+  return res.json({ lyric: null, translation: null, ...(extra || {}) });
 }
 
 /** GET /api/mappings/track/:trackId/lyrics */
@@ -737,6 +739,55 @@ router.get('/track/:trackId/lyrics', listenLimiter, requireMappingEditor, async 
     if (!parsed.success) throw new NotFoundError('Track');
     const track = await svc.getTrack(parsed.data);
     return await resolveLyrics(track.source, track.externalId, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* --- 歌词段落: verified answers and their review queue ------------------- */
+
+/**
+ * GET /api/mappings/passages?status=&take=&cursor=
+ *
+ * The review queue. Editor-only like the rest of the review page: an answer
+ * here decides what every singer sees highlighted, which is the same kind of
+ * site-wide decision a mapping is.
+ *
+ * Declared above `/:id/...` so the literal path is not read as a mapping id.
+ */
+router.get('/passages', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await passageReview.list({
+      status: req.query.status,
+      take: req.query.take,
+      cursor: req.query.cursor,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** GET /api/mappings/passages/counts — the queue badge. */
+router.get('/passages/counts', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await passageReview.counts());
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/mappings/passages/:passageId — a reviewer's decision.
+ *
+ * Stored as `human`, which outranks the assistant's answer and survives every
+ * later pass: a correction that a re-import could undo is not a correction.
+ */
+router.patch('/passages/:passageId', requireMappingEditor, async (req, res, next) => {
+  try {
+    const id = z.string().uuid().safeParse(req.params.passageId);
+    if (!id.success) throw new NotFoundError('Passage');
+    const { status, answer, note } = req.body || {};
+    res.json(await passageReview.decide(id.data, { status, answer, note }));
   } catch (err) {
     next(err);
   }
@@ -758,9 +809,34 @@ router.get('/:id/lyrics', listenLimiter, async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
     const { source, externalId } = await resolveOverride(req, mapping);
+
+    // A verified answer for the passage the caller names, when one exists.
+    //
+    // Only the caller knows what the game put on screen, so the passage arrives
+    // as a parameter rather than being looked up here. Absent — which is every
+    // existing caller, the review page included — nothing is looked up and the
+    // response is byte-for-byte what it has always been.
+    //
+    // Null on anything short of an approved answer: a pending suggestion, a
+    // passage known to be unmatchable, a mismatched length, a failed query. The
+    // page runs its matcher whenever this is absent, which is what it does
+    // today, so the worst case here is the current behaviour.
+    let extra = null;
+    const passage = typeof req.query.passage === 'string' ? req.query.passage : null;
+    if (passage) {
+      const lines = Number(req.query.passageLines);
+      const answer = await passages.getApproved(
+        source, externalId, passage, Number.isInteger(lines) ? lines : undefined,
+      );
+      extra = { passageMatch: answer };
+    }
+
     // `words=1` is the 唱卡 page asking for per-syllable timings. Absent, the
     // response is exactly what it has always been.
-    return await resolveLyrics(source, externalId, res, { withWords: req.query.words === '1' });
+    return await resolveLyrics(source, externalId, res, {
+      withWords: req.query.words === '1',
+      extra,
+    });
   } catch (err) {
     next(err);
   }

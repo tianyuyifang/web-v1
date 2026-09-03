@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { mappingAPI, musicSourcesAPI, getStreamUrl } from "@/lib/api";
 import TrackLyricPanel from "@/components/mappings/TrackLyricPanel";
 import UnconfiguredPanel from "@/components/mappings/UnconfiguredPanel";
+import PassagePanel from "@/components/mappings/PassagePanel";
 import useAuth from "@/hooks/useAuth";
 
 const BUCKETS = [
@@ -33,6 +34,9 @@ const BUCKETS = [
   // outward, so it is the only one that can show a gap. Its rows are game texts
   // rather than mapping rows, and it renders its own panel.
   { key: "unconfigured", label: "未配置", hint: "游戏里出现过，但曲库配不上" },
+  // Answers about passages of lyrics rather than about songs, so like 未配置
+  // it renders its own panel and is not a bucket of mapping rows.
+  { key: "passages", label: "歌词段落", hint: "游戏的歌词片段对应真实歌词哪几行" },
 ];
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
@@ -140,7 +144,7 @@ export default function MappingsPage() {
     // 未配置 is not a bucket of mapping rows and has no cursor to page; its own
     // panel fetches and holds what it needs. Asking the list route for it would
     // fail validation, and the spinner below would never clear.
-    if (bucket === "unconfigured") { setLoading(false); return; }
+    if (bucket === "unconfigured" || bucket === "passages") { setLoading(false); return; }
     setLoading(true);
     setError("");
     try {
@@ -564,7 +568,9 @@ export default function MappingsPage() {
         />
       )}
 
-      {bucket !== "unconfigured" && (
+      {bucket === "passages" && <PassagePanel />}
+
+      {bucket !== "unconfigured" && bucket !== "passages" && (
       <form
         className="mb-4 flex gap-2"
         onSubmit={(e) => { e.preventDefault(); setSubmittedQuery(query); }}
@@ -627,7 +633,7 @@ export default function MappingsPage() {
 
           The lyric panel takes what is left. It reads perfectly well narrow,
           being short centred lines, so the width is worth more here. */}
-      {bucket !== "unconfigured" && (
+      {bucket !== "unconfigured" && bucket !== "passages" && (
       <div className="lg:grid lg:grid-cols-[minmax(0,48rem)_1fr] lg:items-start lg:gap-4">
         <div className="min-w-0">
       <ul className="space-y-1">

@@ -713,3 +713,73 @@ model DashedArtist {
 
   @@map("dashed_artists")
 }
+
+/// A verified answer for one passage of game lyrics: which real lyric lines it
+/// covers.
+///
+/// The matcher in LiveLyrics.js does well on what it can see — measured at 91%
+/// of lines placed — and the remainder is not a tuning problem. It is that the
+/// game and the platform break lines differently: the game's 「那个傻瓜说的傻话」
+/// is the platform's 「那个傻瓜」 plus 「说的傻话」, and 「对和错」「都不必太在乎」
+/// are one platform line split in two. Reading that takes understanding the
+/// words, not comparing characters, so the answers are worked out once and kept
+/// here rather than recomputed.
+///
+/// Only checked answers live here. An algorithm result is never written back:
+/// storing an unverified guess would freeze a mistake in place, which is worse
+/// than not storing it at all. Anything absent — or pending, or unmatchable —
+/// falls through to the matcher, so the page can only ever be as good as it is
+/// now, never worse.
+model LyricPassageMatch {
+  id          String     @id @default(uuid()) @db.Uuid
+
+  /// Which recording, named the same way SongMapping names it. Deliberately no
+  /// foreign key: a mapping can be repointed or deleted, but this answer is
+  /// about a passage of THIS platform song, and it stays true as long as some
+  /// mapping still points there.
+  source      SongSource
+  externalId  String     @map("external_id")
+
+  /// SHA-1 (first 16 chars) of the game's passage, verbatim.
+  ///
+  /// Shuffled order and different masking make different hashes on purpose. The
+  /// answer is an array parallel to the game's own lines, so reordering the
+  /// lines invalidates it — and a differently-masked read carries different
+  /// evidence, which can deserve a different answer. Measured cost of keeping
+  /// them apart: 1.25x the rows (6909 against 5526), which is not worth the
+  /// bookkeeping needed to merge them.
+  lyricHash   String     @map("lyric_hash")
+
+  /// The passage as the game showed it. The hash cannot be reversed, and review
+  /// has to display what was actually on screen.
+  gameLyric   String     @map("game_lyric")
+
+  /// One real-lyric line index per game line, in the game's order; -1 where a
+  /// line genuinely has no counterpart. Length must equal the game's line count
+  /// — the importer refuses anything else.
+  answer      Json       @db.JsonB
+
+  /// approved   — checked and trusted; the page uses it.
+  /// pending    — a suggestion the reviewer has not confirmed; the page ignores
+  ///              it and runs the matcher, so an uncertain guess costs nothing.
+  /// unmatchable— the platform holds a different version of the words (a 粤语
+  ///              lyric under a 国语 recording, say). No answer exists, and
+  ///              saying so stops it being offered for review again. Usually a
+  ///              sign the mapping itself wants revisiting.
+  status      String     @default("pending")
+
+  /// ai — worked out by the assistant; human — a reviewer's own answer. A human
+  /// answer outranks an ai one and is never overwritten by a later pass.
+  verifiedBy  String     @map("verified_by")
+  /// Why this answer, or why no answer. Free text, shown in review.
+  note        String?
+
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  /// The lookup, and the uniqueness rule: one answer per passage of one song.
+  @@unique([source, externalId, lyricHash])
+  /// Review queue: pending first, most-seen songs first.
+  @@index([status])
+  @@map("lyric_passage_matches")
+}

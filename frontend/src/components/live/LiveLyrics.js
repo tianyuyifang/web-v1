@@ -266,27 +266,47 @@ export default function LiveLyrics({
 
   const [words, setWords] = useState(null);
 
+  /**
+   * A verified answer for this passage, when one has been checked.
+   *
+   * The matcher below places 91% of lines on its own; what it misses is the two
+   * sides breaking lines differently — the game's 「那个傻瓜说的傻话」 is the
+   * platform's 「那个傻瓜」 plus 「说的傻话」 — which takes reading the words
+   * rather than comparing them. Those answers are decided once and stored.
+   *
+   * Null unless an approved answer exists, which is the ordinary case. Null
+   * means the matcher runs, exactly as it always has.
+   */
+  const [verified, setVerified] = useState(null);
+
   useEffect(() => {
-    if (!mappingId) { setLrc(null); setWords(null); setLoading(false); return undefined; }
+    if (!mappingId) { setLrc(null); setWords(null); setVerified(null); setLoading(false); return undefined; }
     let alive = true;
     setLoading(true);
     // While an alternative is being auditioned the words must be that
     // recording's: a cover is usually spotted by reading along, and the
     // original's words under someone else's take is exactly the wrong answer.
     mappingAPI
-      .lyrics(mappingId, ovSource && ovId ? { source: ovSource, externalId: ovId } : undefined, true)
+      .lyrics(
+        mappingId,
+        ovSource && ovId ? { source: ovSource, externalId: ovId } : undefined,
+        true,
+        gameLyric || null,
+      )
       .then((res) => {
         if (!alive) return;
         setLrc(res.data.lyric || null);
         // Absent for most NetEase tracks and a handful of QQ ones. The sweep
         // falls back to an even pace rather than disappearing.
         setWords(res.data.wordLyric || null);
+        // Absent unless this passage has a checked answer — see `verified`.
+        setVerified(Array.isArray(res.data.passageMatch) ? res.data.passageMatch : null);
       })
       // A song without lyrics is ordinary, not a failure worth shouting about.
-      .catch(() => { if (alive) { setLrc(null); setWords(null); } })
+      .catch(() => { if (alive) { setLrc(null); setWords(null); setVerified(null); } })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [mappingId, ovSource, ovId]);
+  }, [mappingId, ovSource, ovId, gameLyric]);
 
   const parsed = useMemo(() => parseLRC(lrc), [lrc]);
 
@@ -326,7 +346,26 @@ export default function LiveLyrics({
    * chosen by a rule that cannot tell them apart. Measured on the ground-truth
    * set, 96% of ties are between two or three places reading identically.
    */
-  const places = useMemo(() => markPassage(gameLyric, parsed), [gameLyric, parsed]);
+  /**
+   * Where the passage sits: the checked answer if there is one, else worked out.
+   *
+   * The stored answer is one place rather than several, because it was chosen
+   * knowing which one is right — the matcher returns every candidate precisely
+   * because it cannot tell them apart.
+   *
+   * Length is checked again here even though the server checks it. The two run
+   * the same split on the same string, so a disagreement means one of them has
+   * changed; falling back to the matcher is the safe reading of that, since an
+   * answer one line out would highlight the wrong lines with full confidence.
+   */
+  const places = useMemo(() => {
+    if (Array.isArray(verified)) {
+      const lines = String(gameLyric || '')
+        .split(/[\n\/]+/).map((l) => l.trim()).filter(Boolean);
+      if (verified.length === lines.length && lines.length) return [verified];
+    }
+    return markPassage(gameLyric, parsed);
+  }, [verified, gameLyric, parsed]);
   const marks = useMemo(() => {
     const s = new Set();
     for (const place of places) for (const i of place) if (i >= 0) s.add(i);

@@ -412,17 +412,39 @@ export const mappingAPI = {
   // `words` asks for per-syllable timings as well. Opt-in because the review
   // page shares this route and reads only the plain lyric — sending them
   // always would charge it for a column it never looks at.
-  lyrics: (id, override, words) => {
+  lyrics: (id, override, words, passage) => {
     const q = new URLSearchParams();
     if (override) {
       q.set("source", override.source);
       q.set("externalId", override.externalId);
     }
     if (words) q.set("words", "1");
+    // The passage the game is showing, so the server can hand back a verified
+    // answer for it if one exists. Sent only by 唱卡; every other caller omits
+    // it and gets the response it has always had.
+    if (passage) {
+      q.set("passage", passage);
+      q.set("passageLines", String(
+        passage.split(/[\n/]+/).map((l) => l.trim()).filter(Boolean).length
+      ));
+    }
     const qs = q.toString();
     return api.get(`/mappings/${id}/lyrics${qs ? `?${qs}` : ""}`);
   },
   trackLyrics: (trackId) => api.get(`/mappings/track/${trackId}/lyrics`),
+
+  // Verified lyric-passage answers and their review queue. Editor-only, like
+  // the rest of the review page.
+  passages: ({ status, take, cursor } = {}) => {
+    const q = new URLSearchParams();
+    if (status) q.set("status", status);
+    if (take) q.set("take", String(take));
+    if (cursor) q.set("cursor", cursor);
+    const qs = q.toString();
+    return api.get(`/mappings/passages${qs ? `?${qs}` : ""}`);
+  },
+  passageCounts: () => api.get("/mappings/passages/counts"),
+  decidePassage: (id, body) => api.patch(`/mappings/passages/${id}`, body),
   // Same thing for a pool track nobody has claimed yet — you have to hear it
   // before you can say it is the right one.
   previewTrack: (trackId) => api.get(`/mappings/track/${trackId}/preview`),

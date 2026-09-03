@@ -320,6 +320,9 @@ export const feedbackAPI = {
   submit: (data) => api.post("/feedback", data),
   list: () => api.get("/feedback"),
   remove: (id) => api.delete(`/feedback/${id}`),
+  // The caller's own feedback with any reply, and the admin's way to write one.
+  mine: () => api.get("/feedback/mine"),
+  reply: (id, reply) => api.patch(`/feedback/${id}/reply`, { reply }),
 };
 
 // --- Updates / announcements ---

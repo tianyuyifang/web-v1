@@ -15,6 +15,69 @@ import SignupPromoPanel from "@/components/admin/SignupPromoPanel";
 import UpdatesPanel from "@/components/admin/UpdatesPanel";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
+/**
+ * One feedback row's reply. Written here and read by the user on the help
+ * page; its presence is the item's status, so sending it marks the item
+ * handled and clearing it un-handles it — there is no separate state to
+ * forget to update.
+ */
+function FeedbackReplyBox({ item, onReplied }) {
+  const [text, setText] = useState(item.reply || "");
+  const [editing, setEditing] = useState(!item.reply);
+  const [busy, setBusy] = useState(false);
+
+  async function send() {
+    setBusy(true);
+    try {
+      const res = await feedbackAPI.reply(item.id, text.trim());
+      onReplied(res.data.feedback);
+      setEditing(!res.data.feedback.reply);
+    } catch {
+      // keep the box open so the text is not lost
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="mt-2 flex items-baseline gap-2 text-sm">
+        <span className="text-green-400">✅ {item.reply}</span>
+        <span className="text-xs text-muted">
+          {item.repliedAt ? new Date(item.repliedAt).toLocaleDateString() : ""}
+        </span>
+        <button
+          onClick={() => setEditing(true)}
+          className="text-xs text-muted hover:text-theme"
+        >
+          修改
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <input
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && text.trim()) send(); }}
+        placeholder="回复用户…"
+        maxLength={1000}
+        className="min-w-0 flex-1 rounded border border-border bg-surface px-2 py-1 text-sm text-theme placeholder-muted focus:border-primary focus:outline-none"
+      />
+      <button
+        onClick={send}
+        disabled={busy || !text.trim()}
+        className="shrink-0 rounded bg-primary px-3 py-1 text-sm font-medium text-white disabled:opacity-40"
+      >
+        回复
+      </button>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const { t } = useLanguage();
   const router = useRouter();
@@ -49,6 +112,12 @@ export default function AdminPage() {
     } catch {
       // silent
     }
+  }, []);
+
+  // Swap the replied item in place, so the list does not reload and collapse
+  // whatever the admin was doing further down.
+  const patchFeedback = useCallback((updated) => {
+    setFeedback((prev) => prev.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
   }, []);
 
   // Merge one updated user into the list in place, instead of refetching all of
@@ -225,6 +294,7 @@ export default function AdminPage() {
                         </div>
                       )}
                       {f.message && <p className="mt-1 text-sm text-muted">{f.message}</p>}
+                      <FeedbackReplyBox item={f} onReplied={patchFeedback} />
                     </div>
                     <button
                       onClick={() => handleDeleteFeedback(f.id)}

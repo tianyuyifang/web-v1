@@ -9,6 +9,9 @@ export default {
   navLive: "唱卡",
   helpTitle: "帮助",
   helpTabFeedback: "反馈",
+  myFeedback: "我的反馈",
+  // 没回复的也要说一句 —— 空着会像提交失败了。
+  feedbackPending: "等待处理",
   helpInstructionCardTitle: "使用指南",
   // 标题已经写了「使用指南」，正文不必再说一遍 —— 同屏三次读着啰嗦。
   helpInstructionCardDesc: "在我们的文档站点查看完整的图文教程。",

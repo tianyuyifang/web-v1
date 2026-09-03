@@ -335,6 +335,12 @@ model Feedback {
   title     String?
   artist    String?
   message   String?
+  /// What an admin wrote back. Its presence is also the status: replied means
+  /// dealt with, absent means not yet. A separate status column would have to
+  /// be kept in step with this one, and almost every request here is a song
+  /// request whose answer is one sentence anyway.
+  reply     String?
+  repliedAt DateTime?    @map("replied_at") @db.Timestamptz
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
   user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)

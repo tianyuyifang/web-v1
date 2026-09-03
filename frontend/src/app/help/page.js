@@ -5,6 +5,8 @@ import useAuth from "@/hooks/useAuth";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import InstructionPanel from "@/components/help/InstructionPanel";
 import FeedbackPanel from "@/components/help/FeedbackPanel";
+import MyFeedback from "@/components/help/MyFeedback";
+import { markSeen } from "@/lib/feedbackSeen";
 
 export default function HelpPage() {
   const { t } = useLanguage();
@@ -51,6 +53,10 @@ export default function HelpPage() {
         <h2 className="mb-4 text-lg font-semibold text-theme">
           {t("helpTabFeedback")}
         </h2>
+        {/* Opening this page is what counts as reading a reply — the replies
+            are right here, so anything subtler would only risk the dot
+            outliving the thing it points at. */}
+        <MyFeedback onSeen={markSeen} />
         <FeedbackPanel />
       </section>
     </div>

@@ -8,6 +8,8 @@ import useAuthStore from "@/store/authStore";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
 import CaptureIndicator from "@/components/layout/CaptureIndicator";
+import { feedbackAPI } from "@/lib/api";
+import { hasUnreadReply } from "@/lib/feedbackSeen";
 
 export default function Navbar() {
   const { user, isAuthenticated, isAdmin, canCapture } = useAuth();
@@ -16,6 +18,24 @@ export default function Navbar() {
   const pathname = usePathname();
   const { t } = useLanguage();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // A dot on 帮助 once feedback has been answered since the user last looked.
+  // Fetched on mount and on navigation rather than polled: replies are written
+  // by hand, days apart, and are not worth a timer running on every page.
+  const [unread, setUnread] = useState(false);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let alive = true;
+    feedbackAPI
+      .mine()
+      .then((res) => {
+        if (alive) setUnread(hasUnreadReply(res.data?.feedback || []));
+      })
+      .catch(() => {
+        // No dot rather than a broken nav: this is a nicety, not a control.
+      });
+    return () => { alive = false; };
+  }, [isAuthenticated, pathname]);
 
   useEffect(() => {
     init();
@@ -26,18 +46,27 @@ export default function Navbar() {
     setMobileOpen(false);
   }, [pathname]);
 
-  const navLink = (href, label) => {
+  const navLink = (href, label, dot = false) => {
     const isActive = pathname?.startsWith(href);
     return (
       <Link
         href={href}
-        className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+        className={`relative rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
           isActive
             ? "bg-primary/10 text-primary"
             : "text-muted hover:bg-surface-hover hover:text-theme"
         }`}
       >
         {label}
+        {/* Unlabelled on purpose: it means "something here changed", and the
+            page one tap away says what. A count would promise a precision
+            this does not have — it is one bit, stored per browser. */}
+        {dot && (
+          <span
+            aria-label="有新回复"
+            className="absolute right-1 top-1 inline-block h-1.5 w-1.5 rounded-full bg-red-500"
+          />
+        )}
       </Link>
     );
   };
@@ -79,7 +108,7 @@ export default function Navbar() {
                   something you find when you go looking at your own account
                   rather than a permanent ad in the nav. */}
               {navLink("/updates", t("navUpdates"))}
-              {navLink("/help", t("navHelp"))}
+              {navLink("/help", t("navHelp"), unread)}
               {isAdmin && navLink("/admin", t("navAdmin"))}
               {navLink("/account", t("navAccount"))}
             </div>
@@ -117,7 +146,7 @@ export default function Navbar() {
           <div className="flex flex-col gap-1">
             {navLink("/tools", t("navTools"))}
             {navLink("/updates", t("navUpdates"))}
-            {navLink("/help", t("navHelp"))}
+            {navLink("/help", t("navHelp"), unread)}
             {isAdmin && navLink("/admin", t("navAdmin"))}
             {navLink("/account", t("navAccount"))}
           </div>

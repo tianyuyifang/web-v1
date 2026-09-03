@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { mappingAPI } from "@/lib/api";
 
 /**
@@ -31,6 +31,8 @@ export default function PassagePanel() {
   const [openId, setOpenId] = useState(null);
   // Edited answers, keyed by row id, as the raw text the reviewer typed.
   const [drafts, setDrafts] = useState({});
+  // Only redirect on the very first load, never after the reviewer chooses.
+  const firstLoad = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +44,14 @@ export default function PassagePanel() {
       ]);
       setItems(list.data.items || []);
       setCounts(c.data || {});
+      // Land somewhere with something on it. 待确认 is the tab that wants
+      // working through, so it leads — but arriving at an empty queue when
+      // there are confirmed rows to see reads as "nothing here at all".
+      if (!firstLoad.current) {
+        firstLoad.current = true;
+        const n = c.data || {};
+        if (status === 'pending' && !n.pending && n.approved) setStatus('approved');
+      }
     } catch (err) {
       setError(err.response?.data?.error?.message || "读取失败");
     } finally {
@@ -120,7 +130,13 @@ export default function PassagePanel() {
       {loading ? (
         <p className="text-sm text-gray-500">加载中…</p>
       ) : !items.length ? (
-        <p className="text-sm text-gray-500">这里没有待处理的片段。</p>
+        <p className="text-sm text-gray-500">
+          {status === "pending"
+            ? "没有待确认的片段。"
+            : status === "approved"
+              ? "还没有确认过的片段。"
+              : "没有标记为无法匹配的片段。"}
+        </p>
       ) : (
         <ul className="space-y-3">
           {items.map((row) => {
@@ -206,23 +222,43 @@ export default function PassagePanel() {
                   </div>
                 )}
 
+                {/* Only the moves that would change something. A row already
+                    approved has nothing to approve, and offering the button
+                    anyway invites a click that does nothing — the reviewer is
+                    then left wondering whether it worked. Editing the answer
+                    stays available everywhere, since a stored answer can be
+                    wrong in any state. */}
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={busyId === row.id}
-                    onClick={() => decide(row, "approved")}
-                    className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    确认
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busyId === row.id}
-                    onClick={() => decide(row, "unmatchable")}
-                    className="rounded bg-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-300 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-200"
-                  >
-                    无法匹配
-                  </button>
+                  {status !== "approved" && (
+                    <button
+                      type="button"
+                      disabled={busyId === row.id}
+                      onClick={() => decide(row, "approved")}
+                      className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      确认
+                    </button>
+                  )}
+                  {status === "approved" && open && (
+                    <button
+                      type="button"
+                      disabled={busyId === row.id}
+                      onClick={() => decide(row, "approved")}
+                      className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      保存改动
+                    </button>
+                  )}
+                  {status !== "unmatchable" && (
+                    <button
+                      type="button"
+                      disabled={busyId === row.id}
+                      onClick={() => decide(row, "unmatchable")}
+                      className="rounded bg-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-300 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-200"
+                    >
+                      无法匹配
+                    </button>
+                  )}
                   {status !== "pending" && (
                     <button
                       type="button"

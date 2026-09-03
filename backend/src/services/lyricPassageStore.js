@@ -31,6 +31,29 @@ function hashPassage(gameLyric) {
 }
 
 /**
+ * Every real line an answer covers, flattened.
+ *
+ * An entry is a line index, or a list of them where the platform wrote as
+ * several lines what the game showed as one — 「你是一只飞鸟飞上我的树梢」 is
+ * 「你是一只飞鸟」 plus 「飞上我的树梢」. -1 records a line with no counterpart.
+ */
+function coveredLines(answer) {
+  const out = [];
+  answer.forEach((v) => {
+    if (Array.isArray(v)) v.forEach((n) => { if (n >= 0) out.push(n); });
+    else if (v >= 0) out.push(v);
+  });
+  return [...new Set(out)].sort((a, b) => a - b);
+}
+
+/** One entry: a line index, a non-empty list of them, or -1 for "no counterpart". */
+function entryOk(v) {
+  if (Number.isInteger(v)) return v >= -1;
+  if (!Array.isArray(v) || !v.length) return false;
+  return v.every((n) => Number.isInteger(n) && n >= 0);
+}
+
+/**
  * Is this a usable answer for a passage of this many lines?
  *
  * Checked on the way out as well as on the way in. A row whose length no longer
@@ -41,7 +64,7 @@ function hashPassage(gameLyric) {
 function isUsable(answer, lineCount) {
   if (!Array.isArray(answer)) return false;
   if (lineCount != null && answer.length !== lineCount) return false;
-  if (!answer.every((v) => Number.isInteger(v) && v >= -1)) return false;
+  if (!answer.every(entryOk)) return false;
 
   // The lines it covers must be adjacent. A passage is sung as a run, so the
   // real lines under it are a block — the matcher enforces this too, and it is
@@ -50,8 +73,9 @@ function isUsable(answer, lineCount) {
   // Checked here because it caught a real mistake: where the platform wrote as
   // two lines what the game showed as one, answers were recorded pointing only
   // at the first, leaving the second unhighlighted and the run with a hole in
-  // it. Six of the first twenty-seven were wrong that way.
-  const used = [...new Set(answer.filter((v) => v >= 0))].sort((a, b) => a - b);
+  // it. Six of the first twenty-seven were wrong that way — which is what the
+  // list form above exists to express.
+  const used = coveredLines(answer);
   if (!used.length) return true;
   return used[used.length - 1] - used[0] === used.length - 1;
 }
@@ -88,4 +112,4 @@ async function getApproved(source, externalId, gameLyric, lineCount) {
   }
 }
 
-module.exports = { hashPassage, isUsable, getApproved };
+module.exports = { hashPassage, isUsable, getApproved, coveredLines };

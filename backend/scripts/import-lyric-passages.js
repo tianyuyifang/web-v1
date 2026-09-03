@@ -23,7 +23,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const prisma = require('../src/db/client');
-const { hashPassage } = require('../src/services/lyricPassageStore');
+const { hashPassage, isUsable, coveredLines } = require('../src/services/lyricPassageStore');
 
 const STATUSES = new Set(['approved', 'pending', 'unmatchable']);
 const SOURCES = new Set(['LOCAL', 'QQ', 'NETEASE']);
@@ -46,22 +46,23 @@ function check(entry, i) {
   if (entry.answer.length !== n) {
     return `${at} answer has ${entry.answer.length} entries for ${n} game lines`;
   }
-  if (!entry.answer.every((v) => Number.isInteger(v) && v >= -1)) {
-    return `${at} answer must be integers >= -1`;
+  // Shape and contiguity both come from the store, so the importer and the page
+  // cannot drift apart on what a usable answer is. An entry is a line index, or
+  // a list of them where the platform wrote as several lines what the game
+  // showed as one, or -1 for a line with no counterpart.
+  if (!isUsable(entry.answer, n)) {
+    const used = coveredLines(entry.answer);
+    if (used.length && used[used.length - 1] - used[0] !== used.length - 1) {
+      return `${at} answer covers ${used.join(',')} — a passage is sung as a run, so the lines must be adjacent`;
+    }
+    return `${at} answer entries must be a line index, a non-empty list of them, or -1`;
   }
-  if (entry.status === 'unmatchable' && entry.answer.some((v) => v >= 0)) {
+  const placed = coveredLines(entry.answer);
+  if (entry.status === 'unmatchable' && placed.length) {
     return `${at} unmatchable rows must not point anywhere`;
   }
-  if (entry.status === 'approved' && entry.answer.every((v) => v < 0)) {
+  if (entry.status === 'approved' && !placed.length) {
     return `${at} an approved answer that places nothing is unmatchable, not approved`;
-  }
-  // The lines an answer covers must be adjacent — a passage is sung as a run.
-  // Six of the first twenty-seven answers failed this, all the same way: where
-  // the platform wrote as two lines what the game showed as one, only the first
-  // was recorded, so the run had a hole and the second line went unmarked.
-  const used = [...new Set(entry.answer.filter((v) => v >= 0))].sort((a, b) => a - b);
-  if (used.length && used[used.length - 1] - used[0] !== used.length - 1) {
-    return `${at} answer covers ${used.join(',')} — a passage is sung as a run, so the lines must be adjacent`;
   }
   return null;
 }

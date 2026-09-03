@@ -362,7 +362,18 @@ export default function LiveLyrics({
     if (Array.isArray(verified)) {
       const lines = String(gameLyric || '')
         .split(/[\n\/]+/).map((l) => l.trim()).filter(Boolean);
-      if (verified.length === lines.length && lines.length) return [verified];
+      if (verified.length === lines.length && lines.length) {
+        // A stored entry may be a list, for the case the matcher cannot see:
+        // the platform writing as two lines what the game shows as one, where
+        // 「你是一只飞鸟飞上我的树梢」 is 「你是一只飞鸟」 plus 「飞上我的树梢」.
+        //
+        // Every covered line goes into ONE place. A place is an occurrence of
+        // the passage — the progress bar draws a dot per place, and the scroll
+        // target is the first — so putting the continuation lines in a place of
+        // their own would invent a second occurrence and a dot that jumps to
+        // the middle of the first.
+        return [verified.flatMap((v) => (Array.isArray(v) ? v : [v]))];
+      }
     }
     return markPassage(gameLyric, parsed);
   }, [verified, gameLyric, parsed]);

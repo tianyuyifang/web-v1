@@ -4,6 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { mappingAPI } from "@/lib/api";
 
 /**
+ * The real lines one answer entry covers.
+ *
+ * An entry is a line index, or a list of them where the platform wrote as
+ * several lines what the game showed as one; -1 means no counterpart.
+ */
+function entryLines(v) {
+  if (Array.isArray(v)) return v.filter((n) => n >= 0);
+  return v >= 0 ? [v] : [];
+}
+
+/**
  * The queue of proposed lyric-passage answers.
  *
  * The 唱卡 page matches a passage against the real lyrics on its own and gets
@@ -73,17 +84,32 @@ export default function PassagePanel() {
         // Checked here rather than left to the server, because half-typed text
         // is the ordinary state of an input: a trailing comma, or a pause after
         // one, parses to NaN and came back as an unexplained failure.
+        // One entry per game line, comma separated. An entry may be several
+        // line numbers joined by "+", for where the platform wrote as two lines
+        // what the game showed as one — 「你是一只飞鸟飞上我的树梢」 is
+        // 「你是一只飞鸟」 plus 「飞上我的树梢」, written 63+64.
         const parts = raw.split(",").map((s) => s.trim()).filter((s) => s !== "");
-        const nums = parts.map(Number);
-        if (nums.some((n) => !Number.isInteger(n) || n < -1)) {
-          setError("答案只能是整数，用逗号分隔（-1 表示不标）");
+        const parsedEntries = parts.map((part) => {
+          const nums = part.split("+").map((s) => Number(s.trim()));
+          return nums.length === 1 ? nums[0] : nums;
+        });
+        const flat = parsedEntries.flat();
+        if (flat.some((n) => !Number.isInteger(n) || n < -1)) {
+          setError("答案只能是整数，逗号分隔；一行对应多行时用 + 连接，如 63+64");
           return;
         }
-        if (nums.length !== row.gameLines.length) {
-          setError(`答案要有 ${row.gameLines.length} 个数字，现在是 ${nums.length} 个`);
+        if (parsedEntries.length !== row.gameLines.length) {
+          setError(`答案要有 ${row.gameLines.length} 项，现在是 ${parsedEntries.length} 项`);
           return;
         }
-        answer = nums;
+        // The lines covered must be adjacent — a passage is sung as a run, and
+        // this is the check that caught six wrong answers before.
+        const covered = [...new Set(flat.filter((n) => n >= 0))].sort((a, b) => a - b);
+        if (covered.length && covered[covered.length - 1] - covered[0] !== covered.length - 1) {
+          setError(`标到了 ${covered.join(",")}，中间断开了。一段词是连着唱的，行号必须连续`);
+          return;
+        }
+        answer = parsedEntries;
       }
       const res = await mappingAPI.decidePassage(row.id, {
         status: next, ...(answer ? { answer } : {}),
@@ -166,7 +192,7 @@ export default function PassagePanel() {
           {items.map((row) => {
             const open = openId === row.id;
             const answer = Array.isArray(row.answer) ? row.answer : [];
-            const marked = new Set(answer.filter((i) => i >= 0));
+            const marked = new Set(answer.flatMap(entryLines));
             return (
               <li
                 key={row.id}
@@ -191,8 +217,10 @@ export default function PassagePanel() {
                           <span className="min-w-0 flex-1 truncate">{line}</span>
                           <span className="shrink-0 text-gray-400">→</span>
                           <span className="min-w-0 flex-[1.2] truncate text-blue-600 dark:text-blue-400">
-                            {answer[i] >= 0
-                              ? `[${answer[i]}] ${row.realLines[answer[i]] ?? "(超出范围)"}`
+                            {entryLines(answer[i]).length
+                              ? entryLines(answer[i])
+                                .map((n) => `[${n}] ${row.realLines[n] ?? "(超出范围)"}`)
+                                .join(" + ")
                               : "(不标)"}
                           </span>
                         </li>
@@ -233,10 +261,10 @@ export default function PassagePanel() {
                       )}
                     </div>
                     <label className="mt-2 block text-xs text-gray-500">
-                      改答案（每个游戏行一个行号，逗号分隔，-1 表示不标）
+                      改答案（每个游戏行一项，逗号分隔；一行对应多行用 + 连接，如 63+64；-1 表示不标）
                       <input
                         type="text"
-                        defaultValue={answer.join(",")}
+                        defaultValue={answer.map((v) => (Array.isArray(v) ? v.join("+") : v)).join(",")}
                         onChange={(e) =>
                           setDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))
                         }

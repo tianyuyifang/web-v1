@@ -316,6 +316,59 @@ router.get('/', requireMappingEditor, async (req, res, next) => {
   }
 });
 
+/* --- 歌词段落: verified answers and their review queue ------------------- */
+
+/**
+ * GET /api/mappings/passages?status=&take=&cursor=
+ *
+ * The review queue. Editor-only like the rest of the review page: an answer
+ * here decides what every singer sees highlighted, which is the same kind of
+ * site-wide decision a mapping is.
+ *
+ * Declared above `/:id` because Express matches in declaration order. Placed
+ * after it, this literal path is swallowed by the parameter route: `/passages`
+ * arrived as a mapping id and answered 404, while `/passages/counts` — two
+ * segments, so no match — worked, which is what made the fault look like a
+ * frontend problem.
+ */
+router.get('/passages', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await passageReview.list({
+      status: req.query.status,
+      take: req.query.take,
+      cursor: req.query.cursor,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** GET /api/mappings/passages/counts — the queue badge. */
+router.get('/passages/counts', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await passageReview.counts());
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/mappings/passages/:passageId — a reviewer's decision.
+ *
+ * Stored as `human`, which outranks the assistant's answer and survives every
+ * later pass: a correction that a re-import could undo is not a correction.
+ */
+router.patch('/passages/:passageId', requireMappingEditor, async (req, res, next) => {
+  try {
+    const id = z.string().uuid().safeParse(req.params.passageId);
+    if (!id.success) throw new NotFoundError('Passage');
+    const { status, answer, note } = req.body || {};
+    res.json(await passageReview.decide(id.data, { status, answer, note }));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/mappings/:id
 router.get('/:id', requireMappingEditor, async (req, res, next) => {
   try {
@@ -739,55 +792,6 @@ router.get('/track/:trackId/lyrics', listenLimiter, requireMappingEditor, async 
     if (!parsed.success) throw new NotFoundError('Track');
     const track = await svc.getTrack(parsed.data);
     return await resolveLyrics(track.source, track.externalId, res);
-  } catch (err) {
-    next(err);
-  }
-});
-
-/* --- 歌词段落: verified answers and their review queue ------------------- */
-
-/**
- * GET /api/mappings/passages?status=&take=&cursor=
- *
- * The review queue. Editor-only like the rest of the review page: an answer
- * here decides what every singer sees highlighted, which is the same kind of
- * site-wide decision a mapping is.
- *
- * Declared above `/:id/...` so the literal path is not read as a mapping id.
- */
-router.get('/passages', requireMappingEditor, async (req, res, next) => {
-  try {
-    res.json(await passageReview.list({
-      status: req.query.status,
-      take: req.query.take,
-      cursor: req.query.cursor,
-    }));
-  } catch (err) {
-    next(err);
-  }
-});
-
-/** GET /api/mappings/passages/counts — the queue badge. */
-router.get('/passages/counts', requireMappingEditor, async (req, res, next) => {
-  try {
-    res.json(await passageReview.counts());
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
- * PATCH /api/mappings/passages/:passageId — a reviewer's decision.
- *
- * Stored as `human`, which outranks the assistant's answer and survives every
- * later pass: a correction that a re-import could undo is not a correction.
- */
-router.patch('/passages/:passageId', requireMappingEditor, async (req, res, next) => {
-  try {
-    const id = z.string().uuid().safeParse(req.params.passageId);
-    if (!id.success) throw new NotFoundError('Passage');
-    const { status, answer, note } = req.body || {};
-    res.json(await passageReview.decide(id.data, { status, answer, note }));
   } catch (err) {
     next(err);
   }

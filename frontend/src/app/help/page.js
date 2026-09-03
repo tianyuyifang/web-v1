@@ -33,14 +33,21 @@ export default function HelpPage() {
       {/* Stacked rather than tabbed. Feedback behind a tab was a page nobody
           opened: reaching it meant knowing to look, and the one thing this
           page exists to collect was the thing hidden. Both fit on a screen —
-          the guide is a single card — so nothing is gained by hiding one. */}
-      <InstructionPanel />
+          the guide is a single card — so nothing is gained by hiding one.
+
+          Both sections are titled the same way, at the same level: the guide's
+          heading used to live inside its card, which left the two halves of
+          the page looking unlike each other. */}
+      <section>
+        <h2 className="mb-4 text-lg font-semibold text-theme">
+          {t("helpInstructionCardTitle")}
+        </h2>
+        <InstructionPanel />
+      </section>
 
       <section className="mt-10 border-t border-border pt-8">
-        {/* Matches 使用指南 inside the card above: these are the page's two
-            sections and should look like a pair. They were 18px and 16px,
-            which reads as a hierarchy that is not there. Both sit below
-            the 2xl page title, so the levels stay distinct. */}
+        {/* Same size as 使用指南 above — a pair, not a hierarchy. Both sit
+            below the 2xl page title, so the levels stay distinct. */}
         <h2 className="mb-4 text-lg font-semibold text-theme">
           {t("helpTabFeedback")}
         </h2>

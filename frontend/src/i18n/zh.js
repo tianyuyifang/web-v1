@@ -10,7 +10,8 @@ export default {
   helpTitle: "帮助",
   helpTabFeedback: "反馈",
   helpInstructionCardTitle: "使用指南",
-  helpInstructionCardDesc: "在我们的文档站点查看完整的图文使用指南。",
+  // 标题已经写了「使用指南」，正文不必再说一遍 —— 同屏三次读着啰嗦。
+  helpInstructionCardDesc: "在我们的文档站点查看完整的图文教程。",
   helpInstructionCardButton: "打开使用指南 →",
   navAdmin: "管理",
 

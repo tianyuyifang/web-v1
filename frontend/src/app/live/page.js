@@ -1506,7 +1506,7 @@ export default function LivePage() {
                                           gameLyric: card.lyric,
                                         }).catch(() => {});
                                       }}
-                                      className="shrink-0 rounded border border-border px-2 py-1 text-[0.68rem] text-muted hover:border-yellow-500/60 hover:text-yellow-500"
+                                      className="shrink-0 rounded border border-red-500/50 bg-red-500/10 px-2 py-1 text-[0.68rem] text-red-400 hover:bg-red-500/20 hover:text-red-300"
                                     >
                                       段落点不准确
                                     </button>

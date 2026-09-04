@@ -8,7 +8,7 @@ const { ensureLiked } = require('./likeService');
 const { resolveGameSong } = require('./mappingResolveService');
 const { titleKey, artistKey } = require('./songKeyService');
 const { broadcast } = require('./sseManager');
-const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
+const { AppError, NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 
 const DEFAULT_TTL_MINUTES = 4 * 60;
 const MAX_TEXT_LENGTH = 200;
@@ -534,9 +534,14 @@ async function ingestText({ session, rawText, side, row }) {
 
   // Aimed elsewhere in the meantime — the capture belongs to whoever the
   // connection points at now, and this is no longer it.
+  //
+  // A refusal, not a 200: the client keeps a sent-set, and a 200 files the
+  // title in it as delivered — after which no rescan and no scroll-back will
+  // ever send it again. The 409 makes the client un-mark the title, and its
+  // next 2s sweep re-sends it to wherever the user is aiming by then.
   if (fresh.target !== 'playlist' || !fresh.playlistId) {
     logNoTarget(fresh, text, 'playlist');
-    return { outcome: 'no_target', rawText: text };
+    throw new AppError('No capture target', 409);
   }
   const playlistId = fresh.playlistId;
 

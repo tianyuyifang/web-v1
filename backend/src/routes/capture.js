@@ -98,7 +98,19 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
       // this one returns before reaching it.
       captureService.logNoTarget(req.captureSession, req.body && req.body.text, 'anything');
       await captureService.touchSession(req.captureSession);
-      return res.json({ outcome: 'no_target' });
+      // A refusal, not a 200. The 200 this used to return was read by the
+      // client as "delivered", which filed the title in its sent-set — after
+      // that, no rescan and no scroll-back would ever send the song again,
+      // and it was lost for the rest of the session. On any non-200 (except
+      // 401, which would clear the pairing) the client un-marks the title and
+      // re-sends on its next 2s sweep, so the moment the user aims, whatever
+      // is on screen — or scrolled back onto it — is delivered. Its own
+      // heartbeat also stops the loop: within ~25s it learns the target is
+      // "none" and pauses scanning until the user aims.
+      return res.status(409).json({
+        error: { message: 'No capture target', status: 409 },
+        outcome: 'no_target',
+      });
     }
 
     const result = target === 'live'

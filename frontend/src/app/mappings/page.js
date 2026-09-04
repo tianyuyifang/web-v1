@@ -307,9 +307,11 @@ export default function MappingsPage() {
         // fault, and the fix is different — so it is worded differently.
         setPlayError(reason === "credential-expired"
           ? "QQ 音乐连接已失效，请到账号页重新扫码"
-          : reason === "unavailable"
-            ? "这首歌当前拿不到播放地址（可能需要会员或已下架）"
-            : "无法试听");
+          : reason === "needs-login"
+            ? "这首歌需要会员，或音乐账号连接已失效，请到账号页重新扫码"
+            : reason === "unavailable"
+              ? "这首歌当前拿不到播放地址（可能需要会员或已下架）"
+              : "无法试听");
         return;
       }
       el.src = url;

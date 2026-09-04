@@ -689,9 +689,13 @@ export default function LivePage() {
       if (!url) {
         setPlayError(reason === "credential-expired"
           ? "音乐账号连接已失效，请到账号页重新扫码"
-          : reason === "needs-vip"
-            ? "这首歌需要会员"
-            : "这首歌当前拿不到播放地址（可能已下架）");
+          : reason === "needs-login"
+            // 会员歌拿不到地址：多为账号会员态失效（免费歌仍能听），
+            // 引导重新扫码，而不是误报下架。
+            ? "这首歌需要会员，或音乐账号连接已失效，请到账号页重新扫码"
+            : reason === "needs-vip"
+              ? "这首歌需要会员"
+              : "这首歌当前拿不到播放地址（可能已下架）");
         return;
       }
       loadedFor.current = key;

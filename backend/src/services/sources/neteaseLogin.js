@@ -425,14 +425,27 @@ async function resolveUrl(songId, { cookie, level = 'standard' } = {}) {
   const info = json?.data?.[0];
   if (!info?.url) {
     /**
-     * fee 1 and 4 mark paid tracks, and a null url alongside them means the
-     * account cannot play it rather than the track being gone. Saying which
-     * matters: one is fixed by a subscription, the other never.
+     * A member track (fee > 0) always resolves to a url when the account has
+     * the right — measured on a live 黑胶VIP credential, every fee 1/4/8 track
+     * came back with a url. So a member track with NO url is a permission
+     * problem, not a delisting: the credential's membership has lapsed (a
+     * cookie can keep its basic session while losing its member state, which
+     * is exactly why free songs still play and member songs stop). The fix is
+     * to reconnect, so it must not be reported as "possibly delisted".
+     *
+     * fee is NOT enumerated here on purpose. An earlier version whitelisted
+     * fee === 1 || 4 and missed fee 8 entirely — the commonest member type,
+     * 77% of the catalogue — reporting every 黑胶 track as delisted the moment
+     * a cookie's member state slipped. Anything paid (fee > 0) with no url is
+     * the same story whatever the exact fee, so the test is fee > 0, not a list.
+     *
+     * fee === 0 with no url is the genuine case: a free track we still cannot
+     * fetch is delisted or a real platform blip.
      */
-    const needsVip = info?.fee === 1 || info?.fee === 4;
+    const isMemberTrack = typeof info?.fee === 'number' && info.fee > 0;
     return {
       url: null,
-      reason: needsVip ? 'needs-vip' : 'unavailable',
+      reason: isMemberTrack ? 'needs-login' : 'unavailable',
       platformResult: info?.code ?? json?.code ?? null,
     };
   }

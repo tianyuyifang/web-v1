@@ -89,6 +89,25 @@ const stamp = (ms) => {
     }
   }
 
+  // 表明出来: 问过平台、有病、但逐字也没有 —— 没法合成的, 别默默略过。
+  if (ALL) {
+    const sick = (await prisma.importedTrack.findMany({
+      where: { lyricFetchedAt: { not: null }, wordLyric: null,
+        source: { in: ['QQ', 'NETEASE'] } },
+      select: { source: true, externalId: true, title: true, artist: true, lyric: true },
+    })).filter((t) => !t.lyric || !hasStamp(t.lyric));
+    if (sick.length) {
+      console.log('');
+      console.log('== 没法修(逐字也无, 平台两样都没给) ' + sick.length + ' 首 ==');
+      sick.forEach((t) => console.log('  ' + t.source.padEnd(9) + t.externalId.padEnd(16)
+        + t.title + ' — ' + t.artist
+        + (t.lyric ? '  (有纯文本, 静态显示)' : '  (完全无词)')));
+    } else {
+      console.log('');
+      console.log('没法修的: 0 首');
+    }
+  }
+
   if (APPLY && backup.length) {
     const file = path.join(__dirname, '..', 'backups',
       `synth-lrc-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);

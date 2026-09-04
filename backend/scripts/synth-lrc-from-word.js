@@ -39,9 +39,13 @@ const stamp = (ms) => {
 (async () => {
   let tracks;
   if (ALL) {
+    // 只扫「问过平台」的行(lyricFetchedAt 已置)。没问过的不碰: 首播时
+    // 平台的回答会覆盖这里合成的, 而且那 800+ 首缺词只是还没人播过,
+    // 不是病。问过的行里, 整句为空(平台说没有)和整句无时间戳(纯文本)
+    // 都算中招 —— 咕叽咕叽就是前者, 只按「lyric 非空」筛会漏掉它。
     tracks = (await prisma.importedTrack.findMany({
-      where: { lyric: { not: null }, wordLyric: { not: null } },
-    })).filter((t) => !hasStamp(t.lyric));
+      where: { lyricFetchedAt: { not: null }, wordLyric: { not: null } },
+    })).filter((t) => !t.lyric || !hasStamp(t.lyric));
   } else {
     if (!mids.length) { console.log('给 mid 或 --all'); process.exit(1); }
     tracks = await prisma.importedTrack.findMany({

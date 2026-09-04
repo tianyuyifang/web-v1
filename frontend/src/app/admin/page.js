@@ -87,6 +87,10 @@ export default function AdminPage() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("members");
+  // Replied feedback folds away so the list in front of the admin is only
+  // what still needs an answer — the "clear it" feeling without deleting
+  // anything, since deleting a row deletes the user's copy of the reply too.
+  const [showReplied, setShowReplied] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setFetching(true);
@@ -165,7 +169,7 @@ export default function AdminPage() {
     { key: "members", label: t("members"), dot: "bg-green-400", count: members.length },
     { key: "pending", label: t("pendingApproval"), dot: "bg-yellow-400", count: pending.length },
     { key: "admins", label: t("admins"), dot: "bg-purple-400", count: admins.length },
-    { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.length },
+    { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.filter((f) => !f.reply).length },
     { key: "updates", label: t("updatesAdminSection"), dot: "bg-pink-400", count: null },
     { key: "bandwidth", label: t("bandwidthTitle"), dot: "bg-cyan-400", count: null },
     { key: "liveUsage", label: "唱卡使用", dot: "bg-rose-400", count: null },
@@ -262,53 +266,72 @@ export default function AdminPage() {
         </section>
       )}
 
-      {activeTab === "feedback" && (
-        <section className="rounded-xl border border-border bg-surface p-5">
-          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
-            <span className="inline-block h-2 w-2 rounded-full bg-blue-400" />
-            {t("feedbackAdmin")}
-            <span className="ml-1 text-sm font-normal text-muted">({feedback.length})</span>
-          </h2>
-          {feedback.length === 0 ? (
-            <p className="text-sm text-muted">{t("feedbackEmpty")}</p>
-          ) : (
-            <div className="space-y-2">
-              {feedback.map((f) => {
-                const typeLabel = f.type === "BAD_SONG" ? t("feedbackBadSong")
-                  : f.type === "REQUEST_SONG" ? t("feedbackRequestSong")
-                  : t("feedbackGeneral");
-                const typeColor = f.type === "BAD_SONG" ? "bg-red-500/15 text-red-400"
-                  : f.type === "REQUEST_SONG" ? "bg-blue-500/15 text-blue-400"
-                  : "bg-yellow-500/15 text-yellow-400";
-                return (
-                  <div key={f.id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${typeColor}`}>{typeLabel}</span>
-                        <span className="text-xs text-muted">{f.user.username}</span>
-                        <span className="text-xs text-muted">{new Date(f.createdAt).toLocaleDateString()}</span>
-                      </div>
-                      {f.title && (
-                        <div className="text-sm text-theme">
-                          {f.title}{f.artist ? ` — ${f.artist}` : ""}
-                        </div>
-                      )}
-                      {f.message && <p className="mt-1 text-sm text-muted">{f.message}</p>}
-                      <FeedbackReplyBox item={f} onReplied={patchFeedback} />
-                    </div>
-                    <button
-                      onClick={() => handleDeleteFeedback(f.id)}
-                      className="shrink-0 text-xs font-medium text-red-400 hover:text-red-300"
-                    >
-                      ✕
-                    </button>
+      {activeTab === "feedback" && (() => {
+        // Split, not filtered away: replied items stay one click below, so
+        // nothing has to be deleted to keep the working list short.
+        const pendingFb = feedback.filter((f) => !f.reply);
+        const repliedFb = feedback.filter((f) => f.reply);
+        const row = (f) => {
+          const typeLabel = f.type === "BAD_SONG" ? t("feedbackBadSong")
+            : f.type === "REQUEST_SONG" ? t("feedbackRequestSong")
+            : t("feedbackGeneral");
+          const typeColor = f.type === "BAD_SONG" ? "bg-red-500/15 text-red-400"
+            : f.type === "REQUEST_SONG" ? "bg-blue-500/15 text-blue-400"
+            : "bg-yellow-500/15 text-yellow-400";
+          return (
+            <div key={f.id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${typeColor}`}>{typeLabel}</span>
+                  <span className="text-xs text-muted">{f.user.username}</span>
+                  <span className="text-xs text-muted">{new Date(f.createdAt).toLocaleDateString()}</span>
+                </div>
+                {f.title && (
+                  <div className="text-sm text-theme">
+                    {f.title}{f.artist ? ` — ${f.artist}` : ""}
                   </div>
-                );
-              })}
+                )}
+                {f.message && <p className="mt-1 text-sm text-muted">{f.message}</p>}
+                <FeedbackReplyBox item={f} onReplied={patchFeedback} />
+              </div>
+              <button
+                onClick={() => handleDeleteFeedback(f.id)}
+                className="shrink-0 text-xs font-medium text-red-400 hover:text-red-300"
+              >
+                ✕
+              </button>
             </div>
-          )}
-        </section>
-      )}
+          );
+        };
+        return (
+          <section className="rounded-xl border border-border bg-surface p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
+              <span className="inline-block h-2 w-2 rounded-full bg-blue-400" />
+              {t("feedbackAdmin")}
+              <span className="ml-1 text-sm font-normal text-muted">待回复 {pendingFb.length}</span>
+            </h2>
+            {pendingFb.length === 0 ? (
+              <p className="text-sm text-muted">没有待回复的反馈。</p>
+            ) : (
+              <div className="space-y-2">{pendingFb.map(row)}</div>
+            )}
+            {repliedFb.length > 0 && (
+              <div className="mt-5 border-t border-border pt-3">
+                <button
+                  onClick={() => setShowReplied((v) => !v)}
+                  aria-expanded={showReplied}
+                  className="text-sm font-medium text-muted hover:text-theme"
+                >
+                  {showReplied ? "▾" : "▸"} 已回复 ({repliedFb.length})
+                </button>
+                {showReplied && (
+                  <div className="mt-3 space-y-2">{repliedFb.map(row)}</div>
+                )}
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       {activeTab === "updates" && (
         <section className="rounded-xl border border-border bg-surface p-5">

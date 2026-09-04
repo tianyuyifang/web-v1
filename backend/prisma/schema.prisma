@@ -77,6 +77,10 @@ model User {
   songPrefs        SongPref[]
 
   @@map("users")
+  /// 好友标记分享: 我分享出去的 / 分享给我的。
+  prefSharesFrom PrefShare[] @relation("PrefShareFrom")
+  prefSharesTo   PrefShare[] @relation("PrefShareTo")
+
 }
 
 /// Site-wide settings an admin changes at runtime, one row per key. A table
@@ -532,6 +536,24 @@ model SongPref {
   /// primary key serves it directly and no second index is needed.
   @@id([userId, source, externalId])
   @@map("song_prefs")
+}
+
+/// 好友标记分享: A 分享给 B = B 可读 A 的标记歌曲(song_prefs 里有
+/// 备注或颜色的行)。单向授权、无需对方接受、可随时取消；取消后
+/// 对方立刻 403。只读 —— 这张表只决定能不能看，看的内容永远现查
+/// song_prefs，所以新增的标记对已分享的好友自动可见。
+model PrefShare {
+  id         String   @id @default(uuid()) @db.Uuid
+  fromUserId String   @map("from_user_id") @db.Uuid
+  toUserId   String   @map("to_user_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  from User @relation("PrefShareFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  to   User @relation("PrefShareTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
+  @@index([toUserId])
+  @@map("pref_shares")
 }
 
 enum SongSource {

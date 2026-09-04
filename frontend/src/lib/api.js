@@ -255,6 +255,20 @@ export const captureAPI = {
   },
   // The singer's own marked songs — notes and colours only. Filters stack:
   // hasNote and any colours are an intersection, plus a keyword over names.
+  // 好友标记分享: 两个名单 / 分享 / 取消 / 看好友的已标记(参数与 marked 同款)。
+  markShares: () => api.get("/capture/mark-shares"),
+  shareMarks: (toUserId) => api.post("/capture/mark-shares", { toUserId }),
+  revokeMarkShare: (userId) => api.delete(`/capture/mark-shares/${userId}`),
+  friendMarked: (userId, { q = "", hasNote = false, colors = [], offset = 0, take } = {}) => {
+    const p2 = new URLSearchParams();
+    if (q) p2.set("q", q);
+    if (hasNote) p2.set("hasNote", "1");
+    colors.forEach((c) => p2.append("color", c));
+    if (offset) p2.set("offset", String(offset));
+    if (take) p2.set("take", String(take));
+    const qs = p2.toString();
+    return api.get(`/capture/friends/${userId}/marked${qs ? `?${qs}` : ""}`);
+  },
   marked: ({ q = "", hasNote = false, colors = [], offset = 0, take } = {}) => {
     const p = new URLSearchParams();
     if (q) p.set("q", q);

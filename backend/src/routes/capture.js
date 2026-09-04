@@ -6,6 +6,7 @@ const captureService = require('../services/captureService');
 const songPrefService = require('../services/songPrefService');
 const songLibraryService = require('../services/songLibraryService');
 const markedSongsService = require('../services/markedSongsService');
+const prefShareService = require('../services/prefShareService');
 const { authMiddleware, requireApproved, requireActiveSession } = require('../middleware/auth');
 const captureAuth = require('../middleware/captureAuth');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
@@ -494,6 +495,64 @@ router.get('/marked', ...web, requireCaptureAddOn, async (req, res, next) => {
     const { q, hasNote, color, offset, take } = parsed.data;
     const colors = color == null ? [] : (Array.isArray(color) ? color : [color]);
     return res.json(await markedSongsService.search(req.user.id, {
+      query: q,
+      hasNote: hasNote === '1',
+      colors,
+      offset: offset || 0,
+      take,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+/**
+ * 好友标记分享。同一道唱卡加订门 —— 这些都是标记功能的延伸，新路由
+ * 自带自己的门（老规矩）。
+ */
+router.get('/mark-shares', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    res.json(await prefShareService.overview(req.user.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/mark-shares', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    res.json(await prefShareService.share(req.user.id, String((req.body || {}).toUserId || '')));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/mark-shares/:userId', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    res.json(await prefShareService.revoke(req.user.id, String(req.params.userId)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * 好友的已标记列表 —— 先查「他分享给我了吗」，通过则原样走
+ * markedSongsService，和本人的已标记 tab 同一条路、同一套参数。
+ * 取消分享后这里立刻 403 —— 权限每次现查，不缓存。
+ */
+router.get('/friends/:userId/marked', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const ownerId = String(req.params.userId);
+    if (!await prefShareService.canView(ownerId, req.user.id)) {
+      return res.status(403).json({ error: { message: '对方没有分享给你', status: 403 } });
+    }
+    const parsed = markedQuery.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: { message: '参数不合法' } });
+    }
+    const { q, hasNote, color, offset, take } = parsed.data;
+    const colors = color == null ? [] : (Array.isArray(color) ? color : [color]);
+    return res.json(await markedSongsService.search(ownerId, {
       query: q,
       hasNote: hasNote === '1',
       colors,

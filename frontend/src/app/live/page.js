@@ -28,6 +28,7 @@ import useAuth from "@/hooks/useAuth";
 import useCaptureStore from "@/store/captureStore";
 import useLivePlayer from "@/hooks/useLivePlayer";
 import LiveLyrics from "@/components/live/LiveLyrics";
+import FriendMarks from "@/components/live/FriendMarks";
 import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
@@ -1188,7 +1189,7 @@ export default function LivePage() {
       {/* A running game keeps running while the library is open: switching tabs
           hides the cards, it does not stop delivery. */}
       <div className="mb-4 flex items-center gap-1 border-b border-border">
-        {[["cards", "唱卡"], ["library", "标记"], ["marked", "已标记"]].map(([id, label]) => (
+        {[["cards", "唱卡"], ["library", "标记"], ["marked", "已标记"], ["friends", "好友标记"]].map(([id, label]) => (
           <button
             key={id}
             type="button"
@@ -1206,13 +1207,14 @@ export default function LivePage() {
 
       {/* 标记 / 已标记 read from gated routes, so a member without the add-on
           sees the same notice here rather than an empty list from a 403. */}
-      {(tab === "library" || tab === "marked") && !canCapture ? (
+      {(tab === "library" || tab === "marked" || tab === "friends") && !canCapture ? (
         <div className="rounded-xl border border-border bg-surface p-6 text-center text-sm text-muted">
           这是加订版功能，开通后即可搜索曲库、给歌曲标记。
         </div>
       ) : null}
       {tab === "library" && canCapture ? <SongLibrary /> : null}
       {tab === "marked" && canCapture ? <MarkedSongs /> : null}
+      {tab === "friends" && canCapture ? <FriendMarks /> : null}
 
       {error && (
         <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">

@@ -103,7 +103,14 @@ function MarkedRow({ row, expanded, onToggle, onSave }) {
   );
 }
 
-export default function MarkedSongs() {
+/**
+ * 好友视图复用同一个组件: 传 friendId 就只读地看那位好友的标记 ——
+ * 取数换到分享门后的接口, 行不可展开(编辑器是改自己的备注用的,
+ * 改别人的不存在这个操作)。其余一切 —— 搜索、过滤、分页、行的
+ * 长相 —— 和本人的已标记完全同款, 好友看到的就是你看到的。
+ */
+export default function MarkedSongs({ friendId = null }) {
+  const readOnly = Boolean(friendId);
   const [q, setQ] = useState("");
   const [hasNote, setHasNote] = useState(false);
   const [colors, setColors] = useState([]);   // selected hex filters
@@ -112,6 +119,7 @@ export default function MarkedSongs() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [openId, setOpenId] = useState(null);
+  // 只读视图永不展开行 —— openId 保持 null。
 
   // Drop out-of-order replies: changing a filter or typing fires overlapping
   // requests, and a slow early one landing last would show the wrong list.
@@ -122,7 +130,9 @@ export default function MarkedSongs() {
     setLoading(true);
     setError("");
     try {
-      const res = await captureAPI.marked({ ...params, offset, take: PAGE });
+      const res = friendId
+        ? await captureAPI.friendMarked(friendId, { ...params, offset, take: PAGE })
+        : await captureAPI.marked({ ...params, offset, take: PAGE });
       if (run !== runRef.current) return;
       setRows((prev) => (offset ? [...prev, ...res.data.rows] : res.data.rows));
       setNextOffset(res.data.nextOffset);
@@ -132,7 +142,7 @@ export default function MarkedSongs() {
     } finally {
       if (run === runRef.current) setLoading(false);
     }
-  }, []);
+  }, [friendId]);
 
   // Debounced on the query, immediate on the toggles: a keyword is typed a
   // character at a time and wants the 300ms wait, but clicking a colour is one
@@ -238,7 +248,7 @@ export default function MarkedSongs() {
               key={key}
               row={row}
               expanded={openId === key}
-              onToggle={() => setOpenId((cur) => (cur === key ? null : key))}
+              onToggle={readOnly ? undefined : () => setOpenId((cur) => (cur === key ? null : key))}
               onSave={save}
             />
           );

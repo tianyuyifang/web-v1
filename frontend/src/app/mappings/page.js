@@ -26,7 +26,10 @@ import UnconfiguredPanel from "@/components/mappings/UnconfiguredPanel";
 import PassagePanel from "@/components/mappings/PassagePanel";
 import useAuth from "@/hooks/useAuth";
 
-const BUCKETS = [
+// Two levels on purpose: 歌曲 and 歌词段落 are different subjects, and the
+// four song buckets are views of one subject. Flattening them into one bar put
+// 歌词段落 beside 待确认 as if it were a fifth bucket of songs, which it is not.
+const SONG_BUCKETS = [
   { key: "pending", label: "待确认", hint: "等待人工判断" },
   { key: "confirmed", label: "已确认", hint: "已批准，播放时直接使用" },
   { key: "unseen", label: "未遇见", hint: "已导入，但游戏里还没出现过" },
@@ -34,9 +37,6 @@ const BUCKETS = [
   // outward, so it is the only one that can show a gap. Its rows are game texts
   // rather than mapping rows, and it renders its own panel.
   { key: "unconfigured", label: "未配置", hint: "游戏里出现过，但曲库配不上" },
-  // Answers about passages of lyrics rather than about songs, so like 未配置
-  // it renders its own panel and is not a bucket of mapping rows.
-  { key: "passages", label: "歌词段落", hint: "游戏的歌词片段对应真实歌词哪几行" },
 ];
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
@@ -531,41 +531,73 @@ export default function MappingsPage() {
         </p>
       </header>
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        {BUCKETS.map((b) => (
-          <button
-            key={b.key}
-            type="button"
-            title={b.hint}
-            onClick={() => {
-              // Stop the audio: the row it belongs to is about to disappear
-              // from the list, and music playing over an unrelated tab is
-              // disorienting.
-              audioRef.current?.pause();
-              setPlaying(null);
-              setLoadedFor(null);
-              // The audition goes with the audio. It is keyed on a row id, and
-              // leaving it set would let 就是这个 on some later row commit a
-              // track nobody is listening to.
-              setAuditioning(null);
-              setRejecting(null);
-              setBucket(b.key);
-              setExpanded(null);
-              setNextCursor(null);
-            }}
-            className={`rounded-lg border px-3 py-2 text-sm transition ${
-              bucket === b.key
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border bg-surface text-muted hover:text-fg"
-            }`}
-          >
-            {b.label}
-            <span className="ml-2 rounded bg-black/20 px-1.5 py-0.5 text-xs tabular-nums">
-              {counts[b.key] ?? 0}
-            </span>
-          </button>
-        ))}
-      </div>
+      {(() => {
+        // One switch used by every navigation button: stop the audio (the row
+        // it belongs to is about to disappear, and music playing over an
+        // unrelated tab is disorienting), and drop everything keyed on a row
+        // id — the audition especially, or 就是这个 on some later row would
+        // commit a track nobody is listening to.
+        const switchTo = (key) => {
+          audioRef.current?.pause();
+          setPlaying(null);
+          setLoadedFor(null);
+          setAuditioning(null);
+          setRejecting(null);
+          setBucket(key);
+          setExpanded(null);
+          setNextCursor(null);
+        };
+        const group = bucket === "passages" ? "passages" : "songs";
+        return (
+          <>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {[
+                { key: "songs", label: "歌曲" },
+                { key: "passages", label: "歌词段落" },
+              ].map((g) => (
+                <button
+                  key={g.key}
+                  type="button"
+                  onClick={() => {
+                    if (g.key === group) return;
+                    switchTo(g.key === "passages" ? "passages" : "pending");
+                  }}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                    group === g.key
+                      ? "bg-accent text-white"
+                      : "bg-surface text-muted hover:text-fg"
+                  }`}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+
+            {group === "songs" && (
+              <div className="mb-4 flex flex-wrap gap-2">
+                {SONG_BUCKETS.map((b) => (
+                  <button
+                    key={b.key}
+                    type="button"
+                    title={b.hint}
+                    onClick={() => switchTo(b.key)}
+                    className={`rounded-lg border px-3 py-2 text-sm transition ${
+                      bucket === b.key
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "border-border bg-surface text-muted hover:text-fg"
+                    }`}
+                  >
+                    {b.label}
+                    <span className="ml-2 rounded bg-black/20 px-1.5 py-0.5 text-xs tabular-nums">
+                      {counts[b.key] ?? 0}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* 未配置 owns its whole body: its rows are game texts rather than
           mapping rows, it has its own search and its own actions, and it is

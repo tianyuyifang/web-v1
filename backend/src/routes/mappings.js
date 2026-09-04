@@ -337,6 +337,8 @@ router.get('/passages', requireMappingEditor, async (req, res, next) => {
       status: req.query.status,
       take: req.query.take,
       cursor: req.query.cursor,
+      // The approved tab's 「只看被报告的」 filter.
+      reportedOnly: req.query.reported === '1',
     }));
   } catch (err) {
     next(err);
@@ -347,6 +349,31 @@ router.get('/passages', requireMappingEditor, async (req, res, next) => {
 router.get('/passages/counts', requireMappingEditor, async (req, res, next) => {
   try {
     res.json(await passageReview.counts());
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/mappings/passages/report — a singer pressed 「段落点不准确」.
+ *
+ * Deliberately NOT behind requireMappingEditor: this is feedback from the
+ * people singing, and its audience is exactly the lyrics route's — the
+ * mount-level guard (authenticated, approved, active session) is the gate.
+ * It can only increment a counter or file an empty pending row; it can never
+ * change a status or an answer, so the write it allows is harmless.
+ */
+router.post('/passages/report', async (req, res, next) => {
+  try {
+    const { source, externalId, gameLyric } = req.body || {};
+    if (source !== 'QQ' && source !== 'NETEASE' && source !== 'LOCAL') {
+      return res.json({ ok: false });
+    }
+    res.json(await passages.report(
+      source,
+      String(externalId || ''),
+      String(gameLyric || '').slice(0, 2000),
+    ));
   } catch (err) {
     next(err);
   }

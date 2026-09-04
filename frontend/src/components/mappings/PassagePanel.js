@@ -39,6 +39,9 @@ export default function PassagePanel() {
   const [openId, setOpenId] = useState(null);
   // Edited answers, keyed by row id, as the raw text the reviewer typed.
   const [drafts, setDrafts] = useState({});
+  // The approved tab's 「只看被报告的」 filter. Off by default; reset when
+  // leaving the tab so it cannot silently narrow another one.
+  const [reportedOnly, setReportedOnly] = useState(false);
   // Only redirect on the very first load, never after the reviewer chooses.
   const firstLoad = useRef(false);
 
@@ -47,7 +50,7 @@ export default function PassagePanel() {
     setError(null);
     try {
       const [list, c] = await Promise.all([
-        mappingAPI.passages({ status, take: 50 }),
+        mappingAPI.passages({ status, take: 50, reported: status === 'approved' && reportedOnly }),
         mappingAPI.passageCounts(),
       ]);
       setItems(list.data.items || []);
@@ -65,7 +68,7 @@ export default function PassagePanel() {
     } finally {
       setLoading(false);
     }
-  }, [status]);
+  }, [status, reportedOnly]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -124,7 +127,7 @@ export default function PassagePanel() {
         // Removing it here would read as the row having been lost.
         setItems((prev) => prev.map((r) => (
           r.id === row.id
-            ? { ...r, answer: res.data.answer, status: res.data.status, verifiedBy: res.data.verifiedBy }
+            ? { ...r, answer: res.data.answer, status: res.data.status, verifiedBy: res.data.verifiedBy, reportCount: res.data.reportCount, lastReportedAt: res.data.lastReportedAt }
             : r
         )));
       } else {
@@ -161,7 +164,7 @@ export default function PassagePanel() {
           <button
             key={t.key}
             type="button"
-            onClick={() => { setStatus(t.key); setOpenId(null); }}
+            onClick={() => { setStatus(t.key); setOpenId(null); setReportedOnly(false); }}
             className={`rounded px-3 py-1.5 text-sm transition ${
               status === t.key
                 ? "bg-blue-600 text-white"
@@ -172,8 +175,28 @@ export default function PassagePanel() {
             <span className="ml-2 rounded bg-black/20 px-1.5 py-0.5 text-xs tabular-nums">
               {counts[t.key] ?? 0}
             </span>
+            {/* Approved rows singers are still reporting. Shown on the label so
+                a contested answer is visible without opening the tab. */}
+            {t.key === "approved" && (counts.reportedApproved || 0) > 0 && (
+              <span className="ml-1.5 rounded bg-red-500/20 px-1.5 py-0.5 text-xs text-red-500">
+                ⚠{counts.reportedApproved}
+              </span>
+            )}
           </button>
         ))}
+        {status === "approved" && (counts.reportedApproved || 0) > 0 && (
+          <button
+            type="button"
+            onClick={() => setReportedOnly((v) => !v)}
+            className={`rounded px-3 py-1.5 text-sm transition ${
+              reportedOnly
+                ? "bg-red-600 text-white"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+            }`}
+          >
+            只看被报告的
+          </button>
+        )}
       </div>
 
       {error && (
@@ -218,6 +241,13 @@ export default function PassagePanel() {
                       {row.verifiedBy === "human" && (
                         <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
                           人工
+                        </span>
+                      )}
+                      {(row.reportCount || 0) > 0 && (
+                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-red-700 dark:bg-red-900/60 dark:text-red-300">
+                          {row.status === "approved"
+                            ? `⚠ 已确认但仍被报告 ${row.reportCount} 次`
+                            : `报告 ${row.reportCount} 次`}
                         </span>
                       )}
                     </div>

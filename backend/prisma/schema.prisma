@@ -780,6 +780,13 @@ model LyricPassageMatch {
   /// Why this answer, or why no answer. Free text, shown in review.
   note        String?
 
+  /// How many times a singer pressed 「段落点不准确」 on this passage. The
+  /// review queue sorts by it, and an approved row it keeps counting on is
+  /// flagged rather than demoted — a stray tap must not undo a human answer.
+  /// Reset to 0 when a reviewer changes the answer or the status.
+  reportCount    Int       @default(0) @map("report_count")
+  lastReportedAt DateTime? @map("last_reported_at") @db.Timestamptz
+
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 

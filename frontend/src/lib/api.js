@@ -438,15 +438,19 @@ export const mappingAPI = {
 
   // Verified lyric-passage answers and their review queue. Editor-only, like
   // the rest of the review page.
-  passages: ({ status, take, cursor } = {}) => {
+  passages: ({ status, take, cursor, reported } = {}) => {
     const q = new URLSearchParams();
     if (status) q.set("status", status);
     if (take) q.set("take", String(take));
     if (cursor) q.set("cursor", cursor);
+    if (reported) q.set("reported", "1");
     const qs = q.toString();
     return api.get(`/mappings/passages${qs ? `?${qs}` : ""}`);
   },
   passageCounts: () => api.get("/mappings/passages/counts"),
+  // 「段落点不准确」— a singer's report from the live page; counts only,
+  // can never change an answer.
+  reportPassage: (body) => api.post("/mappings/passages/report", body),
   decidePassage: (id, body) => api.patch(`/mappings/passages/${id}`, body),
   // Same thing for a pool track nobody has claimed yet — you have to hear it
   // before you can say it is the right one.

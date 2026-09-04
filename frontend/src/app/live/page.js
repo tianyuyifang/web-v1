@@ -171,6 +171,11 @@ export default function LivePage() {
   const [openId, setOpenId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [playError, setPlayError] = useState("");
+  // Cards whose passage marks a singer has reported (by eventId), so the
+  // button flips to 已反馈 and cannot be tapped twice from the same card.
+  // Session-local on purpose: the report itself is deduplicated server-side
+  // by the passage's hash, so a second tap tomorrow just counts again.
+  const [reportedCards, setReportedCards] = useState(() => new Set());
   // Playback lives in the hook: it starts an <audio> element straight away and
   // decodes in the background, so a card makes sound in well under a second
   // while pitch shifting becomes available a moment later.
@@ -1438,6 +1443,35 @@ export default function LivePage() {
                                 <span className="shrink-0 font-mono text-[0.68rem] text-muted">
                                   {formatClock(current)} / {formatClock(duration)}
                                 </span>
+                                {/* 「段落点不准确」— the singer is the only one who can
+                                    see the marks against the song; a tap files
+                                    the passage into the review queue. Rendered
+                                    only when there is a passage to complain
+                                    about, and flips to a quiet acknowledgement
+                                    so it cannot be spammed from this card. */}
+                                {card.lyric && card.mapping?.source && card.mapping?.externalId && (
+                                  reportedCards.has(card.eventId) ? (
+                                    <span className="shrink-0 text-[0.65rem] text-muted">已反馈</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReportedCards((prev) => new Set(prev).add(card.eventId));
+                                        // Fire-and-forget: a lost report costs one
+                                        // tally, and blocking the singer mid-song
+                                        // on a feedback write would be backwards.
+                                        mappingAPI.reportPassage({
+                                          source: card.mapping.source,
+                                          externalId: card.mapping.externalId,
+                                          gameLyric: card.lyric,
+                                        }).catch(() => {});
+                                      }}
+                                      className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[0.65rem] text-muted hover:border-yellow-500/60 hover:text-yellow-500"
+                                    >
+                                      段落点不准确
+                                    </button>
+                                  )
+                                )}
                               </div>
 
                               <div className="mt-2 flex flex-wrap items-center gap-2">

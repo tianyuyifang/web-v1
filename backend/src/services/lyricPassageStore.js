@@ -154,4 +154,64 @@ async function getApproved(source, externalId, gameLyric, lineCount) {
   }
 }
 
-module.exports = { hashPassage, isUsable, getApproved, coveredLines, placementsOf };
+/**
+ * A singer pressed 「段落点不准确」 on this passage.
+ *
+ * Counting, not judging: the row's status is left alone. A report on an
+ * approved answer must not demote it — a stray tap would undo a human's work
+ * — so it only raises the count, and the review page flags the row for a
+ * person to look at. A passage never seen before becomes a pending row with
+ * an empty answer: nothing is proposed yet, and an empty answer can never be
+ * served (isUsable refuses it), so filing the report costs the page nothing.
+ *
+ * verifiedBy is 'report' on such rows: not the assistant's work, not a
+ * human's — provenance for the review page, overwritten the moment a
+ * reviewer decides.
+ */
+async function report(source, externalId, gameLyric) {
+  if (!source || !externalId || !gameLyric || !String(gameLyric).trim()) {
+    return { ok: false };
+  }
+  const key = {
+    source,
+    externalId: String(externalId),
+    lyricHash: hashPassage(gameLyric),
+  };
+  const bump = {
+    reportCount: { increment: 1 },
+    lastReportedAt: new Date(),
+  };
+  try {
+    await prisma.lyricPassageMatch.update({
+      where: { source_externalId_lyricHash: key }, data: bump,
+    });
+    return { ok: true };
+  } catch (err) {
+    if (err.code !== 'P2025') throw err;
+  }
+  try {
+    await prisma.lyricPassageMatch.create({
+      data: {
+        ...key,
+        gameLyric: String(gameLyric),
+        answer: [],
+        status: 'pending',
+        verifiedBy: 'report',
+        reportCount: 1,
+        lastReportedAt: new Date(),
+      },
+    });
+  } catch (err) {
+    // Two singers reporting the same new passage at once: the loser of the
+    // race just counts on the winner's row.
+    if (err.code !== 'P2002') throw err;
+    await prisma.lyricPassageMatch.update({
+      where: { source_externalId_lyricHash: key }, data: bump,
+    });
+  }
+  return { ok: true };
+}
+
+module.exports = {
+  hashPassage, isUsable, getApproved, coveredLines, placementsOf, report,
+};

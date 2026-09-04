@@ -254,10 +254,15 @@ export default function PassagePanel() {
                         </span>
                       )}
                       {(row.reportCount || 0) > 0 && (
-                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-red-700 dark:bg-red-900/60 dark:text-red-300">
+                        <span
+                          className="ml-2 cursor-help rounded bg-red-100 px-1.5 py-0.5 text-red-700 dark:bg-red-900/60 dark:text-red-300"
+                          title={(row.reporters || []).length
+                            ? `报告者: ${(row.reporters || []).map((r) => r.name || "?").join("、")}`
+                            : "早期报告未记名"}
+                        >
                           {row.status === "approved"
-                            ? `⚠ 已确认但仍被报告 ${row.reportCount} 次`
-                            : `报告 ${row.reportCount} 次`}
+                            ? `⚠ 已确认但仍被 ${row.reportCount} 人报告`
+                            : `${row.reportCount} 人报告`}
                         </span>
                       )}
                     </div>
@@ -294,6 +299,15 @@ export default function PassagePanel() {
 
                 {open && (
                   <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+                    {(row.reportCount || 0) > 0 && (
+                      // Hover 在手机上不存在, 展开时把名单直接摆出来。
+                      <p className="mb-2 text-xs text-red-600 dark:text-red-400">
+                        报告者：
+                        {(row.reporters || []).length
+                          ? (row.reporters || []).map((r) => r.name || "?").join("、")
+                          : "早期报告未记名"}
+                      </p>
+                    )}
                     <div className="max-h-72 overflow-y-auto rounded bg-gray-50 p-2 text-sm dark:bg-gray-900">
                       {row.realLines.length ? (
                         row.realLines.map((line, i) => (

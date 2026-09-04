@@ -168,7 +168,7 @@ async function getApproved(source, externalId, gameLyric, lineCount) {
  * human's — provenance for the review page, overwritten the moment a
  * reviewer decides.
  */
-async function report(source, externalId, gameLyric) {
+async function report(source, externalId, gameLyric, reporter) {
   if (!source || !externalId || !gameLyric || !String(gameLyric).trim()) {
     return { ok: false };
   }
@@ -177,9 +177,28 @@ async function report(source, externalId, gameLyric) {
     externalId: String(externalId),
     lyricHash: hashPassage(gameLyric),
   };
-  const bump = {
-    reportCount: { increment: 1 },
-    lastReportedAt: new Date(),
+  // Distinct people, not taps. The same person re-reporting (new device, a
+  // cleared localStorage) is acknowledged and ignored — three here means
+  // three different singers found the marks wrong. Names are snapshots for
+  // the reviewer's tooltip; the id is what dedupes. Capped so a row cannot
+  // grow without bound; past the cap the count keeps moving, names stop.
+  const who = reporter && reporter.id
+    ? { id: String(reporter.id), name: String(reporter.name || '').slice(0, 40) }
+    : null;
+  const listWith = (existing) => {
+    const list = Array.isArray(existing) ? existing : [];
+    if (!who) return { dup: false, list };
+    if (list.some((r) => r && r.id === who.id)) return { dup: true, list };
+    return { dup: false, list: list.length >= 50 ? list : [...list, who] };
+  };
+  const bumpFor = (row) => {
+    const { dup, list } = listWith(row.reporters);
+    if (dup) return null;
+    return {
+      reportCount: { increment: 1 },
+      lastReportedAt: new Date(),
+      reporters: list,
+    };
   };
   // An approved row is silently not counted. The page already hides the
   // button when a human-checked answer is in use, but hiding is only the UI:
@@ -188,16 +207,21 @@ async function report(source, externalId, gameLyric) {
   // true rather than merely invisible. ok:true on purpose — the client needs
   // nothing done differently, and an error would just be noise to retry.
   const existing = await prisma.lyricPassageMatch.findUnique({
-    where: { source_externalId_lyricHash: key }, select: { status: true },
+    where: { source_externalId_lyricHash: key },
+    select: { status: true, reporters: true },
   });
   if (existing && existing.status === 'approved') return { ok: true };
-  try {
-    await prisma.lyricPassageMatch.update({
-      where: { source_externalId_lyricHash: key }, data: bump,
-    });
+  if (existing) {
+    const data = bumpFor(existing);
+    if (!data) return { ok: true };
+    try {
+      await prisma.lyricPassageMatch.update({
+        where: { source_externalId_lyricHash: key }, data,
+      });
+    } catch (err) {
+      if (err.code !== 'P2025') throw err;
+    }
     return { ok: true };
-  } catch (err) {
-    if (err.code !== 'P2025') throw err;
   }
   try {
     await prisma.lyricPassageMatch.create({
@@ -209,15 +233,25 @@ async function report(source, externalId, gameLyric) {
         verifiedBy: 'report',
         reportCount: 1,
         lastReportedAt: new Date(),
+        reporters: who ? [who] : [],
       },
     });
   } catch (err) {
     // Two singers reporting the same new passage at once: the loser of the
-    // race just counts on the winner's row.
+    // race counts on the winner's row.
     if (err.code !== 'P2002') throw err;
-    await prisma.lyricPassageMatch.update({
-      where: { source_externalId_lyricHash: key }, data: bump,
+    const row = await prisma.lyricPassageMatch.findUnique({
+      where: { source_externalId_lyricHash: key },
+      select: { status: true, reporters: true },
     });
+    if (row && row.status !== 'approved') {
+      const data = bumpFor(row);
+      if (data) {
+        await prisma.lyricPassageMatch.update({
+          where: { source_externalId_lyricHash: key }, data,
+        }).catch(() => {});
+      }
+    }
   }
   return { ok: true };
 }

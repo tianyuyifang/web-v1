@@ -373,6 +373,9 @@ router.post('/passages/report', async (req, res, next) => {
       source,
       String(externalId || ''),
       String(gameLyric || '').slice(0, 2000),
+      // Who is reporting, for the reviewer's tooltip and per-person dedup.
+      // Mount-level auth guarantees req.user here.
+      { id: req.user.id, name: req.user.username },
     ));
   } catch (err) {
     next(err);

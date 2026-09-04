@@ -784,8 +784,16 @@ model LyricPassageMatch {
   /// review queue sorts by it, and an approved row it keeps counting on is
   /// flagged rather than demoted — a stray tap must not undo a human answer.
   /// Reset to 0 when a reviewer changes the answer or the status.
+  /// Distinct people, not taps: reporters are recorded below and a repeat
+  /// report from the same person is silently ignored, so 3 here means three
+  /// different singers found the marks wrong — a far stronger signal.
   reportCount    Int       @default(0) @map("report_count")
   lastReportedAt DateTime? @map("last_reported_at") @db.Timestamptz
+  /// Who reported: [{id, name}], deduped by id, capped at 50. Names are
+  /// snapshots for the reviewer's tooltip; the id is what dedupes. Shown only
+  /// behind requireMappingEditor. Pre-existing counts have no names — the
+  /// panel says so rather than pretending.
+  reporters      Json      @default("[]") @db.JsonB
 
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz

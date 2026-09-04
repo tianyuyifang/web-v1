@@ -93,11 +93,14 @@ const stamp = (ms) => {
   if (ALL) {
     // 病 = 存着纯文本(不论 fetchedAt, 历史导入有直接写词没打标的旧行),
     // 或问过且平台说没有。没问过又没词的不算 —— 那是还没播过, 不是病。
+    // wordLyric 用 JS 过滤: Prisma 的 where wordLyric:null 只匹配 DbNull,
+    // 历史行存的 JSON null 会漏网(实测漏掉 4 首纯文本老行)。
     const sick = (await prisma.importedTrack.findMany({
-      where: { wordLyric: null, source: { in: ['QQ', 'NETEASE'] } },
+      where: { source: { in: ['QQ', 'NETEASE'] } },
       select: { source: true, externalId: true, title: true, artist: true,
-        lyric: true, lyricFetchedAt: true },
-    })).filter((t) => (t.lyric && !hasStamp(t.lyric)) || (!t.lyric && t.lyricFetchedAt));
+        lyric: true, lyricFetchedAt: true, wordLyric: true },
+    })).filter((t) => !t.wordLyric
+      && ((t.lyric && !hasStamp(t.lyric)) || (!t.lyric && t.lyricFetchedAt)));
     if (sick.length) {
       console.log('');
       console.log('== 没法修(逐字也无, 平台两样都没给) ' + sick.length + ' 首 ==');

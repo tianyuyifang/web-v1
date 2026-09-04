@@ -294,6 +294,7 @@ function SweptLine({ text, progress }) {
 
 export default function LiveLyrics({
   mappingId, gameLyric, current, onSeek, onTimesChange, onPassageTimes,
+  onUsedVerified,
   override,
 }) {
   const [lrc, setLrc] = useState(null);
@@ -428,7 +429,10 @@ export default function LiveLyrics({
    * changed; falling back to the matcher is the safe reading of that, since an
    * answer one line out would highlight the wrong lines with full confidence.
    */
-  const places = useMemo(() => {
+  // places 之外还产出一个布尔: 这一刻标行用的是人工答案还是算法。
+  // 报告按钮只对算法标的段落有意义 —— 人工核过的藏掉它; 而人工答案
+  // 因行数对不上回退到算法时, 用户看到的是算法标的, 按钮就该回来。
+  const { places, usedVerified } = useMemo(() => {
     if (Array.isArray(verified)) {
       const lines = String(gameLyric || '')
         .split(/[\n\/]+/).map((l) => l.trim()).filter(Boolean);
@@ -445,10 +449,16 @@ export default function LiveLyrics({
       const flat = placementsOf(verified, lines.length)
         .filter((p) => p.length === lines.length)
         .map((p) => p.flatMap((v) => (Array.isArray(v) ? v : [v])));
-      if (flat.length && lines.length) return flat;
+      if (flat.length && lines.length) return { places: flat, usedVerified: true };
     }
-    return markPassage(gameLyric, parsed);
+    return { places: markPassage(gameLyric, parsed), usedVerified: false };
   }, [verified, gameLyric, parsed]);
+
+  // 上报给页面, 和 onPassageTimes 同款。
+  useEffect(() => {
+    if (!onUsedVerified) return;
+    onUsedVerified(usedVerified);
+  }, [usedVerified, onUsedVerified]);
   const marks = useMemo(() => {
     const s = new Set();
     for (const place of places) for (const i of place) if (i >= 0) s.add(i);

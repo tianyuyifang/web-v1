@@ -181,6 +181,16 @@ async function report(source, externalId, gameLyric) {
     reportCount: { increment: 1 },
     lastReportedAt: new Date(),
   };
+  // An approved row is silently not counted. The page already hides the
+  // button when a human-checked answer is in use, but hiding is only the UI:
+  // anyone talking to the endpoint directly could still inflate a counter on
+  // an answer a person verified. Refusing here makes 「已确认不能被报告」
+  // true rather than merely invisible. ok:true on purpose — the client needs
+  // nothing done differently, and an error would just be noise to retry.
+  const existing = await prisma.lyricPassageMatch.findUnique({
+    where: { source_externalId_lyricHash: key }, select: { status: true },
+  });
+  if (existing && existing.status === 'approved') return { ok: true };
   try {
     await prisma.lyricPassageMatch.update({
       where: { source_externalId_lyricHash: key }, data: bump,

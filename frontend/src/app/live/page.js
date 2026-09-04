@@ -171,11 +171,27 @@ export default function LivePage() {
   const [openId, setOpenId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [playError, setPlayError] = useState("");
-  // Cards whose passage marks a singer has reported (by eventId), so the
-  // button flips to 已反馈 and cannot be tapped twice from the same card.
-  // Session-local on purpose: the report itself is deduplicated server-side
-  // by the passage's hash, so a second tap tomorrow just counts again.
-  const [reportedCards, setReportedCards] = useState(() => new Set());
+  // Passages this device has reported, keyed source:externalId:lyric so the
+  // 已反馈 state survives a refresh and covers duplicate cards of the same
+  // passage. localStorage can be absent or full — both reads and writes are
+  // guarded, and losing it only means the button comes back.
+  const [reportedPassages, setReportedPassages] = useState(() => {
+    try {
+      const raw = localStorage.getItem('reportedPassages');
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch { return new Set(); }
+  });
+  // Two-tap confirm: the first tap arms this card for ~3s, the second files
+  // the report. A solid red button invites curious fingers; arming makes a
+  // stray tap cost nothing.
+  const [reportArmed, setReportArmed] = useState(null);
+  const reportArmTimer = useRef(null);
+  useEffect(() => () => clearTimeout(reportArmTimer.current), []);
+  // Whether the OPEN card's marks came from a human-checked answer. Reported
+  // up by LiveLyrics (it owns the if); human-checked passages hide the report
+  // button — there is no algorithm to complain about.
+  const [passageVerified, setPassageVerified] = useState(false);
+  const onUsedVerified = useCallback((v) => setPassageVerified(v), []);
   // Playback lives in the hook: it starts an <audio> element straight away and
   // decodes in the background, so a card makes sound in well under a second
   // while pitch shifting becomes available a moment later.
@@ -1378,6 +1394,7 @@ export default function LivePage() {
                                   onSeek={player.seek}
                                   onTimesChange={setLineTimes}
                                   onPassageTimes={onPassageTimes}
+                                  onUsedVerified={onUsedVerified}
                                 />
                               </div>
 
@@ -1489,14 +1506,43 @@ export default function LivePage() {
                                     there narrowed the scrub bar on phones.
                                     Flips to a quiet acknowledgement so it
                                     cannot be spammed from this card. */}
-                                {card.lyric && card.mapping?.source && card.mapping?.externalId && (
-                                  reportedCards.has(card.eventId) ? (
-                                    <span className="shrink-0 text-[0.65rem] text-muted">已反馈，待人工确认</span>
-                                  ) : (
+                                {card.lyric && card.mapping?.source && card.mapping?.externalId
+                                  && !passageVerified && (() => {
+                                  // Keyed on the passage, not the card: the same
+                                  // passage reappears as new cards across rounds,
+                                  // and 已反馈 should hold for all of them.
+                                  const pKey = `${card.mapping.source}:${card.mapping.externalId}:${card.lyric}`;
+                                  if (reportedPassages.has(pKey)) {
+                                    return <span className="shrink-0 text-[0.65rem] text-muted">已反馈，待人工确认</span>;
+                                  }
+                                  const armed = reportArmed === card.eventId;
+                                  return (
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        setReportedCards((prev) => new Set(prev).add(card.eventId));
+                                        if (!armed) {
+                                          // First tap only arms. A stray tap
+                                          // un-arms itself after 3s.
+                                          setReportArmed(card.eventId);
+                                          clearTimeout(reportArmTimer.current);
+                                          reportArmTimer.current = setTimeout(
+                                            () => setReportArmed(null), 3000,
+                                          );
+                                          return;
+                                        }
+                                        clearTimeout(reportArmTimer.current);
+                                        setReportArmed(null);
+                                        setReportedPassages((prev) => {
+                                          const next = new Set(prev).add(pKey);
+                                          // Bounded: oldest entries fall off, and
+                                          // a full or absent storage only means
+                                          // the button comes back after refresh.
+                                          try {
+                                            localStorage.setItem('reportedPassages',
+                                              JSON.stringify([...next].slice(-300)));
+                                          } catch { /* 存不了就算了 */ }
+                                          return next;
+                                        });
                                         // Fire-and-forget: a lost report costs one
                                         // tally, and blocking the singer mid-song
                                         // on a feedback write would be backwards.
@@ -1506,12 +1552,16 @@ export default function LivePage() {
                                           gameLyric: card.lyric,
                                         }).catch(() => {});
                                       }}
-                                      className="shrink-0 rounded bg-red-600 px-2.5 py-1 text-[0.68rem] font-medium text-white hover:bg-red-500"
+                                      className={`shrink-0 rounded px-2.5 py-1 text-[0.68rem] font-medium text-white ${
+                                        armed
+                                          ? "bg-red-500 ring-2 ring-red-300/60"
+                                          : "bg-red-600 hover:bg-red-500"
+                                      }`}
                                     >
-                                      段落点不准确
+                                      {armed ? "再点一次确认报告" : "段落点不准确"}
                                     </button>
-                                  )
-                                )}
+                                  );
+                                })()}
 
                                 {/* Pitch and tempo. Pitch appears only once the
                                     track is decoded, which is a second or two

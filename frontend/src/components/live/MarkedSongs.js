@@ -53,7 +53,8 @@ function MarkedRow({ row, expanded, onToggle, onSave }) {
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
+        disabled={!onToggle}
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left disabled:cursor-default"
       >
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap text-[0.82rem] leading-tight">

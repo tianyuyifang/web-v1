@@ -462,6 +462,15 @@ export const mappingAPI = {
     return api.get(`/mappings/passages${qs ? `?${qs}` : ""}`);
   },
   passageCounts: () => api.get("/mappings/passages/counts"),
+  // 唱卡集: 浏览所有见过的段落, 与审核无关。
+  passageCatalogue: ({ q = "", offset = 0, take } = {}) => {
+    const p3 = new URLSearchParams();
+    if (q) p3.set("q", q);
+    if (offset) p3.set("offset", String(offset));
+    if (take) p3.set("take", String(take));
+    const qs = p3.toString();
+    return api.get(`/mappings/passages/catalogue${qs ? `?${qs}` : ""}`);
+  },
   // 「段落点不准确」— a singer's report from the live page; counts only,
   // can never change an answer.
   reportPassage: (body) => api.post("/mappings/passages/report", body),

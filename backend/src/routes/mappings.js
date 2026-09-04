@@ -345,6 +345,22 @@ router.get('/passages', requireMappingEditor, async (req, res, next) => {
   }
 });
 
+/**
+ * GET /api/mappings/passages/catalogue — 唱卡集: browse every passage ever seen.
+ * Read-only, unrelated to the review queue. Search by game name via ?q=.
+ */
+router.get('/passages/catalogue', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await passageReview.catalogue({
+      q: req.query.q,
+      offset: req.query.offset,
+      take: req.query.take,
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** GET /api/mappings/passages/counts — the queue badge. */
 router.get('/passages/counts', requireMappingEditor, async (req, res, next) => {
   try {

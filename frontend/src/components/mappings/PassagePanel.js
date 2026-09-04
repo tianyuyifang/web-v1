@@ -5,6 +5,7 @@ import { mappingAPI } from "@/lib/api";
 // Shared with the 唱卡 page: both must read an answer the same way, or the page
 // marks lines the reviewer never approved.
 import { entryLines, placementsOf } from "@/lib/passageAnswer";
+import CataloguePanel from "./CataloguePanel";
 
 /** How a placement is written in the box: 63+64,65,66 */
 function placementText(place) {
@@ -46,6 +47,7 @@ export default function PassagePanel() {
   const firstLoad = useRef(false);
 
   const load = useCallback(async () => {
+    if (status === 'catalogue') { setLoading(false); return; }
     setLoading(true);
     setError(null);
     try {
@@ -157,6 +159,8 @@ export default function PassagePanel() {
     { key: "ai_reviewed", label: "AI语义校对" },
     { key: "approved", label: "已确认" },
     { key: "unmatchable", label: "无法匹配" },
+    // 浏览用, 与审核无关 —— 选中时整块换成 CataloguePanel。
+    { key: "catalogue", label: "唱卡集" },
   ];
 
   return (
@@ -180,9 +184,11 @@ export default function PassagePanel() {
             }`}
           >
             {t.label}
-            <span className="ml-2 rounded bg-black/20 px-1.5 py-0.5 text-xs tabular-nums">
-              {counts[t.key] ?? 0}
-            </span>
+            {t.key !== "catalogue" && (
+              <span className="ml-2 rounded bg-black/20 px-1.5 py-0.5 text-xs tabular-nums">
+                {counts[t.key] ?? 0}
+              </span>
+            )}
             {/* Approved rows singers are still reporting. Shown on the label so
                 a contested answer is visible without opening the tab. */}
             {t.key === "approved" && (counts.reportedApproved || 0) > 0 && (
@@ -207,6 +213,10 @@ export default function PassagePanel() {
         )}
       </div>
 
+      {status === "catalogue" ? (
+        <CataloguePanel />
+      ) : (
+      <>
       {error && (
         <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
           {error}
@@ -241,6 +251,10 @@ export default function PassagePanel() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
+                    <div className="mb-0.5 text-sm font-medium text-gray-800 dark:text-gray-100">
+                      {row.gameTitle || "（未匹配歌曲）"}
+                      {row.gameArtist ? <span className="text-gray-500"> — {row.gameArtist}</span> : null}
+                    </div>
                     <div className="mb-1 text-xs text-gray-500">
                       {row.source} · {row.externalId}
                       {places.length > 1 && (
@@ -395,6 +409,8 @@ export default function PassagePanel() {
             );
           })}
         </ul>
+      )}
+      </>
       )}
     </div>
   );

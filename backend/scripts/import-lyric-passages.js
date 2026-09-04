@@ -27,7 +27,7 @@ const {
   hashPassage, isUsable, coveredLines, placementsOf,
 } = require('../src/services/lyricPassageStore');
 
-const STATUSES = new Set(['approved', 'pending', 'unmatchable']);
+const STATUSES = new Set(['approved', 'pending', 'unmatchable', 'ai_reviewed']);
 const SOURCES = new Set(['LOCAL', 'QQ', 'NETEASE']);
 
 /** How the page will split this passage — must match LiveLyrics.js exactly. */
@@ -41,7 +41,7 @@ function check(entry, i) {
   if (!SOURCES.has(entry.source)) return `${at} source must be LOCAL|QQ|NETEASE, got ${entry.source}`;
   if (!entry.externalId) return `${at} externalId missing`;
   if (!entry.gameLyric || !String(entry.gameLyric).trim()) return `${at} gameLyric empty`;
-  if (!STATUSES.has(entry.status)) return `${at} status must be approved|pending|unmatchable`;
+  if (!STATUSES.has(entry.status)) return `${at} status must be approved|pending|unmatchable|ai_reviewed`;
   if (!Array.isArray(entry.answer)) return `${at} answer must be an array`;
 
   // Length, shape and contiguity all come from the store, so the importer and
@@ -72,7 +72,7 @@ function check(entry, i) {
   if (entry.status === 'unmatchable' && placed.length) {
     return `${at} unmatchable rows must not point anywhere`;
   }
-  if (entry.status === 'approved' && !placed.length) {
+  if ((entry.status === 'approved' || entry.status === 'ai_reviewed') && !placed.length) {
     return `${at} an approved answer that places nothing is unmatchable, not approved`;
   }
   return null;

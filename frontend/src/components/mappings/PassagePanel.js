@@ -30,7 +30,7 @@ function placementText(place) {
 export default function PassagePanel() {
   const [status, setStatus] = useState("pending");
   const [items, setItems] = useState([]);
-  const [counts, setCounts] = useState({ pending: 0, approved: 0, unmatchable: 0 });
+  const [counts, setCounts] = useState({ pending: 0, ai_reviewed: 0, approved: 0, unmatchable: 0 });
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState(null);
@@ -61,7 +61,10 @@ export default function PassagePanel() {
       if (!firstLoad.current) {
         firstLoad.current = true;
         const n = c.data || {};
-        if (status === 'pending' && !n.pending && n.approved) setStatus('approved');
+        if (status === 'pending' && !n.pending) {
+          if (n.ai_reviewed) setStatus('ai_reviewed');
+          else if (n.approved) setStatus('approved');
+        }
       }
     } catch (err) {
       setError(err.response?.data?.error?.message || "读取失败");
@@ -148,6 +151,10 @@ export default function PassagePanel() {
 
   const TABS = [
     { key: "pending", label: "待确认" },
+    // The assistant's confident answers wait here for a person. Not served to
+    // the page until a reviewer moves them to approved — until then the
+    // passage keeps running the matcher, exactly as if this tab did not exist.
+    { key: "ai_reviewed", label: "AI语义校对" },
     { key: "approved", label: "已确认" },
     { key: "unmatchable", label: "无法匹配" },
   ];
@@ -156,7 +163,8 @@ export default function PassagePanel() {
     <div className="space-y-4">
       <p className="text-sm text-gray-500 dark:text-gray-400">
         游戏给的歌词片段，对应真实歌词的哪几行。只有「已确认」的会被唱卡页使用；
-        其余一律沿用原本的自动匹配，不影响任何人。
+        其余（含 AI 语义校对）一律沿用自动匹配，不影响任何人。
+        AI 校对结果逐条看一眼、点「确认」即生效；拿不准的可退回或标无法匹配。
       </p>
 
       <div className="flex flex-wrap gap-2">
@@ -211,9 +219,11 @@ export default function PassagePanel() {
         <p className="text-sm text-gray-500">
           {status === "pending"
             ? "没有待确认的片段。"
-            : status === "approved"
-              ? "还没有确认过的片段。"
-              : "没有标记为无法匹配的片段。"}
+            : status === "ai_reviewed"
+              ? "没有等待审核的 AI 校对结果。对助手说「语义校对 待确认 歌词段落」可以发起一轮。"
+              : status === "approved"
+                ? "还没有确认过的片段。"
+                : "没有标记为无法匹配的片段。"}
         </p>
       ) : (
         <ul className="space-y-3">

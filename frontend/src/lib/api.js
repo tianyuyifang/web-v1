@@ -459,6 +459,10 @@ export const mappingAPI = {
   // because deleting a pool track takes every mapping that names it.
   rejectImpact: (id) => api.get(`/mappings/${id}/reject-impact`),
   reject: (id, body = {}) => api.post(`/mappings/${id}/reject`, body),
+  // The unseen tab's rows are pool tracks with no mapping; same cascade, keyed
+  // by the track's own id.
+  poolRejectImpact: (id) => api.get(`/mappings/pool/${id}/reject-impact`),
+  poolReject: (id) => api.post(`/mappings/pool/${id}/reject`),
 
   // 未配置 — songs the game showed that nothing answers. Recomputed on every
   // read, so the numbers move as the catalogue and the artist list change.

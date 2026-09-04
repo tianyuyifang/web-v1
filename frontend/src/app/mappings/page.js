@@ -460,8 +460,12 @@ export default function MappingsPage() {
     setBusy(`reject:${row.id}`);
     setError("");
     try {
-      const res = await mappingAPI.rejectImpact(row.id);
-      setRejecting({ rowId: row.id, ...res.data });
+      // An unseen row is a pool track with no mapping; its impact comes from
+      // the track's own id, through the same cascade.
+      const res = row.kind === "imported"
+        ? await mappingAPI.poolRejectImpact(row.id)
+        : await mappingAPI.rejectImpact(row.id);
+      setRejecting({ rowId: row.id, isPool: row.kind === "imported", ...res.data });
     } catch (err) {
       setError(err.response?.data?.error?.message || "无法读取删除影响");
     } finally {
@@ -471,13 +475,18 @@ export default function MappingsPage() {
   }, [rejecting]);
 
   const confirmReject = (row) => act(
-    () => mappingAPI.reject(row.id, { deleteTrack: true }),
+    () => (row.kind === "imported"
+      ? mappingAPI.poolReject(row.id)
+      : mappingAPI.reject(row.id, { deleteTrack: true })),
     row.id,
     () => {
       setRows((prev) => prev.filter((r) => r.id !== row.id));
       setRejecting(null);
       setExpanded(null);
       setAuditioning((prev) => (prev?.rowId === row.id ? null : prev));
+      if (row.kind === "imported") {
+        setCounts((prev) => ({ ...prev, unseen: Math.max(0, (prev.unseen || 0) - 1) }));
+      }
     },
   );
 
@@ -749,6 +758,16 @@ export default function MappingsPage() {
                     认领
                   </button>
                 )}
+                {row.kind === "imported" && (
+                  <button
+                    type="button"
+                    onClick={() => startReject(row)}
+                    disabled={busy === `reject:${row.id}`}
+                    className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                  >
+                    {busy === `reject:${row.id}` ? "…" : "删除"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => toggleExpand(row)}
@@ -848,7 +867,7 @@ export default function MappingsPage() {
                       ? `${rejecting.track.title} — ${rejecting.track.artist}`
                       : "（曲库里已无此条目）"}
                   </span>
-                  并删除这条映射。
+                  {rejecting.isPool ? "。" : "并删除这条映射。"}
                 </p>
                 {/* A pool track keyed on (source, id) can be named by more than
                     one mapping. Those go too, and saying so afterwards would be

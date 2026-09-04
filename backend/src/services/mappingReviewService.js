@@ -387,6 +387,79 @@ async function rejectImpact(id) {
 }
 
 /**
+ * What deleting an unseen pool track would take with it.
+ *
+ * The unseen tab lists pool rows the game has never claimed, so by definition
+ * there should be no mappings to lose — but the count is read rather than
+ * assumed, because a row can be claimed between the page loading and the
+ * button being pressed, and a dialog that says "nothing else is affected"
+ * must be telling the truth at the moment it is shown.
+ */
+async function poolRejectImpact(trackId) {
+  const track = await prisma.importedTrack.findUnique({ where: { id: trackId } });
+  if (!track) throw new NotFoundError('Track');
+
+  const mappings = await prisma.songMapping.findMany({
+    where: { source: track.source, externalId: track.externalId },
+    select: { id: true, rawTitle: true, rawArtist: true, approved: true },
+  });
+
+  return {
+    track: {
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      source: track.source,
+      externalId: track.externalId,
+    },
+    otherMappings: mappings.map((o) => ({
+      id: o.id,
+      title: o.rawTitle,
+      artist: o.rawArtist,
+      approved: o.approved,
+    })),
+  };
+}
+
+/**
+ * Delete a pool track from the unseen tab — the same effect as "不是这首",
+ * reached from the track instead of from a mapping.
+ *
+ * The cascade is reject()'s, kept in step deliberately: every mapping naming
+ * the track goes (defensively — an unseen row has none unless it was claimed
+ * after the page loaded), and the singers' saved keys go with the recording,
+ * inside the same transaction for the same reason as there.
+ *
+ * No re-resolve afterwards, unlike reject(): reject just unmapped a game song
+ * and answers what it maps to now, but an unseen track was never asked about
+ * by the game, so there is nothing to re-answer. If a claim did race in, the
+ * next capture of that game song runs the ordinary lookup anyway.
+ */
+async function poolReject(trackId) {
+  const outcome = await prisma.$transaction(async (tx) => {
+    const track = await tx.importedTrack.findUnique({ where: { id: trackId } });
+    if (!track) return null;
+
+    const orphaned = await tx.songMapping.deleteMany({
+      where: { source: track.source, externalId: track.externalId },
+    });
+    await tx.importedTrack.delete({ where: { id: track.id } });
+    const prefsRemoved = await songPrefs.forgetTracks(
+      { source: track.source, externalId: track.externalId }, tx
+    );
+
+    return {
+      trackDeleted: true,
+      mappingsRemoved: orphaned.count,
+      prefsRemoved: prefsRemoved.count,
+    };
+  });
+
+  if (!outcome) throw new NotFoundError('Track');
+  return outcome;
+}
+
+/**
  * "不是这首" — this recording should not be in the catalogue at all.
  *
  * Distinct from picking a different candidate: that repoints a mapping and
@@ -601,6 +674,8 @@ module.exports = {
   remove,
   rejectImpact,
   reject,
+  poolRejectImpact,
+  poolReject,
   createFromTrack,
   markSeen,
   releaseIfUnclaimed,

@@ -887,6 +887,33 @@ router.delete('/:id', requireMappingEditor, async (req, res, next) => {
 });
 
 /**
+ * GET /api/mappings/pool/:id/reject-impact — what deleting an unseen pool
+ * track would destroy. POST /api/mappings/pool/:id/reject does it.
+ *
+ * The unseen tab's rows are pool tracks with no mapping, so "不是这首" has
+ * nothing to hang off; these two reach the same cascade from the track's own
+ * id. Three path segments, so they cannot collide with any of the /:id
+ * family. Same guard as every other mutating route here — the gate is per
+ * route on purpose, and a new route brings its own.
+ */
+router.get('/pool/:id/reject-impact', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await svc.poolRejectImpact(String(req.params.id)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/pool/:id/reject', requireMappingEditor, async (req, res, next) => {
+  try {
+    const result = await svc.poolReject(String(req.params.id));
+    res.json({ ...result, counts: await svc.getCounts() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/mappings/:id/reject-impact — what "不是这首" would destroy.
  *
  * Read-only, and asked before the confirmation is shown: deleting a pool track

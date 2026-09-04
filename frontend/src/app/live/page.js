@@ -1443,35 +1443,6 @@ export default function LivePage() {
                                 <span className="shrink-0 font-mono text-[0.68rem] text-muted">
                                   {formatClock(current)} / {formatClock(duration)}
                                 </span>
-                                {/* 「段落点不准确」— the singer is the only one who can
-                                    see the marks against the song; a tap files
-                                    the passage into the review queue. Rendered
-                                    only when there is a passage to complain
-                                    about, and flips to a quiet acknowledgement
-                                    so it cannot be spammed from this card. */}
-                                {card.lyric && card.mapping?.source && card.mapping?.externalId && (
-                                  reportedCards.has(card.eventId) ? (
-                                    <span className="shrink-0 text-[0.65rem] text-muted">已反馈</span>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setReportedCards((prev) => new Set(prev).add(card.eventId));
-                                        // Fire-and-forget: a lost report costs one
-                                        // tally, and blocking the singer mid-song
-                                        // on a feedback write would be backwards.
-                                        mappingAPI.reportPassage({
-                                          source: card.mapping.source,
-                                          externalId: card.mapping.externalId,
-                                          gameLyric: card.lyric,
-                                        }).catch(() => {});
-                                      }}
-                                      className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[0.65rem] text-muted hover:border-yellow-500/60 hover:text-yellow-500"
-                                    >
-                                      段落点不准确
-                                    </button>
-                                  )
-                                )}
                               </div>
 
                               <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1509,6 +1480,38 @@ export default function LivePage() {
                                 >
                                   +1s
                                 </button>
+
+                                {/* 「段落点不准确」— the singer is the only one
+                                    who can see the marks against the song; a
+                                    tap files the passage into the review queue.
+                                    Lives in this wrapping row, not the seek
+                                    row: that one cannot wrap, and a button
+                                    there narrowed the scrub bar on phones.
+                                    Flips to a quiet acknowledgement so it
+                                    cannot be spammed from this card. */}
+                                {card.lyric && card.mapping?.source && card.mapping?.externalId && (
+                                  reportedCards.has(card.eventId) ? (
+                                    <span className="shrink-0 text-[0.65rem] text-muted">已反馈，待人工确认</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReportedCards((prev) => new Set(prev).add(card.eventId));
+                                        // Fire-and-forget: a lost report costs one
+                                        // tally, and blocking the singer mid-song
+                                        // on a feedback write would be backwards.
+                                        mappingAPI.reportPassage({
+                                          source: card.mapping.source,
+                                          externalId: card.mapping.externalId,
+                                          gameLyric: card.lyric,
+                                        }).catch(() => {});
+                                      }}
+                                      className="shrink-0 rounded border border-border px-2 py-1 text-[0.68rem] text-muted hover:border-yellow-500/60 hover:text-yellow-500"
+                                    >
+                                      段落点不准确
+                                    </button>
+                                  )
+                                )}
 
                                 {/* Pitch and tempo. Pitch appears only once the
                                     track is decoded, which is a second or two

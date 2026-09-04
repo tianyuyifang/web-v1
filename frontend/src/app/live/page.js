@@ -29,6 +29,7 @@ import useCaptureStore from "@/store/captureStore";
 import useLivePlayer from "@/hooks/useLivePlayer";
 import LiveLyrics from "@/components/live/LiveLyrics";
 import FriendMarks from "@/components/live/FriendMarks";
+import { LADDER_TINT } from "@/components/live/ladderStyle";
 import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
@@ -1554,10 +1555,12 @@ export default function LivePage() {
                                           gameLyric: card.lyric,
                                         }).catch(() => {});
                                       }}
-                                      className={`shrink-0 rounded px-2.5 py-1 text-[0.68rem] font-medium text-white ${
+                                      // 变调变速选中键的同款配方(共享常量,
+                                      // 换主题跟着走); 上膣态加 ring 以示区别。
+                                      className={`shrink-0 rounded border px-2.5 py-1 text-[0.68rem] font-medium text-accent ${LADDER_TINT} ${
                                         armed
-                                          ? "bg-red-500 ring-2 ring-red-300/60"
-                                          : "bg-red-600 hover:bg-red-500"
+                                          ? "border-accent ring-2 ring-accent/40"
+                                          : "border-accent hover:border-accent/70"
                                       }`}
                                     >
                                       {armed ? "再点一次确认报告" : "段落点不准确"}

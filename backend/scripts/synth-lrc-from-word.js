@@ -91,11 +91,13 @@ const stamp = (ms) => {
 
   // 表明出来: 问过平台、有病、但逐字也没有 —— 没法合成的, 别默默略过。
   if (ALL) {
+    // 病 = 存着纯文本(不论 fetchedAt, 历史导入有直接写词没打标的旧行),
+    // 或问过且平台说没有。没问过又没词的不算 —— 那是还没播过, 不是病。
     const sick = (await prisma.importedTrack.findMany({
-      where: { lyricFetchedAt: { not: null }, wordLyric: null,
-        source: { in: ['QQ', 'NETEASE'] } },
-      select: { source: true, externalId: true, title: true, artist: true, lyric: true },
-    })).filter((t) => !t.lyric || !hasStamp(t.lyric));
+      where: { wordLyric: null, source: { in: ['QQ', 'NETEASE'] } },
+      select: { source: true, externalId: true, title: true, artist: true,
+        lyric: true, lyricFetchedAt: true },
+    })).filter((t) => (t.lyric && !hasStamp(t.lyric)) || (!t.lyric && t.lyricFetchedAt));
     if (sick.length) {
       console.log('');
       console.log('== 没法修(逐字也无, 平台两样都没给) ' + sick.length + ' 首 ==');

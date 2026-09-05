@@ -7,11 +7,6 @@ import { mappingAPI } from "@/lib/api";
 import { entryLines, placementsOf } from "@/lib/passageAnswer";
 import CataloguePanel from "./CataloguePanel";
 
-/** How a placement is written in the box: 63+64,65,66 */
-function placementText(place) {
-  return place.map((v) => (Array.isArray(v) ? v.join('+') : v)).join(',');
-}
-
 /**
  * The queue of proposed lyric-passage answers.
  *
@@ -39,8 +34,7 @@ export default function PassagePanel() {
   // lines and several expanded at once is unreadable.
   const [openId, setOpenId] = useState(null);
   // Edited answers, keyed by row id, as the raw text the reviewer typed.
-  const [drafts, setDrafts] = useState({});
-  // 首末快填草稿(每行「首-末」), 优先于逐行 drafts。
+  // 标注草稿: 每行一处「首-末」。没编辑过就用下面算好的 rangeText。
   const [flDrafts, setFlDrafts] = useState({});
   // 待删除确认的行 id(点一次亮确认, 再点才删)
   const [confirmDelId, setConfirmDelId] = useState(null);
@@ -86,7 +80,6 @@ export default function PassagePanel() {
     setError(null);
     try {
       const fl = flDrafts[row.id];
-      const raw = drafts[row.id];
       // Only send an answer when the reviewer actually edited one; otherwise the
       // stored answer stands and only the status changes.
       let answer;
@@ -104,44 +97,6 @@ export default function PassagePanel() {
         }
         if (!ranges.length) { setError("首末不能为空"); return; }
         answer = { ranges };
-      } else if (raw !== undefined && next !== "unmatchable") {
-        // Checked here rather than left to the server, because half-typed text
-        // is the ordinary state of an input: a trailing comma, or a pause after
-        // one, parses to NaN and came back as an unexplained failure.
-        // One line per occurrence. Within a line: one entry per game line,
-        // comma separated; an entry may be several line numbers joined by "+",
-        // for where the platform wrote as two lines what the game showed as one
-        // — 「你是一只飞鸟飞上我的树梢」 is 「你是一只飞鸟」 plus 「飞上我的树梢」.
-        const blocks = raw.split(/\n+/).map((b) => b.trim()).filter(Boolean);
-        const parsedPlaces = blocks.map((block) => block
-          .split(",").map((s) => s.trim()).filter((s) => s !== "")
-          .map((part) => {
-            const nums = part.split("+").map((s) => Number(s.trim()));
-            return nums.length === 1 ? nums[0] : nums;
-          }));
-
-        for (let bi = 0; bi < parsedPlaces.length; bi += 1) {
-          const place = parsedPlaces[bi];
-          const where = parsedPlaces.length > 1 ? `第 ${bi + 1} 处：` : "";
-          const flat = place.flat();
-          if (flat.some((n) => !Number.isInteger(n) || n < -1)) {
-            setError(`${where}只能是整数，逗号分隔；一行对应多行时用 + 连接，如 63+64`);
-            return;
-          }
-          if (place.length !== row.gameLines.length) {
-            setError(`${where}要有 ${row.gameLines.length} 项，现在是 ${place.length} 项`);
-            return;
-          }
-          // Each occurrence is sung as a run, so its own lines must be adjacent.
-          // The gaps between occurrences are the verses in between, and are fine.
-          const covered = [...new Set(flat.filter((n) => n >= 0))].sort((a, b) => a - b);
-          if (covered.length && covered[covered.length - 1] - covered[0] !== covered.length - 1) {
-            setError(`${where}标到了 ${covered.join(",")}，中间断开了。一段词是连着唱的，行号必须连续`);
-            return;
-          }
-        }
-        if (!parsedPlaces.length) { setError("答案不能为空"); return; }
-        answer = parsedPlaces.length === 1 ? parsedPlaces[0] : parsedPlaces;
       }
       const res = await mappingAPI.decidePassage(row.id, {
         status: next, ...(answer ? { answer } : {}),
@@ -162,7 +117,6 @@ export default function PassagePanel() {
           [next]: (prev[next] || 0) + 1,
         }));
       }
-      setDrafts((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
       setFlDrafts((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
     } catch (err) {
       setError(err.response?.data?.error?.message || "保存失败");
@@ -282,6 +236,27 @@ export default function PassagePanel() {
             // 展开时那片黄正是算法当前标的, 一眼看出错在哪。
             const answerMarks = places.flatMap((pl) => pl.flatMap(entryLines));
             const marked = new Set(answerMarks.length ? answerMarks : (row.algoGuess || []).flat());
+
+            /**
+             * 输入框里预先填好的「首-末」, 每处一行。
+             *
+             * 有答案就是那个答案, 没有就用算法当前的猜测 —— 待确认行的
+             * answer 基本都是空的, 而算法其实已经算出了位置。以前这猜测只
+             * 拿去给歌词标黄底, 输入框留空, 于是画面上「黄底标着两处、右边
+             * 每行却写(不标)」自相矛盾, 审核还得照着黄底把数字自己敲一遍。
+             *
+             * 现在直接填进去: 算法对就点确认, 错就改那两个数字。
+             */
+            const rangeSource = answerMarks.length
+              ? places.map((pl) => pl.flatMap(entryLines))
+              : (row.algoGuess || []);
+            const rangeText = rangeSource
+              .map((g) => {
+                const ns = [...new Set(g)].filter((n) => n >= 0).sort((a, b) => a - b);
+                return ns.length ? ns[0] + "-" + ns[ns.length - 1] : null;
+              })
+              .filter(Boolean)
+              .join("\n");
             return (
               <li
                 key={row.id}
@@ -331,7 +306,14 @@ export default function PassagePanel() {
                               ? entryLines(answer[i])
                                 .map((n) => `[${n}] ${row.realLines[n] ?? "(超出范围)"}`)
                                 .join(" + ")
-                              : "(不标)"}
+                              : (
+                                // 答案确实写了不标才说不标。待确认行的答案
+                                // 是空的, 一律写「(不标)」会和上面按算法猜测
+                                // 标出的黄底对不上, 看着像坏了。
+                                <span className="text-gray-400">
+                                  {answerMarks.length ? "(不标)" : "(待标注)"}
+                                </span>
+                              )}
                           </span>
                         </li>
                       ))}
@@ -391,27 +373,19 @@ export default function PassagePanel() {
                       )}
                     </div>
                     <label className="mt-2 block text-xs font-medium text-emerald-700 dark:text-emerald-400">
-                      首末标注：一行一处，写「首行-末行」（如 14-20）；副歌多处就写多行。
-                      中间行按连续性自动补齐，只需首末。
+                      标注：一行一处，写「首行-末行」（如 14-20）；副歌唱几遍就写几行。
+                      中间行按连续性自动补齐，只要首末两个数字。
+                      {!answerMarks.length && rangeText && (
+                        <span className="ml-1 font-normal text-gray-500">
+                          （下面是算法的猜测，对就直接确认，错就改）
+                        </span>
+                      )}
                       <textarea
-                        rows={2}
+                        rows={Math.max(2, rangeText.split("\n").length)}
                         placeholder={"14-20"}
-                        value={flDrafts[row.id] ?? ""}
+                        value={flDrafts[row.id] ?? rangeText}
                         onChange={(e) => setFlDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))}
                         className="mt-1 w-full rounded border border-emerald-400 px-2 py-1 font-mono text-sm dark:border-emerald-600 dark:bg-gray-900"
-                      />
-                    </label>
-                    <label className="mt-3 block text-xs text-gray-500">
-                      改答案：一行写一处，每个游戏行一项、逗号分隔；
-                      一句对应真实歌词多行时用 + 连接（如 63+64）；-1 表示不标。
-                      副歌唱几遍就写几行。
-                      <textarea
-                        rows={Math.max(2, places.length + 1)}
-                        defaultValue={places.map(placementText).join("\n")}
-                        onChange={(e) =>
-                          setDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))
-                        }
-                        className="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-600 dark:bg-gray-900"
                       />
                     </label>
                   </div>

@@ -797,6 +797,7 @@ async function resolveLyrics(source, externalId, res, { withWords = false, extra
     const platform = source === 'QQ' ? qq : netease;
     let r;
     let word = null;
+    let chorusMs = null;
     try {
       // The fetch is allowed to throw through the store, so a platform outage
       // is not written down as "this song has no lyrics" — that would be
@@ -810,10 +811,17 @@ async function resolveLyrics(source, externalId, res, { withWords = false, extra
       // a song without them stays without them until the backfill runs again,
       // rather than reaching for the platform mid-song.
       if (withWords) {
-        word = await prisma.importedTrack.findFirst({
+        const row = await prisma.importedTrack.findFirst({
           where: { source, externalId },
-          select: { wordLyric: true },
-        }).then((t) => t?.wordLyric || null).catch(() => null);
+          select: { wordLyric: true, chorusMs: true },
+        }).catch(() => null);
+        word = row?.wordLyric || null;
+        // The chorus point rides along on the same read rather than earning a
+        // request of its own — it is wanted by exactly the caller that asks
+        // for word timings (the 唱卡 page, drawing it as a green dot) and by
+        // the same row this already has in hand. Null is ordinary: a song the
+        // backfill has not reached, or one the platform has no chorus for.
+        chorusMs = row?.chorusMs ?? null;
       }
     } catch (err) {
       // Being throttled is the one failure that must not read as "no lyrics".
@@ -834,7 +842,7 @@ async function resolveLyrics(source, externalId, res, { withWords = false, extra
     // The field appears only when it was asked for, so a caller that did not
     // ask sees exactly the response it always saw.
     return res.json(withWords
-      ? { lyric: r.lyric, translation: r.translation, wordLyric: word, ...(extra || {}) }
+      ? { lyric: r.lyric, translation: r.translation, wordLyric: word, chorusMs, ...(extra || {}) }
       : { lyric: r.lyric, translation: r.translation, ...(extra || {}) });
   }
   // LOCAL clips have their own lyrics route; anything else has none to give.

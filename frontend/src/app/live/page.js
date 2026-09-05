@@ -362,6 +362,20 @@ export default function LivePage() {
     });
   }, []);
 
+  /**
+   * Where the chorus starts, seconds into the song.
+   *
+   * Beside the passage times rather than folded into them because the two are
+   * known at different moments and mean different things: the yellow dots need
+   * a game card and say "sing this now", the green one is known the moment the
+   * song is and only says "the hook is here". Same guard against re-rendering
+   * on every lyric re-parse.
+   */
+  const [chorusTime, setChorusTime] = useState(null);
+  const onChorusTime = useCallback((t) => {
+    setChorusTime((prev) => (prev === t ? prev : t));
+  }, []);
+
   const batches = useMemo(() => toBatches(cards), [cards]);
 
   /**
@@ -972,6 +986,7 @@ export default function LivePage() {
     // The marks belong to the song being closed; the next card's lyrics are a
     // fetch away, and stale marks would sit on the new song's transport.
     setPassageTimes([]);
+    setChorusTime(null);
     if (openId === card.eventId) {
       setOpenId(null);
       return;
@@ -1401,6 +1416,7 @@ export default function LivePage() {
                                   onSeek={player.seek}
                                   onTimesChange={setLineTimes}
                                   onPassageTimes={onPassageTimes}
+                                  onChorusTime={onChorusTime}
                                   onUsedVerified={onUsedVerified}
                                 />
                               </div>
@@ -1453,6 +1469,30 @@ export default function LivePage() {
                                       to hit reliably — the snap makes landing near
                                       it enough, so the dots no longer need to
                                       catch the click themselves. */}
+                                  {/* The chorus, as the platform marked it.
+
+                                      Drawn before the yellow dots so they paint
+                                      over it, and dropped outright when one is
+                                      within five seconds: yellow is the passage
+                                      actually being sung, green only a hint at
+                                      where the hook is, and two dots a breath
+                                      apart read as a bug rather than as two
+                                      facts. Five seconds is deliberately wide —
+                                      losing a green dot costs nothing, showing
+                                      one that contradicts the yellow costs the
+                                      singer a glance at the wrong place.
+
+                                      Unlike the yellow dots this needs no card:
+                                      it is known as soon as the song is, which
+                                      is the whole point of it. */}
+                                  {duration > 0 && chorusTime !== null
+                                    && !passageTimes.some((t) => Math.abs(t - chorusTime) < 5) && (
+                                    <div
+                                      aria-hidden="true"
+                                      className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background bg-emerald-500"
+                                      style={{ left: `${Math.min(100, (chorusTime / duration) * 100)}%` }}
+                                    />
+                                  )}
                                   {duration > 0 && passageTimes.map((t, i) => (
                                     <div
                                       key={t}

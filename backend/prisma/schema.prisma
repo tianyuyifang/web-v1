@@ -704,6 +704,34 @@ model ImportedTrack {
   /// already been asked.
   wordLyricFetchedAt DateTime? @map("word_lyric_fetched_at") @db.Timestamptz
 
+  /// Where the chorus starts, in milliseconds from the top of the song.
+  ///
+  /// The 唱卡 progress bar draws it as a green dot, so a singer can see the
+  /// hook coming before any card has been matched — it is known the moment the
+  /// song is known, unlike the yellow passage dots which need a game card.
+  ///
+  /// Backfilled in bulk from a laptop, never from the server. NetEase answers
+  /// `/api/song/chorus` with no credential at all, which means it leaves over
+  /// the one IP every user shares — the same trap the lyric fetch fell into at
+  /// 7.2 requests a second. QQ's number rides along in the search response but
+  /// needs a personal cookie, so that one is a signed-in account's risk rather
+  /// than the server's. Both are static per recording: fetched once, kept
+  /// forever, and the page only ever reads this column.
+  ///
+  /// The two platforms mean slightly different things by it. NetEase runs a
+  /// chorus detector and returns the hook; QQ reports `file.try_begin`, the
+  /// start of the clip it lets non-members preview, which it cuts at the hook
+  /// but not always exactly. NetEase is the more accurate of the two where
+  /// both exist; each recording keeps whichever its own platform gave.
+  chorusMs        Int?      @map("chorus_ms")
+  /// When the chorus point was last asked for, answered or not.
+  ///
+  /// Its own clock for the same reason `wordLyricFetchedAt` has one: null
+  /// means never asked, so a backfill can resume where it stopped, and a song
+  /// the platform has no chorus for (instrumentals, mostly) is not asked about
+  /// again on every run.
+  chorusFetchedAt DateTime? @map("chorus_fetched_at") @db.Timestamptz
+
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
   /// Re-importing the same playlist updates rows instead of duplicating them.

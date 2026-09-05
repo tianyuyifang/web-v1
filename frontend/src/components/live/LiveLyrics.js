@@ -62,10 +62,18 @@ function SweptLine({ text, progress }) {
 
 export default function LiveLyrics({
   mappingId, gameLyric, current, onSeek, onTimesChange, onPassageTimes,
-  onUsedVerified,
+  onUsedVerified, onChorusTime,
   override,
 }) {
   const [lrc, setLrc] = useState(null);
+  /**
+   * Where the platform says the chorus starts, in milliseconds.
+   *
+   * Known as soon as the song is known — it rides along on the lyric response
+   * and needs no game card, which is exactly what makes it worth drawing: the
+   * singer sees the hook coming before the passage has been matched.
+   */
+  const [chorusMs, setChorusMs] = useState(null);
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef(null);
   const activeRef = useRef(null);
@@ -115,7 +123,7 @@ export default function LiveLyrics({
     // to have the same line count it would survive the length check and mark
     // the wrong lines until the fresh one lands. The matcher covers the gap.
     if (!sameSong) {
-      setLrc(null); setWords(null);
+      setLrc(null); setWords(null); setChorusMs(null);
       setLoading(true);
     }
     setVerified(null);
@@ -135,6 +143,9 @@ export default function LiveLyrics({
         // Absent for most NetEase tracks and a handful of QQ ones. The sweep
         // falls back to an even pace rather than disappearing.
         setWords(res.data.wordLyric || null);
+        // Null for a song the backfill has not reached, or one the platform
+        // has no chorus for. Either way the page simply draws no green dot.
+        setChorusMs(Number.isFinite(res.data.chorusMs) ? res.data.chorusMs : null);
         // Absent unless this passage has a checked answer — see `verified`.
         const pm = res.data.passageMatch;
         setVerified((Array.isArray(pm) || isRangeAnswer(pm)) ? pm : null);
@@ -271,6 +282,38 @@ export default function LiveLyrics({
     if (!onPassageTimes) return;
     onPassageTimes(placeTimes);
   }, [placeTimes, onPassageTimes]);
+
+  /**
+   * The chorus, snapped onto the line it starts.
+   *
+   * The platforms report a moment, not a line, and it lands a beat either side
+   * of the words: measured over thirty songs, every one fell within 2.5s of a
+   * lyric line and most within one. Left raw the dot sits mid-phrase and reads
+   * as a mistake, so it moves to the nearest line inside that window — the same
+   * 2.5s the offline backfill uses, and the reason the number is not larger is
+   * that a wider window starts capturing the *next* line instead.
+   *
+   * Outside the window it stays where the platform put it: better a dot a
+   * second off than one moved to the wrong phrase. Untimed lyrics report the
+   * raw position too, since there are no lines to snap to.
+   */
+  const chorusTime = useMemo(() => {
+    if (!Number.isFinite(chorusMs) || chorusMs <= 0) return null;
+    const raw = chorusMs / 1000;
+    if (!timed || !parsed.length) return raw;
+    let best = null;
+    for (const line of parsed) {
+      const t = line?.time;
+      if (!Number.isFinite(t) || t < 0) continue;
+      if (best === null || Math.abs(t - raw) < Math.abs(best - raw)) best = t;
+    }
+    return best !== null && Math.abs(best - raw) <= 2.5 ? best : raw;
+  }, [chorusMs, parsed, timed]);
+
+  useEffect(() => {
+    if (!onChorusTime) return;
+    onChorusTime(chorusTime);
+  }, [chorusTime, onChorusTime]);
 
   /**
    * Put a line in the middle of the lyric box.

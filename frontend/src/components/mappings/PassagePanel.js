@@ -33,7 +33,6 @@ export default function PassagePanel() {
   // Which row is open. Only one at a time: the real lyrics run to dozens of
   // lines and several expanded at once is unreadable.
   const [openId, setOpenId] = useState(null);
-  // Edited answers, keyed by row id, as the raw text the reviewer typed.
   // 标注草稿: 每行一处「首-末」。没编辑过就用下面算好的 rangeText。
   const [flDrafts, setFlDrafts] = useState({});
   // 待删除确认的行 id(点一次亮确认, 再点才删)
@@ -255,10 +254,12 @@ export default function PassagePanel() {
              * 每行却写(不标)」自相矛盾, 审核还得照着黄底把数字自己敲一遍。
              *
              * 现在直接填进去: 算法对就点确认, 错就改那两个数字。
+             *
+             * 已经有答案的行留空。首末是有损的 —— [[11,12],[13,14]] 这种
+             * 一句对两句的答案压成 "11-14", 存回去就变四个游戏行, -1 也
+             * 会丢。而已确认那一栏住的正是这些答案。留空就碰不到它们。
              */
-            const rangeSource = answerMarks.length
-              ? places.map((pl) => pl.flatMap(entryLines))
-              : (row.algoGuess || []);
+            const rangeSource = answerMarks.length ? [] : (row.algoGuess || []);
             const rangeText = rangeSource
               .map((g) => {
                 const ns = [...new Set(g)].filter((n) => n >= 0).sort((a, b) => a - b);
@@ -390,7 +391,7 @@ export default function PassagePanel() {
                         </span>
                       )}
                       <textarea
-                        rows={Math.max(2, rangeText.split("\n").length)}
+                        rows={Math.max(2, rangeText.split("\n").length + 1)}
                         placeholder={"14-20"}
                         value={flDrafts[row.id] ?? rangeText}
                         onChange={(e) => setFlDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))}
@@ -431,7 +432,7 @@ export default function PassagePanel() {
                     <button
                       type="button"
                       disabled={busyId === row.id}
-                      onClick={() => decide(row, "unmatchable", rangeText)}
+                      onClick={() => decide(row, "unmatchable")}
                       className="rounded bg-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-300 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-200"
                     >
                       无法匹配

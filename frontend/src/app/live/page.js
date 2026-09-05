@@ -1447,15 +1447,21 @@ export default function LivePage() {
                                     // joins the same contest rather than getting
                                     // a rule of its own.
                                     //
-                                    // It goes first in the list, not last: the
-                                    // test below is `d <= best`, so on an exact
-                                    // tie the later entry wins, and a yellow dot
-                                    // should take that. Yellow is the passage
-                                    // being sung; green is only where the hook
-                                    // is. A tie needs a click landing exactly
-                                    // midway between the two, which is rare —
-                                    // but the tie-break should still fall the
-                                    // right way when it happens.
+                                    // Their catch ranges do overlap: two dots
+                                    // compete whenever they are under 2×snapSec
+                                    // apart (~38s on a 300px bar holding a
+                                    // four-minute song), and green is only
+                                    // suppressed within 20s of a yellow one.
+                                    // That is fine — nearest still wins, so a
+                                    // click always lands on whichever dot it is
+                                    // genuinely closer to.
+                                    //
+                                    // Green goes first in the list, not last:
+                                    // the test below is `d <= best`, so on an
+                                    // exact tie the later entry wins, and a
+                                    // yellow dot should take that. Yellow is the
+                                    // passage being sung; green is only where
+                                    // the hook is.
                                     const targets = chorusTime === null
                                       ? passageTimes
                                       : [chorusTime, ...passageTimes];

@@ -237,29 +237,32 @@ async function syncCatalogue() {
    *
    * Two admins opening the tab together would otherwise both read "never
    * synced", both count the whole log, and both add it — measured: 28314
-   * events became 56628. The read of the watermark and the write of it are
-   * separate statements, so the row itself cannot be the lock.
+   * events became 56628, and `seen` is a running total so nothing later
+   * corrects it. The read of the watermark and the write of it are separate
+   * statements, so the row itself cannot serve as the lock.
    *
-   * pg_advisory_lock is a lock on a number, not on any table: it serialises
+   * pg_advisory_xact_lock locks a number rather than any table: it serialises
    * this function and touches nothing else, so captures keep being written
    * while it is held. The second admin waits out the first sync (~5ms once
-   * warm) and then finds the watermark already moved, so there is nothing
-   * left to count. Released in the finally below — a session-level advisory
-   * lock outlives the transaction and would otherwise leak on the first
-   * error and block every later sync.
+   * warm) and then finds the watermark already moved, with nothing left to
+   * count.
+   *
+   * The transaction-scoped variant, not the session one, because the client
+   * pools connections: a session-level lock and its unlock can be handed
+   * different connections, and an unlock from a session that does not hold it
+   * silently returns false, leaking the lock until that connection is
+   * recycled. An xact lock is released by the commit or rollback itself, so
+   * there is nothing to leak and no unlock to get wrong.
    */
   const LOCK_KEY = 8123401; // arbitrary, unique to this job
-  await prisma.$executeRawUnsafe('SELECT pg_advisory_lock($1)', LOCK_KEY);
-  try {
-    await syncCatalogueLocked();
-  } finally {
-    await prisma.$executeRawUnsafe('SELECT pg_advisory_unlock($1)', LOCK_KEY)
-      .catch(() => {});
-  }
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock($1)', LOCK_KEY);
+    await syncCatalogueLocked(tx);
+  }, { timeout: 120000 });
 }
 
-async function syncCatalogueLocked() {
-  const mark = await prisma.passageCatalogueSync.findUnique({ where: { id: 'singleton' } });
+async function syncCatalogueLocked(db) {
+  const mark = await db.passageCatalogueSync.findUnique({ where: { id: 'singleton' } });
   const since = mark?.syncedAt || null;
   // 现在时刻先取下来, 拿它当这次的水位。用 now() 会把同步期间新到的事件也算进
   // 水位里, 而它们未必进了这次的 GROUP BY, 下次就再也数不到了。
@@ -278,7 +281,7 @@ async function syncCatalogueLocked() {
     conds.push(`created_at > $${params.length}`);
   }
 
-  await prisma.$executeRawUnsafe(`
+  await db.$executeRawUnsafe(`
     INSERT INTO passage_catalogue (id, raw_text, lyric, seen, first_seen, last_seen)
     SELECT gen_random_uuid(), raw_text, lyric, COUNT(*)::int,
            MIN(created_at), MAX(created_at)
@@ -291,7 +294,7 @@ async function syncCatalogueLocked() {
           last_seen = GREATEST(passage_catalogue.last_seen, EXCLUDED.last_seen)
   `, ...params);
 
-  await prisma.passageCatalogueSync.upsert({
+  await db.passageCatalogueSync.upsert({
     where: { id: 'singleton' },
     create: { id: 'singleton', syncedAt: now },
     update: { syncedAt: now },
@@ -327,7 +330,10 @@ async function catalogue({ q = '', offset = 0, take = 40 } = {}) {
   const rows = await prisma.passageCatalogue.findMany({
     where,
     select: { rawText: true, lyric: true, seen: true },
-    orderBy: [{ seen: 'desc' }, { lastSeen: 'desc' }],
+    // rawText 兜底, 让顺序完全确定。前两个键本来就有, 但 seen 从「30 天内的
+    // 次数」变成累计值之后, 一大批段落会稳定停在 seen=1, 并列比以前多得多 ——
+    // 而 OFFSET 分页遇到并列顺序不定, 同一行会在两页里出现或者被跳过。
+    orderBy: [{ seen: 'desc' }, { lastSeen: 'desc' }, { rawText: 'asc' }],
     skip,
     take: limit + 1,
   });

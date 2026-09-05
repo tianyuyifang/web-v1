@@ -298,7 +298,13 @@ export default function LiveLyrics({
    * raw position too, since there are no lines to snap to.
    */
   const chorusTime = useMemo(() => {
-    if (!Number.isFinite(chorusMs) || chorusMs <= 0) return null;
+    // Under a second is not a chorus — the earliest real one measured across
+    // 6830 songs is 1057ms. The bound is really a unit check: if a platform
+    // ever reports seconds where this expects milliseconds, every value lands
+    // here and the dot simply stops appearing, which is obvious. Without it
+    // the same mistake would park every dot at the far left of the bar and
+    // still snap to the first lyric, looking plausible and being wrong.
+    if (!Number.isFinite(chorusMs) || chorusMs < 1000) return null;
     const raw = chorusMs / 1000;
     if (!timed || !parsed.length) return raw;
     let best = null;

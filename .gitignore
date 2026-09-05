@@ -31,3 +31,11 @@ backups/
 /*.xlsx
 backend/scripts/chorus.b64.txt
 backend/scripts/*.b64.txt
+
+# 副歌点回填的中间产物 —— 一次性的，尤其 qq_cookie.txt 是个人账号凭证。
+# fetch-chorus-offline.js 默认在当前工作目录读写这三个，而它的文档用法是在
+# backend/ 里跑，也就是仓库内。忽略掉，免得哪次 git add -A 把 cookie 提上去。
+qq_cookie.txt
+qq_cookie_raw.tsv
+chorus-results.json
+need-chorus.json

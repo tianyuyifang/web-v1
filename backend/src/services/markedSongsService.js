@@ -120,18 +120,33 @@ async function search(userId, {
   params.push(skip);
   const skipParam = `$${params.length}`;
 
+  // DISTINCT ON collapses the join's one-to-many: one platform recording can be
+  // claimed by several approved mappings (the same song under different game
+  // names — one recording is filed as both 蒋志光/韦绮姗 and 蒋志光, and 82
+  // recordings across the catalogue carry more than one). Without this each such
+  // pref came back once per mapping, so a singer saw the same marked song two or
+  // three times. The mappings are left as they are — this only decides which one
+  // labels the row: the most recently updated, for a stable choice.
+  //
+  // Inner query de-dups per recording; the outer keeps display order and paging,
+  // because DISTINCT ON has to order by its own key first.
   const sql = `
-    SELECT sp.source, sp.external_id, sp.note, sp.color_tag, sp.pitch, sp.speed,
-           m.id            AS mapping_id,
-           m.raw_title, m.raw_artist,
-           m.platform_title, m.platform_artist, m.duration_sec
-      FROM song_prefs sp
-      LEFT JOIN song_mappings m
-        ON m.source = sp.source
-       AND m.external_id = sp.external_id
-       AND m.approved = TRUE
-     WHERE ${conds.join('\n       AND ')}
-     ORDER BY sp.updated_at DESC, sp.external_id ASC
+    SELECT * FROM (
+      SELECT DISTINCT ON (sp.source, sp.external_id)
+             sp.source, sp.external_id, sp.note, sp.color_tag, sp.pitch, sp.speed,
+             sp.updated_at,
+             m.id            AS mapping_id,
+             m.raw_title, m.raw_artist,
+             m.platform_title, m.platform_artist, m.duration_sec
+        FROM song_prefs sp
+        LEFT JOIN song_mappings m
+          ON m.source = sp.source
+         AND m.external_id = sp.external_id
+         AND m.approved = TRUE
+       WHERE ${conds.join('\n         AND ')}
+       ORDER BY sp.source, sp.external_id, m.updated_at DESC NULLS LAST
+    ) d
+     ORDER BY d.updated_at DESC, d.external_id ASC
      LIMIT ${takeParam} OFFSET ${skipParam}`;
 
   const rows = await prisma.$queryRawUnsafe(sql, ...params);

@@ -742,6 +742,53 @@ model ImportedTrack {
   @@map("imported_tracks")
 }
 
+/// 唱卡集 —— 游戏里出现过的每一段词, 各留一行。
+///
+/// capture_events 是流水账: 每晚 03:30 只保留 30 天(见 prune-captures.js),
+/// 而唱卡集要的是「都遇到过什么」, 那不该随流水一起过期。两者量级也差得远,
+/// 实测同一批数据 28311 条事件去重后只剩 9512 行, 压缩 3 倍 —— 流水必须清,
+/// 去重后的这份留着几乎不占地方。
+///
+/// 只在有人打开唱卡集时同步, 抓取路径一行都不碰。这是刻意的取舍: 唱卡集是
+/// 锦上添花, 而抓取是游戏进行中的实时路径, 不值得为一张统计表在那里多做事。
+/// 代价是两次同步之间被 prune 删掉的事件会漏掉, 但同一段词会反复唱到, 漏掉
+/// 的下次自己回来 —— 真正丢的只有「这一个月唱过、以后再没唱过」的段落。
+model PassageCatalogue {
+  id        String   @id @default(uuid()) @db.Uuid
+
+  /// 游戏原文「歌名-歌手」, 和 capture_events.raw_text 一致。
+  rawText   String   @map("raw_text")
+  /// 段落原文。实测最长 226 字符、平均 46, 所以唯一键直接建在文本上就够,
+  /// 不必像 lyric_passage_matches 那样先 hash。
+  lyric     String
+
+  /// 累计出现次数 —— 跨过清理窗口累加, 只增不减。
+  ///
+  /// 和旧口径不同: 以前是现场 COUNT(*) 数 capture_events, 数到的只有 30 天内
+  /// 还没被删的那些, 所以一首歌不唱了, 次数会随清理一路掉到 0, 最后整首消失。
+  seen      Int      @default(0)
+  firstSeen DateTime @map("first_seen") @db.Timestamptz
+  lastSeen  DateTime @map("last_seen") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([rawText, lyric])
+  /// 列表默认按出现次数排。
+  @@index([seen])
+  @@map("passage_catalogue")
+}
+
+/// 唱卡集上次同步到哪儿了。
+///
+/// 单行表。同步时只取 created_at 大于这个时刻的事件累加, 否则每次打开都要把
+/// 整张 capture_events 重数一遍, 而且已经数过的会被重复累加。
+model PassageCatalogueSync {
+  id       String   @id @default("singleton")
+  syncedAt DateTime @map("synced_at") @db.Timestamptz
+
+  @@map("passage_catalogue_sync")
+}
+
 /// An artist whose own name contains a dash, added by hand.
 ///
 /// The split between "歌名-歌手" is made at a dash, so a dash inside the

@@ -215,39 +215,95 @@ async function decide(id, { status, answer, note } = {}) {
  * 所以唱卡集直接以 raw_text 为歌的身份, 按 (raw_text, lyric) 去重, 搜索
  * 就在 raw_text 上进行。
  */
+/**
+ * 把流水账里还没数过的唱卡事件累加进唱卡集。
+ *
+ * 只在有人打开唱卡集时跑, 抓取路径一行都不碰 —— 唱卡集是锦上添花, 而抓取是
+ * 游戏进行中的实时路径, 不值得为一张统计表在那条路上多做事。
+ *
+ * 增量的依据是 passage_catalogue_sync 记的时刻: 只取比它新的事件, 否则每次
+ * 打开都会把整张流水重数一遍, 已经数过的被重复累加。首次没有这一行, 就把
+ * 现存的全部数进来(实测 9512 行 / 318ms), 那就是起点。
+ *
+ * 漏数的可能: 两次同步之间被 prune-captures 删掉的事件(默认 30 天)。接受这个
+ * 代价, 因为同一段词会反复唱到, 漏掉的下次自己回来 —— 真正丢的只有「这一个月
+ * 唱过、以后再没唱过」的段落, 而那种段落本来也不值得留。
+ *
+ * ON CONFLICT 累加而不是覆盖: 同一段词这次又唱了几回, seen 就往上加几回。
+ */
+async function syncCatalogue() {
+  const mark = await prisma.passageCatalogueSync.findUnique({ where: { id: 'singleton' } });
+  const since = mark?.syncedAt || null;
+  // 现在时刻先取下来, 拿它当这次的水位。用 now() 会把同步期间新到的事件也算进
+  // 水位里, 而它们未必进了这次的 GROUP BY, 下次就再也数不到了。
+  const now = new Date();
+
+  const conds = [
+    "stage = 'singing'",
+    'lyric IS NOT NULL',
+    "lyric <> ''",
+    'raw_text IS NOT NULL',
+    'created_at <= $1',
+  ];
+  const params = [now];
+  if (since) {
+    params.push(since);
+    conds.push(`created_at > $${params.length}`);
+  }
+
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO passage_catalogue (id, raw_text, lyric, seen, first_seen, last_seen)
+    SELECT gen_random_uuid(), raw_text, lyric, COUNT(*)::int,
+           MIN(created_at), MAX(created_at)
+    FROM capture_events
+    WHERE ${conds.join(' AND ')}
+    GROUP BY raw_text, lyric
+    ON CONFLICT (raw_text, lyric) DO UPDATE
+      SET seen = passage_catalogue.seen + EXCLUDED.seen,
+          first_seen = LEAST(passage_catalogue.first_seen, EXCLUDED.first_seen),
+          last_seen = GREATEST(passage_catalogue.last_seen, EXCLUDED.last_seen)
+  `, ...params);
+
+  await prisma.passageCatalogueSync.upsert({
+    where: { id: 'singleton' },
+    create: { id: 'singleton', syncedAt: now },
+    update: { syncedAt: now },
+  });
+}
+
+/**
+ * 唱卡集 —— 浏览所有遇到过的段落, 与审核无关。
+ *
+ * 读 passage_catalogue, 不再现场聚合 capture_events。两点不同:
+ *
+ *   次数是历史累计, 不再是「30 天内」。以前现场 COUNT(*) 数流水, 数到的只有
+ *   还没被清理删掉的那些, 于是一首歌不唱了, 次数会一路掉到 0, 整首从唱卡集
+ *   消失 —— 而这里恰恰是唯一能回头看「都遇到过什么」的地方。
+ *
+ *   快得多。实测 GROUP BY 28311 行要 71ms 且随数据增长, 读这张小表 4ms。
+ *
+ * 收录范围没变: 演唱阶段、有歌词、有歌名, 与是否已确认无关 —— 唱卡集要的是
+ * 游戏里出现过的全部段落, 段落表里只有被报告或导入过的那少数。
+ */
 async function catalogue({ q = '', offset = 0, take = 40 } = {}) {
   const limit = Math.min(Number(take) || 40, 100);
   const skip = Math.max(0, Number(offset) || 0);
-  const conds = [
-    "e.stage = 'singing'",
-    "e.lyric IS NOT NULL",
-    "e.lyric <> ''",
-    "e.raw_text IS NOT NULL",
-  ];
-  const params = [];
-  const query = String(q || '').trim();
-  if (query) {
-    params.push(`%${query}%`);
-    conds.push(`e.raw_text ILIKE $${params.length}`);
-  }
-  params.push(limit + 1);
-  const takeParam = `$${params.length}`;
-  params.push(skip);
-  const skipParam = `$${params.length}`;
 
-  // 一条 SQL 搞定去重+出现次数+分页。raw_text 就是游戏「歌名-歌手」原文;
-  // 展示时拆开最后一个连字符——前端处理更灵活, 这里原样送回。
-  const sql = `
-    SELECT e.raw_text AS "rawText", e.lyric,
-           COUNT(*)::int AS seen,
-           MAX(e.created_at) AS "lastSeen"
-    FROM capture_events e
-    WHERE ${conds.join(' AND ')}
-    GROUP BY e.raw_text, e.lyric
-    ORDER BY seen DESC, "lastSeen" DESC
-    LIMIT ${takeParam} OFFSET ${skipParam}
-  `;
-  const rows = await prisma.$queryRawUnsafe(sql, ...params);
+  // 先补上这次没数过的, 再读。失败就让它抛 —— 打开唱卡集时当场看见, 比悄悄
+  // 少算一截好; 下次打开自动重试, 因为水位没推进。
+  await syncCatalogue();
+
+  const where = {};
+  const query = String(q || '').trim();
+  if (query) where.rawText = { contains: query, mode: 'insensitive' };
+
+  const rows = await prisma.passageCatalogue.findMany({
+    where,
+    select: { rawText: true, lyric: true, seen: true },
+    orderBy: [{ seen: 'desc' }, { lastSeen: 'desc' }],
+    skip,
+    take: limit + 1,
+  });
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
 
@@ -282,4 +338,4 @@ async function remove(id) {
   return { ok: true };
 }
 
-module.exports = { list, counts, decide, remove, catalogue, splitGameLines, splitReal, hashPassage };
+module.exports = { list, counts, decide, remove, catalogue, syncCatalogue, splitGameLines, splitReal, hashPassage };

@@ -50,6 +50,11 @@ async function listUsers() {
   // needs no separate row here. Login time is deliberately left out — it lives
   // in an activeSessions JSON blob and means "came back", not "used something".
   //
+  // bandwidth_logs 只精确到天, 所以它那一行读的是「那天结束时, 但不晚于此刻」。
+  // 读成当天 00:00 的话, 一个今天注册、今天就在听的人会显示成快一天前 ——
+  // 差的正是当天已经过去的时间。这张表也不能不看: 有 88 个用户只有它一个
+  // 活动来源, 少了它他们会显示成从没用过。
+  //
   // Each table is aggregated to one row per user in its OWN subquery BEFORE the
   // join. Joining the raw tables and grouping afterwards multiplies rows across
   // tables (a user with 100 clips and 50 likes yields 5000 rows) — measured at
@@ -62,7 +67,7 @@ async function listUsers() {
     FROM users u
       LEFT JOIN (SELECT user_id, MAX(last_seen_at) t FROM capture_sessions GROUP BY user_id) cs ON cs.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(updated_at) t FROM playlists GROUP BY user_id) pl ON pl.user_id = u.id
-      LEFT JOIN (SELECT user_id, MAX(date::timestamptz) t FROM bandwidth_logs GROUP BY user_id) bl ON bl.user_id = u.id
+      LEFT JOIN (SELECT user_id, LEAST(MAX(date::timestamptz) + INTERVAL '1 day' - INTERVAL '1 second', NOW()) t FROM bandwidth_logs GROUP BY user_id) bl ON bl.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(created_at) t FROM likes GROUP BY user_id) lk ON lk.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(created_at) t FROM tag_events GROUP BY user_id) te ON te.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(created_at) t FROM feedback GROUP BY user_id) fb ON fb.user_id = u.id

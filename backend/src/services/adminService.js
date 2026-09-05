@@ -50,19 +50,19 @@ async function listUsers() {
   // needs no separate row here. Login time is deliberately left out — it lives
   // in an activeSessions JSON blob and means "came back", not "used something".
   //
-  // bandwidth_logs 只精确到天, 所以它那一行读的是「那天结束时, 但不晚于此刻」。
-  // 读成当天 00:00 的话, 一个今天注册、今天就在听的人会显示成快一天前 ——
-  // 差的正是当天已经过去的时间。这张表也不能不看: 有 88 个用户只有它一个
-  // 活动来源, 少了它他们会显示成从没用过。
+  // bandwidth_logs 只记「这一天有过流量」, 和其余九张表记的「这一刻做了什么」
+  // 不是一回事, 所以不跟它们比大小, 而是当兜底: 有精确记录就用精确的, 一条都
+  // 没有才退回那一天(读作那天结束、不晚于此刻)。
   //
-  // Each table is aggregated to one row per user in its OWN subquery BEFORE the
-  // join. Joining the raw tables and grouping afterwards multiplies rows across
-  // tables (a user with 100 clips and 50 likes yields 5000 rows) — measured at
-  // ~7s on a tiny dataset. Per-table pre-aggregation keeps every join 1:1.
+  // 两个方向都试错过。直接读成当天 00:00, 会把今天注册今天在用的人说成快一天
+  // 前; 反过来把它塞进 GREATEST 读成那天结束, 只要今天有流量就一律「刚刚」——
+  // 实测 30 人被夸大, 有个真实最后活动在 199 小时前的照样显示刚刚。说旧了误事,
+  // 说新了更误事: 会让人以为早就不用的人还在用。
   const activityRows = await prisma.$queryRaw`
     SELECT u.id AS "userId",
-      GREATEST(
-        cs.t, pl.t, bl.t, lk.t, te.t, fb.t, ps.t, pcp.t, cl.t, sp.t
+      COALESCE(
+        GREATEST(cs.t, pl.t, lk.t, te.t, fb.t, ps.t, pcp.t, cl.t, sp.t),
+        bl.t
       ) AS "lastActiveAt"
     FROM users u
       LEFT JOIN (SELECT user_id, MAX(last_seen_at) t FROM capture_sessions GROUP BY user_id) cs ON cs.user_id = u.id

@@ -33,6 +33,7 @@ import { LADDER_TINT } from "@/components/live/ladderStyle";
 import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
+import { PRESET_COLORS } from "@/components/player/ColorTag";
 import SongLibrary from "@/components/live/SongLibrary";
 import MarkedSongs from "@/components/live/MarkedSongs";
 import LiveGuide from "@/components/live/LiveGuide";
@@ -1440,7 +1441,17 @@ export default function LivePage() {
                                     const snapSec = (SNAP_PX / r.width) * duration;
                                     let target = clickTime;
                                     let best = snapSec;
-                                    for (const t of passageTimes) {
+                                    // The green dot is as small and as worth
+                                    // hitting as the yellow ones — reaching the
+                                    // chorus is the reason it is drawn. It joins
+                                    // the same contest rather than getting its
+                                    // own rule, and it can only be here at all
+                                    // when it is 20s clear of every yellow dot,
+                                    // so the two can never fight over a click.
+                                    const targets = chorusTime === null
+                                      ? passageTimes
+                                      : [...passageTimes, chorusTime];
+                                    for (const t of targets) {
                                       const d = Math.abs(t - clickTime);
                                       if (d <= best) { best = d; target = t; }
                                     }
@@ -1473,27 +1484,38 @@ export default function LivePage() {
 
                                       Drawn before the yellow dots so they paint
                                       over it, and dropped outright when one is
-                                      within ten seconds: yellow is the passage
-                                      actually being sung, green only a hint at
-                                      where the hook is, and two dots a breath
-                                      apart read as a bug rather than as two
-                                      facts. Ten seconds is deliberately wide —
-                                      a chorus runs twenty to thirty, so a card
-                                      cut anywhere inside it still lands near
-                                      the green dot. Losing a green dot costs
-                                      nothing; showing one that contradicts the
-                                      yellow costs the singer a glance at the
-                                      wrong place.
+                                      within twenty seconds: green is for the
+                                      wait before your turn, when you want to
+                                      hear the hook and nothing has told you
+                                      where it is. The moment a yellow dot says
+                                      "sing this", green has done its job and
+                                      should get out of the way.
+
+                                      Twenty rather than ten because a chorus
+                                      runs twenty to thirty seconds, so a card
+                                      cut anywhere inside one still sits near
+                                      the green dot — and because both are 10px
+                                      targets that now snap: on a phone, ten
+                                      seconds of bar can be close enough that
+                                      the two would compete for the same tap.
 
                                       Unlike the yellow dots this needs no card:
                                       it is known as soon as the song is, which
                                       is the whole point of it. */}
                                   {duration > 0 && chorusTime !== null
-                                    && !passageTimes.some((t) => Math.abs(t - chorusTime) < 10) && (
+                                    && !passageTimes.some((t) => Math.abs(t - chorusTime) < 20) && (
                                     <div
                                       aria-hidden="true"
-                                      className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background bg-emerald-500"
-                                      style={{ left: `${Math.min(100, (chorusTime / duration) * 100)}%` }}
+                                      className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background"
+                                      style={{
+                                        left: `${Math.min(100, (chorusTime / duration) * 100)}%`,
+                                        // The palette's green, not Tailwind's: the
+                                        // colour tags are what a singer already
+                                        // reads as green on this page, and a second
+                                        // green half a shade off looks like it means
+                                        // something different.
+                                        backgroundColor: PRESET_COLORS[2],
+                                      }}
                                     />
                                   )}
                                   {duration > 0 && passageTimes.map((t, i) => (

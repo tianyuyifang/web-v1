@@ -75,11 +75,20 @@ export default function PassagePanel() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function decide(row, next) {
+  async function decide(row, next, shownRange) {
     setBusyId(row.id);
     setError(null);
     try {
-      const fl = flDrafts[row.id];
+      // 框里当下显示的文本 —— 和 value={flDrafts[row.id] ?? rangeText} 同一个
+      // 表达式。只看 flDrafts 的话, 没动过输入框就是 undefined, 而框里明明
+      // 预填着算法猜测: 「看到 17-18 点确认」会把状态改成已确认、答案却留空。
+      // 框里当下显示的文本 —— 和 value={flDrafts[row.id] ?? rangeText} 同一个
+      // 表达式。只看 flDrafts 的话, 没动过输入框就是 undefined, 而框里明明
+      // 预填着算法猜测: 「看到 17-18 点确认」会把状态改成已确认、答案却留空。
+      //
+      // 「退回待确认」除外: 那句话的意思是「我先不判断」, 而预填的是算法当场
+      // 算的猜测、不是人的判断。把它写进答案, 下次打开就成了「有人标过」。
+      const fl = next === "pending" ? flDrafts[row.id] : (flDrafts[row.id] ?? shownRange);
       // Only send an answer when the reviewer actually edited one; otherwise the
       // stored answer stands and only the status changes.
       let answer;
@@ -402,7 +411,7 @@ export default function PassagePanel() {
                     <button
                       type="button"
                       disabled={busyId === row.id}
-                      onClick={() => decide(row, "approved")}
+                      onClick={() => decide(row, "approved", rangeText)}
                       className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
                     >
                       确认
@@ -412,7 +421,7 @@ export default function PassagePanel() {
                     <button
                       type="button"
                       disabled={busyId === row.id}
-                      onClick={() => decide(row, "approved")}
+                      onClick={() => decide(row, "approved", rangeText)}
                       className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
                     >
                       保存改动
@@ -422,7 +431,7 @@ export default function PassagePanel() {
                     <button
                       type="button"
                       disabled={busyId === row.id}
-                      onClick={() => decide(row, "unmatchable")}
+                      onClick={() => decide(row, "unmatchable", rangeText)}
                       className="rounded bg-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-300 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-200"
                     >
                       无法匹配
@@ -432,7 +441,7 @@ export default function PassagePanel() {
                     <button
                       type="button"
                       disabled={busyId === row.id}
-                      onClick={() => decide(row, "pending")}
+                      onClick={() => decide(row, "pending", rangeText)}
                       className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                       退回待确认

@@ -232,6 +232,33 @@ async function decide(id, { status, answer, note } = {}) {
  * ON CONFLICT 累加而不是覆盖: 同一段词这次又唱了几回, seen 就往上加几回。
  */
 async function syncCatalogue() {
+  /**
+   * One sync at a time, across every process.
+   *
+   * Two admins opening the tab together would otherwise both read "never
+   * synced", both count the whole log, and both add it — measured: 28314
+   * events became 56628. The read of the watermark and the write of it are
+   * separate statements, so the row itself cannot be the lock.
+   *
+   * pg_advisory_lock is a lock on a number, not on any table: it serialises
+   * this function and touches nothing else, so captures keep being written
+   * while it is held. The second admin waits out the first sync (~5ms once
+   * warm) and then finds the watermark already moved, so there is nothing
+   * left to count. Released in the finally below — a session-level advisory
+   * lock outlives the transaction and would otherwise leak on the first
+   * error and block every later sync.
+   */
+  const LOCK_KEY = 8123401; // arbitrary, unique to this job
+  await prisma.$executeRawUnsafe('SELECT pg_advisory_lock($1)', LOCK_KEY);
+  try {
+    await syncCatalogueLocked();
+  } finally {
+    await prisma.$executeRawUnsafe('SELECT pg_advisory_unlock($1)', LOCK_KEY)
+      .catch(() => {});
+  }
+}
+
+async function syncCatalogueLocked() {
   const mark = await prisma.passageCatalogueSync.findUnique({ where: { id: 'singleton' } });
   const since = mark?.syncedAt || null;
   // 现在时刻先取下来, 拿它当这次的水位。用 now() 会把同步期间新到的事件也算进

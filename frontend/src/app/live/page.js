@@ -1441,21 +1441,24 @@ export default function LivePage() {
                                     const snapSec = (SNAP_PX / r.width) * duration;
                                     let target = clickTime;
                                     let best = snapSec;
-                                    // The green dot is as small and as worth
-                                    // hitting as the yellow ones — reaching the
-                                    // chorus is the reason it is drawn — so it
-                                    // joins the same contest.
+                                    // Only what is on screen can be snapped
+                                    // to. The green dot is as small and as
+                                    // worth hitting as the yellow ones, so it
+                                    // joins the same contest — but strictly on
+                                    // the same condition it is drawn under
+                                    // (`passageTimes.length === 0`), never on
+                                    // `chorusTime !== null` alone.
                                     //
-                                    // The two can never both be here: green is
-                                    // drawn only when there are no yellow dots.
-                                    // So this list holds one kind or the other,
-                                    // never a mix, and no tie between them is
-                                    // possible. Green still goes first, which
-                                    // costs nothing and keeps the order right
-                                    // if that ever changes.
-                                    const targets = chorusTime === null
+                                    // Those two are not the same test, and the
+                                    // difference was a real bug: once a card
+                                    // arrived the green dot was hidden but its
+                                    // time stayed in this list, so a click on
+                                    // empty bar could be pulled to a marker
+                                    // nobody could see. Whatever decides the
+                                    // dot has to decide the snap.
+                                    const targets = passageTimes.length
                                       ? passageTimes
-                                      : [chorusTime, ...passageTimes];
+                                      : (chorusTime === null ? passageTimes : [chorusTime]);
                                     for (const t of targets) {
                                       const d = Math.abs(t - clickTime);
                                       if (d <= best) { best = d; target = t; }

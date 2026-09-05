@@ -50,24 +50,22 @@ async function listUsers() {
   // needs no separate row here. Login time is deliberately left out — it lives
   // in an activeSessions JSON blob and means "came back", not "used something".
   //
-  // bandwidth_logs 只记「这一天有过流量」, 和其余九张表记的「这一刻做了什么」
-  // 不是一回事, 所以不跟它们比大小, 而是当兜底: 有精确记录就用精确的, 一条都
-  // 没有才退回那一天(读作那天结束、不晚于此刻)。
+  // 每个来源都精确到秒。bandwidth_logs 曾经也在这里, 但它只记「这一天有过
+  // 流量」, 按天推算怎么取都是编的: 取当天零点, 今天注册今天在听的人成了快
+  // 一天前; 取当天结束, 上周听过、今天碰巧有条记录的人成了刚刚。两种都上线
+  // 试过, 都错。
   //
-  // 两个方向都试错过。直接读成当天 00:00, 会把今天注册今天在用的人说成快一天
-  // 前; 反过来把它塞进 GREATEST 读成那天结束, 只要今天有流量就一律「刚刚」——
-  // 实测 30 人被夸大, 有个真实最后活动在 199 小时前的照样显示刚刚。说旧了误事,
-  // 说新了更误事: 会让人以为早就不用的人还在用。
+  // 根子不在那张表, 而在播放本身不留精确痕迹 —— 于是给 users 加了
+  // last_stream_at, 由 /api/stream 在响应发完后节流写入。天级的那份从此
+  // 不必参与, 88 位只听歌不做别的用户也终于有了准确的时刻。
   const activityRows = await prisma.$queryRaw`
     SELECT u.id AS "userId",
-      COALESCE(
-        GREATEST(cs.t, pl.t, lk.t, te.t, fb.t, ps.t, pcp.t, cl.t, sp.t),
-        bl.t
+      GREATEST(
+        u.last_stream_at, cs.t, pl.t, lk.t, te.t, fb.t, ps.t, pcp.t, cl.t, sp.t
       ) AS "lastActiveAt"
     FROM users u
       LEFT JOIN (SELECT user_id, MAX(last_seen_at) t FROM capture_sessions GROUP BY user_id) cs ON cs.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(updated_at) t FROM playlists GROUP BY user_id) pl ON pl.user_id = u.id
-      LEFT JOIN (SELECT user_id, LEAST(MAX(date::timestamptz) + INTERVAL '1 day' - INTERVAL '1 second', NOW()) t FROM bandwidth_logs GROUP BY user_id) bl ON bl.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(created_at) t FROM likes GROUP BY user_id) lk ON lk.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(created_at) t FROM tag_events GROUP BY user_id) te ON te.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(created_at) t FROM feedback GROUP BY user_id) fb ON fb.user_id = u.id

@@ -34,6 +34,21 @@ model User {
   activeSessionId String?    @map("active_session_id") @db.Uuid
   deviceLimit     Int?       @map("device_limit")
   activeSessions  Json?      @default("[]") @map("active_sessions") @db.JsonB
+
+  /// 最后一次真正听歌的时刻。
+  ///
+  /// 播放是这个站最常用的功能, 却是唯一不留精确痕迹的: 建歌单、点赞、剪片段
+  /// 都写下了带时分秒的行, 而听歌只让 bandwidth_logs 的字节数按天累加。于是
+  /// 「最近使用」对一个只听歌的人只能精确到天 —— 有 88 位用户就是这样, 他们
+  /// 从曲库搜歌直接播放, 不建歌单也不点赞。
+  ///
+  /// 按天推算怎么取都是编的: 取当天零点会把今天在听的人说成快一天前, 取当天
+  /// 结束又会把上周听过、今天碰巧有条记录的人说成刚刚。两种都试过, 都错。
+  /// 所以让播放自己写下时刻, 天级的那份从此不必参与计算。
+  ///
+  /// 只在 /api/stream 响应发完之后写, 而且距上次超过五分钟才写 —— 连听一小时
+  /// 也就十来次, 听歌的人一次都不会等它。
+  lastStreamAt    DateTime?  @map("last_stream_at") @db.Timestamptz
   expiresAt       DateTime?  @map("expires_at") @db.Timestamptz
   // Set when an admin revokes a MEMBER back to PENDING, cleared on approval.
   // Without it a revoked member and a brand-new signup are indistinguishable:

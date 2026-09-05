@@ -1512,7 +1512,19 @@ export default function LivePage() {
 
                                       Unlike the yellow dots this needs no card:
                                       it is known as soon as the song is, which
-                                      is the whole point of it. */}
+                                      is the whole point of it.
+
+                                      "No yellow dots" is broader than "no card
+                                      yet", and deliberately so. It also covers
+                                      lyrics with no timings (placeTimes returns
+                                      nothing without them, while the chorus
+                                      falls back to the platform's raw second)
+                                      and a passage the matcher could not place.
+                                      In both the singer is mid-turn with green
+                                      showing — which is the right outcome:
+                                      those are exactly the cases where the
+                                      yellow dots had nothing to offer, and the
+                                      green one still points at the chorus. */}
                                   {duration > 0 && chorusTime !== null
                                     && passageTimes.length === 0 && (
                                     <div

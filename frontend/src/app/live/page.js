@@ -1443,14 +1443,22 @@ export default function LivePage() {
                                     let best = snapSec;
                                     // The green dot is as small and as worth
                                     // hitting as the yellow ones — reaching the
-                                    // chorus is the reason it is drawn. It joins
-                                    // the same contest rather than getting its
-                                    // own rule, and it can only be here at all
-                                    // when it is 20s clear of every yellow dot,
-                                    // so the two can never fight over a click.
+                                    // chorus is the reason it is drawn — so it
+                                    // joins the same contest rather than getting
+                                    // a rule of its own.
+                                    //
+                                    // It goes first in the list, not last: the
+                                    // test below is `d <= best`, so on an exact
+                                    // tie the later entry wins, and a yellow dot
+                                    // should take that. Yellow is the passage
+                                    // being sung; green is only where the hook
+                                    // is. A tie needs a click landing exactly
+                                    // midway between the two, which is rare —
+                                    // but the tie-break should still fall the
+                                    // right way when it happens.
                                     const targets = chorusTime === null
                                       ? passageTimes
-                                      : [...passageTimes, chorusTime];
+                                      : [chorusTime, ...passageTimes];
                                     for (const t of targets) {
                                       const d = Math.abs(t - clickTime);
                                       if (d <= best) { best = d; target = t; }

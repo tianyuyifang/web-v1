@@ -1473,20 +1473,23 @@ export default function LivePage() {
 
                                       Drawn before the yellow dots so they paint
                                       over it, and dropped outright when one is
-                                      within five seconds: yellow is the passage
+                                      within ten seconds: yellow is the passage
                                       actually being sung, green only a hint at
                                       where the hook is, and two dots a breath
                                       apart read as a bug rather than as two
-                                      facts. Five seconds is deliberately wide —
-                                      losing a green dot costs nothing, showing
-                                      one that contradicts the yellow costs the
-                                      singer a glance at the wrong place.
+                                      facts. Ten seconds is deliberately wide —
+                                      a chorus runs twenty to thirty, so a card
+                                      cut anywhere inside it still lands near
+                                      the green dot. Losing a green dot costs
+                                      nothing; showing one that contradicts the
+                                      yellow costs the singer a glance at the
+                                      wrong place.
 
                                       Unlike the yellow dots this needs no card:
                                       it is known as soon as the song is, which
                                       is the whole point of it. */}
                                   {duration > 0 && chorusTime !== null
-                                    && !passageTimes.some((t) => Math.abs(t - chorusTime) < 5) && (
+                                    && !passageTimes.some((t) => Math.abs(t - chorusTime) < 10) && (
                                     <div
                                       aria-hidden="true"
                                       className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background bg-emerald-500"

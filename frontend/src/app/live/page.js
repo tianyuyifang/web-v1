@@ -1444,24 +1444,15 @@ export default function LivePage() {
                                     // The green dot is as small and as worth
                                     // hitting as the yellow ones — reaching the
                                     // chorus is the reason it is drawn — so it
-                                    // joins the same contest rather than getting
-                                    // a rule of its own.
+                                    // joins the same contest.
                                     //
-                                    // Their catch ranges do overlap: two dots
-                                    // compete whenever they are under 2×snapSec
-                                    // apart (~38s on a 300px bar holding a
-                                    // four-minute song), and green is only
-                                    // suppressed within 20s of a yellow one.
-                                    // That is fine — nearest still wins, so a
-                                    // click always lands on whichever dot it is
-                                    // genuinely closer to.
-                                    //
-                                    // Green goes first in the list, not last:
-                                    // the test below is `d <= best`, so on an
-                                    // exact tie the later entry wins, and a
-                                    // yellow dot should take that. Yellow is the
-                                    // passage being sung; green is only where
-                                    // the hook is.
+                                    // The two can never both be here: green is
+                                    // drawn only when there are no yellow dots.
+                                    // So this list holds one kind or the other,
+                                    // never a mix, and no tie between them is
+                                    // possible. Green still goes first, which
+                                    // costs nothing and keeps the order right
+                                    // if that ever changes.
                                     const targets = chorusTime === null
                                       ? passageTimes
                                       : [chorusTime, ...passageTimes];
@@ -1496,28 +1487,31 @@ export default function LivePage() {
                                       catch the click themselves. */}
                                   {/* The chorus, as the platform marked it.
 
-                                      Drawn before the yellow dots so they paint
-                                      over it, and dropped outright when one is
-                                      within twenty seconds: green is for the
-                                      wait before your turn, when you want to
-                                      hear the hook and nothing has told you
-                                      where it is. The moment a yellow dot says
-                                      "sing this", green has done its job and
-                                      should get out of the way.
+                                      Shown only while there are no yellow dots
+                                      at all. Green exists for the wait before
+                                      your turn — you want to hear the hook and
+                                      nothing has told you where it is. A yellow
+                                      dot means the game has named the passage
+                                      to sing, so green has done its job.
 
-                                      Twenty rather than ten because a chorus
-                                      runs twenty to thirty seconds, so a card
-                                      cut anywhere inside one still sits near
-                                      the green dot — and because both are 10px
-                                      targets that now snap: on a phone, ten
-                                      seconds of bar can be close enough that
-                                      the two would compete for the same tap.
+                                      This replaced a distance rule (hide green
+                                      within N seconds of a yellow dot). On a
+                                      phone that did not hold up: the snap
+                                      radius is 24px, which on a 300px bar
+                                      carrying a four-minute song is ~19s of
+                                      music, so the two dots' catch areas
+                                      overlapped whatever N was and competed for
+                                      the same tap. Tying visibility to the card
+                                      instead of to a distance removes the
+                                      conflict rather than tuning around it, and
+                                      takes the tie-break and the magic number
+                                      with it.
 
                                       Unlike the yellow dots this needs no card:
                                       it is known as soon as the song is, which
                                       is the whole point of it. */}
                                   {duration > 0 && chorusTime !== null
-                                    && !passageTimes.some((t) => Math.abs(t - chorusTime) < 20) && (
+                                    && passageTimes.length === 0 && (
                                     <div
                                       aria-hidden="true"
                                       className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background"

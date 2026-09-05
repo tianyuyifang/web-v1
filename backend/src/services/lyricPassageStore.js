@@ -31,6 +31,26 @@ function hashPassage(gameLyric) {
 }
 
 /**
+ * 归一化人工「首末」答案为逐行数组(与前端 passageAnswer 镜像)。
+ * { ranges: [[first,last],...] } 展开成 [[first..last],...]; 非 ranges 原样返回。
+ */
+function isRangeAnswer(answer) {
+  return Boolean(answer && !Array.isArray(answer) && Array.isArray(answer.ranges));
+}
+
+function normaliseAnswer(answer) {
+  if (!isRangeAnswer(answer)) return answer;
+  return answer.ranges
+    .filter((r) => Array.isArray(r) && r.length === 2
+      && Number.isInteger(r[0]) && Number.isInteger(r[1]) && r[0] <= r[1])
+    .map((r) => {
+      const out = [];
+      for (let i = r[0]; i <= r[1]; i += 1) out.push(i);
+      return out;
+    });
+}
+
+/**
  * Every real line an answer covers, flattened.
  *
  * An entry is a line index, or a list of them where the platform wrote as
@@ -89,13 +109,15 @@ function runOk(place, lineCount) {
   return used[used.length - 1] - used[0] === used.length - 1;
 }
 
-function placementsOf(answer, lineCount) {
+function placementsOf(rawAnswer, lineCount) {
+  const lc = isRangeAnswer(rawAnswer) ? null : lineCount;
+  const answer = normaliseAnswer(rawAnswer);
   if (!Array.isArray(answer) || !answer.length) return [];
-  if (runOk(answer, lineCount)) return [answer];
-  if (answer.every((p) => runOk(p, lineCount))) return answer;
+  if (runOk(answer, lc)) return [answer];
+  if (answer.every((p) => runOk(p, lc))) return answer;
   // Neither reading holds. Return the one the author most likely meant, so a
   // caller reporting the problem reports it against that; both are unusable.
-  if (lineCount != null && answer.length === lineCount) return [answer];
+  if (lc != null && answer.length === lc) return [answer];
   const several = answer.every((p) => Array.isArray(p) && p.length && p.every(entryOk));
   return several ? answer : [answer];
 }
@@ -108,7 +130,9 @@ function placementsOf(answer, lineCount) {
  * misalign every line after the discrepancy, and highlighting the wrong lines
  * is worse than highlighting none. Rejecting it here falls back to the matcher.
  */
-function isUsable(answer, lineCount) {
+function isUsable(rawAnswer, lineCount) {
+  const lc = isRangeAnswer(rawAnswer) ? null : lineCount;
+  const answer = normaliseAnswer(rawAnswer);
   if (!Array.isArray(answer) || !answer.length) return false;
   // Every placement must be a run of its own — `runOk` is the same check
   // `placementsOf` used to choose the reading, so an answer is usable exactly
@@ -119,7 +143,7 @@ function isUsable(answer, lineCount) {
   // were recorded pointing only at the first, leaving the second unhighlighted
   // and the run with a hole in it. Six of the first twenty-seven were wrong
   // that way — which is what the list form of an entry exists to express.
-  return placementsOf(answer, lineCount).every((place) => runOk(place, lineCount));
+  return placementsOf(rawAnswer, lineCount).every((place) => runOk(place, lc));
 }
 
 /**

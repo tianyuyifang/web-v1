@@ -40,6 +40,10 @@ export default function PassagePanel() {
   const [openId, setOpenId] = useState(null);
   // Edited answers, keyed by row id, as the raw text the reviewer typed.
   const [drafts, setDrafts] = useState({});
+  // 首末快填草稿(每行「首-末」), 优先于逐行 drafts。
+  const [flDrafts, setFlDrafts] = useState({});
+  // 待删除确认的行 id(点一次亮确认, 再点才删)
+  const [confirmDelId, setConfirmDelId] = useState(null);
   // The approved tab's 「只看被报告的」 filter. Off by default; reset when
   // leaving the tab so it cannot silently narrow another one.
   const [reportedOnly, setReportedOnly] = useState(false);
@@ -81,11 +85,26 @@ export default function PassagePanel() {
     setBusyId(row.id);
     setError(null);
     try {
+      const fl = flDrafts[row.id];
       const raw = drafts[row.id];
       // Only send an answer when the reviewer actually edited one; otherwise the
       // stored answer stands and only the status changes.
       let answer;
-      if (raw !== undefined && next !== "unmatchable") {
+      // 首末优先: 每行「首-末」, 存成 { ranges:[[f,l],...] }。唱卡页只用首末,
+      // 中间行按连续性自动补; 不涉及一对多。
+      if (fl !== undefined && fl.trim() && next !== "unmatchable") {
+        const ranges = [];
+        for (const line of fl.split(/\n+/).map((x) => x.trim()).filter(Boolean)) {
+          const m = line.match(/^(\d+)\s*[-~]\s*(\d+)$/);
+          if (!m) { setError(`「${line}」格式应为 首行-末行, 如 14-20`); return; }
+          const f = Number(m[1]); const l = Number(m[2]);
+          if (f > l) { setError(`「${line}」首行不能大于末行`); return; }
+          if (l >= row.realLines.length) { setError(`「${line}」末行超出歌词范围(共 ${row.realLines.length} 行)`); return; }
+          ranges.push([f, l]);
+        }
+        if (!ranges.length) { setError("首末不能为空"); return; }
+        answer = { ranges };
+      } else if (raw !== undefined && next !== "unmatchable") {
         // Checked here rather than left to the server, because half-typed text
         // is the ordinary state of an input: a trailing comma, or a pause after
         // one, parses to NaN and came back as an unexplained failure.
@@ -144,8 +163,24 @@ export default function PassagePanel() {
         }));
       }
       setDrafts((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
+      setFlDrafts((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
     } catch (err) {
       setError(err.response?.data?.error?.message || "保存失败");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function removeRow(row) {
+    setBusyId(row.id);
+    setError(null);
+    try {
+      await mappingAPI.deletePassage(row.id);
+      setItems((prev) => prev.filter((r) => r.id !== row.id));
+      setCounts((prev) => ({ ...prev, [row.status]: Math.max(0, (prev[row.status] || 0) - 1) }));
+      setConfirmDelId(null);
+    } catch (err) {
+      setError(err.response?.data?.error?.message || "删除失败");
     } finally {
       setBusyId(null);
     }
@@ -243,7 +278,10 @@ export default function PassagePanel() {
             // The first occurrence is what the row shows line by line; the rest
             // are summarised, since they repeat the same words.
             const answer = places[0] || [];
-            const marked = new Set(places.flatMap((pl) => pl.flatMap(entryLines)));
+            // 有答案高亮答案; 报告产生的空行没答案, 就高亮算法猜测, 让审核
+            // 展开时那片黄正是算法当前标的, 一眼看出错在哪。
+            const answerMarks = places.flatMap((pl) => pl.flatMap(entryLines));
+            const marked = new Set(answerMarks.length ? answerMarks : (row.algoGuess || []).flat());
             return (
               <li
                 key={row.id}
@@ -322,6 +360,17 @@ export default function PassagePanel() {
                           : "早期报告未记名"}
                       </p>
                     )}
+                    {(row.algoGuess && row.algoGuess.some((g) => g.length)) ? (
+                      <p className="mb-2 text-xs text-gray-500">
+                        算法猜测：
+                        {row.algoGuess.filter((g) => g.length)
+                          .map((g) => (g.length === 1 ? `第 ${g[0]} 行` : `第 ${g[0]}–${g[g.length - 1]} 行`))
+                          .join("；")}
+                        （下方黄色高亮即此结果，仅供参考）
+                      </p>
+                    ) : (
+                      <p className="mb-2 text-xs text-gray-400">算法没能匹配出连续段落。</p>
+                    )}
                     <div className="max-h-72 overflow-y-auto rounded bg-gray-50 p-2 text-sm dark:bg-gray-900">
                       {row.realLines.length ? (
                         row.realLines.map((line, i) => (
@@ -341,7 +390,18 @@ export default function PassagePanel() {
                         <p className="text-gray-500">曲库里还没有这首歌的歌词。</p>
                       )}
                     </div>
-                    <label className="mt-2 block text-xs text-gray-500">
+                    <label className="mt-2 block text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                      首末标注：一行一处，写「首行-末行」（如 14-20）；副歌多处就写多行。
+                      中间行按连续性自动补齐，只需首末。
+                      <textarea
+                        rows={2}
+                        placeholder={"14-20"}
+                        value={flDrafts[row.id] ?? ""}
+                        onChange={(e) => setFlDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))}
+                        className="mt-1 w-full rounded border border-emerald-400 px-2 py-1 font-mono text-sm dark:border-emerald-600 dark:bg-gray-900"
+                      />
+                    </label>
+                    <label className="mt-3 block text-xs text-gray-500">
                       改答案：一行写一处，每个游戏行一项、逗号分隔；
                       一句对应真实歌词多行时用 + 连接（如 63+64）；-1 表示不标。
                       副歌唱几遍就写几行。
@@ -402,6 +462,33 @@ export default function PassagePanel() {
                       className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                       退回待确认
+                    </button>
+                  )}
+                  {confirmDelId === row.id ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busyId === row.id}
+                        onClick={() => removeRow(row)}
+                        className="rounded bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        确认删除
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelId(null)}
+                        className="rounded px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelId(row.id)}
+                      className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-500 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+                    >
+                      删除
                     </button>
                   )}
                 </div>

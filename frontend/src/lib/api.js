@@ -475,6 +475,7 @@ export const mappingAPI = {
   // can never change an answer.
   reportPassage: (body) => api.post("/mappings/passages/report", body),
   decidePassage: (id, body) => api.patch(`/mappings/passages/${id}`, body),
+  deletePassage: (id) => api.delete(`/mappings/passages/${id}`),
   // Same thing for a pool track nobody has claimed yet — you have to hear it
   // before you can say it is the right one.
   previewTrack: (trackId) => api.get(`/mappings/track/${trackId}/preview`),

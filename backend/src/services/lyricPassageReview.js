@@ -14,6 +14,7 @@ const prisma = require('../db/client');
 const { AppError, NotFoundError } = require('../utils/errors');
 const lyricStore = require('./lyricStore');
 const { hashPassage, isUsable, coveredLines } = require('./lyricPassageStore');
+const { markPassage } = require('../../../frontend/src/lib/passageMatch');
 
 const STATUSES = new Set(['approved', 'pending', 'unmatchable', 'ai_reviewed']);
 
@@ -113,6 +114,16 @@ async function list({ status = 'pending', take = 30, cursor, reportedOnly = fals
       reporters: Array.isArray(r.reporters) ? r.reporters : [],
       updatedAt: r.updatedAt,
       realLines: lyrics.get(`${r.source} ${r.externalId}`) || [],
+      // 算法对这段现场算一次的猜测(拍平的行号), 供审核看算法错在哪。
+      // 只读展示, 不入库。
+      algoGuess: (() => {
+        const real = lyrics.get(`${r.source} ${r.externalId}`) || [];
+        if (!real.length) return [];
+        try {
+          const places = markPassage(r.gameLyric, real.map((t) => ({ text: t })));
+          return places.map((pl) => [...new Set(pl.filter((i) => i >= 0))].sort((a, b) => a - b));
+        } catch (e) { return []; }
+      })(),
     })),
     nextCursor: rows.length ? rows[rows.length - 1].id : null,
   };
@@ -260,4 +271,15 @@ async function catalogue({ q = '', offset = 0, take = 40 } = {}) {
   };
 }
 
-module.exports = { list, counts, decide, catalogue, splitGameLines, splitReal, hashPassage };
+/**
+ * 删掉一条段落记录 —— 换音源后产生的孤儿待确认, 或不该存在的报告。
+ * 只删 lyric_passage_matches 这一行, 不碰任何别的表。删掉 = 该段回退走算法。
+ */
+async function remove(id) {
+  const row = await prisma.lyricPassageMatch.findUnique({ where: { id } });
+  if (!row) throw new NotFoundError('Passage');
+  await prisma.lyricPassageMatch.delete({ where: { id } });
+  return { ok: true };
+}
+
+module.exports = { list, counts, decide, remove, catalogue, splitGameLines, splitReal, hashPassage };

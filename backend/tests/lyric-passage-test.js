@@ -93,6 +93,20 @@ async function put(status, answer, verifiedBy = 'ai') {
   assert.strictEqual(store.placementsOf([[5, 6], [22, 23]], 2).length, 2);
   console.log('  ✓ contiguity, not nesting, decides how many occurrences an answer names');
 
+  // 首末(ranges)型人工答案: 唱卡页只用首末, 中间行按连续性补。
+  // 核心保证: ranges 渲染与等价逐行完全一致, 且旧逐行答案不受影响。
+  const flat = (pls) => pls.map((pl) => pl.flatMap((v) => (Array.isArray(v) ? v : [v])));
+  assert.deepStrictEqual(
+    flat(store.placementsOf({ ranges: [[10, 14]] }, 3)),
+    flat(store.placementsOf([10, 11, 12, 13, 14], 5)),
+    'a range answer renders identically to its expanded per-line form');
+  assert.ok(store.isUsable({ ranges: [[10, 14]] }, 3), 'a range ignores game line count on purpose');
+  assert.ok(store.isUsable({ ranges: [[10, 12], [30, 32]] }, 3), 'several ranges for a chorus');
+  assert.ok(!store.isUsable({ ranges: [[14, 10]] }, 3), 'first must not exceed last');
+  assert.ok(!store.isUsable({ ranges: [] }, 3), 'an empty range list is not usable');
+  assert.strictEqual(store.placementsOf({ ranges: [[10, 12], [30, 32]] }, 3).length, 2, 'two occurrences');
+  console.log('  ✓ range answers render like per-line and keep the old format intact');
+
   // ---- against the database ----------------------------------------------
   await prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT } });
 

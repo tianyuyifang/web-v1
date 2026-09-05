@@ -11,6 +11,30 @@
  * contiguity settles them. Mirrors `backend/src/services/lyricPassageStore.js`.
  */
 
+/**
+ * 归一化人工「首末」答案为逐行数组。
+ *
+ * 唱卡页只要每处的首末: 标黄整段区间、黄点落首行。admin 存的是
+ * { ranges: [[first,last], ...] }, 这里就地展开成 [[first..last], ...] ——
+ * 一个合法的多处逐行答案, 之后所有判定/渲染原样走旧逻辑, 新旧殊途同归到
+ * 同一套代码, 渲染必然一致。非 ranges(算法/历史逐行数组)原样返回。
+ */
+export function isRangeAnswer(answer) {
+  return Boolean(answer && !Array.isArray(answer) && Array.isArray(answer.ranges));
+}
+
+export function normaliseAnswer(answer) {
+  if (!isRangeAnswer(answer)) return answer;
+  return answer.ranges
+    .filter((r) => Array.isArray(r) && r.length === 2
+      && Number.isInteger(r[0]) && Number.isInteger(r[1]) && r[0] <= r[1])
+    .map((r) => {
+      const out = [];
+      for (let i = r[0]; i <= r[1]; i += 1) out.push(i);
+      return out;
+    });
+}
+
 /** The real lines one entry covers. -1 means the game line has no counterpart. */
 export function entryLines(v) {
   if (Array.isArray(v)) return v.filter((n) => n >= 0);
@@ -61,19 +85,23 @@ export function runOk(place, lineCount) {
  * once. Read as two placements it would draw two progress-bar dots for one
  * occurrence.
  */
-export function placementsOf(answer, lineCount) {
+export function placementsOf(rawAnswer, lineCount) {
+  const lc = isRangeAnswer(rawAnswer) ? null : lineCount;
+  const answer = normaliseAnswer(rawAnswer);
   if (!Array.isArray(answer) || !answer.length) return [];
-  if (runOk(answer, lineCount)) return [answer];
-  if (answer.every((p) => runOk(p, lineCount))) return answer;
+  if (runOk(answer, lc)) return [answer];
+  if (answer.every((p) => runOk(p, lc))) return answer;
   // Neither reading holds. Return the likelier one so a caller that reports the
   // problem reports it against what the author meant; both are unusable.
-  if (lineCount != null && answer.length === lineCount) return [answer];
+  if (lc != null && answer.length === lc) return [answer];
   const several = answer.every((p) => Array.isArray(p) && p.length && p.every(entryOk));
   return several ? answer : [answer];
 }
 
 /** Is the whole answer usable for a passage of this many lines? */
-export function isUsable(answer, lineCount) {
+export function isUsable(rawAnswer, lineCount) {
+  const lc = isRangeAnswer(rawAnswer) ? null : lineCount;
+  const answer = normaliseAnswer(rawAnswer);
   if (!Array.isArray(answer) || !answer.length) return false;
-  return placementsOf(answer, lineCount).every((p) => runOk(p, lineCount));
+  return placementsOf(rawAnswer, lineCount).every((p) => runOk(p, lc));
 }

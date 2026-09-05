@@ -404,6 +404,16 @@ router.post('/passages/report', async (req, res, next) => {
  * Stored as `human`, which outranks the assistant's answer and survives every
  * later pass: a correction that a re-import could undo is not a correction.
  */
+router.delete('/passages/:passageId', requireMappingEditor, async (req, res, next) => {
+  try {
+    const id = z.string().uuid().safeParse(req.params.passageId);
+    if (!id.success) throw new NotFoundError('Passage');
+    res.json(await passageReview.remove(id.data));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.patch('/passages/:passageId', requireMappingEditor, async (req, res, next) => {
   try {
     const id = z.string().uuid().safeParse(req.params.passageId);

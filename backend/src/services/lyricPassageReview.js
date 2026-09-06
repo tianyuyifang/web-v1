@@ -13,7 +13,9 @@
 const prisma = require('../db/client');
 const { AppError, NotFoundError } = require('../utils/errors');
 const lyricStore = require('./lyricStore');
-const { hashPassage, isUsable, coveredLines } = require('./lyricPassageStore');
+const {
+  hashPassage, isUsable, coveredLines, normaliseAnswer,
+} = require('./lyricPassageStore');
 const { markPassage } = require('../../../frontend/src/lib/passageMatch');
 
 const STATUSES = new Set(['approved', 'pending', 'unmatchable', 'ai_reviewed']);
@@ -171,13 +173,17 @@ async function decide(id, { status, answer, note } = {}) {
     }
     next = answer;
   }
-  if (status === 'unmatchable' && Array.isArray(next) && coveredLines(next).length) {
+  // 首末答案是 { ranges: [...] } 而不是数组, 先展开成等价的逐行形式再数 ——
+  // coveredLines 只认逐行, 把对象直接丢进去会抛。和唱卡页、isUsable 用同一套
+  // 展开, 两边对「这个答案标了几行」的理解才不会分家。
+  const flat = normaliseAnswer(next);
+  if (status === 'unmatchable' && Array.isArray(flat) && coveredLines(flat).length) {
     // Saying "there is no counterpart" and pointing at one at the same time
     // would leave a row that means nothing. Blank it instead of refusing.
     next = new Array(lines).fill(-1);
   }
   if ((status === 'approved' || status === 'ai_reviewed')
-    && (!Array.isArray(next) || !coveredLines(next).length)) {
+    && (!Array.isArray(flat) || !coveredLines(flat).length)) {
     throw new AppError('an approved answer must place at least one line', 400);
   }
 

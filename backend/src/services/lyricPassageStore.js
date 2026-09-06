@@ -282,4 +282,5 @@ async function report(source, externalId, gameLyric, reporter) {
 
 module.exports = {
   hashPassage, isUsable, getApproved, coveredLines, placementsOf, report,
+  isRangeAnswer, normaliseAnswer,
 };

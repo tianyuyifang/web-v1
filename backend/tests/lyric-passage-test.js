@@ -174,6 +174,34 @@ async function put(status, answer, verifiedBy = 'ai') {
     'a passage with no counterpart falls through to the matcher');
   console.log('  ✓ pending and unmatchable stay out of the page');
 
+  // 队列里的段落, 哪怕同一首歌里躺着一条已确认的变体, 也不能顺着它拿到答案。
+  // 变体兜底只服务于表里根本没有的段落 —— 一段词既然在等人判断, 系统就不该
+  // 自己绕过那次判断; unmatchable 更是人明说过「没有对应」, 去匹配变体等于
+  // 推翻结论。
+  {
+    const sibling = '你是我碰不到的风' + '\n' + '醒不来的梦';
+    const shuffled = '醒不来的梦' + '\n' + '你是我碰不到的风';
+    const hash = store.hashPassage(shuffled);
+    await prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT } });
+    // 一条已确认的兄弟, 和一条正在排队的变体
+    await prisma.lyricPassageMatch.create({
+      data: { source: SOURCE, externalId: EXT, lyricHash: store.hashPassage(sibling),
+        gameLyric: sibling, answer: { ranges: [[5, 6]] }, status: 'approved', verifiedBy: 'human' },
+    });
+    await prisma.lyricPassageMatch.create({
+      data: { source: SOURCE, externalId: EXT, lyricHash: hash,
+        gameLyric: shuffled, answer: [], status: 'pending', verifiedBy: 'ai' },
+    });
+    assert.strictEqual(await store.getApproved(SOURCE, EXT, shuffled, 2), null,
+      '排队中的段落不能顺着已确认的兄弟拿到答案');
+    // 同一段词若不在表里, 变体兜底才该生效
+    await prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT, lyricHash: hash } });
+    assert.deepStrictEqual(await store.getApproved(SOURCE, EXT, shuffled, 2), { ranges: [[5, 6]] },
+      '表里没有这段词时, 才轮到变体兑底');
+    await prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT } });
+    console.log('  ✓ 变体兑底不会绕过排队中的判断');
+  }
+
   await put('approved', [5, 6]);
   assert.strictEqual(await store.getApproved(SOURCE, EXT, PASSAGE, 3), null,
     'a stored answer that no longer fits is refused rather than misaligned');

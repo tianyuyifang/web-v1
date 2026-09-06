@@ -245,7 +245,13 @@ async function getApproved(source, externalId, gameLyric, lineCount) {
       },
       select: { answer: true, status: true },
     });
-    if (row && row.status === 'approved') {
+    // 这段词在表里有记录 —— 记录怎么说就怎么算, 到此为止。已确认的给答案,
+    // 还在队列里的(pending / ai_reviewed)和人说过「没有对应」的(unmatchable)
+    // 都退回算法。下面的变体兜底只服务于表里根本没有的段落 —— 否则一段词
+    // 明明在等人判断, 却能从旁边一条已确认的兄弟那里拿到答案, 把那次判断
+    // 绕过去了。
+    if (row) {
+      if (row.status !== 'approved') return null;
       return isUsable(row.answer, lineCount) ? row.answer : null;
     }
 

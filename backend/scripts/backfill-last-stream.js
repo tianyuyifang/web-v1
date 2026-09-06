@@ -33,7 +33,7 @@ const APPLY = process.argv.includes('--apply');
            LEAST(b.d::timestamptz + INTERVAL '12 hours', NOW()) AS t
     FROM users u
     JOIN (SELECT user_id, MAX(date) d FROM bandwidth_logs GROUP BY user_id) b ON b.user_id = u.id
-    LEFT JOIN (SELECT user_id, MAX(last_seen_at) t FROM capture_sessions GROUP BY user_id) cs ON cs.user_id = u.id
+    LEFT JOIN (SELECT user_id, MAX(GREATEST(last_seen_at, created_at)) t FROM capture_sessions GROUP BY user_id) cs ON cs.user_id = u.id
     LEFT JOIN (SELECT user_id, MAX(updated_at) t FROM playlists GROUP BY user_id) pl ON pl.user_id = u.id
     LEFT JOIN (SELECT user_id, MAX(created_at) t FROM likes GROUP BY user_id) lk ON lk.user_id = u.id
     LEFT JOIN (SELECT user_id, MAX(created_at) t FROM clips GROUP BY user_id) cl ON cl.user_id = u.id

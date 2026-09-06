@@ -50,7 +50,11 @@ async function listUsers() {
   // needs no separate row here. Login time is deliberately left out — it lives
   // in an activeSessions JSON blob and means "came back", not "used something".
   //
-  // 每个来源都精确到秒。bandwidth_logs 曾经也在这里, 但它只记「这一天有过
+  // 每个来源都精确到秒。capture_sessions 取 last_seen_at 和 created_at 里较晚的
+  // 那个: 1587 行会话里有 624 行从没被看见过(配对了但没跑起来), 只看
+  // last_seen_at 会把「配对」这个有确切时刻的动作当成没发生。
+  //
+  // bandwidth_logs 曾经也在这里, 但它只记「这一天有过
   // 流量」, 按天推算怎么取都是编的: 取当天零点, 今天注册今天在听的人成了快
   // 一天前; 取当天结束, 上周听过、今天碰巧有条记录的人成了刚刚。两种都上线
   // 试过, 都错。
@@ -64,7 +68,7 @@ async function listUsers() {
         u.last_stream_at, cs.t, pl.t, lk.t, te.t, fb.t, ps.t, pcp.t, cl.t, sp.t
       ) AS "lastActiveAt"
     FROM users u
-      LEFT JOIN (SELECT user_id, MAX(last_seen_at) t FROM capture_sessions GROUP BY user_id) cs ON cs.user_id = u.id
+      LEFT JOIN (SELECT user_id, MAX(GREATEST(last_seen_at, created_at)) t FROM capture_sessions GROUP BY user_id) cs ON cs.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(updated_at) t FROM playlists GROUP BY user_id) pl ON pl.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(created_at) t FROM likes GROUP BY user_id) lk ON lk.user_id = u.id
       LEFT JOIN (SELECT user_id, MAX(created_at) t FROM tag_events GROUP BY user_id) te ON te.user_id = u.id

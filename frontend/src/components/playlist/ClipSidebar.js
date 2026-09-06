@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { matchesSearch, formatDuration } from "@/lib/utils";
 import LikeButton from "@/components/player/LikeButton";
 import { useLanguage } from "@/components/layout/LanguageProvider";
@@ -16,6 +16,25 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
   const { t } = useLanguage();
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("position");
+
+  // Collapsed to a slim strip on request: the sidebar and the cards compete
+  // for the same width, and on a laptop the list is the thing worth giving
+  // up. Desktop-only by construction — the whole aside is hidden below lg.
+  // The choice is per device and read after mount, so the server render and
+  // the first client paint agree.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("clip-sidebar-collapsed") === "1") setCollapsed(true);
+    } catch { /* private mode: opens expanded */ }
+  }, []);
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("clip-sidebar-collapsed", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
 
   const filtered = useMemo(() => {
     const base = !search
@@ -40,6 +59,19 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
   }, [clips, search, sortBy]);
 
   return (
+    // The strip keeps the way back visible: fully removing the aside would
+    // leave nothing on the left edge to say a list exists at all.
+    collapsed ? (
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        title={`${t("clipsSidebar")} — 展开`}
+        aria-expanded="false"
+        className="sticky top-[5.75rem] hidden h-24 w-7 shrink-0 items-center justify-center self-start rounded-lg border border-border bg-surface text-muted transition-colors hover:border-primary hover:text-theme lg:flex"
+      >
+        »
+      </button>
+    ) : (
     <aside className="sticky top-[5.75rem] hidden max-h-[calc(100vh-5.75rem)] w-64 shrink-0 flex-col self-start rounded-lg border border-border bg-surface lg:flex">
       <div className="shrink-0 border-b border-border px-3 py-2">
         <div className="mb-2 flex items-center justify-between gap-2">
@@ -52,6 +84,15 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
             <option value="position">{t("sortByPosition")}</option>
             <option value="alpha">{t("sortByAlpha")}</option>
           </select>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            title="收起侧栏"
+            aria-expanded="true"
+            className="-mr-1 rounded px-1.5 py-0.5 text-sm leading-none text-muted transition-colors hover:bg-surface-hover hover:text-theme"
+          >
+            «
+          </button>
         </div>
         <div className="relative">
           <input
@@ -137,5 +178,6 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
         )}
       </div>
     </aside>
+    )
   );
 }

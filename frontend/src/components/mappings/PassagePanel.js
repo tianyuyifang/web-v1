@@ -243,7 +243,26 @@ export default function PassagePanel() {
             // 有答案高亮答案; 报告产生的空行没答案, 就高亮算法猜测, 让审核
             // 展开时那片黄正是算法当前标的, 一眼看出错在哪。
             const answerMarks = places.flatMap((pl) => pl.flatMap(entryLines));
-            const marked = new Set(answerMarks.length ? answerMarks : (row.algoGuess || []).flat());
+            const baseMarks = answerMarks.length ? answerMarks : (row.algoGuess || []).flat();
+            // 输入框里写了什么, 底下就黄哪几行 —— 填的时候直接看见结果,
+            // 不用保存一轮才知道标对没有。框里是空的才回到答案/算法猜测。
+            //
+            // 这里只解析不校验: 打到一半的 "14-" 解析不出区间, 那一行就不
+            // 参与标黄。末行超范围之类的错误留给保存那一刻去拦, 边打字边弹
+            // 红字只会碍事。
+            const typed = flDrafts[row.id];
+            const typedMarks = [];
+            if (typed !== undefined && typed.trim()) {
+              for (const one of typed.split(/\n+/)) {
+                const m = one.trim().match(/^(\d+)\s*[-~]\s*(\d+)$/);
+                if (!m) continue;
+                const from = Number(m[1]);
+                const to = Number(m[2]);
+                if (from > to) continue;
+                for (let n = from; n <= to && n < row.realLines.length; n += 1) typedMarks.push(n);
+              }
+            }
+            const marked = new Set(typedMarks.length ? typedMarks : baseMarks);
 
             /**
              * 输入框里预先填好的「首-末」, 每处一行。

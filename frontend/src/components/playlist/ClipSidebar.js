@@ -76,6 +76,9 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
       <div className="shrink-0 border-b border-border px-3 py-2">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-theme">{t("clipsSidebar")}</h2>
+          {/* One right-hand group: justify-between with three children
+              spread the select to the row centre. */}
+          <div className="flex items-center gap-1">
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
@@ -93,6 +96,7 @@ export default function ClipSidebar({ clips, playlistId, onClipClick }) {
           >
             «
           </button>
+          </div>
         </div>
         <div className="relative">
           <input

@@ -249,13 +249,11 @@ async function getApproved(source, externalId, gameLyric, lineCount) {
       },
       select: { answer: true, status: true },
     });
-    // 这段词在表里有记录 —— 记录怎么说就怎么算, 到此为止。已确认的给答案,
-    // 还在队列里的(pending / ai_reviewed)和人说过「没有对应」的(unmatchable)
-    // 都退回算法。下面的变体兜底只服务于表里根本没有的段落 —— 否则一段词
-    // 明明在等人判断, 却能从旁边一条已确认的兄弟那里拿到答案, 把那次判断
-    // 绕过去了。
-    if (row) {
-      if (row.status !== 'approved') return null;
+    // 确认过的直接给答案。其余一律往下走变体 —— 包括还在队列里的和标了
+    // 「没有对应」的。挡住它们并不会让这段词不被标: 返回 null 之后页面会跑
+    // 自己的算法, 照样标。挡住只是把答案来源从「人确认过的兄弟段落」换成
+    // 「算法猜测」, 而后者更不可信。
+    if (row && row.status === 'approved') {
       return isUsable(row.answer, lineCount) ? row.answer : null;
     }
 

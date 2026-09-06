@@ -188,6 +188,10 @@ function isMaskedVariant(a, b) {
   for (let k = 0; k < a.length; k += 1) {
     const x = visible(a[k]);
     const y = visible(b[k]);
+    // 整行被盖光就没有证据可比 —— 空串是任何字符串的前缀, 那一行会跟任何
+    // 词都"相容"。实测两句全盖住的段落能同时匹配《山楂树之恋》和《你是一只
+    // 飞鸟》, 而且查询没有排序, 谁先返回谁赢。宁可整段退回算法。
+    if (!x || !y) return false;
     if (hasMask(a[k]) || hasMask(b[k])) sawMask = true;
     if (x === y) continue;
     if (hasMask(a[k]) && y.startsWith(x)) continue;

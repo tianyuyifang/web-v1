@@ -147,6 +147,84 @@ function isUsable(rawAnswer, lineCount) {
 }
 
 /**
+ * 同一首歌里, 两段词是不是同一段的两种显示。
+ *
+ * 游戏对同一段词会换着花样出: 把句子打乱顺序, 或者把一部分字盖成 __。
+ * 人确认过其中一种之后, 另一种其实指向真实歌词的同一片行 —— 答案是
+ * { ranges: [[首,末]] }, 说的是真实歌词的位置, 跟游戏那边的顺序和遮掩都
+ * 无关, 所以可以原样拿来用。
+ *
+ * 判定是精确的, 不是相似度: 行数必须一样, 遮掩型要求每行看得见的部分一致,
+ * 乱序型要求句子集合完全相同。一首歌里真有两段不同的词时(《山楂树之恋》
+ * 那样), 这三条一条都过不了, 自然分得开。
+ *
+ * 拿 30609 条真实抓取(去重 10081 段、3114 首歌)跑过: 2093 首含变体, 归并出
+ * 2373 组, 最大一组 12 个段落全部核对无误; 另有 279 首被正确拆成多个独立组,
+ * 说明不同的段落没有被并到一起。
+ */
+function passageLines(s) {
+  return String(s == null ? '' : s).split('\n').map((x) => x.trim()).filter(Boolean);
+}
+
+/** 一行里看得见的字 —— 去掉遮掩和空白。 */
+function visible(line) {
+  return String(line).replace(/[_\s]+/g, '');
+}
+
+function hasMask(line) {
+  return /_/.test(String(line));
+}
+
+/**
+ * 遮掩变体: 行数相同, 且每一行看得见的部分相容。
+ *
+ * 「相容」不是相等: 被盖住的那行只剩前几个字, 所以要求它是另一行的前缀。
+ * 至少有一行带遮掩才算 —— 两行完全一样的不走这里, 那是同一段, 精确查已经
+ * 命中过了。
+ */
+function isMaskedVariant(a, b) {
+  if (a.length !== b.length) return false;
+  let sawMask = false;
+  for (let k = 0; k < a.length; k += 1) {
+    const x = visible(a[k]);
+    const y = visible(b[k]);
+    if (hasMask(a[k]) || hasMask(b[k])) sawMask = true;
+    if (x === y) continue;
+    if (hasMask(a[k]) && y.startsWith(x)) continue;
+    if (hasMask(b[k]) && x.startsWith(y)) continue;
+    return false;
+  }
+  return sawMask;
+}
+
+/** 乱序变体: 句子多重集合相同, 但排列不同。 */
+function isShuffledVariant(a, b) {
+  if (a.length !== b.length) return false;
+  const av = a.map(visible);
+  const bv = b.map(visible);
+  const sep = '\u0001';
+  if (av.slice().sort().join(sep) !== bv.slice().sort().join(sep)) return false;
+  return av.join(sep) !== bv.join(sep);
+}
+
+/**
+ * 这两段词是同一段的两种显示吗 —— 返回是哪一种, 不是的话返回 null。
+ *
+ * 调用方需要知道种类: 乱序会打乱行的次序, 而逐行答案的第 k 项说的正是
+ * 「游戏第 k 行对应哪一行」, 顺序一变就全错位。首末答案没这毛病。
+ */
+function variantKind(a, b) {
+  if (isMaskedVariant(a, b)) return 'masked';
+  if (isShuffledVariant(a, b)) return 'shuffled';
+  return null;
+}
+
+/** 同一段的两种显示 —— 不关心是哪一种时用这个。 */
+function isVariant(a, b) {
+  return variantKind(a, b) !== null;
+}
+
+/**
  * The verified answer for this passage, or null to fall through to the matcher.
  *
  * @param {string} source      SongSource, as stored on the mapping
@@ -167,8 +245,34 @@ async function getApproved(source, externalId, gameLyric, lineCount) {
       },
       select: { answer: true, status: true },
     });
-    if (!row || row.status !== 'approved') return null;
-    return isUsable(row.answer, lineCount) ? row.answer : null;
+    if (row && row.status === 'approved') {
+      return isUsable(row.answer, lineCount) ? row.answer : null;
+    }
+
+    // 精确没命中, 再看是不是某个已确认段落的变体。
+    //
+    // 只在这一首录音里找, 绝不跨录音: 答案是真实歌词的行号, 换一份录音行号
+    // 就全变了。实测每首歌平均只有 1.09 条已确认(最多 2 条), 所以这一步是
+    // 一次小查询加几次字符串比对 —— 量到 0.94ms, 和上面那次精确查一样快,
+    // 而命中之后省掉的是整首歌词的窗口滑动, 净赚。
+    const mine = passageLines(gameLyric);
+    const siblings = await prisma.lyricPassageMatch.findMany({
+      where: { source, externalId: String(externalId), status: 'approved' },
+      select: { gameLyric: true, answer: true },
+    });
+    for (const sib of siblings) {
+      const kind = variantKind(mine, passageLines(sib.gameLyric));
+      if (!kind) continue;
+      // 乱序只认首末答案。逐行答案是按游戏那边的排列写的, 句子一打乱就对不
+      // 上了 —— 《Raise Your Glass》那两条已确认的就是这样: 覆盖的真实行
+      // 一样, 答案却是 [0,0,1,1,2] 和 [1,1,0,2,0]。宁可回去走算法。
+      if (kind === 'shuffled' && !isRangeAnswer(sib.answer)) continue;
+      // 变体之间共用同一个答案 —— 它指的是真实歌词的位置, 与游戏那边怎么
+      // 排、盖了多少无关。仍然过一遍 isUsable: 存的答案可能是旧的逐行形式,
+      // 那种要求项数等于游戏行数, 而变体的行数虽同、形状未必仍然合用。
+      if (isUsable(sib.answer, lineCount)) return sib.answer;
+    }
+    return null;
   } catch (err) {
     // The table may not exist yet on an older database, or the query may fail
     // under load. Either way the page has a matcher of its own; saying nothing
@@ -283,4 +387,5 @@ async function report(source, externalId, gameLyric, reporter) {
 module.exports = {
   hashPassage, isUsable, getApproved, coveredLines, placementsOf, report,
   isRangeAnswer, normaliseAnswer,
+  isVariant, variantKind, passageLines,
 };

@@ -107,6 +107,53 @@ async function put(status, answer, verifiedBy = 'ai') {
   assert.strictEqual(store.placementsOf({ ranges: [[10, 12], [30, 32]] }, 3).length, 2, 'two occurrences');
   console.log('  ✓ range answers render like per-line and keep the old format intact');
 
+  // 变体: 同一段词的两种显示。游戏会把句子打乱, 或者盖掉一部分字 —— 人确认
+  // 过一种之后, 另一种指的是真实歌词的同一片行, 答案原样可用。
+  //
+  // 判定必须是精确的。一首歌里真有两段不同的词时要分得开, 否则一次确认会把
+  // 错答案铺到另一段上, 而那是直接生效给正在唱的人看的。
+  const P = store.passageLines;
+
+  assert.ok(store.isVariant(
+    P('你是我触碰不到的风\n醒不来的梦\n忘不了的某某某'),
+    P('醒不来的梦\n忘不了的某某某\n你是我触碰不到的风')),
+    '打乱顺序仍是同一段');
+  assert.ok(store.isVariant(
+    P('你是我触碰不到的风\n醒不来的梦'),
+    P('你 __ __ __ __\n醒不来的梦')),
+    '盖掉一半的字仍是同一段');
+  assert.ok(!store.isVariant(
+    P('香榛丽大街\n如烟花坠落'),
+    P('如 __ __\n香榛丽大街')),
+    '乱序和遮掩同时发生, 这里不认 —— 游戏一次只用一种, '
+    + '而两个不确定性叠在一起, 判错的代价是把答案直接铺给正在唱的人');
+  console.log('  ✓ 乱序和遮掩都认得出是同一段');
+
+  assert.ok(!store.isVariant(
+    P('你是一只飞鸟飞上我的树梢\n从此我乏味的生活变得热闹'),
+    P('我的山楂树之恋\n只有是和你才会纯洁')),
+    '《山楂树之恋》那两段是真的两段词, 不能并');
+  assert.ok(!store.isVariant(P('甲\n乙'), P('甲\n乙\n丙')),
+    '行数不同就不是同一段');
+  assert.ok(!store.isVariant(P('甲\n乙'), P('甲\n乙')),
+    '一模一样的走精确查, 不该再当变体');
+  assert.ok(!store.isVariant(P('我 __ __\n乙'), P('你是谁啊\n乙')),
+    '遮掩剩下的字对不上, 不能当同一段');
+  console.log('  ✓ 两段不同的词分得开');
+
+  // 乱序变体不能拿逐行答案来用。逐行的第 k 项说的是「游戏第 k 行对应哪一行」,
+  // 句子一打乱就整个错位。《Raise Your Glass》两条已确认的正是这样: 覆盖的
+  // 真实行都是 0,1,2, 答案却是 [0,0,1,1,2] 和 [1,1,0,2,0]。
+  assert.strictEqual(store.variantKind(
+    P('Right right\nturn off the lights\nWe are gonna lose'),
+    P('turn off the lights\nWe are gonna lose\nRight right')), 'shuffled',
+    '换了排列顺序, 就是乱序变体');
+  assert.strictEqual(store.variantKind(
+    P('你是我碰不到的风\n醒不来的梦'),
+    P('你 __ __ __\n醒不来的梦')), 'masked',
+    '盖掉几个字, 就是遮掩变体');
+  console.log('  ✓ 分得清是乱序还是遮掩 —— 乱序只能用首末答案');
+
   // ---- against the database ----------------------------------------------
   await prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT } });
 

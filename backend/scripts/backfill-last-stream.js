@@ -12,6 +12,10 @@
  * 也只填那些一条精确记录都没有的人。有精确记录的人时刻本来就准, 拿一个天级的
  * 猜测去盖只会让他们显得比实际活跃。
  *
+ * 这里排除的九张表必须和 adminService 里算 lastActiveAt 的那九个来源一致 ——
+ * 少查一张, 只在那张表里活动过的人就会被天级猜测盖掉。最初漏了四张, 实测正好
+ * 有两位用户中招。
+ *
  * 只填空着的行 —— 已经有真实写入的绝不覆盖, 所以重跑安全, 而且跑得越晚影响
  * 越小(真实数据会自己长出来)。
  *
@@ -34,8 +38,12 @@ const APPLY = process.argv.includes('--apply');
     LEFT JOIN (SELECT user_id, MAX(created_at) t FROM likes GROUP BY user_id) lk ON lk.user_id = u.id
     LEFT JOIN (SELECT user_id, MAX(created_at) t FROM clips GROUP BY user_id) cl ON cl.user_id = u.id
     LEFT JOIN (SELECT user_id, MAX(updated_at) t FROM song_prefs GROUP BY user_id) sp ON sp.user_id = u.id
+    LEFT JOIN (SELECT user_id, MAX(created_at) t FROM tag_events GROUP BY user_id) te ON te.user_id = u.id
+    LEFT JOIN (SELECT user_id, MAX(created_at) t FROM feedback GROUP BY user_id) fb ON fb.user_id = u.id
+    LEFT JOIN (SELECT user_id, MAX(created_at) t FROM playlist_shares GROUP BY user_id) ps ON ps.user_id = u.id
+    LEFT JOIN (SELECT user_id, MAX(created_at) t FROM playlist_copy_permissions GROUP BY user_id) pcp ON pcp.user_id = u.id
     WHERE u.last_stream_at IS NULL
-      AND GREATEST(cs.t, pl.t, lk.t, cl.t, sp.t) IS NULL
+      AND GREATEST(cs.t, pl.t, lk.t, cl.t, sp.t, te.t, fb.t, ps.t, pcp.t) IS NULL
     ORDER BY b.d DESC
   `);
 
@@ -66,6 +74,10 @@ const APPLY = process.argv.includes('--apply');
       AND NOT EXISTS (SELECT 1 FROM likes x WHERE x.user_id = u.id)
       AND NOT EXISTS (SELECT 1 FROM clips x WHERE x.user_id = u.id)
       AND NOT EXISTS (SELECT 1 FROM song_prefs x WHERE x.user_id = u.id)
+      AND NOT EXISTS (SELECT 1 FROM tag_events x WHERE x.user_id = u.id)
+      AND NOT EXISTS (SELECT 1 FROM feedback x WHERE x.user_id = u.id)
+      AND NOT EXISTS (SELECT 1 FROM playlist_shares x WHERE x.user_id = u.id)
+      AND NOT EXISTS (SELECT 1 FROM playlist_copy_permissions x WHERE x.user_id = u.id)
   `);
   console.log('\n写入 ' + n + ' 行。');
 

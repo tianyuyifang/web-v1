@@ -474,6 +474,9 @@ export const mappingAPI = {
   // 「段落点不准确」— a singer's report from the live page; counts only,
   // can never change an answer.
   reportPassage: (body) => api.post("/mappings/passages/report", body),
+  // 唱卡页「段落点准确」——直接存成已确认。后端挂 requireMappingEditor,
+  // 前端只是不给非 admin 看见按钮。
+  confirmPassage: (body) => api.post("/mappings/passages/confirm", body),
   decidePassage: (id, body) => api.patch(`/mappings/passages/${id}`, body),
   deletePassage: (id) => api.delete(`/mappings/passages/${id}`),
   // Same thing for a pool track nobody has claimed yet — you have to hear it

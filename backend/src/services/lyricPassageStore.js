@@ -291,6 +291,47 @@ async function getApproved(source, externalId, gameLyric, lineCount) {
 }
 
 /**
+ * 唱卡页上有人按了「段落点准确」—— 把当下标着的行存成已确认。
+ *
+ * 审核页是对着行号判断, 这里是对着声音: 歌正在放, 标黄对不对听得出来。所以
+ * 这条路存在, 而且只对 admin 开放(路由那层挡)。
+ *
+ * 已经确认过的不动 —— 误触不该改掉之前的判断, 再确认一遍也没有意义。除此
+ * 之外(还在队列里的、标过没有对应的、表里根本没有的)一律写成已确认。
+ *
+ * 答案照样过 isUsable: 它是从浏览器送上来的, 不能因为来路是 admin 就免检。
+ */
+async function confirmFromLive(source, externalId, gameLyric, answer, lineCount, by) {
+  if (!source || !externalId || !String(gameLyric).trim()) return { ok: false, reason: 'missing' };
+  if (!isUsable(answer, lineCount)) return { ok: false, reason: 'unusable' };
+  // 一行都不标的答案不能存。[-1,-1,-1] 过得了 isUsable(滤掉 -1 之后是空,
+  // runOk 对空集合放行), 但存进去就是一条谁也报不掉的死段落: 页面标不出
+  // 东西, 而 passageVerified 又把报告按钮藏了。
+  if (!coveredLines(normaliseAnswer(answer)).length) return { ok: false, reason: 'empty' };
+  const lyricHash = hashPassage(gameLyric);
+  const existing = await prisma.lyricPassageMatch.findUnique({
+    where: { source_externalId_lyricHash: { source, externalId: String(externalId), lyricHash } },
+    select: { id: true, status: true },
+  });
+  if (existing && existing.status === 'approved') {
+    return { ok: true, already: true };
+  }
+  await prisma.lyricPassageMatch.upsert({
+    where: { source_externalId_lyricHash: { source, externalId: String(externalId), lyricHash } },
+    create: {
+      source, externalId: String(externalId), lyricHash, gameLyric,
+      answer, status: 'approved', verifiedBy: 'human', note: by ? '唱卡页确认 by ' + by : null,
+    },
+    update: {
+      answer, status: 'approved', verifiedBy: 'human',
+      // 确认过了, 之前的报告就算处理完了 —— 和审核页 decide 一个道理。
+      reportCount: 0, lastReportedAt: null, reporters: [],
+    },
+  });
+  return { ok: true };
+}
+
+/**
  * A singer pressed 「段落点不准确」 on this passage.
  *
  * Counting, not judging: the row's status is left alone. A report on an
@@ -395,5 +436,5 @@ async function report(source, externalId, gameLyric, reporter) {
 module.exports = {
   hashPassage, isUsable, getApproved, coveredLines, placementsOf, report,
   isRangeAnswer, normaliseAnswer,
-  isVariant, variantKind, passageLines,
+  isVariant, variantKind, passageLines, confirmFromLive,
 };

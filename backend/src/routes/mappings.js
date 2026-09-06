@@ -371,6 +371,35 @@ router.get('/passages/counts', requireMappingEditor, async (req, res, next) => {
 });
 
 /**
+ * POST /api/mappings/passages/confirm — 唱卡页上按了「段落点准确」。
+ *
+ * 和隔壁的 report 正相反, 这条**必须**挂 requireMappingEditor: report 只能
+ * 累加一个计数, 这条却直接写出一个生效的答案 —— 前端按 canEditMapping 藏起
+ * 按钮只是不给看, 真正的门在这里。
+ *
+ * 为什么值得有这条路: 审核页是对着行号判断, 唱卡页是对着声音 —— 歌正在放,
+ * 标黄对不对听得出来, 比盯数字准。
+ */
+router.post('/passages/confirm', requireMappingEditor, async (req, res, next) => {
+  try {
+    const { source, externalId, gameLyric, answer, lineCount } = req.body || {};
+    if (source !== 'QQ' && source !== 'NETEASE' && source !== 'LOCAL') {
+      return res.json({ ok: false, reason: 'source' });
+    }
+    res.json(await passages.confirmFromLive(
+      source,
+      String(externalId || ''),
+      String(gameLyric || '').slice(0, 2000),
+      answer,
+      Number.isInteger(lineCount) ? lineCount : undefined,
+      req.user.username,
+    ));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/mappings/passages/report — a singer pressed 「段落点不准确」.
  *
  * Deliberately NOT behind requireMappingEditor: this is feedback from the

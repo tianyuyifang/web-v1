@@ -237,6 +237,52 @@ async function put(status, answer, verifiedBy = 'ai') {
   console.log('  ✓ missing arguments answer nothing rather than throwing');
 
   await prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT } });
+
+  // 唱卡页「段落点准确」。这条路直接写出生效答案, 而它此前一行测试都没有 ——
+  // 正是因此, 存进去的形状被改坏过两次都没人拦住。
+  {
+    const G = '甲\n乙\n丙';
+    const clean = () => prisma.lyricPassageMatch.deleteMany({ where: { externalId: EXT } });
+    await clean();
+
+    let r = await store.confirmFromLive(SOURCE, EXT, G, { ranges: [[5, 7]] }, 3, 'tester');
+    let row = await prisma.lyricPassageMatch.findFirst({ where: { externalId: EXT } });
+    assert.ok(r.ok && row && row.status === 'approved', '表里没有时写成已确认');
+
+    r = await store.confirmFromLive(SOURCE, EXT, G, { ranges: [[99, 100]] }, 3, 'tester');
+    row = await prisma.lyricPassageMatch.findFirst({ where: { externalId: EXT } });
+    assert.ok(r.already === true && JSON.stringify(row.answer) === '{"ranges":[[5,7]]}',
+      '已确认的不被覆盖 —— 误触不该改掉之前的判断');
+
+    await prisma.lyricPassageMatch.updateMany({ where: { externalId: EXT },
+      data: { status: 'pending', answer: [] } });
+    r = await store.confirmFromLive(SOURCE, EXT, G, { ranges: [[8, 9]] }, 3, 'tester');
+    row = await prisma.lyricPassageMatch.findFirst({ where: { externalId: EXT } });
+    assert.ok(r.ok && row.status === 'approved', '排队中的可以当场确认');
+
+    await clean();
+    r = await store.confirmFromLive(SOURCE, EXT, G, [-1, -1, -1], 3, 'tester');
+    assert.strictEqual(r.reason, 'empty',
+      '一行都不标的答案存进去就是一条谁也报不掉的死段落');
+    r = await store.confirmFromLive(SOURCE, EXT, G, [1, 3], 2, 'tester');
+    assert.ok(!r.ok, '不连续的答案被拒');
+    r = await store.confirmFromLive(SOURCE, '', G, { ranges: [[1, 2]] }, 3, 'tester');
+    assert.ok(!r.ok, '缺参数被拒');
+
+    // 背靠背的两处必须存成逐行 —— 压成首末会被读回成一处。
+    // 「几处」是靠连续性反推的, 所以有些形状两种格式都表达不了 —— 处数正好
+    // 等于游戏行数、而且各处首尾相接时, 逐行会被读成一处长段, 首末的相邻区间
+    // 也连成一片。按钮遇到这种形状不提交(存回去读不出原意), 这里把它钉住。
+    assert.strictEqual(store.placementsOf([[0, 1], [2, 3]], 2).length, 1,
+      '处数==行数且背靠背时, 逐行也表达不了两处');
+    assert.strictEqual(store.placementsOf({ ranges: [[0, 1], [2, 3]] }, 2).length, 1,
+      '首末同样表达不了');
+    assert.strictEqual(store.placementsOf([[1, 2, 3], [4, 5, 6]], 3).length, 2,
+      '处数 != 行数时逐行是好的');
+
+    await clean();
+    console.log('  ✓ 唱卡页当场确认');
+  }
   console.log('\nAll lyric-passage tests passed.');
   await prisma.$disconnect();
   process.exit(0);

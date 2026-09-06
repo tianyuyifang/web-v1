@@ -34,6 +34,8 @@ import LivePitchControl from "@/components/live/LivePitchControl";
 import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
 import { PRESET_COLORS } from "@/components/player/ColorTag";
+// 存之前拿它验一遍: 存进去的答案读回来还是不是这么多处。
+import { placementsOf } from "@/lib/passageAnswer";
 import SongLibrary from "@/components/live/SongLibrary";
 import MarkedSongs from "@/components/live/MarkedSongs";
 import LiveGuide from "@/components/live/LiveGuide";
@@ -195,6 +197,19 @@ export default function LivePage() {
   // button — there is no algorithm to complain about.
   const [passageVerified, setPassageVerified] = useState(false);
   const onUsedVerified = useCallback((v) => setPassageVerified(v), []);
+
+  // 标着的行, 由 LiveLyrics 递上来 —— 「段落点准确」要存的正是这一片。
+  const [places, setPlaces] = useState({ places: [], forLyric: null });
+  const onPlaces = useCallback(
+    (p) => setPlaces(p && Array.isArray(p.places) ? p : { places: [], forLyric: null }),
+    [],
+  );
+  // 这台设备上按过「准确」的段落, 和 reportedPassages 同款: 同一段词换成
+  // 新卡片再出现时, 按钮不该又回来。
+  const [confirmedPassages, setConfirmedPassages] = useState(() => new Set());
+  const [confirmArmed, setConfirmArmed] = useState(null);
+  const confirmArmTimer = useRef(null);
+  useEffect(() => () => clearTimeout(confirmArmTimer.current), []);
   // Playback lives in the hook: it starts an <audio> element straight away and
   // decodes in the background, so a card makes sound in well under a second
   // while pitch shifting becomes available a moment later.
@@ -988,6 +1003,11 @@ export default function LivePage() {
     // fetch away, and stale marks would sit on the new song's transport.
     setPassageTimes([]);
     setChorusTime(null);
+    // 同样的道理: 上一首的行号留着, 会被「段落点准确」当成这一首的答案存
+    // 进去 —— 服务端只查连续性, 认不出行号属于哪首歌。上膛状态一并解除,
+    // 免得在 A 上按了第一次、切到 B 按第二次。
+    setPlaces({ places: [], forLyric: null });
+    setConfirmArmed(null);
     if (openId === card.eventId) {
       setOpenId(null);
       return;
@@ -1294,7 +1314,6 @@ export default function LivePage() {
                     if (!isCollapsed && batch.cards.some((c) => c.eventId === openId)) {
                       stopAudio();
                       setOpenId(null);
-                      setRejecting(null);
                     }
                     setCollapsed((p) => ({ ...p, [batch.at]: !isCollapsed }));
                   }}
@@ -1418,6 +1437,7 @@ export default function LivePage() {
                                   onTimesChange={setLineTimes}
                                   onPassageTimes={onPassageTimes}
                                   onChorusTime={onChorusTime}
+                                  onPlaces={onPlaces}
                                   onUsedVerified={onUsedVerified}
                                 />
                               </div>
@@ -1656,6 +1676,94 @@ export default function LivePage() {
                                       }`}
                                     >
                                       {armed ? "再点一次确认报告" : "段落点不准确"}
+                                    </button>
+                                  );
+                                })()}
+
+                                {/* 「段落点准确」— 只有能编辑映射的人看得见。
+                                    审核页是对着行号判断, 这里是对着声音: 歌
+                                    正在放, 标黄对不对听得出来。两次点击和隔壁
+                                    一个道理, 免得误触写出一个生效的答案。
+                                    已确认过的段落两个按钮都不出现。 */}
+                                {canEditMapping && card.lyric && card.mapping?.source
+                                  && card.mapping?.externalId && !passageVerified
+                                  && places.forLyric === card.lyric
+                                  && places.places.length > 0 && (() => {
+                                  const cKey = `${card.mapping.source}:${card.mapping.externalId}:${card.lyric}`;
+                                  if (confirmedPassages.has(cKey)) {
+                                    return <span className="shrink-0 text-[0.65rem] text-muted">已确认</span>;
+                                  }
+                                  const armed = confirmArmed === card.eventId;
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!armed) {
+                                          setConfirmArmed(card.eventId);
+                                          clearTimeout(confirmArmTimer.current);
+                                          confirmArmTimer.current = setTimeout(
+                                            () => setConfirmArmed(null), 3000,
+                                          );
+                                          return;
+                                        }
+                                        clearTimeout(confirmArmTimer.current);
+                                        setConfirmArmed(null);
+                                        // 先乐观收起按钮, 失败再放回来。丢一次
+                                        // 报告只是少个计数, 丢一次确认是一个本该
+                                        // 生效的答案没生效、而人以为生效了。
+                                        const rollback = () => setConfirmedPassages((prev) => {
+                                          const next = new Set(prev);
+                                          next.delete(cKey);
+                                          return next;
+                                        });
+                                        // 每一处取首末 —— 存的就是审核页那个格式。
+                                        const ranges = places.places
+                                          .map((pl) => {
+                                            const ns = [...new Set(pl.flat())]
+                                              .filter((n) => n >= 0).sort((a, b) => a - b);
+                                            return ns.length ? [ns[0], ns[ns.length - 1]] : null;
+                                          })
+                                          .filter(Boolean);
+                                        if (!ranges.length) return;
+                                        // 每处取首末就是答案。存下去之后读回来
+                                        // 处数必须还一样 —— 不猜规则, 直接问那
+                                        // 段代码。「几处」是靠行号连不连续反推的,
+                                        // 所以副歌万一连着唱, 两处会被读成一处;
+                                        // 那时宁可不存, 页面继续走算法(它当下标
+                                        // 的本来就对), 也不留一个会被读成别的
+                                        // 意思的 approved 答案 —— 那会顶掉算法的
+                                        // 正确结果, 而报告按钮对已确认的段落又是
+                                        // 隐藏的, 谁也报不掉。
+                                        const answer = { ranges };
+                                        const lineCount = String(card.lyric)
+                                          .split(/[\n/]+/).map((s) => s.trim())
+                                          .filter(Boolean).length;
+                                        if (placementsOf(answer, lineCount).length
+                                          !== places.places.length) return;
+                                        setConfirmedPassages((prev) => new Set(prev).add(cKey));
+                                        // 不等它 —— 唱歌途中不该为一次写库卡住。
+                                        mappingAPI.confirmPassage({
+                                          source: card.mapping.source,
+                                          externalId: card.mapping.externalId,
+                                          gameLyric: card.lyric,
+                                          answer,
+                                          // 只按换行拆 —— 后端 passageLines 就是
+                                          // 这么拆的。逐行答案要求每处项数等于
+                                          // lineCount, 两边口径不一样就会被拒,
+                                          // 而按钮那时已经说「已确认」了。
+                                          lineCount,
+                                        }).then((r) => {
+                                          // 服务端拒绝时也是 200, 所以要看 ok。
+                                          if (!r?.data?.ok) rollback();
+                                        }).catch(rollback);
+                                      }}
+                                      className={`shrink-0 rounded border px-2.5 py-1 text-[0.68rem] font-medium text-accent ${LADDER_TINT} ${
+                                        armed
+                                          ? "border-accent ring-2 ring-accent/40"
+                                          : "border-accent hover:border-accent/70"
+                                      }`}
+                                    >
+                                      {armed ? "再点一次确认" : "段落点准确"}
                                     </button>
                                   );
                                 })()}

@@ -62,7 +62,7 @@ function SweptLine({ text, progress }) {
 
 export default function LiveLyrics({
   mappingId, gameLyric, current, onSeek, onTimesChange, onPassageTimes,
-  onUsedVerified, onChorusTime,
+  onUsedVerified, onChorusTime, onPlaces,
   override,
 }) {
   const [lrc, setLrc] = useState(null);
@@ -282,6 +282,16 @@ export default function LiveLyrics({
     if (!onPassageTimes) return;
     onPassageTimes(placeTimes);
   }, [placeTimes, onPassageTimes]);
+
+  // 标着的行本身, 给「段落点准确」用 —— 它要存的正是这一片。places 是
+  // 已经算好的, 这里只是把它递出去, 没有额外计算。
+  useEffect(() => {
+    if (!onPlaces) return;
+    // 连它算自哪段词一起报上去。卡片开着时游戏会逐步揭示同一段, card.lyric
+    // 被原地换掉而这里要等歌词重新 fetch 才更新 —— 中间那一帧, 页面拿的是
+    // 旧段落的行号配新段落的词。让调用方能自己比对, 对不上就别用。
+    onPlaces({ places, forLyric: gameLyric });
+  }, [places, gameLyric, onPlaces]);
 
   /**
    * The chorus, snapped onto the line it starts.

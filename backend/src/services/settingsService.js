@@ -188,6 +188,15 @@ const CLIENT_VERSION_KEY = 'captureClientVersion';
 // songs were tagged into playlists during a 歌 P run -- 22 of 200 production
 // captures. minSupported stays at 1: an older client is wrong only while both
 // rounds are in play, and cutting users off mid-game is worse.
+// v25 declares isAccessibilityTool. Android 14 lets an app mark a view
+// accessibilityDataSensitive, and the system then hides that view from every
+// service that has not made this declaration -- the service is told nothing,
+// it just never sees the node. qni started marking the song title, so nine
+// users went quiet: heartbeats fine, 110 singerDuel nodes readable, the title
+// alone missing, all of them on Android 14/15/16 (an Android 12 emulator kept
+// working throughout, which is what made this so slow to find). The flag is
+// inert on older systems and changes nothing for anyone already reading the
+// title, so it cannot take working clients backwards.
 const CLIENT_VERSION_DEFAULT = Object.freeze({
   latest: 21,
   minSupported: 1,

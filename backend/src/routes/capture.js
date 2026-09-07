@@ -153,6 +153,7 @@ router.post('/heartbeat', captureAuth, async (req, res, next) => {
     const result = await captureService.touchSession(
       req.captureSession,
       req.body && req.body.clientVersion,
+      req.body,
     );
     // How the client learns which screens to scan. Carried on the heartbeat
     // rather than pushed, because the client already polls this and a second

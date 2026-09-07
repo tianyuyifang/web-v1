@@ -413,6 +413,18 @@ model CaptureSession {
   /// Null until a build that reports it connects, which is what makes an old
   /// client identifiable at all.
   clientVersion Int? @map("client_version")
+  /// 客户端连续「扫了游戏画面却一个标题都没读到」的次数，以及它最后一次真读到
+  /// 是多少秒前。
+  ///
+  /// 加这两个字段，是因为抓不到东西这件事以前完全没有信号：2026-09-07 有九个
+  /// 用户连着两三天心跳正常、一首歌都没有（游戏给歌名打了 accessibilityDataSensitive，
+  /// Android 14+ 就把那个节点对我们藏了），而服务端看到的一切都正常，是用户
+  /// 反馈才发现的。客户端在本来就有的心跳上捎带这两个数，不多花一次请求。
+  ///
+  /// 只在游戏前台真扫过之后才更新 —— 不在游戏里不算，否则这两个数只反映用户
+  /// 在不在玩，说明不了抓取本身好不好。旧客户端不报，保持 null。
+  blindScans    Int? @map("blind_scans")
+  lastReadAgo   Int? @map("last_read_ago")
 
   user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   playlist Playlist?      @relation(fields: [playlistId], references: [id], onDelete: Cascade)

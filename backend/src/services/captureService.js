@@ -474,7 +474,7 @@ function logNoTarget(session, text, wanted) {
 }
 
 /** Record that the capture client is alive, without ingesting anything. */
-async function touchSession(session, clientVersion) {
+async function touchSession(session, clientVersion, health) {
   /**
    * Which build is on the other end, when it says so.
    *
@@ -487,11 +487,33 @@ async function touchSession(session, clientVersion) {
     ? clientVersion
     : null;
 
+  /**
+   * Whether the client is reading anything, as opposed to merely alive.
+   *
+   * Same rule as the version above: only written when the client actually
+   * reports, so an older build cannot blank what a newer one recorded. These
+   * are the only signal that capture has stopped working — before them a
+   * client could scan the game for days and find nothing while every
+   * server-side indicator stayed green, which is exactly what nine users hit
+   * when the game marked the song title accessibilityDataSensitive.
+   */
+  // Clamped to what the columns can hold. Anything past INT4 makes Postgres
+  // reject the whole update, and this update is the heartbeat -- the request
+  // the client learns its target from. A number the sender got wrong must not
+  // be able to take that down; our own client cannot produce one (Java ints),
+  // but the server does not get to assume the sender is our client.
+  const INT4_MAX = 2147483647;
+  const asInt4 = (v, min) => (Number.isInteger(v) && v >= min && v <= INT4_MAX ? v : null);
+  const blind = asInt4(health && health.blindScans, 0);
+  const readAgo = asInt4(health && health.lastReadAgoSec, -1);
+
   await prisma.captureSession.update({
     where: { id: session.id },
     data: {
       lastSeenAt: new Date(),
       ...(version ? { clientVersion: version } : {}),
+      ...(blind === null ? {} : { blindScans: blind }),
+      ...(readAgo === null ? {} : { lastReadAgo: readAgo }),
     },
   });
   return { ok: true };
@@ -1125,17 +1147,41 @@ async function ignoreEvent({ userId, eventId }) {
  *   stale        posted before, but not lately — client died or the game
  *                left the song list
  */
+/**
+ * What the connection is doing: waiting | connected | stale.
+ *
+ * One definition for both readers -- the 唱卡 page polls getStatus and the
+ * pairing panel polls getConnection, and the two had their own copies of the
+ * staleness rule, so a change to one silently left the other behind.
+ *
+ * There is a fourth state this could report and deliberately does not: the
+ * client heartbeating on time while it scans the game and finds no title at
+ * all. blindScans measures exactly that, and nine users sat in front of a
+ * green "已连接 · 唱卡识别中" for days in it. Telling them so would be worth
+ * something -- but only at a threshold that does not also fire during a
+ * settings sheet, a lobby, or a stretch of chat, and no one knows where that
+ * line is yet. A warning that cries wolf sends users to reinstall for nothing,
+ * trains them to ignore the one that matters, and poisons the very numbers
+ * that were supposed to answer the question.
+ *
+ * So the field is collected and stored, and read from the database by hand
+ * when someone reports a problem. Once the real distribution shows where
+ * normal play tops out, this can grow a 'blind' branch with a threshold that
+ * was measured rather than guessed.
+ */
+function clientState(session) {
+  const STALE_AFTER_MS = 60 * 1000;
+  if (!session.lastSeenAt) return 'waiting';
+  const age = Date.now() - new Date(session.lastSeenAt).getTime();
+  return age > STALE_AFTER_MS ? 'stale' : 'connected';
+}
+
 async function getStatus({ userId, sessionId }) {
   const session = await prisma.captureSession.findUnique({ where: { id: sessionId } });
   if (!session) throw new NotFoundError('Capture session');
   if (session.userId !== userId) throw new ForbiddenError('Not your capture session');
 
-  const STALE_AFTER_MS = 60 * 1000;
-  let client = 'waiting';
-  if (session.lastSeenAt) {
-    const age = Date.now() - new Date(session.lastSeenAt).getTime();
-    client = age <= STALE_AFTER_MS ? 'connected' : 'stale';
-  }
+  const client = clientState(session);
 
   // How many cards the feed would return right now.
   //
@@ -1188,12 +1234,7 @@ async function getConnection(userId) {
   });
   if (!session) return null;
 
-  const STALE_AFTER_MS = 60 * 1000;
-  let client = 'waiting';
-  if (session.lastSeenAt) {
-    const age = Date.now() - new Date(session.lastSeenAt).getTime();
-    client = age <= STALE_AFTER_MS ? 'connected' : 'stale';
-  }
+  const client = clientState(session);
 
   return {
     sessionId: session.id,

@@ -339,6 +339,8 @@ router.get('/passages', requireMappingEditor, async (req, res, next) => {
       cursor: req.query.cursor,
       // The approved tab's 「只看被报告的」 filter.
       reportedOnly: req.query.reported === '1',
+      // 按游戏歌名/歌手搜 —— 已确认上百条时只能翻页找，复查某首歌做不到。
+      q: req.query.q,
     }));
   } catch (err) {
     next(err);

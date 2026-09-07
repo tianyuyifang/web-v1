@@ -40,6 +40,10 @@ export default function PassagePanel() {
   // The approved tab's 「只看被报告的」 filter. Off by default; reset when
   // leaving the tab so it cannot silently narrow another one.
   const [reportedOnly, setReportedOnly] = useState(false);
+  // 按游戏歌名/歌手搜。draft 是输入框内容，search 是已提交的词 ——
+  // 分开是为了敲字时不打请求，回车或点按钮才查。
+  const [searchDraft, setSearchDraft] = useState("");
+  const [search, setSearch] = useState("");
   // Only redirect on the very first load, never after the reviewer chooses.
   const firstLoad = useRef(false);
 
@@ -49,7 +53,7 @@ export default function PassagePanel() {
     setError(null);
     try {
       const [list, c] = await Promise.all([
-        mappingAPI.passages({ status, take: 50, reported: status === 'approved' && reportedOnly }),
+        mappingAPI.passages({ status, take: 50, reported: status === 'approved' && reportedOnly, search }),
         mappingAPI.passageCounts(),
       ]);
       setItems(list.data.items || []);
@@ -70,7 +74,7 @@ export default function PassagePanel() {
     } finally {
       setLoading(false);
     }
-  }, [status, reportedOnly]);
+  }, [status, reportedOnly, search]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -207,6 +211,34 @@ export default function PassagePanel() {
           >
             只看被报告的
           </button>
+        )}
+        {status !== "catalogue" && (
+          <form
+            className="ml-auto flex items-center gap-2"
+            onSubmit={(e) => { e.preventDefault(); setSearch(searchDraft.trim()); }}
+          >
+            <input
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              placeholder="搜游戏歌名 / 歌手"
+              className="w-48 rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            />
+            <button
+              type="submit"
+              className="rounded bg-gray-200 px-3 py-1.5 text-sm text-gray-700 transition hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+            >
+              搜索
+            </button>
+            {search && (
+              <button
+                type="button"
+                onClick={() => { setSearchDraft(""); setSearch(""); }}
+                className="rounded px-2 py-1.5 text-sm text-gray-500 transition hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
+              >
+                清除
+              </button>
+            )}
+          </form>
         )}
       </div>
 

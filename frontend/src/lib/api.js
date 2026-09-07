@@ -452,12 +452,13 @@ export const mappingAPI = {
 
   // Verified lyric-passage answers and their review queue. Editor-only, like
   // the rest of the review page.
-  passages: ({ status, take, cursor, reported } = {}) => {
+  passages: ({ status, take, cursor, reported, search } = {}) => {
     const q = new URLSearchParams();
     if (status) q.set("status", status);
     if (take) q.set("take", String(take));
     if (cursor) q.set("cursor", cursor);
     if (reported) q.set("reported", "1");
+    if (search) q.set("q", search);
     const qs = q.toString();
     return api.get(`/mappings/passages${qs ? `?${qs}` : ""}`);
   },

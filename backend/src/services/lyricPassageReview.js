@@ -66,11 +66,53 @@ async function gameNamesFor(keys) {
   return out;
 }
 
-async function list({ status = 'pending', take = 30, cursor, reportedOnly = false } = {}) {
+/**
+ * 按游戏歌名/歌手找出这几首歌的 (source, externalId)。
+ *
+ * 段落表只存 (source, externalId)，歌名歌手在 song_mappings 的 rawTitle/
+ * rawArtist —— 与 gameNamesFor 同一张表，只是反过来查。查不到就返回空数组，
+ * 调用方据此给出空列表，而不是退化成「搜索无效、把全部列出来」。
+ */
+async function keysMatching(q) {
+  const query = String(q || '').trim();
+  if (!query) return null;
+  const rows = await prisma.songMapping.findMany({
+    where: {
+      OR: [
+        { rawTitle: { contains: query, mode: 'insensitive' } },
+        { rawArtist: { contains: query, mode: 'insensitive' } },
+      ],
+    },
+    select: { source: true, externalId: true },
+    // 一首歌可能有多条映射，只需要去重后的 (source, externalId)。
+    take: 2000,
+  });
+  const seen = new Set();
+  const out = [];
+  for (const r of rows) {
+    const k = `${r.source} ${r.externalId}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ source: r.source, externalId: r.externalId });
+  }
+  return out;
+}
+
+async function list({ status = 'pending', take = 30, cursor, reportedOnly = false, q = '' } = {}) {
   if (!STATUSES.has(status)) status = 'pending';
+
+  // 按游戏歌名/歌手搜。已确认有一百多条、跨百余首歌，没有搜索就只能翻页找，
+  // 复查某一首歌基本做不到 —— 而已确认里确实躺着错答案，需要能定向翻出来。
+  const keys = await keysMatching(q);
+  if (keys && !keys.length) return { items: [], nextCursor: null };
+
   const rows = await prisma.lyricPassageMatch.findMany({
     // reportedOnly: the approved tab's 「只看被报告的」 filter.
-    where: { status, ...(reportedOnly ? { reportCount: { gt: 0 } } : {}) },
+    where: {
+      status,
+      ...(reportedOnly ? { reportCount: { gt: 0 } } : {}),
+      ...(keys ? { OR: keys.map((k) => ({ source: k.source, externalId: k.externalId })) } : {}),
+    },
     // Most-reported first: a report is a singer saying the marks were wrong,
     // so the queue leads with the passages hurting the most people.
     orderBy: [{ reportCount: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],

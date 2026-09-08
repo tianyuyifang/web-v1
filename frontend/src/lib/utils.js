@@ -62,6 +62,41 @@ export function clipMatchesFilters(pc, searchQuery, colorFilter) {
 }
 
 /**
+ * Format a list of songs as numbered, space-delimited lines and copy to the
+ * clipboard. Shared by the 未配置 list and the pending-feedback list so both
+ * produce the same shape:
+ *
+ *   1 歌名1 歌手1
+ *   2 歌名2 歌手2
+ *
+ * The number is this copy's running position, not any id. A row with no artist
+ * writes "N 歌名" with nothing trailing; a row with no title is skipped
+ * entirely (a general feedback carrying only a message is not a song).
+ *
+ * Returns the number of rows written, or -1 if the copy itself failed — the
+ * caller shows the count, or falls back. clipboard.writeText needs a secure
+ * context (https, or localhost); on http it rejects, hence the try/catch and
+ * the returned -1 rather than a silent no-op.
+ */
+export async function copySongLines(items) {
+  const lines = [];
+  for (const it of items || []) {
+    const title = (it && it.title ? String(it.title) : "").trim();
+    if (!title) continue; // no song on this row
+    const artist = (it && it.artist ? String(it.artist) : "").trim();
+    lines.push(artist ? `${lines.length + 1} ${title} ${artist}`
+      : `${lines.length + 1} ${title}`);
+  }
+  const text = lines.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    return lines.length;
+  } catch {
+    return -1;
+  }
+}
+
+/**
  * Get/set playlist view preference (grid or list).
  */
 const VIEW_KEY = "playlist-view";

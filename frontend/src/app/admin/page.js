@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { adminAPI, feedbackAPI } from "@/lib/api";
+import { copySongLines } from "@/lib/utils";
 import useAuth from "@/hooks/useAuth";
 import UserTable from "@/components/admin/UserTable";
 import BandwidthPanel from "@/components/admin/BandwidthPanel";
@@ -91,6 +92,8 @@ export default function AdminPage() {
   // what still needs an answer — the "clear it" feeling without deleting
   // anything, since deleting a row deletes the user's copy of the reply too.
   const [showReplied, setShowReplied] = useState(false);
+  // 复制待回复反馈里的歌到剪贴板（已回复=已做完，不复制）。序号从 1、空歌手不写。
+  const [fbCopied, setFbCopied] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setFetching(true);
@@ -309,6 +312,22 @@ export default function AdminPage() {
               <span className="inline-block h-2 w-2 rounded-full bg-blue-400" />
               {t("feedbackAdmin")}
               <span className="ml-1 text-sm font-normal text-muted">待回复 {pendingFb.length}</span>
+              {pendingFb.length > 0 && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const n = await copySongLines(pendingFb);
+                    setFbCopied(n < 0 ? "failed" : `${n}`);
+                    setTimeout(() => setFbCopied(false), 2000);
+                  }}
+                  className="ml-auto rounded-lg border border-border px-3 py-1.5 text-xs font-normal text-muted hover:text-fg"
+                  title="把待回复反馈里的歌按「序号 歌名 歌手」复制到剪贴板"
+                >
+                  {fbCopied === "failed" ? "复制失败"
+                    : fbCopied ? `已复制 ${fbCopied} 首`
+                    : "复制列表"}
+                </button>
+              )}
             </h2>
             {pendingFb.length === 0 ? (
               <p className="text-sm text-muted">没有待回复的反馈。</p>

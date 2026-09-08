@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mappingAPI } from "@/lib/api";
+import { copySongLines } from "@/lib/utils";
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
 // without a platform account and cannot be delisted out from under a singer.
@@ -301,6 +302,16 @@ export default function UnconfiguredPanel({ onCountsChange }) {
 
   const shown = filter === "all" ? rows : rows.filter((r) => r.state === filter);
 
+  // 复制全部未配置的歌到剪贴板。按用户约定：全部(不受筛选影响)、序号从 1、
+  // 空歌手不写。用 rows 而非 shown —— shown 是当前筛选后的子集。
+  const [copied, setCopied] = useState(false);
+  const copyList = useCallback(async () => {
+    const n = await copySongLines(rows);
+    if (n < 0) { setCopied("failed"); }
+    else { setCopied(`${n}`); }
+    setTimeout(() => setCopied(false), 2000);
+  }, [rows]);
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -333,6 +344,17 @@ export default function UnconfiguredPanel({ onCountsChange }) {
           className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-fg"
         >
           歌手库 {artistsOpen ? "▴" : "▾"}
+        </button>
+        <button
+          type="button"
+          onClick={copyList}
+          disabled={!rows.length}
+          className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-fg disabled:opacity-40"
+          title="把全部未配置的歌按「序号 歌名 歌手」复制到剪贴板"
+        >
+          {copied === "failed" ? "复制失败"
+            : copied ? `已复制 ${copied} 首`
+            : "复制列表"}
         </button>
       </div>
 

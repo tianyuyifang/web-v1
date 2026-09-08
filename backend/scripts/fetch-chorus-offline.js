@@ -106,12 +106,20 @@ function loadCookie() {
   if (!fs.existsSync(COOKIE_FILE)) return null;
   const text = fs.readFileSync(COOKIE_FILE, 'utf8').trim();
   if (text && !text.includes('\n')) return text;
+  // 两种多列格式, 名字和值在不同的列上:
+  //   Netscape cookies.txt : domain  flag  path  secure  expiry  NAME  VALUE   (col0 是域名)
+  //   DevTools 复制的表格  : NAME  VALUE  domain  path  expires  size  …       (col0 是名字)
+  // 之前只认第一种, 把 DevTools 导出的 Size/HttpOnly 列当成了 cookie, 搜索带着
+  // 一串垃圾 cookie 去问, 平台礼貌地回 code 0 + 空列表 —— 15 首全记成
+  // 「mid 不在搜索结果里」, 看着像接口坏了, 其实是 cookie 根本没发对。
+  // 靠 col0 长什么样分辨: 域名带点、不含等号; cookie 名不带点。
   const pairs = [];
   for (const line of text.split(/\r?\n/)) {
     const t = line.trim();
     if (!t || t.startsWith('#')) continue;
-    const p = t.split('\t');
-    if (p.length >= 7) pairs.push(p[5] + '=' + p[6]);
+    const p = t.split('\t').map((s) => s.trim());
+    const netscape = p.length >= 7 && /^\.?[\w-]+(\.[\w-]+)+$/.test(p[0]);
+    if (netscape) pairs.push(p[5] + '=' + p[6]);
     else if (p.length >= 2 && p[0] && p[1]) pairs.push(p[0] + '=' + p[1]);
   }
   return pairs.length ? pairs.join('; ') : null;

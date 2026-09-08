@@ -1757,10 +1757,14 @@ export default function LivePage() {
                                           if (!r?.data?.ok) rollback();
                                         }).catch(rollback);
                                       }}
-                                      className={`shrink-0 rounded border px-2.5 py-1 text-[0.68rem] font-medium text-accent ${LADDER_TINT} ${
+                                      // 绿色 —— 跟旁边的「段落点不准确」区分开。
+                                      // 两个按钮挨着放、文案只差一个「不」字,
+                                      // 同一个颜色时很容易点错 —— 而这两个按钮
+                                      // 写入的是相反的东西。
+                                      className={`shrink-0 rounded border px-2.5 py-1 text-[0.68rem] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 ${
                                         armed
-                                          ? "border-accent ring-2 ring-accent/40"
-                                          : "border-accent hover:border-accent/70"
+                                          ? "border-emerald-500 ring-2 ring-emerald-500/40"
+                                          : "border-emerald-500 hover:border-emerald-500/70"
                                       }`}
                                     >
                                       {armed ? "再点一次确认" : "段落点准确"}

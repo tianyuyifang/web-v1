@@ -8,6 +8,7 @@ const { ensureLiked } = require('./likeService');
 const { resolveGameSong } = require('./mappingResolveService');
 const { titleKey, artistKey } = require('./songKeyService');
 const { broadcast } = require('./sseManager');
+const settingsService = require('./settingsService');
 const { AppError, NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 
 const DEFAULT_TTL_MINUTES = 4 * 60;
@@ -1183,6 +1184,22 @@ async function getStatus({ userId, sessionId }) {
 
   const client = clientState(session);
 
+  // Whether the connected client is an older build than the newest one served.
+  //
+  // Reported only once the client has actually connected and named its version
+  // (it rides the heartbeat into session.clientVersion), so the page can tell
+  // the user their APK is behind. This is the one signal the site never had:
+  // when the game hid the song title from Android 14+, nine users sat on a
+  // green "已连接" for days with no idea an update existed. Unlike blindScans
+  // it cannot misfire — a version number is either behind the served one or it
+  // is not. A client that predates version reporting stays null → not flagged,
+  // so nobody who simply cannot report is nagged.
+  let clientOutdated = false;
+  if (Number.isInteger(session.clientVersion)) {
+    const { latest } = await settingsService.getClientVersion();
+    clientOutdated = Number.isInteger(latest) && session.clientVersion < latest;
+  }
+
   // How many cards the feed would return right now.
   //
   // The page compares this against what it is holding, and refetches when the
@@ -1213,6 +1230,9 @@ async function getStatus({ userId, sessionId }) {
     // as a healthy run that never receives anything.
     target: session.target,
     playlistId: session.playlistId,
+    // The page shows an update banner on this; false whenever the client is
+    // current or has not reported a version.
+    clientOutdated,
   };
 }
 

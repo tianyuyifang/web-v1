@@ -168,6 +168,11 @@ export default function LivePage() {
   const [pairCode, setPairCode] = useState(null);
   const [cards, setCards] = useState([]);
   const [client, setClient] = useState("waiting");
+  // APK 版本落后（服务端连接后比对得出），以及用户这一局是否已手动收起提醒。
+  // dismiss 只活在内存里 —— 不落库、不写 cookie，重开唱卡就重置，所以只要没
+  // 真的更新，下一局又会提示；真更新后服务端不再回 outdated，提示自然消失。
+  const [outdated, setOutdated] = useState(false);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
   const [collapsed, setCollapsed] = useState({});
@@ -589,6 +594,7 @@ export default function LivePage() {
         const res = await captureAPI.status(session.id);
         if (stop) return;
         setClient(res.data.client);
+        setOutdated(Boolean(res.data.clientOutdated));
         // Held fewer than the server has: something was pushed while this page
         // was not listening. The feed is the authority, so take it whole.
         const serverCount = res.data.liveEventCount;
@@ -1162,6 +1168,8 @@ export default function LivePage() {
       setSession(s);
       setPairCode(conn.pairCode || null);
       setCards([]);
+      // 新的一局：把上一局收起的提醒重新放开，只要还没更新就会再次提示。
+      setUpdateDismissed(false);
     } catch (err) {
       setError(err.response?.data?.error?.message || "无法开始，请稍后再试");
     } finally {
@@ -1282,6 +1290,33 @@ export default function LivePage() {
           />
           {client === "connected" ? "已连接 · 唱卡识别中"
             : client === "stale" ? "客户端无响应" : "等待客户端连接"}
+        </div>
+      )}
+
+      {/* APK 落后提醒。只在唱卡页、连接后、服务端确认版本落后时出现 —— 是确定
+          事实，不会误报。× 收起只管这一局（内存态），下一局仍会提示；用户真正
+          更新后服务端不再回 outdated，提醒自此消失。 */}
+      {tab === "cards" && session && outdated && !updateDismissed && (
+        <div className="mb-3 flex items-start gap-2 rounded border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 text-xs">
+          <span className="leading-5 text-amber-500" aria-hidden="true">⚠</span>
+          <div className="flex-1 text-text-secondary">
+            <strong className="mb-0.5 block font-semibold text-amber-500">
+              打标 App 是旧版本
+            </strong>
+            新系统上旧版会「连着却读不到歌」。请到
+            <a href="/tools" className="mx-1 font-semibold text-amber-500 underline underline-offset-2">
+              工具页
+            </a>
+            下载最新版，覆盖安装后到系统设置里关一次再打开无障碍开关。
+          </div>
+          <button
+            type="button"
+            onClick={() => setUpdateDismissed(true)}
+            className="-mr-1 -mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-muted hover:text-text"
+            aria-label="本局不再提示"
+          >
+            ✕
+          </button>
         </div>
       )}
 

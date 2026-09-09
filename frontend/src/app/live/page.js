@@ -35,7 +35,7 @@ import LiveSpeedControl from "@/components/live/LiveSpeedControl";
 import SongPrefEditor, { SongPrefMarks } from "@/components/live/SongPrefTags";
 import { PRESET_COLORS } from "@/components/player/ColorTag";
 // 存之前拿它验一遍: 存进去的答案读回来还是不是这么多处。
-import { placementsOf } from "@/lib/passageAnswer";
+import { placementsOf, entryLines } from "@/lib/passageAnswer";
 import SongLibrary from "@/components/live/SongLibrary";
 import MarkedSongs from "@/components/live/MarkedSongs";
 import LiveGuide from "@/components/live/LiveGuide";
@@ -1754,8 +1754,10 @@ export default function LivePage() {
                                         // 每一处取首末 —— 存的就是审核页那个格式。
                                         const ranges = places.places
                                           .map((pl) => {
-                                            const ns = [...new Set(pl.flat())]
-                                              .filter((n) => n >= 0).sort((a, b) => a - b);
+                                            // 和 LiveLyrics 的高亮、审核页的逐行显示同一种读法
+                                            // (entryLines), 存的才等于看到的。
+                                            const ns = [...new Set(pl.flatMap(entryLines))]
+                                              .sort((a, b) => a - b);
                                             return ns.length ? [ns[0], ns[ns.length - 1]] : null;
                                           })
                                           .filter(Boolean);

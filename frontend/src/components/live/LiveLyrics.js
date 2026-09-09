@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import { parseWordLyric, alignToLrc, sweepProgress, evenProgress } from "@/lib/wordLyric";
 import { mappingAPI } from "@/lib/api";
-import { placementsOf, isRangeAnswer } from "@/lib/passageAnswer";
+import { placementsOf, isRangeAnswer, entryLines } from "@/lib/passageAnswer";
 import { markPassage } from "@/lib/passageMatch";
 
 
@@ -242,9 +242,14 @@ export default function LiveLyrics({
     if (!onUsedVerified) return;
     onUsedVerified(usedVerified);
   }, [usedVerified, onUsedVerified]);
+  // 一个条目可以是一行、一组行(一条游戏行横跨两条歌词行)或 -1。三处消费 places 的
+  // 地方(这里、firstMark、placeTimes)和唱卡页的「段落点准确」、审核页的逐行显示,
+  // 必须用同一种读法 —— entryLines。之前这里写的是 `if (i >= 0)`,数组条目整个被
+  // 跳过:算法标了 [18,19] 的那条不亮,管理员按看到的批准,按钮却把 19 存了进去。
+  // 「存的」和「看到的」从同一份数据分叉,是那次错批的直接原因。
   const marks = useMemo(() => {
     const s = new Set();
-    for (const place of places) for (const i of place) if (i >= 0) s.add(i);
+    for (const place of places) for (const n of place.flatMap(entryLines)) s.add(n);
     return s;
   }, [places]);
 
@@ -253,7 +258,7 @@ export default function LiveLyrics({
   const firstMark = useMemo(() => {
     const first = places[0];
     if (!first) return -1;
-    const used = first.filter((i) => i >= 0);
+    const used = first.flatMap(entryLines);
     return used.length ? Math.min(...used) : -1;
   }, [places]);
 
@@ -270,7 +275,7 @@ export default function LiveLyrics({
     if (!timed) return [];
     return places
       .map((place) => {
-        const used = place.filter((i) => i >= 0);
+        const used = place.flatMap(entryLines);
         if (!used.length) return null;
         const t = parsed[Math.min(...used)]?.time;
         return Number.isFinite(t) && t >= 0 ? t : null;

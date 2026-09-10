@@ -117,7 +117,7 @@ export default function CaptureIndicator({ compact = false }) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        title="自动打标连接"
+        title="Q你一下连接"
         className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted hover:bg-surface-hover hover:text-theme"
       >
         <span className={`inline-block h-2 w-2 rounded-full ${dotClass(connection)}`} />

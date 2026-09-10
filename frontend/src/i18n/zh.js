@@ -46,7 +46,7 @@ export default {
   captureConnected: "打标 App 已连接",
   captureNoTarget: "App 已连接，但没有瞄准这个歌单",
   captureNoTargetHint: "点上面的「自动打标」重新开始，否则捕捉到的歌会被丢弃。",
-  capturePairHint: "在自动打标 App 里输入这个配对码：",
+  capturePairHint: "在 Q你一下 App 里输入这个配对码：",
   captureStale: "打标 App 可能已断开",
   navAccount: "账户",
 
@@ -201,7 +201,7 @@ export default {
   benefitGrantShare: "授予分享权限",
   benefitGrantCopy: "授予复制权限",
   benefitMakePublic: "歌单设为公开",
-  benefitCapture: "自动打标",
+  benefitCapture: "自动打标/自动搜歌",
   pricingPriceRow: "价格",
   pricingContactBody: "开通会员或升级，请联系管理员：",
   // 账号页的入口。注册成功页用 viewPricingNew —— 刚注册的人没有可续的费。
@@ -540,8 +540,8 @@ export default {
   // 合并工具
   merge: "合并",
   toolsMergeDescription: "一个非常强大的融合歌单的工具！强烈推荐！",
-  toolsCaptureApk: "自动打标 App（安卓）",
-  toolsCaptureApkDescription: "自动打标，解放双手，解放队友！",
+  toolsCaptureApk: "Q你一下 App（安卓）",
+  toolsCaptureApkDescription: "自动打标，自动搜歌",
   mergeBaseline: "我的歌单 (A)",
   mergeSource: "合并来源 (B)",
   mergeButton: "合并",

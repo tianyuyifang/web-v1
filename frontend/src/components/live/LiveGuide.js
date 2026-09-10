@@ -39,11 +39,11 @@ export default function LiveGuide() {
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <Section title="使用步骤" open={openKey === "steps"} onToggle={() => toggle("steps")}>
         <ol className="list-decimal space-y-2 pl-5">
-          <li>在 Q你一下的工具栏中下载【自动打标 APK】，安装至安卓手机或电脑上的安卓模拟器。</li>
-          <li>在该安卓设备的系统设置中，为 APK 开启 <strong className="text-theme">无障碍权限</strong>，并开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>（各品牌名称不同），以避免系统在后台关闭 APK。</li>
+          <li>在 Q你一下的工具栏中下载【Q你一下 APK】，安装至安卓手机或电脑上的安卓模拟器。</li>
+          <li>在该安卓设备的系统设置中，为 App 开启 <strong className="text-theme">无障碍权限</strong>，并开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>（各品牌名称不同），以避免系统在后台关闭 App。</li>
           <li>使用听歌设备打开 Q你一下网页（推荐 Safari 或其他默认浏览器），在账户页面的音乐账号扫码登录 QQ 音乐和网易云音乐。</li>
           <li>在听歌设备网页右上角列表中点击「未连接」，获取配对码。</li>
-          <li>在安卓手机 / 模拟器的 APK 中输入配对码。连接成功后，使用该设备进入 QNI 观战或对局，识别开始。</li>
+          <li>在安卓手机 / 模拟器的 App 中输入配对码。连接成功后，使用该设备进入 QNI 观战或对局，识别开始。</li>
         </ol>
       </Section>
 
@@ -121,8 +121,8 @@ export default function LiveGuide() {
               <li>
                 <span className="font-medium text-theme">若仍未显示</span>：检查安卓设备（手机 / 模拟器）
                 <ul className="mt-1.5 list-disc space-y-1.5 pl-5">
-                  <li>确认安卓手机 / 模拟器已为自动打标 APK 开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>，避免 APK 被系统在后台限流；</li>
-                  <li>检查自动打标 APP 是否已更新至最新版本。</li>
+                  <li>确认安卓手机 / 模拟器已为 Q你一下 App 开启 <strong className="text-theme">后台高耗电 / 高性能模式</strong>，避免 App 被系统在后台限流；</li>
+                  <li>检查 Q你一下 App 是否已更新至最新版本。</li>
                   <li>确认安卓手机是否在同步运行 QNI / Q你一下，会不会在性能上出现卡顿。</li>
                 </ul>
               </li>
@@ -141,13 +141,13 @@ export default function LiveGuide() {
           </div>
           <div>
             <p className="font-medium text-theme">Q3：刚打开唱卡功能时，无法立刻读取数据？</p>
-            <p className="mt-1">自动打标 APK 切换传输对象存在固定的时长频率，该问题正在持续优化中。现阶段建议：<strong className="text-theme">进入对局前及时开启唱卡功能开关</strong>；对于同时使用歌 P 打标与唱卡功能的用户，可养成「歌 P 结束立即打开唱卡」的习惯，以减少识别空档。</p>
+            <p className="mt-1">Q你一下 App 切换传输对象存在固定的时长频率，该问题正在持续优化中。现阶段建议：<strong className="text-theme">进入对局前及时开启唱卡功能开关</strong>；对于同时使用歌 P 打标与唱卡功能的用户，可养成「歌 P 结束立即打开唱卡」的习惯，以减少识别空档。</p>
           </div>
         </div>
       </Section>
 
       <Section title="版本更新" open={openKey === "version"} onToggle={() => toggle("version")}>
-        <p>请及时更新自动打标 APK 至最新版本，以获得完整功能与最佳识别效果。</p>
+        <p>请及时更新 Q你一下 App 至最新版本，以获得完整功能与最佳识别效果。</p>
         <ul className="mt-2 list-disc space-y-1.5 pl-5">
           <li><strong className="text-theme">v3.3（最新）</strong>：玩游戏的安卓手机可以边玩边识别了 —— 自己唱的歌也能被识别，不再需要第二台设备挂房间。</li>
           <li><strong className="text-theme">v3.2</strong>：修复演唱歌词偶尔丢失的问题，歌词匹配更完整。</li>

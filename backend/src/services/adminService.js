@@ -142,25 +142,6 @@ async function approveUser(id) {
 }
 
 /**
- * Moves a user to GUEST — the limited tier — from either direction: an admin
- * stepping a member down without locking them out, or letting someone in from
- * PENDING on a short leash.
- * @param {string} id - User UUID
- * @returns {Promise<object>}
- */
-async function makeGuest(id) {
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) throw new NotFoundError('User');
-  if (user.role === 'ADMIN') throw new ForbiddenError('Cannot change admin role');
-
-  return prisma.user.update({
-    where: { id },
-    data: { role: 'GUEST', demotedAt: null, previousRole: null },
-    select: { id: true, username: true, role: true },
-  });
-}
-
-/**
  * Demotes a GUEST or MEMBER to PENDING, which cannot log in. Records both when
  * it happened and what they were, since an expired guest and a lapsed member
  * both land here but need different wording.
@@ -581,4 +562,4 @@ async function resetPassword(id) {
 async function getTierConfig() { return getTiers(); }
 async function setTierConfig(patch) { return setTiers(patch); }
 
-module.exports = { listUsers, listPending, approveUser, makeGuest, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, getLiveMarks, getTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword, setUserTier, getTierConfig, setTierConfig };
+module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, getLiveMarks, getTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword, setUserTier, getTierConfig, setTierConfig };

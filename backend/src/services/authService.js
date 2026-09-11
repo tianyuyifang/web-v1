@@ -54,12 +54,10 @@ async function register({ username, password }) {
 
   const passwordHash = await hashPassword(password);
 
-  // Signing up lands you in as a GUEST rather than queued for approval. Stated
-  // outright instead of leaning on the schema default, which is still PENDING
-  // — that is now where expired accounts land, not where new ones start.
-  //
-  // …unless a signup promotion is running, which makes new accounts MEMBER on
-  // the VIP tier with an expiry, the same shape an admin-approved member has.
+  // A new account is PENDING (waits for an admin) unless a signup promotion is
+  // running, which makes it MEMBER on the VIP tier with an expiry — the same
+  // shape an admin-approved member has. The old GUEST role is retired: nobody
+  // signs up into it any more, and there are no guests left.
   // If reading the promotion fails, registration still succeeds but the
   // account waits for approval (promo-off behaviour): a broken campaign should
   // not stop people signing up, nor let them straight in.

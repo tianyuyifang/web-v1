@@ -13,24 +13,23 @@ import ContactAdmins from "@/components/account/ContactAdmins";
  */
 function useRows(t) {
   return [
-    { label: t("benefitCreatePlaylist"), guest: true, member: true, plus: true },
-    { label: t("benefitSpeedPitch"), guest: true, member: true, plus: true },
-    { label: t("benefitTagsNotes"), guest: true, member: true, plus: true },
-    { label: t("benefitCompare"), guest: true, member: true, plus: true },
-    { label: t("benefitMerge"), guest: true, member: true, plus: true },
+    { label: t("benefitCreatePlaylist"), member: true, plus: true },
+    { label: t("benefitSpeedPitch"), member: true, plus: true },
+    { label: t("benefitTagsNotes"), member: true, plus: true },
+    { label: t("benefitCompare"), member: true, plus: true },
+    { label: t("benefitMerge"), member: true, plus: true },
     {
       label: t("benefitPlaylistCount"),
-      guest: t("benefitPlaylistCountGuest"),
       member: t("benefitPlaylistCountMember"),
       plus: t("benefitPlaylistCountMember"),
     },
-    { label: t("benefitGrantShare"), guest: true, member: true, plus: true },
-    { label: t("benefitGrantCopy"), guest: false, member: true, plus: true },
-    { label: t("benefitMakePublic"), guest: false, member: true, plus: true },
-    // Add-on features: only the third column ticks. Add the next one here.
+    { label: t("benefitGrantShare"), member: true, plus: true },
+    { label: t("benefitGrantCopy"), member: true, plus: true },
+    { label: t("benefitMakePublic"), member: true, plus: true },
+    // Add-on features: only the last column ticks. Add the next one here.
     {
       label: t("benefitCapture"),
-      guest: false, member: false, plus: true,
+      member: false, plus: true,
       highlight: true,
     },
   ];
@@ -63,31 +62,26 @@ export default function PricingPage() {
 
       <div className="overflow-hidden rounded-xl border border-border bg-surface">
         {/* table-fixed + colgroup: left to itself the table sizes columns by
-            content, and 游客 being one character shorter than 会员版 made its
-            column 58px narrower. The three tiers are being compared, so they
-            get identical widths. */}
+            content. The two tiers are being compared, so they get identical
+            widths. */}
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col />
-            <col className="w-[22%]" />
-            <col className="w-[22%]" />
-            <col className="w-[22%]" />
+            <col className="w-[28%]" />
+            <col className="w-[28%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-border text-left">
-              {/* Same weight and colour as the three tier names: the header is
-                  read as one row, so a muted 权益 left it looking like a stray
+              {/* Same weight and colour as the tier names: the header is read
+                  as one row, so a muted 权益 left it looking like a stray
                   caption rather than the start of that row. */}
               <th className="px-4 py-3 font-bold text-theme">
                 {t("pricingBenefit")}
               </th>
-              {/* One colour across the table: three tinted columns read as a
-                  ranking of their own, competing with the ticks that carry
-                  the actual comparison. text-theme, not a literal black, so
-                  the dark palette still gets legible text. */}
-              <th className="px-4 py-3 text-center font-bold text-theme">
-                {t("pricingGuest")}
-              </th>
+              {/* One colour across the table: tinted columns read as a ranking
+                  of their own, competing with the ticks that carry the actual
+                  comparison. text-theme, not a literal black, so the dark
+                  palette still gets legible text. */}
               <th className="px-4 py-3 text-center font-bold text-theme">
                 {t("pricingMember")}
               </th>
@@ -106,9 +100,6 @@ export default function PricingPage() {
               >
                 <td className="px-4 py-3 text-theme">{r.label}</td>
                 <td className="px-4 py-3 text-center">
-                  <Cell value={r.guest} />
-                </td>
-                <td className="px-4 py-3 text-center">
                   <Cell value={r.member} />
                 </td>
                 <td className="px-4 py-3 text-center">
@@ -121,9 +112,6 @@ export default function PricingPage() {
             <tr className="border-t border-border bg-background/40">
               <td className="px-4 py-3 font-semibold text-theme">
                 {t("pricingPriceRow")}
-              </td>
-              <td className="px-4 py-3 text-center font-semibold text-theme">
-                {t("pricingFree")}
               </td>
               <td className="px-4 py-3 text-center font-semibold text-theme">
                 25 {t("pricingPerMonth")}

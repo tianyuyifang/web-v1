@@ -185,7 +185,6 @@ export default {
   // 定价与权益。/pricing 不再挂在导航栏上，只从账号页和注册成功页进入。
   pricingTitle: "会员与定价",
   pricingBenefit: "权益",
-  pricingGuest: "游客",
   pricingMember: "会员版",
   pricingPlus: "加订版",
   pricingFree: "免费",
@@ -196,7 +195,6 @@ export default {
   benefitCompare: "歌单对比",
   benefitMerge: "合并工具",
   benefitPlaylistCount: "歌单数量",
-  benefitPlaylistCountGuest: "≤ 3",
   benefitPlaylistCountMember: "无限制",
   benefitGrantShare: "授予分享权限",
   benefitGrantCopy: "授予复制权限",
@@ -372,8 +370,6 @@ export default {
   userManagement: "用户管理",
   totalUsers: "位用户",
   pendingApproval: "待审核",
-  guests: "游客",
-  makeGuest: "转为游客",
   revoked: "已过期",
   revokedOn: "过期于",
   members: "成员",
@@ -595,12 +591,8 @@ export default {
   playlistUsage: "{used} / {max}",
 
   // 停用页
-  pendingGuestExpiredTitle: "试用已结束",
-  pendingGuestExpiredBody: "你的游客已到期。成为会员即可继续使用，并解锁全部功能。请联系管理员开通：",
   pendingMemberExpiredTitle: "会员已到期",
   pendingMemberExpiredBody: "你的会员已到期。请联系管理员续费后继续使用：",
-  pendingDefaultTitle: "账号待审核",
-  pendingDefaultBody: "你的账号正在等待管理员处理。如有疑问请联系管理员：",
   feeColumn: "费用",
   expiresColumn: "到期",
   paymentStatusColumn: "付款",

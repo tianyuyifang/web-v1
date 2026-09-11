@@ -12,9 +12,8 @@ export default function LoginForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  // Set when the credentials were right but the account is disabled. Holds
-  // what the user was before — GUEST, MEMBER, or NONE if never recorded.
-  const [blocked, setBlocked] = useState(null);
+  // Set when the credentials were right but the account is disabled (PENDING).
+  const [blocked, setBlocked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -30,9 +29,7 @@ export default function LoginForm() {
     try {
       const data = await login(username, password);
       if (data.user?.role === "PENDING") {
-        // Why the account is disabled decides what to say. An expired guest
-        // needs to be sold a membership; a lapsed member just needs to renew.
-        setBlocked(data.user.previousRole || "NONE");
+        setBlocked(true);
       } else {
         window.location.href = "/dashboard";
       }
@@ -47,31 +44,18 @@ export default function LoginForm() {
   // with an explanation — a one-line error under a still-fillable form reads
   // as "wrong password", which is the one thing it is not.
   if (blocked) {
-    const copy = {
-      GUEST: {
-        title: t("pendingGuestExpiredTitle"),
-        body: t("pendingGuestExpiredBody"),
-      },
-      MEMBER: {
-        title: t("pendingMemberExpiredTitle"),
-        body: t("pendingMemberExpiredBody"),
-      },
-    }[blocked] || {
-      title: t("pendingDefaultTitle"),
-      body: t("pendingDefaultBody"),
-    };
-
+    // 站里只有会员(游客已退役), 停用一律是「会员已到期」——需要续费。
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 px-5 py-5">
           <p className="text-base font-semibold" style={{ color: "var(--text)" }}>
-            {copy.title}
+            {t("pendingMemberExpiredTitle")}
           </p>
-          <p className="mt-2 text-sm text-muted">{copy.body}</p>
+          <p className="mt-2 text-sm text-muted">{t("pendingMemberExpiredBody")}</p>
           <ContactAdmins />
         </div>
         <button
-          onClick={() => { setBlocked(null); setPassword(""); }}
+          onClick={() => { setBlocked(false); setPassword(""); }}
           className="w-full rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-surface-hover"
         >
           {t("return")}

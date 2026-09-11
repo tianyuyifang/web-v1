@@ -197,6 +197,16 @@ const CLIENT_VERSION_KEY = 'captureClientVersion';
 // working throughout, which is what made this so slow to find). The flag is
 // inert on older systems and changes nothing for anyone already reading the
 // title, so it cannot take working clients backwards.
+// v26 has the heartbeat carry blindScans and lastReadAgoSec, so the server can
+// see "reading nodes but capturing nothing" instead of learning it days later
+// from a user -- purely additive telemetry, no capture behaviour changes.
+// v27 gives the client's "already sent" set a 5-minute window instead of being
+// a session-long set cleared only on re-pairing. Up to v26 a title was sent
+// once per session and then silently suppressed for the rest of it, so the
+// longer someone played the more songs vanished, and reconnecting (which
+// cleared the set) "fixed" it -- the same class of bug as v8, and the reason a
+// burst of 5 titles could card only 3. minSupported stays at 1: an old client
+// still captures on a fresh pairing, and the upgrade prompt covers it.
 const CLIENT_VERSION_DEFAULT = Object.freeze({
   latest: 21,
   minSupported: 1,

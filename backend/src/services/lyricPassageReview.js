@@ -160,12 +160,18 @@ async function list({ status = 'pending', take = 30, cursor, reportedOnly = fals
       realLines: lyrics.get(`${r.source} ${r.externalId}`) || [],
       // 算法对这段现场算一次的猜测(拍平的行号), 供审核看算法错在哪。
       // 只读展示, 不入库。
+      //
+      // 每处用 coveredLines 拍平, 和唱卡页 LiveLyrics 的 entryLines 同一种读法:
+      // markPassage 的一个条目可能是"一行游戏词跨两条歌词行"的数组(如 [18,19])。
+      // 从前这里用 pl.filter((i) => i >= 0), 数组条目被 `>= 0` 判成 false 整条丢掉,
+      // 于是同一算法结果, 唱卡页标 [17,18,19]、待确认只标 [17], 两边对不上。
+      // coveredLines 与前端 entryLines 逐条等价(数组展开、单行保留、-1 去掉)。
       algoGuess: (() => {
         const real = lyrics.get(`${r.source} ${r.externalId}`) || [];
         if (!real.length) return [];
         try {
           const places = markPassage(r.gameLyric, real.map((t) => ({ text: t })));
-          return places.map((pl) => [...new Set(pl.filter((i) => i >= 0))].sort((a, b) => a - b));
+          return places.map((pl) => coveredLines(pl));
         } catch (e) { return []; }
       })(),
     })),

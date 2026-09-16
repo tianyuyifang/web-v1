@@ -6,7 +6,7 @@
  *
  * Who gets one:
  *   ADMIN  — always, so the feature can be exercised without buying it
- *   MEMBER / GUEST — only what an admin granted
+ *   MEMBER — only what an admin granted
  *   PENDING — never; the account cannot log in at all
  */
 

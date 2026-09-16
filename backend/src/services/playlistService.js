@@ -1,7 +1,6 @@
 const prisma = require('../db/client');
 const { NotFoundError, ForbiddenError } = require('../utils/errors');
 const { toPinyin, toPinyinInitials, toPinyinAll } = require('../utils/pinyin');
-const { assertCanOwnAnotherPlaylist } = require('../utils/guestLimits');
 const { searchPlaylists, searchClipsInPlaylist } = require('./searchService');
 
 // ---------------------------------------------------------------------------
@@ -126,10 +125,6 @@ async function getPlaylistById(playlistId, userId, clipQuery, userRole) {
 // ---------------------------------------------------------------------------
 
 async function createPlaylist(userId, { name, description, isPublic }) {
-  const isGuest = await assertCanOwnAnotherPlaylist(userId);
-  // A guest cannot publish, so ignore the flag rather than fail the create.
-  if (isGuest) isPublic = false;
-
   const playlist = await prisma.playlist.create({
     data: {
       userId,
@@ -263,9 +258,6 @@ async function updateClipCustomization(playlistId, clipId, data) {
 // ---------------------------------------------------------------------------
 
 async function copyPlaylist(playlistId, userId) {
-  // A copy is a new list of their own, so it counts against the guest limit.
-  await assertCanOwnAnotherPlaylist(userId);
-
   const original = await prisma.playlist.findUnique({
     where: { id: playlistId },
     include: { playlistClips: { orderBy: { position: 'asc' } } },

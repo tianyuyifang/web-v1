@@ -80,7 +80,9 @@ export default {
   confirmPlaceholder: "再次输入密码",
   registrationFailed: "注册失败",
   accountCreated: "账号创建成功！",
-  awaitingApproval: "你现在可以直接登录使用。游客最多可创建 3 个歌单，升级成会员后不受限制。",
+  // 注册成功后按结果二选一: 促销开=可直接用; 促销关=等审核。
+  registerUsableNow: "您现在可以直接登录使用。",
+  registerAwaitingApproval: "您的账号正在等待管理员审核，通过后即可登录使用。",
   alreadyApproved: "现在就",
   creatingAccount: "创建中...",
   createAccount: "创建账号",
@@ -176,13 +178,6 @@ export default {
   share: "分享",
   delete: "删除",
   copyPlaylist: "复制歌单",
-  // 游客限制
-  guestLimitTitle: "游客功能受限",
-  guestNoPublic: "游客不能将歌单设为公开。升级成会员后即可开放歌单给所有人。",
-  guestNoCopyPermission: "游客不能授予他人复制权限。你仍然可以把歌单分享给队友，让他们帮你点赞。升级成会员后即可开放复制。",
-  guestPlaylistLimitTitle: "已达游客歌单上限",
-  guestPlaylistLimitMessage: "游客最多可拥有 3 个歌单。你可以删除一个不用的歌单再新建，或升级成会员后不受数量限制。",
-  guestBadge: "游客",
 
   // 定价与权益。/pricing 不再挂在导航栏上，只从账号页和注册成功页进入。
   pricingTitle: "会员与定价",
@@ -574,15 +569,9 @@ export default {
 
   // 身份与权限
   roleLabel: "身份",
-  roleGuest: "游客",
   roleMember: "会员",
   roleAdmin: "管理员",
   rolePending: "已停用",
-  guestNoExpiry: "暂无期限",
-  // 游客只看「缺什么」。列出他已有的权限等于告诉他「你什么都能做」，
-  // 那不构成信息；完整对比在 /pricing。
-  yourLimits: "权益限制",
-  permOwnPlaylistCount: "自建歌单数量",
   // 联系方式。改这里即可，三处引用（定价页、登录页、加订功能提示）
   // 都走同一个 ContactAdmins 组件。
   contactWechatLabel: "微信",
@@ -590,7 +579,6 @@ export default {
   contactWechat2: "CC：yinyuemeirendong",
   // 图标已经表明是哪个 app，所以正文不再重复「Qni：」前缀。
   contactQni: "搜索家族「Q你一下」",
-  playlistUsage: "{used} / {max}",
 
   // 停用页
   pendingMemberExpiredTitle: "会员已到期",

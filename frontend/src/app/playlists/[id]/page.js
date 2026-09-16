@@ -14,7 +14,6 @@ import CapturePanel from "@/components/playlist/CapturePanel";
 import FloatingClipNav from "@/components/player/FloatingClipNav";
 import { PRESET_COLORS } from "@/components/player/ColorTag";
 import { useLanguage } from "@/components/layout/LanguageProvider";
-import useAuth from "@/hooks/useAuth";
 import useLikes from "@/hooks/useLikes";
 import { preloadClips } from "@/lib/audioCache";
 
@@ -46,7 +45,6 @@ export default function PlaylistPage() {
   const { id } = useParams();
   const router = useRouter();
   const { t } = useLanguage();
-  const { isGuest } = useAuth();
 
   const [playlist, setPlaylist] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -64,10 +62,6 @@ export default function PlaylistPage() {
   const [showCopyConfirm, setShowCopyConfirm] = useState(false);
   const [showUnlikeAllConfirm, setShowUnlikeAllConfirm] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
-  // Which guest restriction to explain, or null. The buttons stay visible and
-  // clickable — a disabled control says "no" without saying why, and the why
-  // is the part that points at a membership.
-  const [guestNotice, setGuestNotice] = useState(null);
   const [highlightedClipId, setHighlightedClipId] = useState(null);
   // clipId of the most recently added clip, so its card can open expanded.
   const [newlyAddedClipId, setNewlyAddedClipId] = useState(null);
@@ -324,12 +318,6 @@ export default function PlaylistPage() {
               setSelectedClips(new Set());
             }}
             onTogglePublic={() => {
-              // Only going public is barred; a guest may still make a list
-              // private again.
-              if (isGuest && !playlist.isPublic) {
-                setGuestNotice(t("guestNoPublic"));
-                return;
-              }
               setShowPublicConfirm(true);
             }}
             onAddClip={() => setShowAddClip(true)}
@@ -488,15 +476,6 @@ export default function PlaylistPage() {
         />
       )}
 
-      {guestNotice && (
-        <ConfirmDialog
-          title={t("guestLimitTitle")}
-          message={guestNotice}
-          confirmLabel={t("confirm")}
-          onConfirm={() => setGuestNotice(null)}
-          onCancel={() => setGuestNotice(null)}
-        />
-      )}
 
       {showCompare && (
         <ComparePlaylistModal

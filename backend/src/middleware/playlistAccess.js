@@ -41,19 +41,10 @@ async function playlistAccess(req, res, next) {
     // admins can copy any playlist; otherwise need explicit copy permission + view access.
     canCopy = isOwner || playlist.isPublic || isAdmin || (canCopy && canView);
 
-    // …but nothing a guest owns leaves their hands. Otherwise a guest nearing
-    // the end of their run could hand a list to a fresh account and start over.
-    // The owner and admins are exempt: an owner copying their own list gains
-    // nothing, and admins need it for moderation.
-    const ownerIsGuest = playlist.user?.role === 'GUEST';
-    if (ownerIsGuest && !isOwner && !isAdmin) {
-      canCopy = false;
-    }
-
     // Remove shares/copyPermissions/user from the attached playlist object
     const { shares, copyPermissions, user, ...cleanPlaylist } = playlist;
     req.playlist = cleanPlaylist;
-    req.playlistAccess = { isOwner, isShared, canView, canEdit, canCopy, ownerIsGuest };
+    req.playlistAccess = { isOwner, isShared, canView, canEdit, canCopy };
 
     next();
   } catch (err) {

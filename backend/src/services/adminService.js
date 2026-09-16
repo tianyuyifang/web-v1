@@ -151,9 +151,9 @@ async function approveUser(id) {
 }
 
 /**
- * Demotes a GUEST or MEMBER to PENDING, which cannot log in. Records both when
- * it happened and what they were, since an expired guest and a lapsed member
- * both land here but need different wording.
+ * Demotes a MEMBER to PENDING, which cannot log in. Records both when it
+ * happened and what they were (previousRole), so a lapsed member can be told
+ * apart from a never-approved signup and shown the right wording.
  * @param {string} id - User UUID
  * @returns {Promise<object>}
  */

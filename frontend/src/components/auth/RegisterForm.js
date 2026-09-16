@@ -39,7 +39,10 @@ export default function RegisterForm() {
   const [serverError, setServerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [touched, setTouched] = useState({});
-  const [registered, setRegistered] = useState(false);
+  // null = not registered yet; otherwise the new account's role, which decides
+  // the success message: MEMBER (a signup promotion is on → usable now) vs
+  // PENDING (promo off → waits for admin approval before it can log in).
+  const [registeredRole, setRegisteredRole] = useState(null);
 
   const update = (field) => (e) => {
     const newForm = { ...form, [field]: e.target.value };
@@ -68,8 +71,11 @@ export default function RegisterForm() {
     setServerError("");
 
     try {
-      await authAPI.register({ username: form.username, password: form.password });
-      setRegistered(true);
+      const res = await authAPI.register({ username: form.username, password: form.password });
+      // MEMBER when a signup promo is running, else PENDING — decides which
+      // success message to show. Default to PENDING (the awaiting-approval
+      // wording), the safe read if the field is ever missing.
+      setRegisteredRole(res?.data?.user?.role || "PENDING");
     } catch (err) {
       setServerError(
         err.response?.data?.error?.message ||
@@ -88,7 +94,9 @@ export default function RegisterForm() {
         : "border-border bg-background focus:border-primary"
     }`;
 
-  if (registered) {
+  if (registeredRole) {
+    // MEMBER → a promo let them in immediately; PENDING → waits for approval.
+    const usableNow = registeredRole !== "PENDING";
     return (
       <div className="space-y-4 text-center">
         <div className="rounded-xl border border-green-500/20 bg-green-500/10 px-6 py-8">
@@ -97,7 +105,7 @@ export default function RegisterForm() {
           </div>
           <p className="text-base font-semibold" style={{ color: "var(--text)" }}>{t("accountCreated")}</p>
           <p className="mt-2 text-sm text-muted">
-            {t("awaitingApproval")}
+            {t(usableNow ? "registerUsableNow" : "registerAwaitingApproval")}
           </p>
           {/* The moment a new user is most curious about what they have —
               and the one place to say the free run will not last. */}

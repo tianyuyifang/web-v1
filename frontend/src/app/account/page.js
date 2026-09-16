@@ -1,17 +1,14 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import useAuth from "@/hooks/useAuth";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
-import { authAPI, playlistsAPI } from "@/lib/api";
+import { authAPI } from "@/lib/api";
 import { clearToken } from "@/lib/auth";
 import MusicSourcesPanel from "@/components/account/MusicSourcesPanel";
-
-/** Mirrors GUEST_PLAYLIST_LIMIT on the server. */
-const GUEST_PLAYLIST_LIMIT = 3;
 
 const THEME_OPTIONS = [
   { value: "dark", labelKey: "themeDark", descKey: "themeDarkDesc" },
@@ -32,44 +29,12 @@ const PRICING_LINK =
   "inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium " +
   "text-white transition-colors hover:bg-primary-hover";
 
-/** One line in the guest permission list: a tick or a cross, plus a note. */
-function PermissionRow({ allowed = false, label, note }) {
-  return (
-    <li className="flex items-center justify-between gap-3 text-sm">
-      <span className="flex items-center gap-2">
-        <span className={allowed ? "text-green-400" : "text-muted"}>
-          {allowed ? "✓" : "✗"}
-        </span>
-        <span className={allowed ? "text-theme" : "text-muted"}>{label}</span>
-      </span>
-      {note && <span className="shrink-0 text-xs text-muted">{note}</span>}
-    </li>
-  );
-}
-
 export default function AccountPage() {
-  const { user, loading, logout, isGuest, isMember, canCapture } = useAuth();
+  const { user, loading, logout, isMember, canCapture } = useAuth();
   const { t } = useLanguage();
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("info"); // info | change | appearance | language
-
-  // How many playlists the guest already owns — the number they care about
-  // most. Only fetched for guests; nobody else has a cap to show.
-  const [ownedCount, setOwnedCount] = useState(null);
-  useEffect(() => {
-    if (!isGuest) return;
-    let alive = true;
-    playlistsAPI
-      .list()
-      .then((res) => {
-        if (!alive) return;
-        const all = res.data?.playlists || [];
-        setOwnedCount(all.filter((p) => p.isOwner).length);
-      })
-      .catch(() => {}); // the card still reads fine without the count
-    return () => { alive = false; };
-  }, [isGuest]);
 
   const daysInfo = useMemo(() => {
     if (!user?.expiresAt) return null;
@@ -164,7 +129,6 @@ export default function AccountPage() {
   const expired = user.status === "expired";
 
   const roleBadge = {
-    GUEST: { label: t("roleGuest"), className: "bg-sky-500/15 text-sky-400" },
     MEMBER: { label: t("roleMember"), className: "bg-green-500/15 text-green-400" },
     ADMIN: { label: t("roleAdmin"), className: "bg-purple-500/15 text-purple-400" },
     PENDING: { label: t("rolePending"), className: "bg-yellow-500/15 text-yellow-400" },
@@ -232,10 +196,7 @@ export default function AccountPage() {
               <span className="text-sm text-theme">
                 {user.expiresAt
                   ? `${new Date(user.expiresAt).toLocaleDateString()}${daysInfo ? ` · ${daysInfo}` : ""}`
-                  /* Guests are told "no time limit yet" rather than "never
-                     expires" — a trial period is planned, and promising the
-                     opposite now would read as a broken promise later. */
-                  : isGuest ? t("guestNoExpiry") : t("noExpiry")}
+                  : t("noExpiry")}
               </span>
             </div>
 
@@ -245,35 +206,6 @@ export default function AccountPage() {
                 <span className="text-sm text-theme">
                   ¥{Number(user.monthlyFee).toFixed(2)} {t("perMonth")}
                 </span>
-              </div>
-            )}
-
-            {/* Only what is withheld. A list of everything a member can do
-                reads as "you can do everything", which is not information —
-                and the side-by-side comparison already lives on /pricing. */}
-            {isGuest && (
-              <div className="border-t border-border pt-4">
-                <p className="mb-3 text-sm font-semibold text-theme">
-                  {t("yourLimits")}
-                </p>
-                <ul className="space-y-2">
-                  <PermissionRow
-                    allowed
-                    label={t("permOwnPlaylistCount")}
-                    note={
-                      ownedCount == null
-                        ? null
-                        : t("playlistUsage")
-                            .replace("{used}", ownedCount)
-                            .replace("{max}", GUEST_PLAYLIST_LIMIT)
-                    }
-                  />
-                  {/* 自动打标 is not listed here — what a guest is missing and
-                      what it costs are both on /pricing, in one table. */}
-                </ul>
-                <Link href="/pricing" className={`mt-4 ${PRICING_LINK}`}>
-                  {t("viewPricing")}
-                </Link>
               </div>
             )}
 

@@ -3,8 +3,6 @@
 import { useState, useEffect } from "react";
 import { playlistsAPI } from "@/lib/api";
 import useSearch from "@/hooks/useSearch";
-import useAuth from "@/hooks/useAuth";
-import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 function UserList({ title, users, onRemove }) {
@@ -80,12 +78,8 @@ function UserSearchAdd({ placeholder, onAdd }) {
 
 export default function SharePlaylistModal({ playlist, onClose }) {
   const { t } = useLanguage();
-  const { isGuest } = useAuth();
   const [shares, setShares] = useState([]);
   const [copyPerms, setCopyPerms] = useState([]);
-  // Guests can share but not grant copying, and the section stays visible so
-  // the reason — and the upgrade — is where they look for the feature.
-  const [guestNotice, setGuestNotice] = useState(false);
 
   useEffect(() => {
     playlistsAPI.getShares(playlist.id).then((r) => setShares(r.data.shares || []));
@@ -115,10 +109,6 @@ export default function SharePlaylistModal({ playlist, onClose }) {
 
   // Copy permission management
   const addCopyPerm = async (user) => {
-    if (isGuest) {
-      setGuestNotice(true);
-      return;
-    }
     try {
       await playlistsAPI.addCopyPermission(playlist.id, { userId: user.id });
       setCopyPerms((prev) => [...prev, user]);
@@ -179,15 +169,6 @@ export default function SharePlaylistModal({ playlist, onClose }) {
         </div>
       </div>
 
-      {guestNotice && (
-        <ConfirmDialog
-          title={t("guestLimitTitle")}
-          message={t("guestNoCopyPermission")}
-          confirmLabel={t("confirm")}
-          onConfirm={() => setGuestNotice(false)}
-          onCancel={() => setGuestNotice(false)}
-        />
-      )}
     </div>
   );
 }

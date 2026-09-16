@@ -327,8 +327,6 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
                       ? "bg-purple-500/15 text-purple-400"
                       : user.role === "MEMBER"
                       ? "bg-green-500/15 text-green-400"
-                      : user.role === "GUEST"
-                      ? "bg-sky-500/15 text-sky-400"
                       : "bg-yellow-500/15 text-yellow-400"
                   }`}
                 >

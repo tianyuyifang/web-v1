@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { authAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
+import ContactAdmins from "@/components/account/ContactAdmins";
 
 function validate(form) {
   const errors = {};
@@ -107,14 +108,22 @@ export default function RegisterForm() {
           <p className="mt-2 text-sm text-muted">
             {t(usableNow ? "registerUsableNow" : "registerAwaitingApproval")}
           </p>
-          {/* The moment a new user is most curious about what they have —
-              and the one place to say the free run will not last. */}
-          <Link
-            href="/pricing"
-            className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
-          >
-            {t("viewPricingNew")}
-          </Link>
+          {usableNow ? (
+            /* A promo let them straight in — point them at what they have and
+               the fact the free run will not last. */
+            <Link
+              href="/pricing"
+              className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
+            >
+              {t("viewPricingNew")}
+            </Link>
+          ) : (
+            /* Promo off: the account waits for a paid month. Give the admins to
+               contact for a free trial instead of a pricing link. */
+            <div className="mt-3 text-left">
+              <ContactAdmins />
+            </div>
+          )}
         </div>
         <p className="text-sm text-muted">
           {t("alreadyApproved")}{" "}

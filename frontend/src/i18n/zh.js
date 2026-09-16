@@ -82,7 +82,7 @@ export default {
   accountCreated: "账号创建成功！",
   // 注册成功后按结果二选一: 促销开=可直接用; 促销关=等审核。
   registerUsableNow: "您现在可以直接登录使用。",
-  registerAwaitingApproval: "您的账号正在等待管理员审核，通过后即可登录使用。",
+  registerAwaitingApproval: "网站需加入月订后才可使用。如果您是第一次使用，可以联系管理员免费体验三天：",
   alreadyApproved: "现在就",
   creatingAccount: "创建中...",
   createAccount: "创建账号",

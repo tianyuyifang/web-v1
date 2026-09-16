@@ -53,6 +53,7 @@ export default {
   // Login
   sessionReplacedMessage: "你的账号已在其他设备上登录，请重新登录。",
   accountDisabledMessage: "您的会员已到期，请联系管理员续费后继续使用。",
+  pendingApprovalMessage: "您的账号正在等待管理员审核，通过后即可使用。",
 
   username: "用户名",
   password: "密码",
@@ -594,6 +595,9 @@ export default {
   // 停用页
   pendingMemberExpiredTitle: "会员已到期",
   pendingMemberExpiredBody: "Q你一下的免费推广活动已于2026/09/16结束，如有喜欢我们产品的朋友，请联系管理员加入月订继续使用：",
+  // 新注册、从未通过审核的用户(没有过会员, 不能说「到期/续费」)
+  pendingApprovalTitle: "等待审核",
+  pendingApprovalBody: "您的账号正在等待管理员审核，通过后即可使用：",
   feeColumn: "费用",
   expiresColumn: "到期",
   paymentStatusColumn: "付款",

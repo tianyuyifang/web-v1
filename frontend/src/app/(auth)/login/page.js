@@ -29,12 +29,19 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Bounced here mid-session because the account was revoked (未续费).
-            Explain it up front rather than showing a blank form they will try
-            to log into and be refused again. */}
+        {/* Bounced here mid-session. Explain it up front rather than showing a
+            blank form they will try to log into and be refused again.
+            account_disabled = a lapsed member (续费); pending_approval = a
+            never-approved signup (等待审核). */}
         {reason === "account_disabled" && (
           <div className="mb-4 rounded-lg border border-warning-border bg-warning-bg px-4 py-3 text-center text-sm text-theme">
             {t("accountDisabledMessage")}
+          </div>
+        )}
+
+        {reason === "pending_approval" && (
+          <div className="mb-4 rounded-lg border border-warning-border bg-warning-bg px-4 py-3 text-center text-sm text-theme">
+            {t("pendingApprovalMessage")}
           </div>
         )}
 

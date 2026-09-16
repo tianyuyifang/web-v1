@@ -85,14 +85,18 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Account revoked while the user was mid-session — the token still exists
-    // but every protected route now 403s with ACCOUNT_DISABLED. Bounce to the
-    // login screen (which shows the "会员已到期，请联系管理员续费" panel) rather
-    // than leaving them limping around the app hitting raw 403s in place.
-    if (error.response?.status === 403 && error.response?.data?.error?.code === "ACCOUNT_DISABLED") {
+    // A PENDING account hitting a protected route mid-session — the token still
+    // exists but every protected route now 403s. Bounce to the login screen
+    // with the matching panel rather than leaving them limping around hitting
+    // raw 403s in place. ACCOUNT_DISABLED = a lapsed member (续费);
+    // PENDING_APPROVAL = a never-approved signup (等待审核) — different wording.
+    const disabledCode = error.response?.data?.error?.code;
+    if (error.response?.status === 403
+      && (disabledCode === "ACCOUNT_DISABLED" || disabledCode === "PENDING_APPROVAL")) {
       clearToken();
       if (typeof window !== "undefined") {
-        window.location.href = "/login?reason=account_disabled";
+        const reason = disabledCode === "PENDING_APPROVAL" ? "pending_approval" : "account_disabled";
+        window.location.href = `/login?reason=${reason}`;
       }
       return Promise.reject(error);
     }

@@ -12,8 +12,10 @@ export default function LoginForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  // Set when the credentials were right but the account is disabled (PENDING).
-  const [blocked, setBlocked] = useState(false);
+  // Set when the credentials were right but the account is PENDING. Which kind
+  // decides the wording: "disabled" = a lapsed member (续费), "pending" = a
+  // never-approved signup (等待审核). null = not blocked.
+  const [blocked, setBlocked] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -28,20 +30,23 @@ export default function LoginForm() {
 
     try {
       const data = await login(username, password);
-      // Kept as a fallback: login now refuses a revoked (PENDING) account with
-      // ACCOUNT_DISABLED below rather than returning one here, but if any path
-      // ever hands one back, still show the disabled screen, not the app.
+      // Fallback only: login now refuses a PENDING account below rather than
+      // returning one here. If any path ever hands one back, treat a former
+      // member (previousRole) as "disabled", else "pending".
       if (data.user?.role === "PENDING") {
-        setBlocked(true);
+        setBlocked(data.user?.previousRole ? "disabled" : "pending");
       } else {
         window.location.href = "/dashboard";
       }
     } catch (err) {
-      // A revoked account: the password was right, the account is switched off.
-      // Show the same disabled screen the old success-path PENDING used, not a
-      // red "wrong password" error — that is the one thing this is not.
-      if (err.response?.data?.error?.code === "ACCOUNT_DISABLED") {
-        setBlocked(true);
+      // The password was right, the account is PENDING. Show the matching panel
+      // (not a red "wrong password" error): ACCOUNT_DISABLED = lapsed member,
+      // PENDING_APPROVAL = never-approved signup.
+      const code = err.response?.data?.error?.code;
+      if (code === "ACCOUNT_DISABLED") {
+        setBlocked("disabled");
+      } else if (code === "PENDING_APPROVAL") {
+        setBlocked("pending");
       } else {
         setError(err.response?.data?.error?.message || err.response?.data?.message || t("loginFailed"));
       }
@@ -50,18 +55,22 @@ export default function LoginForm() {
     }
   };
 
-  // Credentials were right, but the account is switched off. Replace the form
-  // with an explanation — a one-line error under a still-fillable form reads
-  // as "wrong password", which is the one thing it is not.
+  // Credentials were right, but the account is PENDING. Replace the form with
+  // an explanation — a one-line error under a still-fillable form reads as
+  // "wrong password", which is the one thing it is not. A lapsed member sees
+  // the renewal wording; a never-approved signup sees "awaiting review", since
+  // they never had a membership to have expired.
   if (blocked) {
-    // 站里只有会员(游客已退役), 停用一律是「会员已到期」——需要续费。
+    const isPendingApproval = blocked === "pending";
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 px-5 py-5">
           <p className="text-base font-semibold" style={{ color: "var(--text)" }}>
-            {t("pendingMemberExpiredTitle")}
+            {t(isPendingApproval ? "pendingApprovalTitle" : "pendingMemberExpiredTitle")}
           </p>
-          <p className="mt-2 text-sm text-muted">{t("pendingMemberExpiredBody")}</p>
+          <p className="mt-2 text-sm text-muted">
+            {t(isPendingApproval ? "pendingApprovalBody" : "pendingMemberExpiredBody")}
+          </p>
           <ContactAdmins />
         </div>
         <button

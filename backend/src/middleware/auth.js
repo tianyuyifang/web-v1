@@ -55,7 +55,10 @@ async function requireActiveSession(req, res, next) {
     } else {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { role: true, activeSessions: true },
+        // previousRole cached too, so the shared entry is complete whichever
+        // middleware fills it first — requireApproved reads it to tell a
+        // revoked member from a never-approved signup.
+        select: { role: true, previousRole: true, activeSessions: true },
       });
       if (!user) {
         return next(new UnauthorizedError('User not found'));
@@ -64,6 +67,7 @@ async function requireActiveSession(req, res, next) {
       activeSessions = user.activeSessions;
       SESSION_CACHE.set(userId, {
         role,
+        previousRole: user.previousRole,
         activeSessions,
         expiresAt: now + SESSION_CACHE_TTL_MS,
       });
@@ -89,7 +93,7 @@ async function requireActiveSession(req, res, next) {
       // always come from the database, read now.
       const fresh = await prisma.user.findUnique({
         where: { id: userId },
-        select: { role: true, activeSessions: true },
+        select: { role: true, previousRole: true, activeSessions: true },
       });
       if (!fresh) {
         return next(new UnauthorizedError('User not found'));
@@ -97,6 +101,7 @@ async function requireActiveSession(req, res, next) {
       list = Array.isArray(fresh.activeSessions) ? fresh.activeSessions : [];
       SESSION_CACHE.set(userId, {
         role: fresh.role,
+        previousRole: fresh.previousRole,
         activeSessions: list,
         expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
       });
@@ -147,13 +152,20 @@ function requireRole(...roles) {
  * just-revoked account keeps access for up to that TTL (30s) — the same grace
  * window already accepted for session eviction, and far short of a week.
  */
-// A revoked/unapproved (PENDING) account hitting a protected route. Carries a
-// code so the client can bounce it to the login screen (where it sees the
-// "会员已到期，请联系管理员续费" panel) instead of surfacing this as a raw
-// error string in place — the same ACCOUNT_DISABLED the login endpoint uses.
-function disabledAccountError() {
-  const err = new ForbiddenError('账号已停用，请联系管理员续费');
-  err.code = 'ACCOUNT_DISABLED';
+// A PENDING account hitting a protected route. Carries a code so the client
+// bounces it to the login screen (with the matching panel) instead of
+// surfacing a raw error string in place. Two kinds, told apart by whether they
+// were ever a member (previousRole) — same split as the login endpoint:
+//   wasMember → ACCOUNT_DISABLED ("推广已结束/续费")
+//   else      → PENDING_APPROVAL ("等待审核"); a never-approved signup has no
+//               membership to have "expired".
+// `wasMember` defaults to true when unknown (no req.user, or previousRole not
+// loaded): the disabled/renew wording is the safe fallback for the common case.
+function disabledAccountError(wasMember = true) {
+  const err = new ForbiddenError(
+    wasMember ? '账号已停用，请联系管理员续费' : '账号正在等待管理员审核',
+  );
+  err.code = wasMember ? 'ACCOUNT_DISABLED' : 'PENDING_APPROVAL';
   return err;
 }
 
@@ -165,20 +177,24 @@ async function requireApproved(req, res, next) {
     const userId = req.user.id;
     const now = Date.now();
     let role;
+    let previousRole;
     const cached = SESSION_CACHE.get(userId);
     if (cached && cached.expiresAt > now) {
       role = cached.role;
+      previousRole = cached.previousRole;
     } else {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { role: true, activeSessions: true },
+        select: { role: true, previousRole: true, activeSessions: true },
       });
       if (!user) {
         return next(new UnauthorizedError('User not found'));
       }
       role = user.role;
+      previousRole = user.previousRole;
       SESSION_CACHE.set(userId, {
         role,
+        previousRole,
         activeSessions: user.activeSessions,
         expiresAt: now + SESSION_CACHE_TTL_MS,
       });
@@ -188,7 +204,8 @@ async function requireApproved(req, res, next) {
     // rather than the token's stale copy.
     req.user.role = role;
     if (role === 'PENDING') {
-      return next(disabledAccountError());
+      // previousRole set = a demoted member; null = a never-approved signup.
+      return next(disabledAccountError(Boolean(previousRole)));
     }
     next();
   } catch (err) {

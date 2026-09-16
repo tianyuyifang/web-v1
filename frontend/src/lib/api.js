@@ -85,6 +85,18 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // Account revoked while the user was mid-session — the token still exists
+    // but every protected route now 403s with ACCOUNT_DISABLED. Bounce to the
+    // login screen (which shows the "会员已到期，请联系管理员续费" panel) rather
+    // than leaving them limping around the app hitting raw 403s in place.
+    if (error.response?.status === 403 && error.response?.data?.error?.code === "ACCOUNT_DISABLED") {
+      clearToken();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login?reason=account_disabled";
+      }
+      return Promise.reject(error);
+    }
+
     // Expired or invalid token — clear and redirect to login
     if (error.response?.status === 401 && !isAuthRoute) {
       clearToken();

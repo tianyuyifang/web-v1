@@ -147,9 +147,19 @@ function requireRole(...roles) {
  * just-revoked account keeps access for up to that TTL (30s) — the same grace
  * window already accepted for session eviction, and far short of a week.
  */
+// A revoked/unapproved (PENDING) account hitting a protected route. Carries a
+// code so the client can bounce it to the login screen (where it sees the
+// "会员已到期，请联系管理员续费" panel) instead of surfacing this as a raw
+// error string in place — the same ACCOUNT_DISABLED the login endpoint uses.
+function disabledAccountError() {
+  const err = new ForbiddenError('账号已停用，请联系管理员续费');
+  err.code = 'ACCOUNT_DISABLED';
+  return err;
+}
+
 async function requireApproved(req, res, next) {
   if (!req.user) {
-    return next(new ForbiddenError('Your account is awaiting admin approval'));
+    return next(disabledAccountError());
   }
   try {
     const userId = req.user.id;
@@ -178,7 +188,7 @@ async function requireApproved(req, res, next) {
     // rather than the token's stale copy.
     req.user.role = role;
     if (role === 'PENDING') {
-      return next(new ForbiddenError('Your account is awaiting admin approval'));
+      return next(disabledAccountError());
     }
     next();
   } catch (err) {

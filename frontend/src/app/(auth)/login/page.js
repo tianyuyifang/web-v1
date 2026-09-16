@@ -29,6 +29,15 @@ export default function LoginPage() {
           </div>
         )}
 
+        {/* Bounced here mid-session because the account was revoked (未续费).
+            Explain it up front rather than showing a blank form they will try
+            to log into and be refused again. */}
+        {reason === "account_disabled" && (
+          <div className="mb-4 rounded-lg border border-warning-border bg-warning-bg px-4 py-3 text-center text-sm text-theme">
+            {t("accountDisabledMessage")}
+          </div>
+        )}
+
         <div className="rounded-xl border border-border bg-surface p-6 shadow-lg shadow-black/5">
           <LoginForm />
         </div>

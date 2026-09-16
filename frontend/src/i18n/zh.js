@@ -52,6 +52,7 @@ export default {
 
   // Login
   sessionReplacedMessage: "你的账号已在其他设备上登录，请重新登录。",
+  accountDisabledMessage: "你的会员已到期，请联系管理员续费后继续使用。",
 
   username: "用户名",
   password: "密码",

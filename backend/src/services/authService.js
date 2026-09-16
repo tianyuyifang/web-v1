@@ -102,6 +102,23 @@ async function login({ username, password }) {
   const valid = await comparePassword(password, user.passwordHash);
   if (!valid) throw new UnauthorizedError('Invalid username or password');
 
+  // A revoked (未续费/停止续费) account is demoted to PENDING and must not get
+  // back in until an admin approves it again — that is what revocation means.
+  // Refused here rather than after issuing a token: a PENDING login used to
+  // succeed and hand back a valid 7-day token, relying on the frontend to show
+  // a "renew" screen instead of navigating in. But the token was real, and
+  // anything holding it (a saved tab, a direct API call) was let straight
+  // through. No token is issued now. The account and all its data are
+  // untouched; approveUser restores the role and login works again.
+  // `previousRole` rides along on the error so the login screen can say
+  // "会员已到期" rather than the generic "wrong password".
+  if (user.role === 'PENDING') {
+    const err = new UnauthorizedError('账号已停用，请联系管理员续费');
+    err.code = 'ACCOUNT_DISABLED';
+    err.previousRole = user.previousRole || null;
+    throw err;
+  }
+
   const sessionId = crypto.randomUUID();
   const nowIso = new Date().toISOString();
 

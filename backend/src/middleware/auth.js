@@ -133,12 +133,57 @@ function requireRole(...roles) {
 /**
  * Middleware: rejects PENDING users with a 403.
  * Must be used after authMiddleware.
+ *
+ * The role is read from the DATABASE, not from the JWT. A token carries the
+ * role it was signed with, so an account revoked (demoted to PENDING) after
+ * its holder logged in would keep passing here for the life of the token — up
+ * to a week — because the token still says MEMBER. Revocation means "stop
+ * letting them in now", so the check has to be against the current truth.
+ * This mirrors isMappingEditor below, which reads the DB for the same reason.
+ *
+ * The read is served from SESSION_CACHE when warm (the same cache
+ * requireActiveSession fills), so the cost is one DB read per user per
+ * SESSION_CACHE_TTL_MS, not one per request. The tradeoff is that a
+ * just-revoked account keeps access for up to that TTL (30s) — the same grace
+ * window already accepted for session eviction, and far short of a week.
  */
-function requireApproved(req, res, next) {
-  if (req.user && req.user.role === 'PENDING') {
+async function requireApproved(req, res, next) {
+  if (!req.user) {
     return next(new ForbiddenError('Your account is awaiting admin approval'));
   }
-  next();
+  try {
+    const userId = req.user.id;
+    const now = Date.now();
+    let role;
+    const cached = SESSION_CACHE.get(userId);
+    if (cached && cached.expiresAt > now) {
+      role = cached.role;
+    } else {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true, activeSessions: true },
+      });
+      if (!user) {
+        return next(new UnauthorizedError('User not found'));
+      }
+      role = user.role;
+      SESSION_CACHE.set(userId, {
+        role,
+        activeSessions: user.activeSessions,
+        expiresAt: now + SESSION_CACHE_TTL_MS,
+      });
+    }
+    // Keep req.user.role in step with the database, so anything downstream
+    // that reads it (requireRole, route handlers) sees the current role
+    // rather than the token's stale copy.
+    req.user.role = role;
+    if (role === 'PENDING') {
+      return next(new ForbiddenError('Your account is awaiting admin approval'));
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
 
 /**
@@ -195,7 +240,19 @@ async function markMappingEditor(req, res, next) {
   }
 }
 
+/**
+ * Drop a user's cached role/sessions, so the very next request re-reads the
+ * database instead of waiting out the TTL. Called when an admin revokes an
+ * account (demoteUser): without it, a token held by a just-revoked user would
+ * keep passing requireApproved for up to SESSION_CACHE_TTL_MS. A no-op when
+ * nothing is cached for that user.
+ */
+function invalidateSessionCache(userId) {
+  SESSION_CACHE.delete(userId);
+}
+
 module.exports = {
   authMiddleware, requireRole, requireApproved, requireActiveSession,
   requireMappingEditor, markMappingEditor, isMappingEditor,
+  invalidateSessionCache,
 };

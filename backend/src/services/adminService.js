@@ -4,6 +4,7 @@ const { NotFoundError, ForbiddenError, ValidationError } = require('../utils/err
 const { addOneMonth } = require('../utils/billing');
 const { TIER_KEYS, getTiers, setTiers, getClientVersion } = require('./settingsService');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
+const { invalidateSessionCache } = require('../middleware/auth');
 
 const SALT_ROUNDS = 10;
 
@@ -124,7 +125,7 @@ async function approveUser(id) {
   // Clearing demotedAt and previousRole matters: this account is current
   // again, so a later demotion should read as new rather than as the old one
   // still standing.
-  return prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id },
     data: {
       role: 'MEMBER',
@@ -139,6 +140,14 @@ async function approveUser(id) {
     },
     select: { id: true, username: true, role: true },
   });
+
+  // Mirror of demoteUser: drop the cached role so the restored MEMBER takes
+  // effect on the next request. Without it, a user revoked then approved
+  // moments later could stay blocked by a stale PENDING cache entry for the
+  // rest of its TTL — "通过后立即可用" must be immediate.
+  invalidateSessionCache(id);
+
+  return updated;
 }
 
 /**
@@ -153,7 +162,7 @@ async function demoteUser(id) {
   if (!user) throw new NotFoundError('User');
   if (user.role === 'ADMIN') throw new ForbiddenError('Cannot change admin role');
 
-  return prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id },
     data: {
       role: 'PENDING',
@@ -163,6 +172,13 @@ async function demoteUser(id) {
     },
     select: { id: true, username: true, role: true },
   });
+
+  // Drop the cached role so an existing token stops passing requireApproved on
+  // its very next request, rather than after the cache's TTL. New logins are
+  // already refused in authService. Together: revoked = locked out at once.
+  invalidateSessionCache(id);
+
+  return updated;
 }
 
 /**

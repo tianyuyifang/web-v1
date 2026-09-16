@@ -22,6 +22,14 @@ function errorHandler(err, req, res, next) {
     error: { message, status: statusCode },
   };
 
+  // A machine-readable code, when the error carries one, so the client can
+  // branch on the case rather than string-matching the message. Only set on
+  // operational errors that opt in (e.g. ACCOUNT_DISABLED at login); ordinary
+  // errors have no code and the field is simply absent.
+  if (err.isOperational && err.code) {
+    response.error.code = err.code;
+  }
+
   if (err.details) {
     response.error.details = err.details;
   }

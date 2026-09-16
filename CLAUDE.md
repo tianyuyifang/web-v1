@@ -119,7 +119,7 @@ Music clip playlist web app — Next.js frontend, Express.js backend, PostgreSQL
 - `frontend/src/lib/mock-data.js` is not imported anywhere — safe to delete
 - Prisma generate fails if backend is running (DLL lock on Windows) — stop backend first (`taskkill //F //IM node.exe`)
 - User roles: `PENDING` (default), `MEMBER` (approved), `ADMIN` (seeded via script)
-- PENDING users: login succeeds, redirects to `/pending`; all protected API routes return 403
+- PENDING users: login is REFUSED at the backend (401 `ACCOUNT_DISABLED`, no token issued); the login screen shows a "会员已到期，请联系管理员续费" panel. This covers both never-approved signups and admin-revoked (未续费) accounts. `requireApproved` reads the current role from the DB (not the JWT), so an already-issued token stops working within the 30s session-cache TTL after a revoke; `demoteUser`/`approveUser` invalidate that cache so it takes effect on the next request. Approving restores the role and login works again — data is never touched.
 - Admin accounts: seeded via `node scripts/seed-admins.js` — reads `ADMIN_1/2_USERNAME/PASSWORD` from `.env`
 - No email field on users; no password reset flow
 - `e2e-test.js` needs updating: remove email from register payload, use username for login, approve user before testing protected routes

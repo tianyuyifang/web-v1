@@ -28,13 +28,23 @@ export default function LoginForm() {
 
     try {
       const data = await login(username, password);
+      // Kept as a fallback: login now refuses a revoked (PENDING) account with
+      // ACCOUNT_DISABLED below rather than returning one here, but if any path
+      // ever hands one back, still show the disabled screen, not the app.
       if (data.user?.role === "PENDING") {
         setBlocked(true);
       } else {
         window.location.href = "/dashboard";
       }
     } catch (err) {
-      setError(err.response?.data?.error?.message || err.response?.data?.message || t("loginFailed"));
+      // A revoked account: the password was right, the account is switched off.
+      // Show the same disabled screen the old success-path PENDING used, not a
+      // red "wrong password" error — that is the one thing this is not.
+      if (err.response?.data?.error?.code === "ACCOUNT_DISABLED") {
+        setBlocked(true);
+      } else {
+        setError(err.response?.data?.error?.message || err.response?.data?.message || t("loginFailed"));
+      }
     } finally {
       setSubmitting(false);
     }

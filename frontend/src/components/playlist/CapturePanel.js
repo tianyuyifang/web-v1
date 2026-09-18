@@ -19,22 +19,6 @@ import useCaptureStore from "@/store/captureStore";
  * EventSource on the same endpoint — the server broadcasts capture-event
  * and capture-resolved alongside like-update.
  */
-/**
- * How many rows of receipts stay on screen. A rolling window rather than a
- * timer: during a busy round the 10s expiry cleared rows while you were still
- * reading them, and in a quiet stretch it left the panel empty. Keeping the
- * last N means the most recent tags are always there to check.
- *
- * Counted in rows, not songs. Counting songs let one team's half of a row be
- * evicted while the other half stayed, which left a lone song beside a gap that
- * looked like a bug rather than a formation — and with ten songs to a round, a
- * ten-song window hit that on the very first song of the next round.
- *
- * Five because that is what a round holds. Only rows that hold something are
- * drawn: the grid grows as the round fills and stops here, rather than opening
- * at full height with blank rows waiting to be used.
- */
-const AUTO_KEEP_ROWS = 5;
 const POS_KEY = "capture-panel-pos";
 
 /**
@@ -155,9 +139,6 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   const unmatched = events.filter(
     (e) => e.outcome === "no_match" || e.outcome === "not_in_playlist"
   );
-  // How many rows those receipts occupy once the teams are lined up. Drives
-  // eviction, which works in rows so a pair is never half-removed.
-  const settledRowCount = settledRows(settled).length;
 
   // Listen for capture events on the playlist's SSE stream.
   useEffect(() => {
@@ -496,35 +477,11 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
     }
   }, [countTagged]);
 
-  // Keep only the newest AUTO_KEEP_ROWS rows; each new row rolls off the
-  // oldest. Nothing here is time-based, so no interval is needed — the list
-  // only changes when a receipt is added.
-  //
-  // Whole rows go at once. Evicting individual songs used to break a row in
-  // half, leaving one team's title beside an empty cell that read as a missing
-  // capture rather than the formation it was meant to show.
-  useEffect(() => {
-    if (settledRowCount <= AUTO_KEEP_ROWS) return;
-    setEvents((prev) => {
-      // Recomputed from `prev` rather than closing over `settled`, which is a
-      // fresh array each render and would make this effect re-run forever.
-      //
-      // The same three outcomes the grid draws. Counting rows one way and
-      // evicting by another would leave the list above the limit it is meant
-      // to hold, and the rows that never rolled off would be exactly the
-      // hand-settled ones.
-      const rows = settledRows(prev.filter(
-        (x) => x.outcome === "auto" || x.outcome === "manual" || x.outcome === "skipped"
-      ));
-      if (rows.length <= AUTO_KEEP_ROWS) return prev;
-      const drop = new Set();
-      for (const r of rows.slice(0, rows.length - AUTO_KEEP_ROWS)) {
-        if (r.red) drop.add(r.red.eventId);
-        if (r.blue) drop.add(r.blue.eventId);
-      }
-      return drop.size ? prev.filter((x) => !drop.has(x.eventId)) : prev;
-    });
-  }, [settledRowCount]);
+  // Settled receipts are no longer capped: the whole session's auto / manual /
+  // skipped rows are kept and the user scrolls the list to see them all. (They
+  // still live only in memory for this session — a page reload does not bring
+  // them back; that is unchanged.) The old rolling window (AUTO_KEEP_ROWS) that
+  // evicted the oldest whole rows has been removed.
 
   const ignore = useCallback(async (eventId) => {
     // Still an ignore on the server -- nothing was tagged -- but the song
@@ -1096,6 +1053,13 @@ function CaptureRow({ event, onApprove, onIgnore, t }) {
                     the only thing telling the choices apart. */}
                 {cands.length > 1 && <span className="text-muted"> · {c.artist}</span>}
                 {c.clips.length > 1 && <span className="text-muted"> @{cl.start}s</span>}
+                {/* Where this clip sits in the playlist, so the user can match
+                    it against the list they see on the playlist page. position
+                    is 0-based in the DB and shown as +1 there, so +1 here too.
+                    Only when known — older events/rows carry no position. */}
+                {Number.isInteger(cl.position) && (
+                  <span className="text-muted"> · 第{cl.position + 1}首</span>
+                )}
               </button>
             ))
           )}

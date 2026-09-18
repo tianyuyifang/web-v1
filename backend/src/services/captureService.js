@@ -431,6 +431,9 @@ async function clipsInPlaylist(playlistId, songIds) {
   const rows = await prisma.playlistClip.findMany({
     where: { playlistId, clip: { songId: { in: songIds } } },
     select: {
+      // The clip's place in this playlist (the drag-ordered rank), so the
+      // ambiguous picker can say "第 N 首" and the user recognises which one.
+      position: true,
       clip: {
         select: {
           id: true, start: true, length: true,
@@ -439,7 +442,8 @@ async function clipsInPlaylist(playlistId, songIds) {
       },
     },
   });
-  return rows.map((r) => r.clip).filter(Boolean);
+  // Carry the playlist position onto the clip object the caller works with.
+  return rows.map((r) => (r.clip ? { ...r.clip, position: r.position } : null)).filter(Boolean);
 }
 
 /**
@@ -588,7 +592,7 @@ async function ingestText({ session, rawText, side, row }) {
   const clips = await clipsInPlaylist(playlistId, candidates.map((c) => c.songId));
   const enriched = candidates.map((c) => {
     const own = clips.filter((cl) => cl.song.id === c.songId)
-      .map((cl) => ({ clipId: cl.id, start: cl.start, length: cl.length }))
+      .map((cl) => ({ clipId: cl.id, start: cl.start, length: cl.length, position: cl.position }))
       .sort((a, b) => a.start - b.start);
     return { ...c, clips: own, inPlaylist: own.length > 0 };
   });

@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const adminService = require('../services/adminService');
 const settingsService = require('../services/settingsService');
+const redeemService = require('../services/redeemService');
 const validate = require('../middleware/validate');
 const { updateBillingSchema } = require('../validators/billing');
 
@@ -216,6 +217,42 @@ router.put('/signup-promo', async (req, res, next) => {
     const promo = await settingsService.setSignupPromo(req.body || {});
     const resolved = await settingsService.resolveSignupPromo();
     res.json({ promo, active: resolved.active });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- Activation codes ---
+
+// GET /api/admin/activation-codes — list all codes (plaintext, newest first)
+router.get('/activation-codes', async (req, res, next) => {
+  try {
+    const codes = await redeemService.listCodes({ take: req.query.take });
+    res.json({ codes });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/activation-codes — generate a batch of one duration + tier
+// body: { preset?: 'day'|'week'|'month'|'quarter', days?: number, tier, count }
+router.post('/activation-codes', async (req, res, next) => {
+  try {
+    const { preset, days, tier, count } = req.body || {};
+    const codes = await redeemService.generateCodes({
+      preset, days, tier, count, adminId: req.user.id,
+    });
+    res.status(201).json({ codes });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/activation-codes/:id/void — void an unused code
+router.post('/activation-codes/:id/void', async (req, res, next) => {
+  try {
+    const code = await redeemService.voidCode(req.params.id);
+    res.json({ code });
   } catch (err) {
     next(err);
   }

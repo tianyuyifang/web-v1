@@ -9,6 +9,7 @@ import { useTheme } from "@/components/layout/ThemeProvider";
 import { authAPI } from "@/lib/api";
 import { clearToken } from "@/lib/auth";
 import MusicSourcesPanel from "@/components/account/MusicSourcesPanel";
+import RedeemBox from "@/components/account/RedeemBox";
 
 const THEME_OPTIONS = [
   { value: "dark", labelKey: "themeDark", descKey: "themeDarkDesc" },
@@ -226,6 +227,14 @@ export default function AccountPage() {
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
                 {t("renewalNotice")}
               </div>
+            )}
+
+            {/* Self-service renewal with an activation code, for a member who
+                can still log in but has lapsed. username is passed so the field
+                is locked to this account. On success re-fetch /me so the new
+                expiry and status show without a reload. */}
+            {expired && (
+              <RedeemBox username={user.username} onSuccess={() => window.location.reload()} />
             )}
 
             {/* Signing out sits at the foot of the account details rather than

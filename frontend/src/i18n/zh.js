@@ -586,6 +586,18 @@ export default {
   // 新注册、从未通过审核的用户(没有过会员, 不能说「到期/续费」)
   pendingApprovalTitle: "等待审核",
   pendingApprovalBody: "您的账号正在等待管理员审核，通过后即可使用：",
+  // 激活码兑换(登录停用页 + 账户页共用 RedeemBox)
+  redeemTitle: "有激活码？直接激活账户",
+  redeemPlaceholder: "输入激活码，如 QNI-XXXX-XXXX-XXXX",
+  redeemButton: "激活",
+  redeemNeedBoth: "请输入用户名和激活码",
+  redeemFailed: "激活失败，请检查激活码",
+  redeemSuccess: "激活成功！",
+  redeemNewExpiry: "有效期至 {date}",
+  redeemNowLogin: "现在可以登录使用了。",
+  redeemBuy: "没有激活码？点此购买 →",
+  // 购买链接：设成购买页地址即显示「点此购买」；保持 # 则隐藏该链接。
+  redeemBuyUrl: "#",
   feeColumn: "费用",
   expiresColumn: "到期",
   paymentStatusColumn: "付款",

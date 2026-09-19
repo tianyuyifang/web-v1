@@ -4,6 +4,7 @@ const validate = require('../middleware/validate');
 const { authMiddleware, requireActiveSession } = require('../middleware/auth');
 const { registerSchema, loginSchema, changePasswordSchema, changeUsernameSchema, updatePreferencesSchema } = require('../validators/auth');
 const authService = require('../services/authService');
+const redeemService = require('../services/redeemService');
 
 // Rate limit only login + register (brute-force targets).
 // Other auth routes require a valid JWT so brute-force isn't a risk.
@@ -13,6 +14,17 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: { message: 'Too many attempts, please try again later' } },
+});
+
+// Tighter limit for redeem: an activation code is a guessable credential worth
+// money, so cap attempts per IP hard (10 / 10 min, like the capture pair code)
+// rather than the looser login limit. trust proxy is set so this is per real IP.
+const redeemLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { message: '尝试次数过多，请稍后再试' } },
 });
 
 // POST /api/auth/register
@@ -29,6 +41,21 @@ router.post('/register', authLimiter, validate(registerSchema), async (req, res,
 router.post('/login', authLimiter, validate(loginSchema), async (req, res, next) => {
   try {
     const result = await authService.login(req.validated);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/redeem — public. A lapsed/PENDING user (no token) renews their
+// own account with an activation code: username + code in the body. Rate limited
+// against code guessing. Errors carry codes like INVALID_CODE / CODE_USED /
+// NO_USER — deliberately NOT ACCOUNT_DISABLED/PENDING_APPROVAL, which the
+// frontend response interceptor would hijack into a login redirect.
+router.post('/redeem', redeemLimiter, async (req, res, next) => {
+  try {
+    const { username, code } = req.body || {};
+    const result = await redeemService.redeem(username, code);
     res.json(result);
   } catch (err) {
     next(err);

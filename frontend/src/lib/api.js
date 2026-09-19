@@ -121,6 +121,8 @@ export const authAPI = {
   changePassword: (data) => api.put("/auth/password", data),
   changeUsername: (data) => api.put("/auth/username", data),
   updatePreferences: (preferences) => api.put("/auth/preferences", { preferences }),
+  // Public: renew a lapsed/PENDING account with an activation code.
+  redeem: (username, code) => api.post("/auth/redeem", { username, code }),
 };
 
 // --- Songs ---
@@ -312,6 +314,10 @@ export const captureAPI = {
 
 // --- Admin ---
 export const adminAPI = {
+  // Activation codes
+  listCodes: () => api.get("/admin/activation-codes"),
+  generateCodes: (data) => api.post("/admin/activation-codes", data),
+  voidCode: (id) => api.post(`/admin/activation-codes/${id}/void`),
   listUsers: () => api.get("/admin/users"),
   listPending: () => api.get("/admin/users/pending"),
   approveUser: (id) => api.patch(`/admin/users/${id}/approve`),

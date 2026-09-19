@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import useAuth from "@/hooks/useAuth";
 import ContactAdmins from "@/components/account/ContactAdmins";
+import RedeemBox from "@/components/account/RedeemBox";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 export default function LoginForm() {
@@ -73,6 +74,13 @@ export default function LoginForm() {
           </p>
           <ContactAdmins />
         </div>
+        {/* Self-service renewal: the user has an activation code (bought from an
+            admin) and redeems it here without needing to log in. On success they
+            are told to log in — role and expiry are now restored. */}
+        <RedeemBox
+          username={username}
+          onSuccess={() => { setBlocked(false); setPassword(""); setError(""); }}
+        />
         <button
           onClick={() => { setBlocked(false); setPassword(""); }}
           className="w-full rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-surface-hover"

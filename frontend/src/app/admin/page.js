@@ -13,6 +13,7 @@ import TaggingUsagePanel from "@/components/admin/TaggingUsagePanel";
 import CaptureClientPanel from "@/components/admin/CaptureClientPanel";
 import TierConfigPanel from "@/components/admin/TierConfigPanel";
 import SignupPromoPanel from "@/components/admin/SignupPromoPanel";
+import ActivationCodesPanel from "@/components/admin/ActivationCodesPanel";
 import UpdatesPanel from "@/components/admin/UpdatesPanel";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
@@ -179,6 +180,7 @@ export default function AdminPage() {
     { key: "taggingUsage", label: "歌P使用", dot: "bg-amber-400", count: null },
     { key: "captureClient", label: "App版本", dot: "bg-lime-400", count: null },
     { key: "tiers", label: "档位设置", dot: "bg-indigo-400", count: null },
+    { key: "codes", label: "激活码", dot: "bg-orange-400", count: null },
     { key: "tools", label: "管理员工具", dot: "bg-teal-400", count: null },
   ];
 
@@ -370,6 +372,7 @@ export default function AdminPage() {
 
       {activeTab === "captureClient" && <CaptureClientPanel />}
       {activeTab === "tiers" && <TierConfigPanel />}
+      {activeTab === "codes" && <ActivationCodesPanel />}
 
       {activeTab === "tools" && (
         <div className="space-y-6">

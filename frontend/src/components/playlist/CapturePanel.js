@@ -771,27 +771,41 @@ function SettledList({ events, t }) {
   const ordered = [...events].reverse();
   const hasSide = ordered.some((e) => e.side === "red" || e.side === "blue");
 
+  // Settled receipts get their own short scroll box (~5 rows tall), so the
+  // whole session's auto/manual/skipped history is kept and scrollable without
+  // it pushing the pending/failed rows out of view — the panel used to cap the
+  // list at 5 rows for exactly the height this box now bounds. 130px ≈ a column
+  // header plus 5 CompactAutoRow lines (py-1 + 11px/leading-tight ≈ 21px each).
+  // No wrapper when empty, so it takes no space until there is something.
+  if (!ordered.length) return null;
+
   // No team information at all — clients before v3, and modes with one list.
   // Two empty columns would be worse than the plain list they replaced.
   if (!hasSide) {
-    return ordered.map((e) => <AutoRow key={e.eventId} event={e} t={t} />);
+    return (
+      <div className="max-h-[130px] overflow-y-auto">
+        {ordered.map((e) => <AutoRow key={e.eventId} event={e} t={t} />)}
+      </div>
+    );
   }
 
   const rows = settledRows(events);
 
   return (
-    <div className="grid grid-cols-2 gap-px border-b border-border/50 bg-border/30">
-      <div className="bg-surface">
-        <ColumnHeader label={t("captureTeamRed")} tone="text-red-400" />
-        {rows.map((r, i) => (
-          <CompactAutoRow key={r.red ? r.red.eventId : `red-gap-${i}`} event={r.red} />
-        ))}
-      </div>
-      <div className="bg-surface">
-        <ColumnHeader label={t("captureTeamBlue")} tone="text-blue-400" />
-        {rows.map((r, i) => (
-          <CompactAutoRow key={r.blue ? r.blue.eventId : `blue-gap-${i}`} event={r.blue} />
-        ))}
+    <div className="max-h-[130px] overflow-y-auto">
+      <div className="grid grid-cols-2 gap-px border-b border-border/50 bg-border/30">
+        <div className="bg-surface">
+          <ColumnHeader label={t("captureTeamRed")} tone="text-red-400" />
+          {rows.map((r, i) => (
+            <CompactAutoRow key={r.red ? r.red.eventId : `red-gap-${i}`} event={r.red} />
+          ))}
+        </div>
+        <div className="bg-surface">
+          <ColumnHeader label={t("captureTeamBlue")} tone="text-blue-400" />
+          {rows.map((r, i) => (
+            <CompactAutoRow key={r.blue ? r.blue.eventId : `blue-gap-${i}`} event={r.blue} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -875,8 +889,11 @@ function alignRows(red, blue) {
 }
 
 function ColumnHeader({ label, tone }) {
+  // Sticky so 红队/蓝队 stay pinned while the receipts scroll under them inside
+  // the short (130px) settled box. Its own bg-surface + z make it opaque, or
+  // the rows would show through as they pass beneath.
   return (
-    <p className={`px-2 pb-0.5 pt-1 text-[10px] font-medium ${tone}`}>{label}</p>
+    <p className={`sticky top-0 z-10 bg-surface px-2 pb-0.5 pt-1 text-[10px] font-medium ${tone}`}>{label}</p>
   );
 }
 

@@ -72,19 +72,32 @@ router.delete('/:id', requireRole('ADMIN'), async (req, res, next) => {
     const clip = await prisma.clip.findUnique({ where: { id: req.params.id } });
     if (!clip) return res.status(404).json({ error: { message: 'Clip not found' } });
 
-    // Find another clip for the same song to reassign playlists
-    const replacement = await prisma.clip.findFirst({
+    // Every other clip of the song. The replacement is the one whose start is
+    // nearest the deleted clip's: the point of replacing at all is that a
+    // playlist keeps a segment as close as possible to the one it loses, and
+    // the old earliest-start rule could swap an 80s chorus for a 20s intro.
+    // Ties go to the later start — hand-cut clips on this catalogue sit
+    // overwhelmingly at the later cut points (the chorus), so later is the
+    // likelier match for what users meant.
+    const others = await prisma.clip.findMany({
       where: { songId: clip.songId, id: { not: clip.id } },
-      orderBy: { start: 'asc' },
-      select: { id: true },
+      select: { id: true, start: true },
     });
 
     // Block deletion if this is the last clip for the song
-    if (!replacement) {
+    if (others.length === 0) {
       return res.status(400).json({
         error: { message: 'Cannot delete the last clip for a song. Create another clip first.' },
       });
     }
+
+    const replacement = others.reduce((best, c) => {
+      const d = Math.abs(c.start - clip.start);
+      const bd = Math.abs(best.start - clip.start);
+      if (d < bd) return c;
+      if (d === bd && c.start > best.start) return c;
+      return best;
+    });
 
     // Find playlists that already have the replacement clip — can't reassign those
     const conflicting = await prisma.playlistClip.findMany({
@@ -93,24 +106,44 @@ router.delete('/:id', requireRole('ADMIN'), async (req, res, next) => {
     });
     const conflictingPlaylistIds = conflicting.map((pc) => pc.playlistId);
 
-    // Transaction: reassign/remove playlist references, clean up likes, delete clip
-    await prisma.$transaction([
+    // Interactive transaction rather than the array form: the renumbering at
+    // the end reads what is left, which an array transaction cannot do.
+    await prisma.$transaction(async (tx) => {
       // Delete likes for the clip being deleted (all playlists, all users)
-      prisma.like.deleteMany({ where: { clipId: clip.id } }),
+      await tx.like.deleteMany({ where: { clipId: clip.id } });
       // Playlists that already have the replacement: just remove the old entry
-      ...(conflictingPlaylistIds.length > 0
-        ? [prisma.playlistClip.deleteMany({
-            where: { clipId: clip.id, playlistId: { in: conflictingPlaylistIds } },
-          })]
-        : []),
+      if (conflictingPlaylistIds.length > 0) {
+        await tx.playlistClip.deleteMany({
+          where: { clipId: clip.id, playlistId: { in: conflictingPlaylistIds } },
+        });
+      }
       // Remaining playlists: reassign to replacement
-      prisma.playlistClip.updateMany({
+      await tx.playlistClip.updateMany({
         where: { clipId: clip.id },
         data: { clipId: replacement.id },
-      }),
+      });
       // Delete the clip record
-      prisma.clip.delete({ where: { id: req.params.id } }),
-    ]);
+      await tx.clip.delete({ where: { id: req.params.id } });
+
+      // Close the numbering hole the removed row left. Only the conflicting
+      // playlists lost a row — reassigned rows keep their positions — and the
+      // ordinary remove-from-playlist path renumbers, so matching it here
+      // means a hole can never outlive the request that made it.
+      for (const playlistId of conflictingPlaylistIds) {
+        const remaining = await tx.playlistClip.findMany({
+          where: { playlistId },
+          orderBy: { position: 'asc' },
+          select: { id: true, position: true },
+        });
+        const fixes = [];
+        remaining.forEach((pc, index) => {
+          if (pc.position !== index) {
+            fixes.push(tx.playlistClip.update({ where: { id: pc.id }, data: { position: index } }));
+          }
+        });
+        await Promise.all(fixes);
+      }
+    });
 
     // Delete audio files from disk (outside transaction — non-critical)
     if (clip.filePath) {

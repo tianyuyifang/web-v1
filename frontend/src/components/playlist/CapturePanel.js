@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { captureAPI, getLikesSSEUrl } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import useAuth from "@/hooks/useAuth";
@@ -771,28 +771,33 @@ function SettledList({ events, t }) {
   const ordered = [...events].reverse();
   const hasSide = ordered.some((e) => e.side === "red" || e.side === "blue");
 
-  // Settled receipts get their own short scroll box (~5 rows tall), so the
-  // whole session's auto/manual/skipped history is kept and scrollable without
-  // it pushing the pending/failed rows out of view — the panel used to cap the
-  // list at 5 rows for exactly the height this box now bounds. 130px ≈ a column
-  // header plus 5 CompactAutoRow lines (py-1 + 11px/leading-tight ≈ 21px each).
-  // No wrapper when empty, so it takes no space until there is something.
-  if (!ordered.length) return null;
+  // The short scroll box, and whether the viewer was pinned to its bottom.
+  const boxRef = useRef(null);
+  // Start true so the first receipts land already scrolled to the newest.
+  const atBottomRef = useRef(true);
+
+  // Follow the newest receipt only when the viewer is already at the bottom —
+  // the chat-window rule. Scroll up to read earlier rows and new arrivals do
+  // NOT yank you back down; return to the bottom and following resumes. No
+  // timer, so nothing fires after unmount. useLayoutEffect runs after the new
+  // rows are in the DOM but before paint, so the jump is never seen.
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (box && atBottomRef.current) box.scrollTop = box.scrollHeight;
+  });
+
+  // Recompute "at bottom" on every human scroll. A 4px slack absorbs sub-pixel
+  // rounding so a viewer who scrolled all the way down still counts as pinned.
+  const onScroll = (e) => {
+    const el = e.currentTarget;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+  };
 
   // No team information at all — clients before v3, and modes with one list.
   // Two empty columns would be worse than the plain list they replaced.
-  if (!hasSide) {
+  const inner = hasSide ? (() => {
+    const rows = settledRows(events);
     return (
-      <div className="max-h-[130px] overflow-y-auto">
-        {ordered.map((e) => <AutoRow key={e.eventId} event={e} t={t} />)}
-      </div>
-    );
-  }
-
-  const rows = settledRows(events);
-
-  return (
-    <div className="max-h-[130px] overflow-y-auto">
       <div className="grid grid-cols-2 gap-px border-b border-border/50 bg-border/30">
         <div className="bg-surface">
           <ColumnHeader label={t("captureTeamRed")} tone="text-red-400" />
@@ -807,6 +812,19 @@ function SettledList({ events, t }) {
           ))}
         </div>
       </div>
+    );
+  })() : ordered.map((e) => <AutoRow key={e.eventId} event={e} t={t} />);
+
+  // Settled receipts get their own short scroll box (~5 rows tall), so the
+  // whole session's auto/manual/skipped history is kept and scrollable without
+  // it pushing the pending/failed rows out of view — the panel used to cap the
+  // list at 5 rows for exactly the height this box now bounds. 130px ≈ a column
+  // header plus 5 CompactAutoRow lines (py-1 + 11px/leading-tight ≈ 21px each).
+  // Rendered even when empty now (rather than returning null early) so the hooks
+  // above always run in the same order; an empty box is 0px tall and invisible.
+  return (
+    <div ref={boxRef} onScroll={onScroll} className="max-h-[130px] overflow-y-auto">
+      {inner}
     </div>
   );
 }

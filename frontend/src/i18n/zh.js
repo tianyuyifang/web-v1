@@ -595,9 +595,10 @@ export default {
   redeemSuccess: "激活成功！",
   redeemNewExpiry: "有效期至 {date}",
   redeemNowLogin: "现在可以登录使用了。",
-  redeemBuy: "没有激活码？点此购买 →",
+  redeemBuy: "点此购买激活码可以直接付费使用 →",
   // 购买链接：设成购买页地址即显示「点此购买」；保持 # 则隐藏该链接。
-  redeemBuyUrl: "#",
+  // 外部闲鱼链接，新标签打开（RedeemBox 已 target=_blank + rel=noopener）。
+  redeemBuyUrl: "https://www.goofish.com/item?spm=a21ybx.personal.feeds.1.6a496ac24xsG93&id=1084213756906&categoryId=50023914",
   feeColumn: "费用",
   expiresColumn: "到期",
   paymentStatusColumn: "付款",

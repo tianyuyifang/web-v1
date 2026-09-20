@@ -457,6 +457,39 @@ router.patch('/passages/:passageId', requireMappingEditor, async (req, res, next
 });
 
 // GET /api/mappings/:id
+/**
+ * GET /api/mappings/preview-pair?source=&externalId= — hear a track named by
+ * its (source, externalId) pair, rather than a track UUID or a mapping id.
+ *
+ * Defined BEFORE `/:id` on purpose: it is a single-segment path, so `/:id`
+ * would otherwise capture "preview-pair" as an id. (`/:id/preview` is safe
+ * after `/:id` only because it is two segments.)
+ *
+ * The lyric-passage review queue holds only (source, externalId) — its rows
+ * carry no mapping id — so it cannot use the two id-based preview routes. This
+ * lets that page play the exact recording a passage came from, through the same
+ * resolver, the same credential-and-CDN path, and the same open-proxy guard as
+ * the override: the pair is looked up in the imported pool, never resolved on
+ * trust, so this can never become a proxy for the reviewer's own credential.
+ */
+router.get('/preview-pair', listenLimiter, requireMappingEditor, async (req, res, next) => {
+  try {
+    const source = SOURCE_VALUES.safeParse(req.query.source);
+    const externalId = req.query.externalId;
+    if (!source.success || !externalId) throw new NotFoundError('Track');
+
+    const known = await prisma.importedTrack.findUnique({
+      where: { source_externalId: { source: source.data, externalId: String(externalId) } },
+      select: { source: true, externalId: true },
+    });
+    if (!known) throw new NotFoundError('Track');
+
+    return await resolvePreview(req.user.id, known.source, known.externalId, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id', requireMappingEditor, async (req, res, next) => {
   try {
     res.json({ mapping: await svc.get(mappingId(req)) });

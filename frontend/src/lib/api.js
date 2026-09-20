@@ -507,6 +507,10 @@ export const mappingAPI = {
   // Same thing for a pool track nobody has claimed yet — you have to hear it
   // before you can say it is the right one.
   previewTrack: (trackId) => api.get(`/mappings/track/${trackId}/preview`),
+  // Preview by (source, externalId) — for the lyric-passage queue, whose rows
+  // have no mapping id or track UUID. Same resolver/guard as the id routes.
+  previewPair: (source, externalId) =>
+    api.get(`/mappings/preview-pair?source=${encodeURIComponent(source)}&externalId=${encodeURIComponent(externalId)}`),
   create: (body) => api.post("/mappings", body),
   approve: (id, body = {}) => api.post(`/mappings/${id}/approve`, body),
   unapprove: (id) => api.post(`/mappings/${id}/unapprove`),

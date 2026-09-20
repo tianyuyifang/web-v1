@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mappingAPI } from "@/lib/api";
+import { mappingAPI, getStreamUrl } from "@/lib/api";
 // Shared with the 唱卡 page: both must read an answer the same way, or the page
 // marks lines the reviewer never approved.
 import { entryLines, placementsOf } from "@/lib/passageAnswer";
+import useLivePlayer from "@/hooks/useLivePlayer";
 import CataloguePanel from "./CataloguePanel";
 
 /**
@@ -46,6 +47,78 @@ export default function PassagePanel() {
   const [search, setSearch] = useState("");
   // Only redirect on the very first load, never after the reviewer chooses.
   const firstLoad = useRef(false);
+
+  // Audio preview of the recording a passage came from. Same player and same
+  // resolve-then-CDN path the 唱卡 page uses; here it plays the row's own
+  // (source, externalId). Only one row plays at a time.
+  const player = useLivePlayer();
+  const [playingId, setPlayingId] = useState(null); // row.id currently loaded
+  const [playBusyId, setPlayBusyId] = useState(null); // row.id resolving
+  const [playError, setPlayError] = useState({}); // row.id -> message
+
+  const togglePlay = useCallback(async (row) => {
+    // Same row already loaded — just pause/resume, keeping position and decode.
+    if (playingId === row.id) {
+      await player.toggle();
+      return;
+    }
+    setPlayBusyId(row.id);
+    setPlayError((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
+    try {
+      const res = await mappingAPI.previewPair(row.source, row.externalId);
+      const { url, reason, kind, songId } = res.data;
+      if (kind === "unsupported") {
+        setPlayError((prev) => ({ ...prev, [row.id]: `${row.source} 的播放还没做` }));
+        return;
+      }
+      if (kind === "local" && songId) {
+        setPlayingId(row.id);
+        await player.load(getStreamUrl(songId));
+        return;
+      }
+      if (!url) {
+        setPlayError((prev) => ({
+          ...prev,
+          [row.id]: reason === "credential-expired"
+            ? "音乐账号连接已失效，请到账号页重新扫码"
+            : reason === "needs-login"
+              ? "这首歌需要会员，或音乐账号连接已失效，请到账号页重新扫码"
+              : reason === "needs-vip"
+                ? "这首歌需要会员"
+                : "这首歌当前拿不到播放地址（可能已下架）",
+        }));
+        return;
+      }
+      setPlayingId(row.id);
+      await player.load(url);
+    } catch (err) {
+      setPlayError((prev) => ({
+        ...prev,
+        [row.id]: err.response?.data?.error?.message || "播放失败",
+      }));
+    } finally {
+      setPlayBusyId(null);
+    }
+  }, [player, playingId]);
+
+  // Stop audio when switching tabs or searching — a hidden row must not keep
+  // playing, and the row it belonged to may not even be in the new list.
+  useEffect(() => {
+    player.stop();
+    setPlayingId(null);
+    setPlayError({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, search, reportedOnly]);
+
+  // Only one row is open at a time. If the open row changes away from the one
+  // that is playing, its play control is no longer on screen — stop it.
+  useEffect(() => {
+    if (playingId && openId !== playingId) {
+      player.stop();
+      setPlayingId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId]);
 
   const load = useCallback(async () => {
     if (status === 'catalogue') { setLoading(false); return; }
@@ -385,7 +458,13 @@ export default function PassagePanel() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setOpenId(open ? null : row.id)}
+                    onClick={() => {
+                      // Collapsing (or switching to another row) hides this
+                      // row's play control, so stop its audio rather than let
+                      // it keep playing where it can no longer be paused.
+                      if (open && playingId === row.id) { player.stop(); setPlayingId(null); }
+                      setOpenId(open ? null : row.id);
+                    }}
                     className="shrink-0 rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                   >
                     {open ? "收起" : "看歌词"}
@@ -433,6 +512,39 @@ export default function PassagePanel() {
                         <p className="text-gray-500">曲库里还没有这首歌的歌词。</p>
                       )}
                     </div>
+
+                    {/* Hear the exact recording this passage came from — same
+                        (source, externalId) as its lyrics, so audio and words
+                        always match. Resolves through the reviewer's own
+                        credential; audio streams from the CDN (or /api/stream
+                        for LOCAL), exactly like the 唱卡 page. */}
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={playBusyId === row.id}
+                        onClick={() => togglePlay(row)}
+                        className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {playBusyId === row.id
+                          ? "加载中…"
+                          : (playingId === row.id && player.isPlaying)
+                            ? "⏸ 暂停"
+                            : (playingId === row.id ? "▶ 继续" : "▶ 播放")}
+                      </button>
+                      <span className="text-xs text-gray-500">
+                        音源：{row.source}
+                        {row.realLines.length ? "" : "（曲库暂无歌词）"}
+                      </span>
+                      {playingId === row.id && player.duration > 0 && (
+                        <span className="text-xs tabular-nums text-gray-400">
+                          {Math.floor(player.current)}s / {Math.floor(player.duration)}s
+                        </span>
+                      )}
+                    </div>
+                    {playError[row.id] && (
+                      <p className="mt-1 text-xs text-red-600 dark:text-red-400">{playError[row.id]}</p>
+                    )}
+
                     <label className="mt-2 block text-xs font-medium text-emerald-700 dark:text-emerald-400">
                       标注：一行一处，写「首行-末行」（如 14-20）；副歌唱几遍就写几行。
                       中间行按连续性自动补齐，只要首末两个数字。

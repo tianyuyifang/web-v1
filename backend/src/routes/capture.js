@@ -273,8 +273,16 @@ router.get('/connection', ...web, async (req, res, next) => {
   }
 });
 
-// PATCH /api/capture/target — point the open connection somewhere, or nowhere.
-router.patch('/target', ...web, requireCaptureAddOn, async (req, res, next) => {
+// POST/PATCH /api/capture/target — point the open connection somewhere, or nowhere.
+//
+// Registered under both methods on purpose. PATCH is the semantically correct
+// verb (it edits one field of the session), and Safari/Chrome send it fine, but
+// the Quark browser (old UC engine, common on iPad) fails every HTTP PATCH at
+// its own layer — the request never reaches us (nginx logs urt=-, a 400 the app
+// never saw), so the 唱卡 page's 开始 button, the only PATCH in the app, was dead
+// for Quark users while POST/GET/DELETE all worked. POST is the fix; PATCH stays
+// so any still-cached old client keeps working during the rollout.
+const setTargetHandler = async (req, res, next) => {
   try {
     const { target, playlistId } = req.body || {};
 
@@ -294,7 +302,9 @@ router.patch('/target', ...web, requireCaptureAddOn, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+};
+router.patch('/target', ...web, requireCaptureAddOn, setTargetHandler);
+router.post('/target', ...web, requireCaptureAddOn, setTargetHandler);
 
 // DELETE /api/capture/sessions/:id — stop a run
 router.delete('/sessions/:id', ...web, async (req, res, next) => {

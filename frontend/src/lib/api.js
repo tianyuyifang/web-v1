@@ -244,8 +244,11 @@ export const captureAPI = {
   // The current connection, or null. Polled by the nav indicator.
   connection: () => api.get("/capture/connection", { timeout: 10000 }),
   // Point the open connection at a playlist, at 唱卡, or at nothing.
+  // POST, not PATCH: the Quark browser (old UC engine, common on iPad) fails
+  // every HTTP PATCH before it leaves the client, which killed the 唱卡 page's
+  // 开始 button for those users; POST goes through. The server accepts both.
   setTarget: (target, playlistId) =>
-    api.patch("/capture/target", playlistId ? { target, playlistId } : { target },
+    api.post("/capture/target", playlistId ? { target, playlistId } : { target },
       { timeout: 10000 }),
   liveFeed: (sessionId, limit) =>
     api.get(`/capture/sessions/${sessionId}/live${limit ? `?limit=${limit}` : ""}`),

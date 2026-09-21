@@ -496,6 +496,9 @@ export const mappingAPI = {
     const qs = p3.toString();
     return api.get(`/mappings/passages/catalogue${qs ? `?${qs}` : ""}`);
   },
+  // Delete one 唱卡集 entry (OCR bad data). Only the stats row; not the capture
+  // log. Editor-only on the server.
+  deleteCatalogueEntry: (id) => api.delete(`/mappings/passages/catalogue/${id}`),
   // 「段落点不准确」— a singer's report from the live page; counts only,
   // can never change an answer.
   reportPassage: (body) => api.post("/mappings/passages/report", body),

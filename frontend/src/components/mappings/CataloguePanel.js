@@ -19,7 +19,24 @@ export default function CataloguePanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [openId, setOpenId] = useState(null);
+  // 删除坏数据(OCR 读错的)。两步确认:点一次亮「确认删除」,再点才删。
+  const [confirmDelId, setConfirmDelId] = useState(null);
+  const [busyDelId, setBusyDelId] = useState(null);
   const runRef = useRef(0);
+
+  const remove = useCallback(async (id) => {
+    setBusyDelId(id);
+    setError("");
+    try {
+      await mappingAPI.deleteCatalogueEntry(id);
+      setRows((prev) => prev.filter((r) => r.id !== id));
+      setConfirmDelId(null);
+    } catch (err) {
+      setError(err.response?.data?.error?.message || "删除失败");
+    } finally {
+      setBusyDelId(null);
+    }
+  }, []);
 
   const load = useCallback(async (query, offset = 0) => {
     const run = ++runRef.current;
@@ -47,7 +64,8 @@ export default function CataloguePanel() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        所有在 QNI 里出现过的歌词段落，按游戏原文去重。仅供浏览，可按歌名或歌手搜索。
+        所有在 QNI 里出现过的歌词段落，按游戏原文去重。可按歌名或歌手搜索；
+        OCR 读错的坏数据可以「删除」（只删这条统计记录，不影响游戏流水）。
       </p>
 
       <input
@@ -68,31 +86,65 @@ export default function CataloguePanel() {
       ) : (
         <ul className="space-y-2">
           {rows.map((row, i) => {
-            const id = `${row.rawText}#${i}`;
+            // Prefer the real DB id (unique, stable across pages); fall back to
+            // rawText#i only if a row somehow lacks one.
+            const id = row.id || `${row.rawText}#${i}`;
             const open = openId === id;
             return (
               <li
                 key={id}
                 className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
               >
-                <button
-                  type="button"
-                  onClick={() => setOpenId(open ? null : id)}
-                  className="flex w-full items-start justify-between gap-3 text-left"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                      {row.gameTitle || "（未知）"}
-                      {row.gameArtist ? <span className="text-gray-500"> — {row.gameArtist}</span> : null}
+                <div className="flex items-start justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(open ? null : id)}
+                    className="flex min-w-0 flex-1 items-start justify-between gap-3 text-left"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                        {row.gameTitle || "（未知）"}
+                        {row.gameArtist ? <span className="text-gray-500"> — {row.gameArtist}</span> : null}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-gray-500">
+                        {row.gameLines.join(" / ")}
+                      </div>
                     </div>
-                    <div className="mt-0.5 truncate text-xs text-gray-500">
-                      {row.gameLines.join(" / ")}
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-xs text-gray-400">
-                    出现 {row.seen} 次
-                  </span>
-                </button>
+                    <span className="shrink-0 text-xs text-gray-400">
+                      出现 {row.seen} 次
+                    </span>
+                  </button>
+                  {/* 删除坏数据。仅在有真实 id 时可删(兜底 id 无法定位后端行)。 */}
+                  {row.id && (
+                    confirmDelId === row.id ? (
+                      <span className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={busyDelId === row.id}
+                          onClick={() => remove(row.id)}
+                          className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          {busyDelId === row.id ? "删除中…" : "确认删除"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDelId(null)}
+                          className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        >
+                          取消
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelId(row.id)}
+                        className="shrink-0 rounded border border-red-300 px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+                      >
+                        删除
+                      </button>
+                    )
+                  )}
+                </div>
                 {open && (
                   <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-700">
                     <ol className="list-decimal space-y-0.5 pl-5 text-sm text-gray-700 dark:text-gray-300">

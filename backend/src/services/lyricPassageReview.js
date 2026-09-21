@@ -383,7 +383,7 @@ async function catalogue({ q = '', offset = 0, take = 40 } = {}) {
 
   const rows = await prisma.passageCatalogue.findMany({
     where,
-    select: { rawText: true, lyric: true, seen: true },
+    select: { id: true, rawText: true, lyric: true, seen: true },
     // rawText 兜底, 让顺序完全确定。前两个键本来就有, 但 seen 从「30 天内的
     // 次数」变成累计值之后, 一大批段落会稳定停在 seen=1, 并列比以前多得多 ——
     // 而 OFFSET 分页遇到并列顺序不定, 同一行会在两页里出现或者被跳过。
@@ -402,6 +402,7 @@ async function catalogue({ q = '', offset = 0, take = 40 } = {}) {
       const gameTitle = dash > 0 ? raw.slice(0, dash) : raw;
       const gameArtist = dash > 0 ? raw.slice(dash + 1) : '';
       return {
+        id: r.id,
         rawText: raw,
         gameTitle,
         gameArtist,
@@ -425,4 +426,21 @@ async function remove(id) {
   return { ok: true };
 }
 
-module.exports = { list, counts, decide, remove, catalogue, syncCatalogue, splitGameLines, splitReal, hashPassage };
+/**
+ * 删掉唱卡集里的一条统计记录 —— OCR 读进来的坏数据(乱码/错字/非歌曲)。
+ *
+ * 只删 passage_catalogue 这一行,不碰 capture_events(游戏演唱流水)、也不碰
+ * lyric_passage_matches(待确认队列)。删除是安全的:这张表本就是从流水累加的
+ * 统计册,删掉后若那首歌日后又被(无障碍)正确读到,会自然重新累加进来。
+ *
+ * 不做黑名单防回流:OCR 的错误是随机的、几乎不会以同一段精确文本再次出现
+ * (用户 2026-09-21 的判断),黑名单在这里是过度设计。
+ */
+async function removeCatalogueEntry(id) {
+  const row = await prisma.passageCatalogue.findUnique({ where: { id } });
+  if (!row) throw new NotFoundError('Catalogue entry');
+  await prisma.passageCatalogue.delete({ where: { id } });
+  return { ok: true };
+}
+
+module.exports = { list, counts, decide, remove, catalogue, removeCatalogueEntry, syncCatalogue, splitGameLines, splitReal, hashPassage };

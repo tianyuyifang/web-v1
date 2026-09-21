@@ -363,6 +363,27 @@ router.get('/passages/catalogue', requireMappingEditor, async (req, res, next) =
   }
 });
 
+/**
+ * DELETE /api/mappings/passages/catalogue/:id — remove one 唱卡集 entry.
+ *
+ * For OCR-borne bad data (garbled text / wrong song). Deletes only the
+ * passage_catalogue row; capture_events and the review queue are untouched.
+ * Three segments after /passages/, so it never collides with the two-segment
+ * `/passages/:passageId` DELETE below.
+ */
+router.delete('/passages/catalogue/:id', requireMappingEditor, async (req, res, next) => {
+  try {
+    // Validate the UUID before Prisma sees it — a non-uuid raises an internal
+    // PrismaClientValidationError that surfaces as a 500, so turn it into the
+    // 404 it should be, matching the sibling /passages/:passageId route.
+    const id = z.string().uuid().safeParse(req.params.id);
+    if (!id.success) throw new NotFoundError('Catalogue entry');
+    res.json(await passageReview.removeCatalogueEntry(id.data));
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** GET /api/mappings/passages/counts — the queue badge. */
 router.get('/passages/counts', requireMappingEditor, async (req, res, next) => {
   try {

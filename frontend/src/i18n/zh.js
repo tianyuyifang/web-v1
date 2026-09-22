@@ -53,7 +53,7 @@ export default {
   // Login
   sessionReplacedMessage: "你的账号已在其他设备上登录，请重新登录。",
   accountDisabledMessage: "您的会员已到期，请联系管理员续费后继续使用。",
-  pendingApprovalMessage: "您的账号正在等待管理员审核，通过后即可使用。",
+  pendingApprovalMessage: "您的账号已过期，请登录后按提示购买激活码或联系管理员。",
 
   username: "用户名",
   password: "密码",
@@ -62,7 +62,6 @@ export default {
   noAccount: "没有账号？",
   createOne: "注册一个",
   usernamePasswordRequired: "请输入用户名和密码",
-  accountNotApproved: "你的账号尚未审核通过，请联系管理员。",
   loginFailed: "登录失败",
 
   // Register

@@ -82,7 +82,6 @@ export default {
   accountCreated: "账号创建成功！",
   // 注册成功后按结果二选一: 促销开=可直接用; 促销关=等审核。
   registerUsableNow: "您现在可以直接登录使用。",
-  registerAwaitingApproval: "网站需加入月订后才可使用。如果您是第一次使用，可以联系管理员免费体验三天：",
   alreadyApproved: "现在就",
   creatingAccount: "创建中...",
   createAccount: "创建账号",
@@ -577,15 +576,13 @@ export default {
   contactWechatLabel: "微信",
   contactWechat1: "YY：coffeezxb",
   contactWechat2: "CC：yinyuemeirendong",
-  // 图标已经表明是哪个 app，所以正文不再重复「Qni：」前缀。
-  contactQni: "搜索家族「Q你一下」",
 
   // 停用页
   pendingMemberExpiredTitle: "会员已到期",
   pendingMemberExpiredBody: "Q你一下的免费推广活动已于2026/09/16结束，如有喜欢我们产品的朋友，请联系管理员加入月订继续使用：",
   // 新注册、从未通过审核的用户(没有过会员, 不能说「到期/续费」)
-  pendingApprovalTitle: "等待审核",
-  pendingApprovalBody: "您的账号正在等待管理员审核，通过后即可使用：",
+  pendingApprovalTitle: "注册成功！",
+  pendingApprovalBody: "您的账号正在等待激活，请点击下方蓝色链接自主购买激活码，也可联系管理员人工续费：",
   // 激活码兑换(登录停用页 + 账户页共用 RedeemBox)
   redeemTitle: "有激活码？直接激活账户",
   redeemPlaceholder: "输入激活码，如 QNI-XXXX-XXXX-XXXX",

@@ -581,7 +581,7 @@ export default {
   pendingMemberExpiredBody: "Q你一下的免费推广活动已于2026/09/16结束，如有喜欢我们产品的朋友，请联系管理员加入月订继续使用：",
   // 新注册、从未通过审核的用户(没有过会员, 不能说「到期/续费」)
   pendingApprovalTitle: "注册成功！",
-  pendingApprovalBody: "您的账号正在等待激活，请点击下方蓝色链接自主购买激活码，也可联系管理员人工续费：",
+  pendingApprovalBody: "您的账号正在等待激活，请点击下方蓝色链接自助购买激活码，也可联系管理员人工续费：",
   // 激活码兑换(登录停用页 + 账户页共用 RedeemBox)
   redeemTitle: "有激活码？直接激活账户",
   redeemPlaceholder: "输入激活码，如 QNI-XXXX-XXXX-XXXX",
@@ -591,10 +591,10 @@ export default {
   redeemSuccess: "激活成功！",
   redeemNewExpiry: "有效期至 {date}",
   redeemNowLogin: "现在可以登录使用了。",
-  redeemBuy: "点此购买激活码可以直接付费使用 →",
+  redeemBuy: "点此前往咸鱼查看订阅套餐 →",
   // 购买链接：设成购买页地址即显示「点此购买」；保持 # 则隐藏该链接。
-  // 外部闲鱼链接，新标签打开（RedeemBox 已 target=_blank + rel=noopener）。
-  redeemBuyUrl: "https://www.goofish.com/item?spm=a21ybx.personal.feeds.1.6a496ac24xsG93&id=1084213756906&categoryId=50023914",
+  // 外部淘宝短链(指向闲鱼套餐页)，新标签打开（RedeemBox 已 target=_blank + rel=noopener）。
+  redeemBuyUrl: "https://m.tb.cn/h.8uy1tOR?tk=w5Q5TleXqTT",
   feeColumn: "费用",
   expiresColumn: "到期",
   paymentStatusColumn: "付款",

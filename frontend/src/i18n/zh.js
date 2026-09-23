@@ -591,7 +591,7 @@ export default {
   redeemSuccess: "激活成功！",
   redeemNewExpiry: "有效期至 {date}",
   redeemNowLogin: "现在可以登录使用了。",
-  redeemBuy: "点此前往咸鱼查看订阅套餐 →",
+  redeemBuy: "点此前往闲鱼查看订阅套餐 →",
   // 购买链接：设成购买页地址即显示「点此购买」；保持 # 则隐藏该链接。
   // 外部淘宝短链(指向闲鱼套餐页)，新标签打开（RedeemBox 已 target=_blank + rel=noopener）。
   redeemBuyUrl: "https://m.tb.cn/h.8uy1tOR?tk=w5Q5TleXqTT",

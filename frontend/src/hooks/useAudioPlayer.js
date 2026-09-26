@@ -129,12 +129,12 @@ export default function useAudioPlayer({
 
   // Stop and rewind when every player is told to (store.stopAll). Subscribed
   // outside render, so the idle players it rewinds to 0 don't re-render.
+  // stopShifter unconditionally, as unmounting did: it also cancels a play()
+  // still loading its clip, which would otherwise start after the stop.
   useEffect(() => usePlayerStore.subscribe((state, prev) => {
     if (state.stopAllSeq === prev.stopAllSeq) return;
-    if (isPlayingRef.current) {
-      stopShifter();
-      setIsPlaying(false);
-    }
+    stopShifter();
+    setIsPlaying(false);
     offsetRef.current = 0;
     setCurrentTime(0);
   }), [stopShifter]);

@@ -48,6 +48,19 @@ const DRAG_DELAY_MS = 250;
 const DRAG_TOLERANCE_PX = 8;
 
 /**
+ * A sensor that never activates and sets nothing up.
+ *
+ * dnd-kit's TouchSensor, merely by being passed to a mounted DndContext, adds
+ * a non-passive `touchmove` listener on window (so preventDefault works on
+ * iOS). A non-passive touchmove listener makes every touch scroll wait on the
+ * main thread. The DndContext now stays mounted in view mode, where nothing
+ * can be dragged, so view mode swaps TouchSensor for this.
+ */
+class InertSensor {
+  static activators = [];
+}
+
+/**
  * One draggable clip on a phone.
  *
  * The handle is a separate grip rather than the whole row: a card carries a
@@ -273,14 +286,20 @@ export default function PlaylistGrid({
   // to a position the user never saw.
   const dragDisabled = Boolean(searchQuery || colorFilter);
 
-  const sensors = useSensors(
-    // Mouse/pen: only relevant because the same tree renders on desktop. The
-    // handle is hidden there, so this effectively never activates.
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: DRAG_DELAY_MS, tolerance: DRAG_TOLERANCE_PX },
-    })
-  );
+  // Mouse/pen: only relevant because the same tree renders on desktop. The
+  // handle is hidden there, so this effectively never activates.
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 8 } });
+  const touchSensor = useSensor(TouchSensor, {
+    activationConstraint: { delay: DRAG_DELAY_MS, tolerance: DRAG_TOLERANCE_PX },
+  });
+  const inertSensor = useSensor(InertSensor);
+  // Outside edit mode nothing can be dragged, and TouchSensor would still add
+  // its non-passive window touchmove listener (see InertSensor), so view mode
+  // gets the inert one. Same length either way: dnd-kit keys its setup effect
+  // on the sensor list, and React compares a changed-length list only up to
+  // the shorter length — a shorter list would never tear the listener down.
+  const editSensors = useSensors(pointerSensor, touchSensor);
+  const viewSensors = useSensors(pointerSensor, inertSensor);
 
   const handleDragEnd = useCallback((event) => {
     const { active, over } = event;
@@ -765,7 +784,7 @@ export default function PlaylistGrid({
   const gridContent = (
     <div>
       <DndContext
-        sensors={sensors}
+        sensors={editMode ? editSensors : viewSensors}
         collisionDetection={closestCenter}
         onDragEnd={handleDragEnd}
       >

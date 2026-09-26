@@ -44,9 +44,15 @@ function useIsSm() {
   useEffect(() => {
     const mql = getSmMql();
     const onChange = () => startTransition(() => setIsSm(mql.matches));
-    mql.addEventListener("change", onChange);
+    // addListener for Safari < 14, which has no addEventListener on a
+    // MediaQueryList: without the fallback the whole page would crash there.
+    if (mql.addEventListener) mql.addEventListener("change", onChange);
+    else mql.addListener(onChange);
     onChange(); // catch a change between render and subscribe
-    return () => mql.removeEventListener("change", onChange);
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener("change", onChange);
+      else mql.removeListener(onChange);
+    };
   }, []);
   return isSm;
 }
@@ -145,7 +151,9 @@ export default memo(function PlayerBox({
       observer.disconnect();
       if (dwellTimer) clearTimeout(dwellTimer);
     };
-  }, [clipId, clip.version]);
+    // isSm: the observed element is the desktop card, which is created and
+    // removed as the width crosses sm; re-observe whenever that happens.
+  }, [clipId, clip.version, isSm]);
 
   // Neighborhood preload: when this clip starts playing, queue the next N
   // clips in the playlist (if the parent provided the clip list + index).

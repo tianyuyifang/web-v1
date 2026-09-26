@@ -27,6 +27,9 @@ export default memo(function ClipComment({ comment, editable, onChange }) {
   }, [editing, draft]);
 
   const save = () => {
+    // Settled here, not on the next render: a blur fired while the editor is
+    // being removed would otherwise be followed by the unmount save as well.
+    saveOnUnmountRef.current = null;
     onChange(draft.trim() || null);
     setEditing(false);
   };
@@ -49,7 +52,10 @@ export default memo(function ClipComment({ comment, editable, onChange }) {
           onChange={(e) => setDraft(e.target.value)}
           onBlur={save}
           onKeyDown={(e) => {
-            if (e.key === "Escape") setEditing(false);
+            if (e.key === "Escape") {
+              saveOnUnmountRef.current = null;
+              setEditing(false);
+            }
           }}
           rows={1}
           className="w-full resize-none rounded border border-border bg-background px-2 py-1 text-xs leading-relaxed text-theme focus:border-primary focus:outline-none"

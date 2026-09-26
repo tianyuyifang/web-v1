@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, memo } from "react";
+import { useState, useEffect, useCallback, useRef, memo, startTransition } from "react";
 import { createPortal } from "react-dom";
 import useAudioPlayer from "@/hooks/useAudioPlayer";
 import usePlayerStore from "@/store/playerStore";
@@ -20,9 +20,36 @@ import {
   enqueueHover,
   enqueueNeighborhood,
 } from "@/lib/preloadScheduler";
+import { fetchLyrics } from "@/lib/lyricsCache";
 
 const VIEWPORT_DWELL_MS = 500;
 const NEIGHBORHOOD_COUNT = 8;
+
+// Tailwind's `sm`. Each card renders only the layout for the current width.
+// Both used to be rendered and one hidden with CSS, which on a phone meant a
+// full desktop card — lyrics, controls, and in edit mode every edit control —
+// built invisibly under each row: ~13.6k DOM nodes instead of ~4.3k for a
+// 243-clip playlist, and most of the cost of entering edit mode.
+const SM_QUERY = "(min-width: 640px)";
+let smMql = null;
+const getSmMql = () => (smMql ||= window.matchMedia(SM_QUERY));
+
+// Cards only render after the client has fetched the playlist, so reading the
+// media query while rendering cannot disagree with server HTML. A width change
+// (a phone rotating) swaps the layout of every card, so it runs as a
+// transition: the page stays responsive while the new layout renders, with
+// the old one on screen meanwhile.
+function useIsSm() {
+  const [isSm, setIsSm] = useState(() => typeof window === "undefined" || getSmMql().matches);
+  useEffect(() => {
+    const mql = getSmMql();
+    const onChange = () => startTransition(() => setIsSm(mql.matches));
+    mql.addEventListener("change", onChange);
+    onChange(); // catch a change between render and subscribe
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isSm;
+}
 
 export default memo(function PlayerBox({
   playlistClip,
@@ -42,11 +69,18 @@ export default memo(function PlayerBox({
   isOwner = true,
 }) {
   const { t } = useLanguage();
+  const isSm = useIsSm();
   const [showNewClip, setShowNewClip] = useState(false);
   const { clipId, speed, pitch, colorTag, comment, clip } = playlistClip;
   const { song } = clip;
 
   const playerId = `${playlistId}-${clipId}`;
+
+  // On a phone the hidden desktop card used to fetch every clip's lyrics, so
+  // expanding a row showed them at once. Keep that without rendering the card.
+  useEffect(() => {
+    if (!isSm) fetchLyrics(clipId, clip.version);
+  }, [isSm, clipId, clip.version]);
 
   const playFromStartClipId = usePlayerStore((s) => s.playFromStartClipId);
   const clearPlayFromStart = usePlayerStore((s) => s.clearPlayFromStart);
@@ -157,7 +191,7 @@ export default memo(function PlayerBox({
   const phoneCollapsedView = collapsed ? (
     <div
       onClick={() => onToggleExpand?.(clipId)}
-      className={`flex cursor-pointer items-baseline gap-1.5 border-b border-border px-2 transition-colors hover:bg-surface-hover sm:hidden ${isLiked ? "opacity-40" : ""}`}
+      className={`flex cursor-pointer items-baseline gap-1.5 border-b border-border px-2 transition-colors hover:bg-surface-hover ${isLiked ? "opacity-40" : ""}`}
     >
       {position != null && (
         <span className="w-5 shrink-0 text-right text-xs text-muted">{position}.</span>
@@ -182,7 +216,7 @@ export default memo(function PlayerBox({
   // --- Phone expanded view (below sm) ---
   const phoneExpandedView = collapsed ? null : (
     <div
-      className={`relative border-b border-border bg-surface transition-all sm:hidden ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
+      className={`relative border-b border-border bg-surface transition-all ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
     >
       {/* Header row */}
       <div
@@ -323,7 +357,7 @@ export default memo(function PlayerBox({
     <div
       ref={containerRef}
       id={`playerbox-${clipId}`}
-      className={`relative hidden overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all sm:block ${editMode ? "" : "h-full"} ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
+      className={`relative overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all ${editMode ? "" : "h-full"} ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
     >
       {/* Color tag flags — top right, editable by owner only */}
       <ColorTag
@@ -485,8 +519,17 @@ export default memo(function PlayerBox({
           editable={isOwner}
         />
       </div>
+    </div>
+  );
 
-      {/* New clip modal */}
+  return (
+    <>
+      {!isSm && phoneCollapsedView}
+      {!isSm && phoneExpandedView}
+      {isSm && desktopView}
+
+      {/* New clip modal. Outside both layouts: the phone's clip switcher
+          opens it too, and on a phone the desktop card is not rendered. */}
       {showNewClip && createPortal(
         <AddClipModal
           playlistId={playlistId}
@@ -499,14 +542,6 @@ export default memo(function PlayerBox({
         />,
         document.body
       )}
-    </div>
-  );
-
-  return (
-    <>
-      {phoneCollapsedView}
-      {phoneExpandedView}
-      {desktopView}
     </>
   );
 })

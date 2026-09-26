@@ -9,6 +9,14 @@ export default memo(function ClipComment({ comment, editable, onChange }) {
   const [draft, setDraft] = useState(comment || "");
   const textareaRef = useRef(null);
 
+  // Save an open draft if the editor goes away without a blur — the card
+  // swapping layout when a phone rotates across the sm breakpoint, or leaving
+  // the page in-app. Blur already saves and closes the editor, so this only
+  // runs when no blur came first.
+  const saveOnUnmountRef = useRef(null);
+  saveOnUnmountRef.current = editing ? () => onChange(draft.trim() || null) : null;
+  useEffect(() => () => saveOnUnmountRef.current?.(), []);
+
   // Auto-resize textarea to fit content
   useEffect(() => {
     if (editing && textareaRef.current) {

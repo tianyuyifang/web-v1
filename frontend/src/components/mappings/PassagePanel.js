@@ -399,8 +399,25 @@ export default function PassagePanel() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="mb-0.5 text-sm font-medium text-gray-800 dark:text-gray-100">
-                      {row.gameTitle || "（未匹配歌曲）"}
-                      {row.gameArtist ? <span className="text-gray-500"> — {row.gameArtist}</span> : null}
+                      {/* The game's own text for this passage. A passage can
+                          appear under more than one (the same words sung as
+                          忽而今夏 by two singers), so every one is listed. */}
+                      {(row.gameNames && row.gameNames.length > 1 ? row.gameNames : [{ title: row.gameTitle, artist: row.gameArtist }])
+                        .map((n, i) => (
+                          <span key={i}>
+                            {i > 0 && <span className="text-gray-400"> / </span>}
+                            {n.title || "（未匹配歌曲）"}
+                            {n.artist ? <span className="text-gray-500"> — {n.artist}</span> : null}
+                          </span>
+                        ))}
+                      {row.gameTitle && row.gameNamesExact === false && (
+                        <span
+                          className="ml-1.5 cursor-help text-xs font-normal text-gray-400"
+                          title="没在游戏记录里找到这段歌词出现时的原文，显示的是指向这个音源的某条映射的名字，不一定是这一段对应的版本"
+                        >
+                          （映射名）
+                        </span>
+                      )}
                     </div>
                     <div className="mb-1 text-xs text-gray-500">
                       {row.source} · {row.externalId}

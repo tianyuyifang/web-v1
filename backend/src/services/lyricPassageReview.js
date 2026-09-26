@@ -16,6 +16,8 @@ const lyricStore = require('./lyricStore');
 const {
   hashPassage, isUsable, coveredLines, normaliseAnswer,
 } = require('./lyricPassageStore');
+const { mappingTitleKey, artistKey } = require('./songKeyService');
+const { splitTitleArtist, loadDashedArtists } = require('./captureService');
 const { markPassage } = require('../../../frontend/src/lib/passageMatch');
 
 const STATUSES = new Set(['approved', 'pending', 'unmatchable', 'ai_reviewed']);
@@ -46,6 +48,9 @@ function splitReal(lyric) {
  * 段落表只存 (source, externalId), 歌名歌手在 song_mappings 的 rawTitle/
  * rawArtist(QNI 游戏画面的写法)。一首录音可能多条映射, 取 approved
  * 的那条; 都未确认就取任意一条。keys: ['QQ 123', ...]。
+ *
+ * 只是退路: 名字取自"指向这个音源的某条映射", 未必是这一段出现时的那首。
+ * list() 优先用 gameTextsFor 找到的确切原文, 找不到才用这里的。
  */
 async function gameNamesFor(keys) {
   const out = new Map();
@@ -62,6 +67,85 @@ async function gameNamesFor(keys) {
   for (const r of rows) {
     const k = `${r.source} ${r.externalId}`;
     if (!out.has(k)) out.set(k, { gameTitle: r.rawTitle, gameArtist: r.rawArtist });
+  }
+  return out;
+}
+
+/**
+ * 每个段落在游戏里的确切原文「歌名-歌手」,按段落 id 返回 [{ title, artist }]。
+ *
+ * gameNamesFor 反查的是"指向这个音源的某一条映射"的名字 —— 一个音源常被
+ * 好几条映射指着(无眠 / 无眠(国语版) 都播同一个音源, 同一段词还会以不同歌手
+ * 出现), 于是列表上的名字未必是这一段真正出现时的那首。
+ *
+ * 这里改从源头找: 唱卡集按 (游戏原文, 段落歌词) 成对记下了游戏里出现过的每一段,
+ * 找不到的再查近 30 天的抓取记录(新段落可能还没被数进唱卡集)。同一段歌词可能
+ * 在几首歌里都出现过, 所以只留下映射正好指向这个段落音源的那几条原文 ——
+ * 映射按原文做键(songKeyService.mappingTitleKey), 这一步是精确的。
+ * 出现多条就全部返回, 按出现次数排; 一条都找不到返回空, 由调用方回退。
+ *
+ * 只读。
+ */
+async function gameTextsFor(rows) {
+  const out = new Map();
+  const lyricOf = (r) => String(r.gameLyric == null ? '' : r.gameLyric).trim();
+  const wantLyrics = [...new Set(rows.map(lyricOf).filter(Boolean))];
+  if (!wantLyrics.length) return out;
+
+  // lyric -> Map(raw_text -> times seen)
+  const seenBy = new Map();
+  const add = (lyric, raw, seen) => {
+    const k = String(lyric).trim();
+    if (!seenBy.has(k)) seenBy.set(k, new Map());
+    const m = seenBy.get(k);
+    m.set(raw, (m.get(raw) || 0) + (Number(seen) || 0));
+  };
+  const cat = await prisma.passageCatalogue.findMany({
+    where: { lyric: { in: wantLyrics } },
+    select: { rawText: true, lyric: true, seen: true },
+  });
+  for (const c of cat) add(c.lyric, c.rawText, c.seen);
+  const missing = wantLyrics.filter((l) => !seenBy.has(l));
+  if (missing.length) {
+    const ev = await prisma.$queryRaw`
+      SELECT raw_text, lyric, count(*)::int AS seen FROM capture_events
+       WHERE playlist_id IS NULL AND raw_text IS NOT NULL AND lyric = ANY(${missing})
+       GROUP BY raw_text, lyric`;
+    for (const e of ev) add(e.lyric, e.raw_text, e.seen);
+  }
+  if (!seenBy.size) return out;
+
+  // Which recording each candidate text maps to, keyed as the resolver keys it.
+  const known = await loadDashedArtists();
+  const split = new Map();
+  for (const m of seenBy.values()) {
+    for (const raw of m.keys()) {
+      if (split.has(raw)) continue;
+      const { title, artist } = splitTitleArtist(raw, known);
+      split.set(raw, { title, artist, mk: mappingTitleKey(title), ak: artistKey(artist) });
+    }
+  }
+  const mks = [...new Set([...split.values()].map((s) => s.mk).filter(Boolean))];
+  const maps = mks.length
+    ? await prisma.songMapping.findMany({
+      where: { titleKey: { in: mks } },
+      select: { titleKey: true, artistKey: true, source: true, externalId: true },
+    })
+    : [];
+  const recordingOf = new Map(maps.map((m) => [`${m.titleKey}\u0001${m.artistKey}`, `${m.source} ${m.externalId}`]));
+
+  for (const r of rows) {
+    const cands = seenBy.get(lyricOf(r));
+    if (!cands) continue;
+    const here = `${r.source} ${r.externalId}`;
+    const hits = [...cands.entries()]
+      .filter(([raw]) => {
+        const s = split.get(raw);
+        return s && s.mk && recordingOf.get(`${s.mk}\u0001${s.ak}`) === here;
+      })
+      .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+      .map(([raw]) => ({ title: split.get(raw).title, artist: split.get(raw).artist }));
+    if (hits.length) out.set(r.id, hits);
   }
   return out;
 }
@@ -139,15 +223,29 @@ async function list({ status = 'pending', take = 30, cursor, reportedOnly = fals
     lyrics.set(k, splitReal(track && track.lyric));
   }));
 
+  // The exact game text(s) each passage appeared under; the mapping-based name
+  // is only the fallback when none can be found (see gameTextsFor).
   const names = await gameNamesFor(wanted);
+  const exactNames = await gameTextsFor(rows);
 
   return {
     items: rows.map((r) => ({
       id: r.id,
       source: r.source,
       externalId: r.externalId,
-      gameTitle: names.get(`${r.source} ${r.externalId}`)?.gameTitle || null,
-      gameArtist: names.get(`${r.source} ${r.externalId}`)?.gameArtist || null,
+      ...(() => {
+        const exact = exactNames.get(r.id) || [];
+        const fallback = names.get(`${r.source} ${r.externalId}`);
+        return {
+          gameTitle: exact.length ? exact[0].title : (fallback?.gameTitle || null),
+          gameArtist: exact.length ? exact[0].artist : (fallback?.gameArtist || null),
+          // Every game text this passage appeared under, most seen first.
+          gameNames: exact,
+          // false: nothing in the game data pins this passage to a text, so the
+          // name above is only one of the mappings that point at the recording.
+          gameNamesExact: exact.length > 0,
+        };
+      })(),
       gameLines: splitGameLines(r.gameLyric),
       answer: r.answer,
       status: r.status,

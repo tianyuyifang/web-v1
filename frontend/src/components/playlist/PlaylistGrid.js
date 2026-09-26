@@ -253,7 +253,10 @@ export default function PlaylistGrid({
     const [moved] = clips.splice(fromIndex, 1);
     clips.splice(clampedTo, 0, moved);
 
-    const reordered = clips.map((c, i) => ({ ...c, position: i }));
+    // Only clips whose position changed get a new object; the rest keep theirs,
+    // so their memoized cards skip re-rendering (moving #20 to #19 used to
+    // re-render all 243).
+    const reordered = clips.map((c, i) => (c.position === i ? c : { ...c, position: i }));
     onReorder(reordered);
 
     try {
@@ -512,10 +515,12 @@ export default function PlaylistGrid({
   // One SortableContext over every clip in the playlist, not one per section:
   // the sections are a visual grouping, and a drag has to be able to cross them
   // — which is what makes a clip change section at all.
-  const sortableIds = useMemo(
-    () => playlist.clips.map((c) => c.clipId),
-    [playlist.clips]
-  );
+  //
+  // Keyed by the id list itself, not the clips array: every colour, speed or
+  // comment edit rebuilds that array, and a new `items` re-rendered every
+  // sortable card although the order had not changed.
+  const sortableIdsKey = playlist.clips.map((c) => c.clipId).join(",");
+  const sortableIds = useMemo(() => (sortableIdsKey ? sortableIdsKey.split(",") : []), [sortableIdsKey]);
 
   if (filteredClips.length === 0) {
     return <p className="py-12 text-center text-sm text-muted">{t("noClipsFound")}</p>;

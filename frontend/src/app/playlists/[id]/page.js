@@ -135,9 +135,11 @@ export default function PlaylistPage() {
   const handleClipRemoved = useCallback((clipId) => {
     setPlaylist((prev) => ({
       ...prev,
+      // Clips whose position is unchanged keep their object, so their
+      // memoized cards don't re-render.
       clips: prev.clips
         .filter((c) => c.clipId !== clipId)
-        .map((c, i) => ({ ...c, position: i })),
+        .map((c, i) => (c.position === i ? c : { ...c, position: i })),
     }));
   }, []);
 

@@ -316,11 +316,14 @@ export default memo(function PlayerBox({
   );
 
   // --- Desktop view (sm and above) ---
+  // h-full outside edit mode: the card sits inside the grid's drag wrapper, so
+  // it no longer stretches to its row on its own. View-mode cards have always
+  // filled their row; edit-mode cards never have, and still don't.
   const desktopView = (
     <div
       ref={containerRef}
       id={`playerbox-${clipId}`}
-      className={`relative hidden overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all sm:block ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
+      className={`relative hidden overflow-visible rounded-xl border border-border bg-surface shadow-sm transition-all sm:block ${editMode ? "" : "h-full"} ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
     >
       {/* Color tag flags — top right, editable by owner only */}
       <ColorTag
@@ -334,7 +337,13 @@ export default memo(function PlayerBox({
         {position != null && (
           <div className="mb-1.5 flex items-center gap-1 text-xs text-muted">
             {editMode && onMove ? (
+              // Keyed by position: an uncontrolled input only takes
+              // defaultValue when it mounts, so without the key a card that
+              // shifted (another clip moved or removed above it) kept showing
+              // its old number — and typing against that number moved the
+              // clip to the wrong place.
               <input
+                key={position}
                 type="number"
                 defaultValue={position}
                 min={1}

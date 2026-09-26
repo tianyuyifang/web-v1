@@ -127,6 +127,18 @@ export default function useAudioPlayer({
     }
   }, [activePlayerId, playerId, isPlaying, stopShifter]);
 
+  // Stop and rewind when every player is told to (store.stopAll). Subscribed
+  // outside render, so the idle players it rewinds to 0 don't re-render.
+  useEffect(() => usePlayerStore.subscribe((state, prev) => {
+    if (state.stopAllSeq === prev.stopAllSeq) return;
+    if (isPlayingRef.current) {
+      stopShifter();
+      setIsPlaying(false);
+    }
+    offsetRef.current = 0;
+    setCurrentTime(0);
+  }), [stopShifter]);
+
   // Cleanup on unmount (don't close shared AudioContext)
   useEffect(() => {
     return () => {

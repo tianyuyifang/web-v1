@@ -59,8 +59,13 @@ const DRAG_TOLERANCE_PX = 8;
  * list, so while a search or colour filter is on, the row above a clip on
  * screen is not the row above it in the playlist, and a drop would land
  * somewhere the user did not point at.
+ *
+ * Every card sits in one of these in view mode too, with no handle
+ * (`showHandle` off). A card whose parent changes is a new card to React —
+ * torn down and rebuilt, playback and all — so the wrapper stays put and only
+ * the handle comes and goes with edit mode.
  */
-function SortableClip({ id, disabled, children }) {
+function SortableClip({ id, disabled, showHandle, className = "", children }) {
   const {
     attributes, listeners, setNodeRef, setActivatorNodeRef,
     transform, transition, isDragging,
@@ -75,26 +80,71 @@ function SortableClip({ id, disabled, children }) {
       // without the indent it sat exactly on top of the position number —
       // which is the number the position box is typed against, so covering it
       // made the other way of moving a clip harder to use.
-      className={`relative pl-7 sm:pl-0 ${isDragging ? "z-10 opacity-40" : ""}`}
+      className={`relative ${showHandle ? "pl-7 sm:pl-0" : ""} ${isDragging ? "z-10 opacity-40" : ""} ${className}`}
     >
       {/* Hidden on sm+: dragging is a phone affordance, and the desktop keeps
           the numeric position box, which beats dragging across a playlist
           whose median length is 152. */}
-      <button
-        ref={setActivatorNodeRef}
-        type="button"
-        disabled={disabled}
-        aria-label="拖动排序"
-        title={disabled ? "清除筛选后可拖动排序" : "按住拖动"}
-        className={`absolute left-0 top-0 z-20 flex h-9 w-7 touch-none items-center justify-center text-sm leading-none sm:hidden ${
-          disabled ? "cursor-not-allowed text-muted/30" : "cursor-grab text-muted active:cursor-grabbing"
-        }`}
-        {...attributes}
-        {...listeners}
-      >
-        ⠿
-      </button>
+      {showHandle && (
+        <button
+          ref={setActivatorNodeRef}
+          type="button"
+          disabled={disabled}
+          aria-label="拖动排序"
+          title={disabled ? "清除筛选后可拖动排序" : "按住拖动"}
+          className={`absolute left-0 top-0 z-20 flex h-9 w-7 touch-none items-center justify-center text-sm leading-none sm:hidden ${
+            disabled ? "cursor-not-allowed text-muted/30" : "cursor-grab text-muted active:cursor-grabbing"
+          }`}
+          {...attributes}
+          {...listeners}
+        >
+          ⠿
+        </button>
+      )}
       {children}
+    </div>
+  );
+}
+
+/**
+ * Heading above a section. Declared at module level: defined inside the grid
+ * it was a new component type on every render, so React rebuilt every heading
+ * each time the grid rendered.
+ *
+ * The edit input is uncontrolled, so it is keyed by its label — a label that
+ * changes underneath it (rename, clear) must replace what the box shows.
+ */
+function SectionDivider({ label, clipId, editMode, onClipUpdated }) {
+  return (
+    <div
+      id={`section-${clipId}`}
+      className="flex items-center gap-3 py-2"
+      style={{ scrollMarginTop: "12rem" }}
+    >
+      <div className="h-px flex-1 bg-border" />
+      {editMode ? (
+        <input
+          key={label}
+          type="text"
+          defaultValue={label}
+          onBlur={(e) => {
+            const val = e.target.value.trim();
+            if (val !== label) onClipUpdated(clipId, { sectionLabel: val || null });
+          }}
+          className="rounded border border-border bg-background px-2 py-0.5 text-center text-sm font-semibold text-theme focus:border-primary focus:outline-none"
+        />
+      ) : (
+        <span className="shrink-0 text-sm font-semibold text-theme">{label}</span>
+      )}
+      <div className="h-px flex-1 bg-border" />
+      {editMode && (
+        <button
+          onClick={() => onClipUpdated(clipId, { sectionLabel: null })}
+          className="shrink-0 text-xs text-muted hover:text-red-400"
+        >
+          ✕
+        </button>
+      )}
     </div>
   );
 }
@@ -627,134 +677,97 @@ export default function PlaylistGrid({
     );
   }
 
-  // Section divider component
-  const SectionDivider = ({ label, clipId }) => (
-    <div
-      id={`section-${clipId}`}
-      className="flex items-center gap-3 py-2"
-      style={{ scrollMarginTop: "12rem" }}
-    >
-      <div className="h-px flex-1 bg-border" />
-      {editMode ? (
-        <input
-          type="text"
-          defaultValue={label}
-          onBlur={(e) => {
-            const val = e.target.value.trim();
-            if (val !== label) onClipUpdated(clipId, { sectionLabel: val || null });
-          }}
-          className="rounded border border-border bg-background px-2 py-0.5 text-center text-sm font-semibold text-theme focus:border-primary focus:outline-none"
-        />
-      ) : (
-        <span className="shrink-0 text-sm font-semibold text-theme">{label}</span>
-      )}
-      <div className="h-px flex-1 bg-border" />
-      {editMode && (
-        <button
-          onClick={() => onClipUpdated(clipId, { sectionLabel: null })}
-          className="shrink-0 text-xs text-muted hover:text-red-400"
-        >
-          ✕
-        </button>
-      )}
-    </div>
-  );
+  // One grid per section in both modes, every card under the same parent.
+  //
+  // Edit mode used to cut each section into one grid per row, to fit an "add
+  // section" button between rows. But React only matches cards among siblings
+  // of the same parent, so any card that changed rows — entering or leaving
+  // edit mode, each keystroke in the filter, every remove or move above it —
+  // was torn down and rebuilt: seconds per keystroke on a phone, and playback
+  // on that card stopped. The button is now a full-width item of the same
+  // grid, so the cards never change parent.
+  //
+  // Spacing matches the old per-row grids exactly: no vertical gap between
+  // rows (the button row separates them), and on phones, where a row is a
+  // one-column stack, the cards within it keep their 16px apart.
+  const editGridClass = "grid gap-x-4 gap-y-0 grid-cols-1 sm:grid-cols-[repeat(var(--cols),minmax(0,1fr))]";
 
-  // Render clips in a grid, with optional "add section" buttons between rows in edit mode
-  const renderSectionClips = (clips) => {
-    if (!editMode) {
-      return (
-        <div className={gridClass} style={gridStyle}>
-          {clips.map((pc) => (
+  const renderSectionClips = (clips) => (
+    <div className={editMode ? editGridClass : gridClass} style={gridStyle}>
+      {clips.map((pc, i) => (
+        <Fragment key={pc.clipId}>
+          {editMode && i % colCount === 0 && (
+            <div className="col-span-full flex justify-center py-1 opacity-0 transition-opacity hover:opacity-100">
+              <button
+                onClick={() => setSectionPromptClipId(pc.clipId)}
+                className="rounded border border-border bg-surface px-2 py-0.5 text-xs text-muted transition-colors hover:border-primary hover:text-theme"
+              >
+                + {t("addSection")}
+              </button>
+            </div>
+          )}
+          <SortableClip
+            id={pc.clipId}
+            disabled={!editMode || dragDisabled}
+            showHandle={editMode}
+            className={editMode && i % colCount !== 0 ? "max-sm:mt-4" : ""}
+          >
             <PlayerBox
-              key={pc.clipId}
               playlistClip={pc}
               playlistId={playlist.id}
-              editMode={false}
+              editMode={editMode}
               highlighted={highlightedClipId === pc.clipId}
               onUpdate={onClipUpdated}
+              onRemove={editMode ? setRemoveConfirmClipId : undefined}
+              onSwap={editMode ? handleSwapCarryingExpand : undefined}
               position={pc.position + 1}
+              totalClips={editMode ? playlist.clips.length : undefined}
+              onMove={editMode ? handleMove : undefined}
               getAllClips={getAllClips}
               clipIndex={pc.position}
               collapsed={!expandedClipIds.has(pc.clipId)}
               onToggleExpand={handleToggleExpand}
               isOwner={playlist.isOwner}
             />
-          ))}
-        </div>
-      );
-    }
-
-    // Split into rows for "add section" buttons between them
-    const rows = [];
-    for (let i = 0; i < clips.length; i += colCount) {
-      rows.push(clips.slice(i, i + colCount));
-    }
-
-    return rows.map((row, ri) => (
-      <Fragment key={row[0].clipId}>
-        <div className="flex justify-center py-1 opacity-0 transition-opacity hover:opacity-100">
-          <button
-            onClick={() => setSectionPromptClipId(row[0].clipId)}
-            className="rounded border border-border bg-surface px-2 py-0.5 text-xs text-muted transition-colors hover:border-primary hover:text-theme"
-          >
-            + {t("addSection")}
-          </button>
-        </div>
-        <div className={gridClass} style={gridStyle}>
-          {row.map((pc) => (
-            <SortableClip key={pc.clipId} id={pc.clipId} disabled={dragDisabled}>
-              <PlayerBox
-                playlistClip={pc}
-                playlistId={playlist.id}
-                editMode
-                highlighted={highlightedClipId === pc.clipId}
-                onUpdate={onClipUpdated}
-                onRemove={setRemoveConfirmClipId}
-                onSwap={handleSwapCarryingExpand}
-                position={pc.position + 1}
-                totalClips={playlist.clips.length}
-                onMove={handleMove}
-                getAllClips={getAllClips}
-                clipIndex={pc.position}
-                collapsed={!expandedClipIds.has(pc.clipId)}
-                onToggleExpand={handleToggleExpand}
-                isOwner={playlist.isOwner}
-              />
-            </SortableClip>
-          ))}
-        </div>
-      </Fragment>
-    ));
-  };
+          </SortableClip>
+        </Fragment>
+      ))}
+    </div>
+  );
 
   // Full card grid view with sections
   const sections = (
     <>
       {sectionGroups.map((section, si) => (
         <Fragment key={section.clipId || `section-${si}`}>
-          {section.label && <SectionDivider label={section.label} clipId={section.clipId} />}
+          {section.label && (
+            <SectionDivider
+              label={section.label}
+              clipId={section.clipId}
+              editMode={editMode}
+              onClipUpdated={onClipUpdated}
+            />
+          )}
           {renderSectionClips(section.clips)}
         </Fragment>
       ))}
     </>
   );
 
+  // DndContext is mounted in view mode too (every item disabled, no handles):
+  // swapping it in and out with edit mode would change every card's parent,
+  // which is the rebuild the single grid above exists to avoid.
   const gridContent = (
     <div>
-      {editMode ? (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-            {sections}
-          </SortableContext>
-        </DndContext>
-      ) : (
-        sections
-      )}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+          {sections}
+        </SortableContext>
+      </DndContext>
 
       {sectionPromptClipId && (
         <ConfirmDialog

@@ -5,6 +5,12 @@ const usePlayerStore = create((set, get) => ({
   activePlayerId: null,
   setActivePlayer: (id) => set({ activePlayerId: id }),
 
+  // Bumped to stop every player and rewind it to the start. Toggling edit mode
+  // on the playlist page does this on purpose — it used to happen as a side
+  // effect of the grid rebuilding every card.
+  stopAllSeq: 0,
+  stopAll: () => set((s) => ({ stopAllSeq: s.stopAllSeq + 1 })),
+
   // Sidebar "go to" — clipId to play from start, cleared after consumed
   playFromStartClipId: null,
   triggerPlayFromStart: (clipId) => set({ playFromStartClipId: clipId }),

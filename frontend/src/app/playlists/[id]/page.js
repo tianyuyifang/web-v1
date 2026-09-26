@@ -238,6 +238,10 @@ export default function PlaylistPage() {
         break;
       }
     }
+    // Toggling has always stopped playback. It used to be a side effect of the
+    // grid rebuilding every card; the cards now survive the toggle, so stop on
+    // purpose to keep the behaviour.
+    usePlayerStore.getState().stopAll();
     setEditMode((prev) => !prev);
   }, []);
 

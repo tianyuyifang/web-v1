@@ -41,7 +41,7 @@ const STATES = {
   },
   absent: {
     label: "曲库没有",
-    hint: "曲库里没有这首歌（同名的不算），需要先导入。可以导出成 Excel",
+    hint: "曲库里没有歌名完全一致的这首（其他版本、或只是写法不同的同名歌都不算），需要先导入，或点「手动配」自己选。可以导出成 Excel",
     className: "bg-red-500/15 text-red-300 border-red-500/30",
   },
 };

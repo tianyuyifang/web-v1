@@ -11,9 +11,13 @@
  *
  * Title normalisation is deliberately NOT reimplemented here. captureMatchService
  * already does it, its rules were learned from real game data, and auto-tagging
- * runs on them in production — so this file borrows normTitle/foldWidth and adds
- * only what is new: artist keys. Changing normTitle's behaviour would silently
+ * runs on them in production — so this file borrows normTitle/foldWidth for the
+ * pool's title key, and adds what is new: artist keys, the mapping's own title
+ * key and a version comparison. Changing normTitle's behaviour would silently
  * change which songs auto-tagging likes, so it stays untouched.
+ *
+ * Two title keys, for two columns: titleKey (loose, normTitle) keys the imported
+ * pool, mappingTitleKey (the game's text as-is) keys song_mappings. See each.
  */
 const { normTitle, foldWidth } = require('./captureMatchService');
 
@@ -68,9 +72,62 @@ function artistKey(s) {
   return splitArtists(s).sort().join('|');
 }
 
-/** Normalised title key. Same rules auto-tagging already matches on. */
+/**
+ * Normalised title key for the imported POOL (imported_tracks.title_key).
+ * Same rules auto-tagging already matches on.
+ *
+ * Loose on purpose: it strips bracketed suffixes, so 十年 and 十年(Live) share a
+ * key. That is right for the pool — claiming a track and listing "other
+ * versions of this song" both want every recording of a title together. It is
+ * wrong for a mapping's identity, which is what mappingTitleKey is for.
+ */
 function titleKey(s) {
   return normTitle(foldWidth(String(s == null ? '' : s)));
+}
+
+/**
+ * Title key for a MAPPING's identity (song_mappings.title_key) — the game's own
+ * text, not normalised.
+ *
+ * A mapping answers "which recording plays when the game shows this", and the
+ * game shows versions apart: 无眠 and 无眠(国语版), 知足 and 知足(乐团版) are
+ * different songs that each need their own source. The loose titleKey above
+ * folded them into one key, so the unique (titleKey, artistKey) constraint let
+ * only one of each pair exist and the other silently played its sibling.
+ *
+ * So only two things are removed: outer whitespace, and 《》 — kept as it was,
+ * since it is a decoration around a title rather than part of it. Brackets,
+ * case, width and inner spaces all survive. NFC is not normalisation in that
+ * sense: it only makes one character's two byte encodings compare equal.
+ *
+ * Every place that reads or writes song_mappings.title_key must use this, and
+ * every place that reads imported_tracks.title_key must use titleKey — the two
+ * columns are keyed by different rules now.
+ */
+function mappingTitleKey(s) {
+  return String(s == null ? '' : s)
+    .normalize('NFC')
+    .trim()
+    .replace(/[《》]/g, '')
+    .trim();
+}
+
+/**
+ * Title with its version kept but its formatting folded — for asking "is this
+ * track the same VERSION the game named", never stored as a key.
+ *
+ * Brackets and "- Live" style suffixes count (无眠 vs 无眠(国语版), 十年 vs
+ * 十年 - Live are different recordings). Case, width and spacing do not
+ * (God Is a Girl vs God Is A Girl is one recording spelled two ways), or the
+ * check would flag platforms' cosmetic differences as version changes.
+ */
+function versionTitleKey(s) {
+  return foldWidth(String(s == null ? '' : s))
+    .normalize('NFC')
+    .trim()
+    .replace(/[《》]/g, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
 }
 
 /**
@@ -82,7 +139,7 @@ function titleKey(s) {
  */
 function songKey(title, artist) {
   return {
-    titleKey: titleKey(title),
+    titleKey: mappingTitleKey(title),
     artistKey: artistKey(artist),
     rawTitle: String(title == null ? '' : title).trim(),
     rawArtist: String(artist == null ? '' : artist).trim(),
@@ -145,6 +202,8 @@ function artistsOverlap(a, b) {
 
 module.exports = {
   titleKey,
+  mappingTitleKey,
+  versionTitleKey,
   artistKey,
   songKey,
   splitArtists,

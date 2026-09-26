@@ -3,13 +3,14 @@
  * Run: node tests/song-key-test.js
  *
  * Most cases below are real strings read off the game and off QQ Music, not
- * invented ones. The mapping table is keyed on these values, so a change in
- * behaviour here silently splits one song into two rows or fuses two songs
- * into one — neither is visible until someone plays the wrong track.
+ * invented ones. song_mappings is keyed on mappingTitleKey + artistKey and the
+ * imported pool on titleKey + artistKey, so a change in behaviour here silently
+ * splits one song into two rows or fuses two songs into one — neither is
+ * visible until someone plays the wrong track.
  */
 const assert = require('assert');
 const {
-  titleKey, artistKey, songKey, splitArtists, normOneArtist,
+  titleKey, mappingTitleKey, versionTitleKey, artistKey, songKey, splitArtists, normOneArtist,
   artistsOverlap, isSeparatorAmbiguous,
 } = require('../src/services/songKeyService');
 
@@ -40,6 +41,35 @@ assert.strictEqual(titleKey('心碎大道[中国好歌曲3]'), titleKey('心碎�
 assert.strictEqual(titleKey('暂停.开始过'), titleKey('暂停．开始过'), 'full-width punctuation folded');
 assert.strictEqual(titleKey(null), '', 'tolerates null');
 
+// --- mapping title key: versions stay apart --------------------------------
+// The game shows versions as different songs, and each needs its own source.
+// The loose titleKey above fused these pairs, so only one of each could be
+// mapped and the other silently played its sibling.
+assert.notStrictEqual(mappingTitleKey('无眠'), mappingTitleKey('无眠(国语版)'), 'version bracket kept');
+assert.notStrictEqual(mappingTitleKey('知足'), mappingTitleKey('知足(乐团版)'), 'band version kept');
+assert.notStrictEqual(mappingTitleKey('K歌之王[粤语版]'), mappingTitleKey('K歌之王[国语版]'), 'language versions kept');
+assert.notStrictEqual(mappingTitleKey('十年'), mappingTitleKey('十年 - Live'), 'dash suffix kept');
+// ...while the pool key still groups them, for claiming and "other versions".
+assert.strictEqual(titleKey('无眠'), titleKey('无眠(国语版)'), 'pool key still groups versions');
+// 《》 is a decoration around a title and is removed exactly as before.
+assert.strictEqual(mappingTitleKey('《换季》'), '换季', '《》 removed');
+assert.strictEqual(mappingTitleKey('  无眠(国语版) '), '无眠(国语版)', 'outer whitespace trimmed');
+// Otherwise the game's text as-is: no case, width or inner-space folding.
+assert.strictEqual(mappingTitleKey('God Is a Girl'), 'God Is a Girl', 'case and spaces kept');
+assert.strictEqual(mappingTitleKey('爱，存在'), '爱，存在', 'full-width punctuation kept');
+assert.strictEqual(mappingTitleKey(null), '', 'tolerates null');
+assert.strictEqual(mappingTitleKey('《》'), '', 'only book marks');
+for (const t of ['《换季》', '无眠(国语版)', '  God Is a Girl ']) {
+  assert.strictEqual(mappingTitleKey(mappingTitleKey(t)), mappingTitleKey(t), `mappingTitleKey idempotent: ${t}`);
+}
+
+// --- version key: only for ranking which pool track the game meant ---------
+assert.notStrictEqual(versionTitleKey('无眠'), versionTitleKey('无眠(国语版)'), 'version differs');
+assert.notStrictEqual(versionTitleKey('十年'), versionTitleKey('十年 - Live'), 'dash suffix differs');
+assert.strictEqual(versionTitleKey('Because Of You'), versionTitleKey('Because of You'), 'case is not a version');
+assert.strictEqual(versionTitleKey('爱多少早知道'), versionTitleKey('爱多少 早知道'), 'spacing is not a version');
+assert.strictEqual(versionTitleKey('你说是的,'), versionTitleKey('你说是的，'), 'width is not a version');
+
 // --- songKey keeps the raw forms -------------------------------------------
 // Needed to re-key every row if these rules ever change; without them a
 // normalisation fix would require the game data all over again.
@@ -48,6 +78,9 @@ assert.strictEqual(sk.titleKey, '致青春');
 assert.strictEqual(sk.artistKey, '王菲');
 assert.strictEqual(sk.rawTitle, '《致青春》', 'raw title trimmed but otherwise untouched');
 assert.strictEqual(sk.rawArtist, '王菲');
+// songKey is the MAPPING key, so it keeps versions and case apart.
+assert.strictEqual(songKey('无眠(国语版)', '苏打绿').titleKey, '无眠(国语版)', 'songKey uses the mapping rule');
+assert.strictEqual(songKey('God Is a Girl', 'x').titleKey, 'God Is a Girl', 'songKey keeps case');
 
 // --- separator ambiguity ----------------------------------------------------
 // EVERY separator we split on also occurs inside real artist names: AC/DC,

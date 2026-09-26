@@ -21,7 +21,9 @@
  */
 const prisma = require('../db/client');
 const songPrefs = require('./songPrefService');
-const { titleKey, artistKey, artistsOverlap } = require('./songKeyService');
+const {
+  titleKey, mappingTitleKey, artistKey, artistsOverlap,
+} = require('./songKeyService');
 // The project's error classes set statusCode and isOperational, which the error
 // handler reads. A bare Error with .status ends up as a 500 with the message
 // swallowed — the caller is told 'internal server error' for a missing row.
@@ -44,7 +46,7 @@ async function getCounts() {
 /**
  * Rows for one bucket, newest first, optionally narrowed by a search term.
  *
- * The term is matched against the normalised keys as well as the raw text, so
+ * The term is matched against the stored keys as well as the raw text, so
  * typing what the game showed finds the row even when the platform spells the
  * artist differently.
  */
@@ -101,7 +103,7 @@ async function list({ bucket = 'pending', query = '', cursor = null, take = PAGE
         { rawTitle: { contains: q, mode: 'insensitive' } },
         { rawArtist: { contains: q, mode: 'insensitive' } },
         { platformTitle: { contains: q, mode: 'insensitive' } },
-        { titleKey: { contains: titleKey(q) } },
+        { titleKey: { contains: mappingTitleKey(q) } },
         { externalId: q },
       ],
     }
@@ -214,8 +216,11 @@ async function candidatesFor(id) {
   const m = await prisma.songMapping.findUnique({ where: { id } });
   if (!m) throw new NotFoundError('Mapping');
 
+  // The POOL's loose key, recomputed from the game text — not m.titleKey, which
+  // keys the mapping by different (version-preserving) rules. Other versions of
+  // the song are exactly what this list is for.
   const sameTitle = await prisma.importedTrack.findMany({
-    where: { titleKey: m.titleKey },
+    where: { titleKey: titleKey(m.rawTitle) },
     take: MAX_CANDIDATES,
   });
 
@@ -233,7 +238,9 @@ async function candidatesFor(id) {
  * versions must not starve the other rows of theirs.
  */
 async function candidatesForMany(mappings) {
-  const keys = [...new Set(mappings.map((m) => m.titleKey).filter(Boolean))];
+  // Pool keys, not the mappings' own — see candidatesFor.
+  const poolKeyOf = (m) => titleKey(m.rawTitle);
+  const keys = [...new Set(mappings.map(poolKeyOf).filter(Boolean))];
   if (!keys.length) return new Map();
 
   // Bounded, though the pool today holds at most three versions of any one
@@ -253,7 +260,7 @@ async function candidatesForMany(mappings) {
 
   const out = new Map();
   for (const m of mappings) {
-    const pool = byKey.get(m.titleKey);
+    const pool = byKey.get(poolKeyOf(m));
     if (!pool || !pool.length) continue;
     out.set(m.id, shapeCandidates(m, pool.slice(0, MAX_CANDIDATES)));
   }
@@ -613,9 +620,12 @@ async function releaseIfUnclaimed(source, externalId) {
 async function createFromTrack({
   gameTitle, gameArtist, source, externalId, userId, approved = true,
 }) {
-  const tk = titleKey(gameTitle);
+  const tk = mappingTitleKey(gameTitle);
   const ak = artistKey(gameArtist);
-  if (!tk) throw new ValidationError({ gameTitle: ['游戏侧歌名不能为空'] });
+  // The loose key too, as before: a title that is only a bracket ("(Live)")
+  // keeps its strict key but the resolver refuses it, so the row would be one
+  // no capture could ever reach.
+  if (!tk || !titleKey(gameTitle)) throw new ValidationError({ gameTitle: ['游戏侧歌名不能为空'] });
 
   const track = await prisma.importedTrack.findUnique({
     where: { source_externalId: { source, externalId } },

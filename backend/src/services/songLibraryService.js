@@ -18,7 +18,7 @@
  */
 const prisma = require('../db/client');
 const songPrefs = require('./songPrefService');
-const { titleKey } = require('./songKeyService');
+const { mappingTitleKey } = require('./songKeyService');
 
 const PAGE_SIZE = 40;
 const MAX_TAKE = 100;
@@ -73,12 +73,12 @@ async function search(userId, { query = '', cursor = null, take = PAGE_SIZE } = 
   const where = {
     approved: true,
     OR: [
-      // Game side, raw and normalised. The normalised key is what makes a
-      // search work across width and case differences the singer will not
-      // think about while typing.
+      // Game side. The key is the game's own text now (versions kept apart,
+      // see songKeyService), so it no longer folds width or spaces; case is
+      // still covered by the insensitive match on the raw column.
       { rawTitle: { contains: q, mode: 'insensitive' } },
       { rawArtist: { contains: q, mode: 'insensitive' } },
-      { titleKey: { contains: titleKey(q) } },
+      { titleKey: { contains: mappingTitleKey(q) } },
       // Platform side. Display-only columns elsewhere, but here they are half
       // of what the singer might remember.
       { platformTitle: { contains: q, mode: 'insensitive' } },

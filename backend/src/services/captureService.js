@@ -6,7 +6,7 @@ const {
 } = require('./captureMatchService');
 const { ensureLiked } = require('./likeService');
 const { resolveGameSong } = require('./mappingResolveService');
-const { titleKey, artistKey } = require('./songKeyService');
+const { mappingTitleKey, artistKey } = require('./songKeyService');
 const { broadcast } = require('./sseManager');
 const settingsService = require('./settingsService');
 const { AppError, NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
@@ -1418,7 +1418,7 @@ async function getLiveFeed({ userId, sessionId, limit }) {
   if (orphaned.length) {
     const keys = orphaned.map((e) => {
       const { title, artist } = splitTitleArtist(e.rawText, known);
-      return { titleKey: titleKey(title), artistKey: artistKey(artist) };
+      return { titleKey: mappingTitleKey(title), artistKey: artistKey(artist) };
     }).filter((k) => k.titleKey);
     if (keys.length) {
       const rows = await prisma.songMapping.findMany({
@@ -1434,7 +1434,7 @@ async function getLiveFeed({ userId, sessionId, limit }) {
     let mapping = e.candidates || null;
     if (mapping && mapping.mappingId) {
       const now = currentById.get(mapping.mappingId)
-        || byGameKey.get(gameKeyOf(titleKey(title), artistKey(artist)));
+        || byGameKey.get(gameKeyOf(mappingTitleKey(title), artistKey(artist)));
       if (!now) {
         // Nothing maps this song any more. The event still records what the
         // game showed -- that stays true -- but there is nothing to play.

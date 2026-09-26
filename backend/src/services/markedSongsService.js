@@ -21,7 +21,7 @@
  * request, no credential, nothing on the server's shared address.
  */
 const prisma = require('../db/client');
-const { titleKey } = require('./songKeyService');
+const { mappingTitleKey } = require('./songKeyService');
 
 const PAGE_SIZE = 40;
 const MAX_TAKE = 100;
@@ -101,11 +101,12 @@ async function search(userId, {
   if (q) {
     // Matched against both name sides, game and platform, like the library —
     // 24% of confirmed rows disagree on a name, so one side alone loses a
-    // quarter of them depending on which the singer remembers. The normalised
-    // key catches width/case differences they will not type exactly.
+    // quarter of them depending on which the singer remembers. The key is the
+    // game's own text now (see songKeyService), so it no longer folds width or
+    // spaces; case is covered by the ILIKEs on the raw columns.
     params.push(`%${q}%`);
     const like = `$${params.length}`;
-    params.push(`%${cleanLike(titleKey(query))}%`);
+    params.push(`%${cleanLike(mappingTitleKey(query))}%`);
     const keyLike = `$${params.length}`;
     conds.push(`(
       m.raw_title ILIKE ${like} OR m.raw_artist ILIKE ${like}

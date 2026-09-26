@@ -20,7 +20,7 @@
 const XLSX = require('xlsx');
 const prisma = require('../db/client');
 const { AppError } = require('../utils/errors');
-const { titleKey, artistKey } = require('./songKeyService');
+const { titleKey, mappingTitleKey, artistKey } = require('./songKeyService');
 const { splitTitleArtist, loadDashedArtists } = require('./captureService');
 const { resolveGameSong } = require('./mappingResolveService');
 const review = require('./mappingReviewService');
@@ -62,7 +62,11 @@ async function listUnconfigured({ query = '', all = false } = {}) {
       lastSeen: r.last_seen,
       title,
       artist,
+      // Loose, for the pool candidates below.
       titleKey: titleKey(title),
+      // The mapping's own key, for "is this already mapped" — the two columns
+      // are keyed by different rules (see songKeyService).
+      mapTitleKey: mappingTitleKey(title),
       artistKey: artistKey(artist),
     };
   }).filter((r) => r.titleKey);
@@ -75,7 +79,7 @@ async function listUnconfigured({ query = '', all = false } = {}) {
   //
   // One IN over distinct titles is far smaller (a title repeats across
   // versions) and is covered by the index the resolver already relies on.
-  const titleKeys = [...new Set(split.map((s) => s.titleKey))];
+  const titleKeys = [...new Set(split.map((s) => s.mapTitleKey))];
   const mapped = titleKeys.length
     ? await prisma.songMapping.findMany({
       where: { titleKey: { in: titleKeys } },
@@ -84,7 +88,7 @@ async function listUnconfigured({ query = '', all = false } = {}) {
     : [];
   const has = new Set(mapped.map((m) => `${m.titleKey} :: ${m.artistKey}`));
 
-  const unresolved = split.filter((s) => !has.has(`${s.titleKey} :: ${s.artistKey}`));
+  const unresolved = split.filter((s) => !has.has(`${s.mapTitleKey} :: ${s.artistKey}`));
 
   // What the pool could offer, for the two states that are not "nothing at all".
   const keys = [...new Set(unresolved.map((u) => u.titleKey))];
@@ -108,7 +112,15 @@ async function listUnconfigured({ query = '', all = false } = {}) {
 
   const out = unresolved.map((u) => {
     const candidates = byTitle.get(u.titleKey) || [];
-    const exact = u.artistKey ? candidates.filter((c) => c.artistKey === u.artistKey) : [];
+    // Exact on BOTH halves — the same test the resolver uses to approve by
+    // itself — so 重新解析 only ever produces confirmed rows. A same-artist
+    // track under another version or spelling (无眠 for 无眠(国语版)) is not the
+    // recording the game means: it stays here as absent, for a human to pick by
+    // hand or to import, rather than being pushed into 待确认 by a button.
+    const exact = u.artistKey
+      ? candidates.filter((c) => c.artistKey === u.artistKey
+        && mappingTitleKey(c.title) === u.mapTitleKey)
+      : [];
     // A capture with no artist can never be resolved automatically, however
     // many songs share its title: the resolver refuses to create a mapping
     // from a title alone, because 夜夜夜夜 with no artist was once paired with

@@ -607,10 +607,12 @@ enum SongSource {
 model SongMapping {
   id           String     @id @default(uuid()) @db.Uuid
 
-  /// Normalised game-side key. Both are lowercased/width-folded; artists are
-  /// split, sorted and rejoined so 汪苏泷/赵露思 and 赵露思/汪苏泷 are one key.
-  /// The raw forms are kept beside them for display and for re-normalising if
-  /// the rules ever change.
+  /// Game-side key. titleKey is the game's own text (songKeyService
+  /// mappingTitleKey: only 《》 and outer whitespace removed), so versions such
+  /// as 无眠 and 无眠(国语版) are separate rows. artistKey is normalised: artists
+  /// are split, sorted and rejoined so 汪苏泷/赵露思 and 赵露思/汪苏泷 are one key.
+  /// The raw forms are kept beside them for display and for re-keying if the
+  /// rules ever change (scripts/migrate-mapping-title-key.js).
   titleKey     String     @map("title_key")
   artistKey    String     @map("artist_key")
   rawTitle     String     @map("raw_title")
@@ -675,8 +677,10 @@ model ImportedTrack {
 
   title        String
   artist       String
-  /// Same normalisation as SongMapping, so matching is an indexed lookup
-  /// rather than a scan over every imported row.
+  /// Loose keys (songKeyService titleKey: brackets stripped, so every version
+  /// of a title shares one), so claiming a track and listing other versions is
+  /// an indexed lookup rather than a scan. NOT the rule SongMapping.titleKey
+  /// uses — that one keeps versions apart.
   titleKey     String     @map("title_key")
   artistKey    String     @map("artist_key")
   durationSec  Int?       @map("duration_sec")

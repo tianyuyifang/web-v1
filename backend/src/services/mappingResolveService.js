@@ -19,7 +19,9 @@
  * forever, so a song resolves once by search and never again.
  */
 const prisma = require('../db/client');
-const { titleKey, artistKey, artistsOverlap, isSeparatorAmbiguous } = require('./songKeyService');
+const {
+  titleKey, mappingTitleKey, versionTitleKey, artistKey, artistsOverlap, isSeparatorAmbiguous,
+} = require('./songKeyService');
 
 /**
  * How sure we are that an imported track is this game song.
@@ -45,19 +47,56 @@ const MAX_POOL_CANDIDATES = 25;
  * dropping the rows that fail to overlap would routinely discard the right
  * answer. The reviewer sees the alternatives either way.
  */
-function rankCandidates(tracks, rawArtist) {
+function rankCandidates(tracks, rawArtist, gameTitle) {
+  // Within the same artist standing, the track the game actually named comes
+  // first: its exact title, then failing that the same version. The pool query
+  // groups every version of a title, and without this the order among them was
+  // whatever the database returned — so 无眠(国语版) could be handed 无眠.
+  // Not part of the returned rows; stored candidates keep their old shape.
+  const exact = new Set();
+  const sameVersion = new Set();
+  // Exact artist, for the "exact on both halves" rank below: a pool holding
+  // 甲 and 甲/乙 under the same exact title must hand the claim to 甲, or a
+  // song the pool answers exactly would queue for review.
+  const ak = artistKey(rawArtist);
+  const exactArtist = new Set(ak ? tracks.filter((t) => artistKey(t.artist) === ak) : []);
+  if (gameTitle != null) {
+    const mk = mappingTitleKey(gameTitle);
+    const vk = versionTitleKey(gameTitle);
+    for (const t of tracks) {
+      if (mappingTitleKey(t.title) === mk) exact.add(t);
+      if (versionTitleKey(t.title) === vk) sameVersion.add(t);
+    }
+  }
   return tracks
     .map((t) => ({
-      source: t.source,
-      externalId: t.externalId,
-      title: t.title,
-      artist: t.artist,
-      durationSec: t.durationSec,
-      album: t.album,
-      vipOnly: t.vipOnly,
-      artistMatches: artistsOverlap(rawArtist, t.artist),
+      row: {
+        source: t.source,
+        externalId: t.externalId,
+        title: t.title,
+        artist: t.artist,
+        durationSec: t.durationSec,
+        album: t.album,
+        vipOnly: t.vipOnly,
+        artistMatches: artistsOverlap(rawArtist, t.artist),
+      },
+      exactArtist: exactArtist.has(t),
+      exact: exact.has(t),
+      version: sameVersion.has(t),
     }))
-    .sort((a, b) => Number(b.artistMatches) - Number(a.artistMatches));
+    // 1. exact on both halves — the only rows that approve themselves, so they
+    //    always win, which is what lets 一键解析 promise 已确认;
+    // 2. then the right recording before the right billing: an overlapping
+    //    artist with the exact title (无眠(国语版) billed 甲/乙) plays the song
+    //    the game named, where an exact artist on another version (无眠 by 甲)
+    //    would play the wrong one while it waits for review;
+    // 3. exact artist last, as the tie-break it was before.
+    .sort((a, b) => (Number(b.exactArtist && b.exact) - Number(a.exactArtist && a.exact))
+      || (Number(b.row.artistMatches) - Number(a.row.artistMatches))
+      || (Number(b.exact) - Number(a.exact))
+      || (Number(b.version) - Number(a.version))
+      || (Number(b.exactArtist) - Number(a.exactArtist)))
+    .map((x) => x.row);
 }
 
 /**
@@ -83,10 +122,16 @@ function rankCandidates(tracks, rawArtist) {
  * separator string whose two sides do NOT agree, where the split really is
  * deciding the outcome.
  */
-function classify({ gameArtist, track, exactArtist, ambiguous }) {
+function classify({ gameArtist, track, exactArtist, exactTitle, ambiguous }) {
   // Title and artist both agree outright. Nothing left to judge — including,
   // deliberately, whether a separator inside them was split correctly.
-  if (exactArtist) return TIER.STRONG;
+  //
+  // "Title agrees" means the game's text exactly (mappingTitleKey: only 《》
+  // and outer whitespace ignored). The pool query matches titles loosely, so
+  // without this 无眠(国语版) claimed 无眠, and Because Of You claimed
+  // Because of You, and both approved themselves. Now anything short of an
+  // exact title is judged by a human; the artist keeps its normalised rule.
+  if (exactArtist && exactTitle) return TIER.STRONG;
   if (ambiguous) return TIER.WEAK;
   // Title matches and the artists share at least one name — the usual shape of
   // "same song, different billing".
@@ -109,9 +154,13 @@ function classify({ gameArtist, track, exactArtist, ambiguous }) {
  * coverage shows up, and it is what the review page exists to fill.
  */
 async function resolveGameSong({ title, artist }) {
+  // Two title keys: `mk` is the mapping's identity (the game's text, versions
+  // kept apart), `tk` is the loose pool key used only to claim a track in step
+  // 3. See songKeyService.
+  const mk = mappingTitleKey(title);
   const tk = titleKey(title);
   const ak = artistKey(artist);
-  if (!tk) return { status: 'unmapped', mapping: null, tier: null, candidates: [] };
+  if (!tk || !mk) return { status: 'unmapped', mapping: null, tier: null, candidates: [] };
 
   // A 唱卡 capture always names its artist: the picking screen carries it in
   // its own view beside the title, and the singing screen writes "title-artist".
@@ -126,7 +175,7 @@ async function resolveGameSong({ title, artist }) {
 
   // --- steps 1 and 2: an existing mapping wins, approved or not ---
   const existing = await prisma.songMapping.findUnique({
-    where: { titleKey_artistKey: { titleKey: tk, artistKey: ak } },
+    where: { titleKey_artistKey: { titleKey: mk, artistKey: ak } },
   });
   if (existing) {
     return {
@@ -154,19 +203,38 @@ async function resolveGameSong({ title, artist }) {
     where: { titleKey: tk },
     take: MAX_POOL_CANDIDATES,
   });
+  // The capped query above has no order, so past MAX_POOL_CANDIDATES rows an
+  // exact-artist track could be left out and a song the pool answers exactly
+  // would queue for review. Fetch those by (title_key, artist_key) as well —
+  // the same stored columns 未配置 judges "可自动配" on — so a row it offers to
+  // resolve automatically is always in reach here.
+  if (ak) {
+    const exactArtistRows = await prisma.importedTrack.findMany({
+      where: { titleKey: tk, artistKey: ak },
+    });
+    const have = new Set(pool.map((t) => t.id));
+    for (const t of exactArtistRows) if (!have.has(t.id)) pool.push(t);
+  }
   if (!pool.length) {
     return { status: 'unmapped', mapping: null, tier: null, candidates: [] };
   }
 
-  const ranked = rankCandidates(pool, artist);
-  const best = pool.find((t) => t.externalId === ranked[0].externalId) || pool[0];
+  const ranked = rankCandidates(pool, artist, title);
+  const top = ranked[0];
+  const best = pool.find((t) => t.source === top.source && t.externalId === top.externalId) || pool[0];
 
   // Whether either side carries a separator whose split is a guess. Only
   // consulted when the two artist keys disagree — see classify: a split that
   // both sides made identically cannot have changed the answer.
   const ambiguous = isSeparatorAmbiguous(artist) || isSeparatorAmbiguous(best.artist);
   const exactArtist = Boolean(ak) && artistKey(best.artist) === ak;
-  const tier = classify({ gameArtist: artist, track: best, exactArtist, ambiguous });
+  const exactTitle = mappingTitleKey(best.title) === mk;
+  const tier = classify({ gameArtist: artist, track: best, exactArtist, exactTitle, ambiguous });
+
+  // Why a human is being asked, when the reason is not obvious from the tier.
+  const notes = [];
+  if (ambiguous) notes.push('歌手名分隔符可疑，需人工确认');
+  if (exactArtist && !exactTitle) notes.push('歌名与音源不完全一致（版本或写法不同），需人工确认');
 
   // Only an exact agreement on both halves approves itself. Everything else is
   // playable now and judged later — the review queue is the safety net, not a
@@ -175,7 +243,7 @@ async function resolveGameSong({ title, artist }) {
 
   const mapping = await prisma.songMapping.create({
     data: {
-      titleKey: tk,
+      titleKey: mk,
       artistKey: ak,
       rawTitle: String(title).trim(),
       rawArtist: String(artist || '').trim(),
@@ -191,7 +259,7 @@ async function resolveGameSong({ title, artist }) {
       // to the pool, and so a wrong pick is one click from being corrected.
       candidates: ranked.length > 1 ? ranked.slice(0, 8) : undefined,
       ...(approved ? { approvedAt: new Date() } : {}),
-      ...(ambiguous ? { note: '歌手名分隔符可疑，需人工确认' } : {}),
+      ...(notes.length ? { note: notes.join('；') } : {}),
     },
   });
 

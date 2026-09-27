@@ -663,11 +663,43 @@ async function likedMap(cookie, ids) {
   return out;
 }
 
+/**
+ * The account id a like has to name. Cached per cookie for a while, so a run
+ * of likes costs one account read rather than one per song.
+ */
+const UID_TTL_MS = 10 * 60 * 1000;
+const uidCache = new Map(); // cookie → { at, uid }
+
+async function uidFor(cookie) {
+  const hit = uidCache.get(cookie);
+  if (hit && Date.now() - hit.at < UID_TTL_MS) return hit.uid;
+  const acct = await getAccountInfo(cookie);
+  if (!acct.ok || !acct.uid) throw refusedNetease(301, '读取账号');
+  uidCache.set(cookie, { at: Date.now(), uid: acct.uid });
+  return acct.uid;
+}
+
+/**
+ * Like or unlike one song. /api/song/like, not /api/radio/like.
+ *
+ * Measured 2026-09-27 from the production server with a real account:
+ * radio/like answers -460 Cheating to a datacenter address while reads on the
+ * same cookie pass; song/like answers 200 and the read-back agrees. From a
+ * home address radio/like had worked, which is what hid this until the first
+ * run on the server. The write is verified by reading the state back either
+ * way, because the code alone has been wrong before.
+ */
+async function setLike(cookie, id, like) {
+  const userid = await uidFor(cookie);
+  const { json } = await call('/api/song/like', {
+    trackId: String(id), userid, like: Boolean(like),
+  }, { cookie });
+  return json;
+}
+
 /** Like one song, then read the state back — the code alone is not trusted. */
 async function likeSong(cookie, id) {
-  const { json } = await call('/api/radio/like', {
-    alg: 'itembased', trackId: String(id), like: true, time: '3',
-  }, { cookie });
+  const json = await setLike(cookie, id, true);
   if (json?.code !== 200) throw refusedNetease(json?.code, '点赞');
 
   const after = await likedMap(cookie, [id]);
@@ -680,11 +712,9 @@ async function likeSong(cookie, id) {
   return { ok: true, changed: true };
 }
 
-/** Unlike one song, read back. Measured 2026-09-18: like:false removes it. */
+/** Unlike one song, read back. */
 async function unlikeSong(cookie, id) {
-  const { json } = await call('/api/radio/like', {
-    alg: 'itembased', trackId: String(id), like: false, time: '3',
-  }, { cookie });
+  const json = await setLike(cookie, id, false);
   if (json?.code !== 200) throw refusedNetease(json?.code, '取消点赞');
 
   const after = await likedMap(cookie, [id]);

@@ -21,6 +21,17 @@ import useAuth from "@/hooks/useAuth";
 import useCaptureStore from "@/store/captureStore";
 import { musicSourcesAPI, platformTaggingAPI } from "@/lib/api";
 import PlatformTagPanel from "@/components/platform/PlatformTagPanel";
+import PlatformLikeButton from "@/components/platform/PlatformLikeButton";
+
+/**
+ * Substring match on the server-built search text: the name, its pinyin run
+ * together, every polyphonic reading, and the initials. Each space-separated
+ * word typed must hit somewhere, so "zjl qt" narrows the way a person expects.
+ */
+function matchesQuery(searchText, fallback, query) {
+  const hay = (searchText || String(fallback || "")).toLowerCase();
+  return query.split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+}
 
 const PLATFORM_LABEL = { qq: "QQ 音乐", netease: "网易云" };
 
@@ -44,6 +55,7 @@ export default function PlatformTaggingPage() {
   const [songsError, setSongsError] = useState("");
   const [songsLoading, setSongsLoading] = useState(false);
   const [filter, setFilter] = useState("");
+  const [listFilter, setListFilter] = useState("");
   const [likeBusy, setLikeBusy] = useState(null);
 
   const [starting, setStarting] = useState(false);
@@ -118,7 +130,7 @@ export default function PlatformTaggingPage() {
     setSongsLoading(true);
     setSongsError("");
     setFilter("");
-    platformTaggingAPI.songs(selected.ref, selected.dirId)
+    platformTaggingAPI.songs(selected.ref, selected.dirId, selected.isLikes)
       .then((res) => { if (alive) setSongs(res.data.songs || []); })
       .catch((err) => { if (alive) { setSongs([]); setSongsError(errMsg(err, "读取歌曲失败")); } })
       .finally(() => { if (alive) setSongsLoading(false); });
@@ -129,16 +141,29 @@ export default function PlatformTaggingPage() {
     setSongs((prev) => prev && prev.map((s) => (String(s.id) === String(id) ? { ...s, alreadyLiked: true } : s)));
   }, []);
 
-  const likeByHand = async (song) => {
+  // The heart in the list. Lit → unlike, unlit → like, as on the playlist
+  // page. This is the only place an unlike can start: the capture path only
+  // ever adds, so a repeated capture can never turn a like off.
+  const toggleLike = async (song) => {
     setLikeBusy(song.id);
+    setSongsError("");
     try {
       // The song's platform is the one in its playlist ref, never the tab: a
-      // QQ id sent as "netease" would like whatever NetEase track has that
-      // number, into the user's real favourites, with no undo.
-      await platformTaggingAPI.like(selected.ref.split(":")[0], song.id, song.songType);
-      markLiked(song.id);
+      // QQ id sent as "netease" would act on whatever NetEase track has that
+      // number, in the user's real favourites.
+      const p = selected.ref.split(":")[0];
+      if (song.alreadyLiked) {
+        await platformTaggingAPI.unlike(p, song.id, song.songType, selected.ref);
+        // On the favourites list itself the row is gone, not just unlit.
+        setSongs((prev) => prev && (selected.isLikes
+          ? prev.filter((s) => String(s.id) !== String(song.id))
+          : prev.map((s) => (String(s.id) === String(song.id) ? { ...s, alreadyLiked: false } : s))));
+      } else {
+        await platformTaggingAPI.like(p, song.id, song.songType, selected.ref);
+        markLiked(song.id);
+      }
     } catch (err) {
-      setSongsError(errMsg(err, "点赞失败"));
+      setSongsError(errMsg(err, song.alreadyLiked ? "取消点赞失败" : "点赞失败"));
     } finally {
       setLikeBusy(null);
     }
@@ -160,14 +185,14 @@ export default function PlatformTaggingPage() {
       // Through this page's own route, so the gate is this feature's add-on.
       if (!current) await platformTaggingAPI.connect({});
       try {
-        await platformTaggingAPI.start(selected.ref, selected.dirId);
+        await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
       } catch (err) {
         // The connection the server knew about has since expired or been
         // stopped elsewhere: open a fresh one and aim once more, the way the
         // playlist page's store heals the same case.
         if (err.response?.status !== 404) throw err;
         await platformTaggingAPI.connect({});
-        await platformTaggingAPI.start(selected.ref, selected.dirId);
+        await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
       }
       await refreshConnection();
     } catch (err) {
@@ -200,8 +225,14 @@ export default function PlatformTaggingPage() {
     if (!songs) return [];
     const q = filter.trim().toLowerCase();
     if (!q) return songs;
-    return songs.filter((s) => `${s.title} ${s.artist}`.toLowerCase().includes(q));
+    return songs.filter((s) => matchesQuery(s.searchText, `${s.title} ${s.artist}`, q));
   }, [songs, filter]);
+
+  const visiblePlaylists = useMemo(() => {
+    const q = listFilter.trim().toLowerCase();
+    if (!q) return playlists;
+    return playlists.filter((p) => matchesQuery(p.searchText, p.name, q));
+  }, [playlists, listFilter]);
 
   if (authLoading) return null;
   if (!user) return null;
@@ -257,10 +288,21 @@ export default function PlatformTaggingPage() {
               {PLATFORM_LABEL[platform]} · {sources[platform].nickname || "已连接"}
               {sources[platform].level === "expired" && <span className="ml-2 text-red-400">登录已过期</span>}
             </div>
+            <div className="border-b border-border px-2 py-1.5">
+              <input
+                value={listFilter}
+                onChange={(e) => setListFilter(e.target.value)}
+                placeholder="搜歌单：汉字 / 拼音 / 首字母"
+                className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
+              />
+            </div>
             <div className="max-h-[70vh] overflow-y-auto p-1.5">
               {listLoading && <p className="p-3 text-xs text-muted">读取中…</p>}
               {listError && <p className="p-3 text-xs text-red-400">{listError}</p>}
-              {playlists.map((p) => {
+              {!listLoading && playlists.length > 0 && visiblePlaylists.length === 0 && (
+                <p className="p-3 text-xs text-muted">没有匹配的歌单</p>
+              )}
+              {visiblePlaylists.map((p) => {
                 const active = selected?.ref === p.ref;
                 const aimed = aimedRef === p.ref;
                 return (
@@ -354,7 +396,7 @@ export default function PlatformTaggingPage() {
                     <input
                       value={filter}
                       onChange={(e) => setFilter(e.target.value)}
-                      placeholder="筛选歌名 / 歌手"
+                      placeholder="搜歌名 / 歌手：汉字 / 拼音 / 首字母"
                       className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
                     />
                     <span className="shrink-0 text-xs text-muted">{visibleSongs.length}</span>
@@ -363,14 +405,12 @@ export default function PlatformTaggingPage() {
                   {songsError && <p className="p-3 text-xs text-red-400">{songsError}</p>}
                   <ul className="max-h-[60vh] divide-y divide-border/40 overflow-y-auto">
                     {visibleSongs.map((s) => (
-                      <li key={s.id} className="flex items-center gap-3 px-3 py-1.5 text-sm">
-                        <button
-                          type="button"
-                          disabled={s.alreadyLiked || likeBusy === s.id}
-                          onClick={() => likeByHand(s)}
-                          title={s.alreadyLiked ? "已在我喜欢" : "点赞"}
-                          className={`shrink-0 text-base ${s.alreadyLiked ? "text-green-400" : "text-muted/50 hover:text-green-400"} disabled:cursor-default`}
-                        >{s.alreadyLiked ? "♥" : "♡"}</button>
+                      <li key={s.id} className="flex items-center gap-2 px-2 py-0.5 text-sm">
+                        <PlatformLikeButton
+                          liked={s.alreadyLiked}
+                          busy={likeBusy === s.id}
+                          onToggle={() => toggleLike(s)}
+                        />
                         <span className="min-w-0 flex-1 truncate" title={s.title}>{s.title}</span>
                         <span className="min-w-0 max-w-[40%] truncate text-xs text-muted" title={s.artist}>{s.artist}</span>
                         {s.vipOnly && <span className="shrink-0 text-[0.6rem] text-muted/60">VIP</span>}

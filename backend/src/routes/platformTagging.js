@@ -15,6 +15,8 @@ const rateLimit = require('express-rate-limit');
 const prisma = require('../db/client');
 const { authMiddleware, requireApproved, requireActiveSession } = require('../middleware/auth');
 const { ADD_ONS } = require('../utils/entitlements');
+const { ValidationError } = require('../utils/errors');
+const { searchTextFor } = require('../utils/searchText');
 const requireAddOn = require('../middleware/requireAddOn');
 const captureService = require('../services/captureService');
 const likes = require('../services/platformLikeService');
@@ -44,7 +46,9 @@ const writeLimiter = rateLimit({
 router.get('/playlists', ...web, async (req, res, next) => {
   try {
     const platform = String(req.query.platform || '');
-    res.json({ playlists: await likes.listPlaylists(req.user.id, platform) });
+    const playlists = await likes.listPlaylists(req.user.id, platform);
+    // Pinyin for the name, so the list is searchable by initials too.
+    res.json({ playlists: playlists.map((p) => ({ ...p, searchText: searchTextFor(p.name) })) });
   } catch (err) {
     next(err);
   }
@@ -59,7 +63,10 @@ router.get('/playlists/:ref/songs', ...web, async (req, res, next) => {
     const { ref } = likes.parseRef(req.params.ref);
     const dirId = req.query.dirId != null && req.query.dirId !== ''
       ? Number(req.query.dirId) : null;
-    res.json(await tags.playlistWithLiked(req.user.id, ref, Number.isInteger(dirId) ? dirId : null));
+    // isLikes: whether this is the favourites list, as the listing said. Cache
+    // bookkeeping only (which entry a like invalidates), never a write.
+    const isLikes = req.query.isLikes === '1' || req.query.isLikes === 'true';
+    res.json(await tags.playlistWithLiked(req.user.id, ref, Number.isInteger(dirId) ? dirId : null, isLikes));
   } catch (err) {
     next(err);
   }
@@ -93,11 +100,12 @@ router.post('/connect', ...web, async (req, res, next) => {
 // POST /api/platform-tagging/start { playlistRef, dirId? } — aim at a playlist
 router.post('/start', ...web, writeLimiter, async (req, res, next) => {
   try {
-    const { playlistRef, dirId } = req.body || {};
+    const { playlistRef, dirId, isLikes } = req.body || {};
     const result = await tags.start({
       userId: req.user.id,
       playlistRef,
       dirId: Number.isInteger(dirId) ? dirId : null,
+      isLikes: isLikes === true,
     });
     res.json({
       session: {
@@ -160,14 +168,52 @@ router.post('/events/:id/ignore', ...web, async (req, res, next) => {
 
 // POST /api/platform-tagging/like { platform, id, songType? } — a manual like
 // from the playlist view. Not limited to exact matches: the user chose it.
+/**
+ * Which platform a manual like/unlike is for. Everything is checked BEFORE
+ * the write: a body refused after the platform has already changed would
+ * leave the page and the cache disagreeing with the account. When a playlist
+ * ref is given, the platform is the ref's -- a song id only means something
+ * on the platform whose list it came from -- and a `platform` field that
+ * disagrees with it is a bad request, not a tie to break.
+ */
+function likeTarget(body) {
+  const { platform, id, songType, playlistRef } = body || {};
+  let target = platform == null ? '' : String(platform);
+  if (playlistRef) {
+    const parsed = likes.parseRef(playlistRef);
+    if (target && target !== parsed.platform) {
+      throw new ValidationError({ platform: ['与歌单所属平台不一致'] });
+    }
+    target = parsed.platform;
+  }
+  return {
+    platform: target,
+    id: id == null ? null : String(id),
+    songType: Number.isInteger(songType) ? songType : 0,
+  };
+}
+
+// POST /api/platform-tagging/like { platform?, id, songType?, playlistRef? }
+// A manual like from the playlist view. Not limited to exact matches: the
+// user chose it.
 router.post('/like', ...web, writeLimiter, async (req, res, next) => {
   try {
-    const { platform, id, songType } = req.body || {};
-    const result = await likes.like(req.user.id, String(platform || ''), {
-      id: id == null ? null : String(id),
-      songType: Number.isInteger(songType) ? songType : 0,
-    });
-    tags.noteLiked(req.user.id, String(id));
+    const { platform, id, songType } = likeTarget(req.body);
+    const result = await likes.like(req.user.id, platform, { id, songType });
+    tags.noteLiked(req.user.id, id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/platform-tagging/unlike { platform?, id, songType?, playlistRef? }
+// The lit heart pressed again. Only the page reaches this; captures never do.
+router.post('/unlike', ...web, writeLimiter, async (req, res, next) => {
+  try {
+    const { platform, id, songType } = likeTarget(req.body);
+    const result = await likes.unlike(req.user.id, platform, { id, songType });
+    tags.noteUnliked(req.user.id, id);
     res.json(result);
   } catch (err) {
     next(err);
@@ -202,3 +248,5 @@ router.get('/stream', authMiddleware, requireApproved, requirePlatformTaggingAdd
 });
 
 module.exports = router;
+// For tests: the one piece of request-shaping logic here worth checking alone.
+module.exports.likeTarget = likeTarget;

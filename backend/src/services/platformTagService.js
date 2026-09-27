@@ -20,6 +20,7 @@
 const prisma = require('../db/client');
 const { matchTitle } = require('./captureMatchService');
 const likes = require('./platformLikeService');
+const { searchTextFor } = require('../utils/searchText');
 const captureService = require('./captureService');
 const { broadcast } = require('./sseManager');
 const { AppError, ValidationError, NotFoundError } = require('../utils/errors');
@@ -75,9 +76,27 @@ async function resolveDirId(userId, ref) {
   return hit ? hit.dirId ?? null : null;
 }
 
-async function songsFor(userId, ref, dirId) {
+/**
+ * `isLikes` -- is this the favourites list itself? It is the one list whose
+ * rows change on a like, so it is the one dropped by setLikedState. QQ says so
+ * by dirId; NetEase only in the listing, which the page has and passes along.
+ * Used for cache bookkeeping only, so a wrong value costs a stale row, never
+ * a wrong write.
+ */
+/**
+ * Which refs are a user's favourites list, remembered for the process.
+ *
+ * The listing says so (isLikes) and the page passes it along on the read
+ * that follows -- but a refill from the capture path, or after a restart,
+ * carries no such hint. Remembering the answer here means the favourites
+ * entry stays recognisable across refills; QQ's is also known by dirId.
+ */
+const favouriteRefs = new Set(); // `${userId}|${ref}`
+
+async function songsFor(userId, ref, dirId, isLikes = false) {
   sweep();
   const key = cacheKey(userId, ref);
+  if (isLikes) favouriteRefs.add(key);
   const hit = songCache.get(key);
   if (hit) {
     if (hit.error) throw hit.error;
@@ -97,7 +116,16 @@ async function songsFor(userId, ref, dirId) {
       const effectiveDirId = dirId ?? await resolveDirId(userId, ref);
       const { title, songs } = await likes.getPlaylistSongs(userId, ref, { dirId: effectiveDirId });
       const liked = await likes.likedMap(userId, platform, songs.map((x) => x.id));
-      const entry = { at: Date.now(), dirId: effectiveDirId, title, songs, liked };
+      for (const s of songs) s.searchText = searchTextFor(s.title, s.artist);
+      const entry = {
+        at: Date.now(),
+        dirId: effectiveDirId,
+        isLikes: favouriteRefs.has(key) || effectiveDirId === likes.QQ_LIKES_DIR_ID,
+        title,
+        songs,
+        liked,
+      };
+      if (entry.isLikes) favouriteRefs.add(key);
       songCache.set(key, entry);
       return entry;
     } catch (err) {
@@ -119,20 +147,57 @@ function dropSongs(userId, ref) {
  * the platform without another sweep.
  */
 function noteLiked(userId, id) {
+  setLikedState(userId, id, true);
+}
+
+function noteUnliked(userId, id) {
+  setLikedState(userId, id, false);
+}
+
+/**
+ * A like or unlike happened. Every cached list of this user is patched in
+ * place -- hearts everywhere, and on the favourites list the ROW itself,
+ * added or removed -- so neither a run nor the page ever pays a platform
+ * read for a click. When the song's row is not on hand (it was liked from a
+ * list not in the cache), the favourites entry is marked stale instead: the
+ * page's next open re-reads it, while a run keeps using it.
+ *
+ * A read still in flight is patched when it lands, or the rows it caches
+ * would predate the like for the whole TTL.
+ */
+function setLikedState(userId, id, liked) {
   const prefix = `${userId}|`;
+  const sid = String(id);
+  let song = null;
   for (const [k, v] of songCache) {
-    if (k.startsWith(prefix) && v.liked) v.liked.set(String(id), true);
+    if (k.startsWith(prefix) && v.songs) song = song || v.songs.find((s) => String(s.id) === sid) || null;
+  }
+  const apply = (v) => {
+    if (v.liked) v.liked.set(sid, liked);
+    if (!v.isLikes || !v.songs) return;
+    const idx = v.songs.findIndex((s) => String(s.id) === sid);
+    if (liked && idx < 0) {
+      if (song) v.songs.unshift(song);
+      else v.stale = true;
+    } else if (!liked && idx >= 0) {
+      v.songs.splice(idx, 1);
+    }
+  };
+  for (const [k, v] of songCache) {
+    if (!k.startsWith(prefix)) continue;
+    if (v.pending) v.pending.then(apply, () => {});
+    else if (!v.error) apply(v);
   }
 }
 
 /** The list with its liked state, for the page. Same cache the run uses. */
-async function playlistWithLiked(userId, ref, dirId) {
+async function playlistWithLiked(userId, ref, dirId, isLikes = false) {
   // A remembered failure is for the capture client, which retries blindly
   // every 2s. A person clicking the list is asking for a fresh attempt -- and
   // has probably just reconnected the account -- so the memory is dropped.
   const cached = songCache.get(cacheKey(userId, ref));
-  if (cached && cached.error) dropSongs(userId, ref);
-  const { title, songs, liked } = await songsFor(userId, ref, dirId);
+  if (cached && (cached.error || cached.stale)) dropSongs(userId, ref);
+  const { title, songs, liked } = await songsFor(userId, ref, dirId, isLikes);
   return {
     title,
     total: songs.length,
@@ -148,7 +213,7 @@ async function playlistWithLiked(userId, ref, dirId) {
  * first capture. `dirId` is what QQ needs to read "我喜欢"; the page has it
  * from the listing.
  */
-async function start({ userId, playlistRef, dirId = null }) {
+async function start({ userId, playlistRef, dirId = null, isLikes = false }) {
   const { ref } = likes.parseRef(playlistRef);
 
   const session = await prisma.captureSession.findFirst({
@@ -163,7 +228,7 @@ async function start({ userId, playlistRef, dirId = null }) {
   // the account is exactly when a retry is wanted.
   const cached = songCache.get(cacheKey(userId, ref));
   if (cached && cached.error) dropSongs(userId, ref);
-  const list = await songsFor(userId, ref, dirId);
+  const list = await songsFor(userId, ref, dirId, isLikes);
 
   const updated = await prisma.captureSession.update({
     where: { id: session.id },
@@ -447,7 +512,7 @@ async function stop({ userId }) {
 
 module.exports = {
   channel, start, stop, ingest, approve, ignore, getFeed,
-  playlistWithLiked, noteLiked,
+  playlistWithLiked, noteLiked, noteUnliked,
   // For tests: the cache is the one piece of state here.
   dropSongs,
 };

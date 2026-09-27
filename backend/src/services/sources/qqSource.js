@@ -955,6 +955,58 @@ async function likeSong({ id, songType = 0 }, { cookie, uin, musicKey }) {
   return { ok: true, changed: data.result?.dirId === LIKES_DIR_ID };
 }
 
+/**
+ * Unlike one song: remove it from "我喜欢".
+ *
+ * The platform's answer is not trusted at all here. Measured 2026-09-26: with
+ * the song's own type (1) the call returned retCode 0 four times in a row and
+ * removed nothing; with songType 0 it removed the song. So 0 goes first, the
+ * state is read back, and the song's own type is tried only if it is still
+ * there. Whichever way, the read-back is the answer.
+ */
+async function unlikeSong({ id, songType = 0 }, { cookie, uin, musicKey }) {
+  // One attempt: the platform's code, and whether the song is really gone.
+  // A refusal other than "login expired" does not end things -- the second
+  // type still gets its turn, because a refused type-0 delete and a silently
+  // ignored one are the same outcome from here.
+  const attempt = async (type) => {
+    const { json } = await cgiPost({
+      req_1: {
+        module: 'music.musicasset.PlaylistDetailWrite',
+        method: 'DelSonglist',
+        param: {
+          dirId: LIKES_DIR_ID,
+          tid: 0,
+          bFmtUtf8: true,
+          v_songInfo: [{ songId: Number(id), songType: type }],
+        },
+      },
+    }, { cookie, uin, musicKey });
+    const code = json?.req_1?.code;
+    // A lapsed login or a body that is not the expected shape ends things at
+    // once: the second type would be a second write against a session that
+    // is already broken. Any other refusal is recorded and the next type
+    // still gets its turn.
+    if (code === 1000 || code === undefined) throw refused(code, '取消点赞');
+    const after = await likedMap([id], { cookie, uin, musicKey });
+    return { removed: !after.get(String(id)), code };
+  };
+
+  const first = await attempt(0);
+  if (first.removed) return { ok: true };
+  const own = Number(songType) || 0;
+  const second = own !== 0 ? await attempt(own) : null;
+  if (second && second.removed) return { ok: true };
+
+  const codes = [first.code, second?.code].filter((c) => c !== undefined && c !== 0);
+  const err = new Error(codes.length
+    ? `QQ 取消点赞失败 (code ${codes.join('/')})`
+    : 'QQ 返回成功但歌曲仍在「我喜欢」里');
+  err.code = 'PLATFORM_UNLIKE_UNVERIFIED';
+  err.status = 502;
+  throw err;
+}
+
 module.exports = {
   PLATFORM,
   search,
@@ -972,5 +1024,6 @@ module.exports = {
   getPlaylistRows,
   likedMap,
   likeSong,
+  unlikeSong,
   toLikeable,
 };

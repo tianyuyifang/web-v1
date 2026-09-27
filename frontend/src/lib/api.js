@@ -321,12 +321,15 @@ export const captureAPI = {
 // Its own router and add-on. Only the connection is shared with capture.
 export const platformTaggingAPI = {
   playlists: (platform) => api.get("/platform-tagging/playlists", { params: { platform } }),
-  songs: (ref, dirId) =>
+  // dirId: QQ needs it to read 我喜欢. isLikes: tells the server which cached
+  // list is the favourites, the one a like changes the rows of.
+  songs: (ref, dirId, isLikes = false) =>
     api.get(`/platform-tagging/playlists/${encodeURIComponent(ref)}/songs`,
-      { params: dirId != null ? { dirId } : {} }),
+      { params: { ...(dirId != null ? { dirId } : {}), ...(isLikes ? { isLikes: 1 } : {}) } }),
   connect: (opts = {}) => api.post("/platform-tagging/connect", opts, { timeout: 10000 }),
-  start: (playlistRef, dirId) =>
-    api.post("/platform-tagging/start", dirId != null ? { playlistRef, dirId } : { playlistRef },
+  start: (playlistRef, dirId, isLikes = false) =>
+    api.post("/platform-tagging/start",
+      { playlistRef, ...(dirId != null ? { dirId } : {}), isLikes: Boolean(isLikes) },
       { timeout: 20000 }),
   // Through this router, not /capture/target: that one is gated on the
   // capture add-on, which a beta user of this feature may not hold.
@@ -336,8 +339,12 @@ export const platformTaggingAPI = {
   approve: (eventId, externalId) =>
     api.post(`/platform-tagging/events/${eventId}/approve`, externalId ? { externalId } : {}),
   ignore: (eventId) => api.post(`/platform-tagging/events/${eventId}/ignore`),
-  like: (platform, id, songType) =>
-    api.post("/platform-tagging/like", { platform, id, songType }),
+  // playlistRef: the list on screen, so the server keeps that one's cache
+  // and refreshes the others (the favourites list changes on every like).
+  like: (platform, id, songType, playlistRef) =>
+    api.post("/platform-tagging/like", { platform, id, songType, playlistRef }),
+  unlike: (platform, id, songType, playlistRef) =>
+    api.post("/platform-tagging/unlike", { platform, id, songType, playlistRef }),
 };
 
 // --- Admin ---

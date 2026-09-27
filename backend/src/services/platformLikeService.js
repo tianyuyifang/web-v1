@@ -175,6 +175,23 @@ async function like(userId, platform, { id, songType = 0, knownUnliked = false }
   }));
 }
 
+/**
+ * Unlike one song, verified by reading back. Only ever reached from the
+ * page's own heart button -- the capture path never calls this, so a repeated
+ * capture can never turn a like off.
+ */
+async function unlike(userId, platform, { id, songType = 0 }) {
+  assertPlatform(platform);
+  if (!id) throw new ValidationError({ id: ['缺少歌曲 id'] });
+  return serialised(userId, () => run(userId, platform, async (cred) => {
+    if (platform === 'qq') await qq.unlikeSong({ id, songType }, cred);
+    else await netease.unlikeSong(cred.cookie, id);
+    return { ok: true };
+  }));
+}
+
 module.exports = {
-  PLATFORMS, parseRef, listPlaylists, getPlaylistSongs, likedMap, like,
+  PLATFORMS, parseRef, listPlaylists, getPlaylistSongs, likedMap, like, unlike,
+  // QQ's fixed dirId for "我喜欢", so callers need not know which module owns it.
+  QQ_LIKES_DIR_ID: qq.LIKES_DIR_ID,
 };

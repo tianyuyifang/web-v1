@@ -88,4 +88,33 @@ function toPinyinInitialsAll(chinese) {
   return [...new Set(combos)].join('|');
 }
 
-module.exports = { toPinyin, toPinyinInitials, toPinyinConcat, toPinyinAll, toPinyinInitialsAll };
+/**
+ * Every full-pinyin spelling, concatenated, for polyphonic characters.
+ * e.g. "音乐" → "yinyue|yinle|..."  Same cartesian walk and 16-variant cap as
+ * toPinyinInitialsAll, on whole syllables. Callers wanting a guaranteed
+ * complete spelling pair this with toPinyinConcat (default reading, no cap):
+ * past the cap the tail of a long title is simply absent from the variants.
+ */
+function toPinyinConcatAll(chinese) {
+  if (!chinese) return null;
+  const readings = pinyinFn(chinese, { style: STYLE_NORMAL, heteronym: true });
+  const perChar = readings.map((r) => [
+    ...new Set(r.map((x) => x.normalize('NFD').replace(/[̀-ͯ]/g, ''))),
+  ]);
+  let combos = [''];
+  for (const chars of perChar) {
+    const next = [];
+    for (const prefix of combos) {
+      for (const ch of chars) {
+        next.push(prefix + ch);
+      }
+    }
+    combos = next;
+    if (combos.length > 16) break;
+  }
+  return [...new Set(combos)].join('|');
+}
+
+module.exports = {
+  toPinyin, toPinyinInitials, toPinyinConcat, toPinyinAll, toPinyinInitialsAll, toPinyinConcatAll,
+};

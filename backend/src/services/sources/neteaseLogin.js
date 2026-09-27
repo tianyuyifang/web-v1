@@ -680,9 +680,26 @@ async function likeSong(cookie, id) {
   return { ok: true, changed: true };
 }
 
+/** Unlike one song, read back. Measured 2026-09-18: like:false removes it. */
+async function unlikeSong(cookie, id) {
+  const { json } = await call('/api/radio/like', {
+    alg: 'itembased', trackId: String(id), like: false, time: '3',
+  }, { cookie });
+  if (json?.code !== 200) throw refusedNetease(json?.code, '取消点赞');
+
+  const after = await likedMap(cookie, [id]);
+  if (after.get(String(id))) {
+    const err = new Error('网易云返回成功但歌曲仍在「我喜欢的音乐」里');
+    err.code = 'PLATFORM_UNLIKE_UNVERIFIED';
+    err.status = 502;
+    throw err;
+  }
+  return { ok: true };
+}
+
 module.exports = {
   createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo,
   resolveUrl, corsFriendlyUrl, getLyric, getPlaylist, QR_STATUS,
   // 平台打标
-  listMyPlaylists, getPlaylistRows, likedMap, likeSong,
+  listMyPlaylists, getPlaylistRows, likedMap, likeSong, unlikeSong,
 };

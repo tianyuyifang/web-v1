@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, memo, startTransition } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, memo, startTransition } from "react";
 import { createPortal } from "react-dom";
 import useAudioPlayer from "@/hooks/useAudioPlayer";
 import usePlayerStore from "@/store/playerStore";
@@ -170,6 +170,28 @@ export default memo(function PlayerBox({
     if (!Array.isArray(clips)) return;
     enqueueNeighborhood(clips, clipIndex, NEIGHBORHOOD_COUNT);
   }, [isPlaying, getAllClips, clipIndex]);
+
+  // Edit-mode position box. It is uncontrolled, and an uncontrolled input
+  // only takes defaultValue when it mounts, so a card that shifted (a clip
+  // moved or removed above it) kept showing its old number — and typing
+  // against that number moved the clip to the wrong place. The box follows
+  // the position unless the user has typed in it, and only a typed value
+  // moves the clip. (Not keyed by position: that replaced the input under a
+  // click landing in it.)
+  const positionInputRef = useRef(null);
+  const positionEditedRef = useRef(false);
+  useLayoutEffect(() => {
+    const el = positionInputRef.current;
+    if (el && !positionEditedRef.current) el.value = String(position);
+  }, [position]);
+  const commitPosition = (el) => {
+    if (!positionEditedRef.current) return;
+    positionEditedRef.current = false;
+    const target = parseInt(el.value, 10);
+    if (target >= 1 && target !== position) {
+      onMove(playlistClip.clipId, position - 1, target - 1);
+    }
+  };
 
   // Hover preload: fire on mouse enter over the play button.
   const handlePlayButtonHover = useCallback(() => {
@@ -379,32 +401,21 @@ export default memo(function PlayerBox({
         {position != null && (
           <div className="mb-1.5 flex items-center gap-1 text-xs text-muted">
             {editMode && onMove ? (
-              // Keyed by position: an uncontrolled input only takes
-              // defaultValue when it mounts, so without the key a card that
-              // shifted (another clip moved or removed above it) kept showing
-              // its old number — and typing against that number moved the
-              // clip to the wrong place.
               <input
-                key={position}
+                ref={positionInputRef}
                 type="number"
                 defaultValue={position}
                 min={1}
                 max={totalClips || 999}
+                onFocus={() => { positionEditedRef.current = false; }}
+                onChange={() => { positionEditedRef.current = true; }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    const target = parseInt(e.target.value, 10);
-                    if (target >= 1 && target !== position) {
-                      onMove(playlistClip.clipId, position - 1, target - 1);
-                    }
+                    commitPosition(e.target);
                     e.target.blur();
                   }
                 }}
-                onBlur={(e) => {
-                  const target = parseInt(e.target.value, 10);
-                  if (target >= 1 && target !== position) {
-                    onMove(playlistClip.clipId, position - 1, target - 1);
-                  }
-                }}
+                onBlur={(e) => commitPosition(e.target)}
                 className="w-10 rounded border border-border bg-background px-1 py-0.5 text-center text-xs text-theme focus:border-primary focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
             ) : (

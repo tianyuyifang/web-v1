@@ -4,11 +4,28 @@ import { useMemo, useEffect, useRef, useState, memo } from "react";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { fetchLyrics, getCachedLyrics } from "@/lib/lyricsCache";
+import usePlayerStore from "@/store/playerStore";
 
 export default memo(function LyricsBox({ clipId, clipVersion, currentTime, clipStart }) {
   const { t } = useLanguage();
   const containerRef = useRef(null);
   const innerRef = useRef(null);
+  const staticRef = useRef(null);
+
+  // Toggling edit mode stops and rewinds every player (store.stopAll). Cards
+  // used to be rebuilt then, so lyrics came back at the top at once; do the
+  // same here. Without it, a clip whose first line starts after 0 kept its old
+  // scroll with nothing highlighted. Only boxes actually scrolled are touched.
+  useEffect(() => usePlayerStore.subscribe((state, prev) => {
+    if (state.stopAllSeq === prev.stopAllSeq) return;
+    const inner = innerRef.current;
+    if (inner && inner.style.transform && inner.style.transform !== "translateY(-0px)") {
+      inner.style.transition = "none"; // jump, as a fresh box would
+      inner.style.transform = "";
+      requestAnimationFrame(() => { inner.style.transition = ""; });
+    }
+    if (staticRef.current && staticRef.current.scrollTop) staticRef.current.scrollTop = 0;
+  }), []);
 
   // Lyrics are fetched on demand from /api/clips/:id/lyrics.
   // Seed with cached value (if any) so first render is instant for revisits.
@@ -53,7 +70,7 @@ export default memo(function LyricsBox({ clipId, clipVersion, currentTime, clipS
   // Static lyrics: scrollable, no highlight
   if (isStatic) {
     return (
-      <div className="h-[92px] overflow-y-auto mb-3">
+      <div ref={staticRef} className="h-[92px] overflow-y-auto mb-3">
         {parsed.map((line, i) => (
           <p key={i} className="text-[0.72rem] leading-[1.8] text-muted">
             {line.text}

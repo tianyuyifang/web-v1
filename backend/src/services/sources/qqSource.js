@@ -713,6 +713,248 @@ async function getLyric(mid) {
   };
 }
 
+// --- 平台打标: the user's own playlists and their "我喜欢" ----------------
+//
+// Everything below acts as the user, with their credential, on their own
+// account. Verified end to end on 2026-09-18/26 against a real WeChat-login
+// account (19-digit uin); the module/method names come from the maintained
+// reference client (L-1124/QQMusicApi) and were exercised one call at a time.
+
+/** dirId of the account-wide favourites list. Fixed by the platform. */
+const LIKES_DIR_ID = 201;
+
+/** Cookie-bearing POST to musicu.fcg with the standard comm block. */
+async function cgiPost(reqs, { cookie, uin, musicKey }) {
+  return callCgi({
+    cookie,
+    codeOf: (j) => j?.req_1?.code,
+    url: `https://${HOST}/cgi-bin/musicu.fcg`,
+    body: { comm: comm(uin, musicKey), ...reqs },
+  });
+}
+
+/**
+ * The credential was refused. 1000 is "needs login" (an expired or wrong key);
+ * anything else non-zero is reported with its code so the page can show it.
+ */
+function refused(code, what) {
+  // No code at all means the body was not the shape expected (a gateway page,
+  // a changed schema) -- said as such, not as "code undefined".
+  if (code === undefined) {
+    const bad = new Error(`QQ ${what}返回了无法识别的响应`);
+    bad.code = 'SOURCE_BAD_RESPONSE';
+    bad.status = 502;
+    return bad;
+  }
+  const err = new Error(code === 1000
+    ? 'QQ 音乐登录已过期，请到账户页重新连接'
+    : `QQ ${what}失败 (code ${code})`);
+  err.code = code === 1000 ? 'PLATFORM_CREDENTIAL_EXPIRED' : 'PLATFORM_CALL_FAILED';
+  err.status = code === 1000 ? 401 : 502;
+  err.platformCode = code;
+  return err;
+}
+
+/**
+ * The playlists this account created, plus the ones it collected.
+ *
+ * Both lists come back in one round trip. GetPlaylistByUin answers everything
+ * at once (bFinish, no paging — 298 lists measured); the collected list is
+ * asked for alongside it and dropped if that half is refused, because the
+ * created lists are what the feature is for and a collected list is a bonus.
+ *
+ * "我喜欢" is an ordinary row here with dirId 201, and it is the row whose
+ * tid names the favourites when they are read back.
+ */
+async function listMyPlaylists({ cookie, uin, musicKey }) {
+  const { json } = await cgiPost({
+    req_1: {
+      module: 'music.musicasset.PlaylistBaseRead',
+      method: 'GetPlaylistByUin',
+      param: { uin: String(uin) },
+    },
+    req_2: {
+      module: 'music.musicasset.PlaylistFavRead',
+      method: 'CgiGetPlaylistFavInfo',
+      param: { uin: String(uin), offset: 0, size: 200 },
+    },
+  }, { cookie, uin, musicKey });
+
+  const code = json?.req_1?.code;
+  if (code !== 0) throw refused(code, '读取歌单');
+
+  const created = (json.req_1.data?.v_playlist || []).map((p) => ({
+    ref: `qq:${p.tid}`,
+    id: String(p.tid),
+    dirId: p.dirId,
+    name: p.dirName || '',
+    count: p.songNum ?? null,
+    cover: p.picUrl || null,
+    isLikes: p.dirId === LIKES_DIR_ID,
+    kind: 'created',
+  }));
+
+  // Different field names on this half (name/songnum), and its own code.
+  const collected = json.req_2?.code === 0
+    ? (json.req_2.data?.v_list || []).map((p) => ({
+      ref: `qq:${p.tid}`,
+      id: String(p.tid),
+      dirId: p.dirId ?? null,
+      name: p.name || '',
+      count: p.songnum ?? null,
+      cover: p.logo || null,
+      isLikes: false,
+      kind: 'collected',
+    }))
+    : [];
+
+  // Favourites first, then the rest in the platform's own order.
+  created.sort((a, b) => Number(b.isLikes) - Number(a.isLikes));
+  return [...created, ...collected];
+}
+
+/**
+ * One playlist row with the fields a like needs.
+ *
+ * Distinct from toTrack, which is the import shape and drops `id`/`type` on
+ * purpose (imports key on mid). AddSonglist wants the numeric id and the
+ * type, and type is not always 0 — a real playlist returned type 1 rows.
+ */
+function toLikeable(s) {
+  return {
+    id: String(s.id),
+    songType: Number.isInteger(s.type) ? s.type : 0,
+    mid: s.mid || null,
+    title: s.name || s.title || '',
+    artist: (s.singer || []).map((x) => x.name).filter(Boolean).join('/'),
+    durationSec: s.interval ?? null,
+    vipOnly: Boolean(s.pay?.pay_play),
+  };
+}
+
+/**
+ * Every song in one of the user's playlists, as the user.
+ *
+ * CgiGetDiss rather than the anonymous import call: it is the one the
+ * reference client uses for a credentialed read, and the only one measured to
+ * return a private "我喜欢" (81/81 rows). For the favourites the platform wants
+ * disstid 0 with the dirId; for any other list the tid plus its dirId.
+ */
+async function getPlaylistRows(tid, {
+  cookie, uin, musicKey, dirId = null, pageSize = 1000, maxSongs = 5000,
+} = {}) {
+  const isLikes = dirId === LIKES_DIR_ID;
+  const songs = [];
+  let title = null;
+  let total = null;
+
+  for (let begin = 0; begin < maxSongs; begin += pageSize) {
+    const { json } = await cgiPost({
+      req_1: {
+        module: 'music.srfDissInfo.DissInfo',
+        method: 'CgiGetDiss',
+        param: {
+          disstid: isLikes ? 0 : Number(tid),
+          ...(dirId != null ? { dirid: dirId } : {}),
+          tag: true,
+          userinfo: true,
+          orderlist: true,
+          song_begin: begin,
+          song_num: pageSize,
+        },
+      },
+    }, { cookie, uin, musicKey });
+
+    const code = json?.req_1?.code;
+    if (code !== 0) throw refused(code, '读取歌单内容');
+    const data = json.req_1.data || {};
+    if (title == null) title = data.dirinfo?.title ?? null;
+    if (total == null) total = data.total_song_num ?? null;
+
+    const page = data.songlist || [];
+    if (!page.length) break;
+    songs.push(...page.map(toLikeable));
+    if (total != null && songs.length >= total) break;
+  }
+
+  // A private list answered to the wrong account comes back as a title and no
+  // rows. Said plainly rather than shown as an empty playlist.
+  if (!songs.length && total > 0) {
+    const err = new Error('这个歌单被设为隐私，当前登录的账号读不到');
+    err.code = 'PLATFORM_PLAYLIST_PRIVATE';
+    err.status = 403;
+    throw err;
+  }
+  return { title, total, songs };
+}
+
+/**
+ * Which of these songs are already in "我喜欢". Batched; answers a map of
+ * id → boolean so callers never confuse "not asked" with "not liked".
+ */
+async function likedMap(ids, { cookie, uin, musicKey }) {
+  const out = new Map();
+  const list = [...new Set(ids.map(String))];
+  for (let i = 0; i < list.length; i += 50) {
+    const slice = list.slice(i, i + 50);
+    const { json } = await cgiPost({
+      req_1: {
+        module: 'music.musicasset.SongFavRead',
+        method: 'IsSongFanById',
+        param: { v_songId: slice.map(Number) },
+      },
+    }, { cookie, uin, musicKey });
+    const code = json?.req_1?.code;
+    if (code !== 0) throw refused(code, '查询喜欢状态');
+    const fan = json.req_1.data?.m_fan || {};
+    for (const id of slice) out.set(id, Boolean(fan[id]));
+  }
+  return out;
+}
+
+/**
+ * Like one song: add it to "我喜欢".
+ *
+ * The success code is not trusted. A repeated add, and a delete with the
+ * wrong type, both answer retCode 0 having changed nothing; what tells a real
+ * write apart is `result.dirId === 201` with a real tid — and even that is
+ * only a hint. The state is read back and is the answer.
+ */
+async function likeSong({ id, songType = 0 }, { cookie, uin, musicKey }) {
+  const { json } = await cgiPost({
+    req_1: {
+      module: 'music.musicasset.PlaylistDetailWrite',
+      method: 'AddSonglist',
+      param: {
+        dirId: LIKES_DIR_ID,
+        tid: 0,
+        bFmtUtf8: true,
+        v_songInfo: [{ songId: Number(id), songType: Number(songType) || 0 }],
+      },
+    },
+  }, { cookie, uin, musicKey });
+
+  const code = json?.req_1?.code;
+  if (code !== 0) throw refused(code, '点赞');
+  const data = json.req_1.data || {};
+  if (data.retCode !== 0) {
+    const detail = data.msg ? `: ${data.msg}` : '';
+    const err = new Error(`QQ 点赞被拒绝 (retCode ${data.retCode}${detail})`);
+    err.code = 'PLATFORM_LIKE_REJECTED';
+    err.status = 502;
+    throw err;
+  }
+
+  const after = await likedMap([id], { cookie, uin, musicKey });
+  if (!after.get(String(id))) {
+    const err = new Error('QQ 返回成功但歌曲并未进入「我喜欢」');
+    err.code = 'PLATFORM_LIKE_UNVERIFIED';
+    err.status = 502;
+    throw err;
+  }
+  return { ok: true, changed: data.result?.dirId === LIKES_DIR_ID };
+}
+
 module.exports = {
   PLATFORM,
   search,
@@ -724,4 +966,11 @@ module.exports = {
   toTrack,
   resetCdnCache,
   TIERS,
+  // 平台打标
+  LIKES_DIR_ID,
+  listMyPlaylists,
+  getPlaylistRows,
+  likedMap,
+  likeSong,
+  toLikeable,
 };

@@ -31,7 +31,7 @@ const PRICING_LINK =
   "text-white transition-colors hover:bg-primary-hover";
 
 export default function AccountPage() {
-  const { user, loading, logout, isMember, canCapture } = useAuth();
+  const { user, loading, logout, isMember, canCapture, canPlatformTag } = useAuth();
   const { t } = useLanguage();
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const router = useRouter();
@@ -150,7 +150,7 @@ export default function AccountPage() {
           // credential: every card resolves through the listener's own account,
           // so without this the page has nothing it can play. Kept from anyone
           // else, who would be handing over a platform login for nothing.
-          ...(canCapture ? [{ key: "music", label: "音乐账号" }] : []),
+          ...((canCapture || canPlatformTag) ? [{ key: "music", label: "音乐账号" }] : []),
           { key: "appearance", label: t("appearance") },
         ].map((tab) => (
           <button
@@ -325,7 +325,7 @@ export default function AccountPage() {
 
         {/* Connected music accounts. Guarded as well as hidden, so a stale tab
             selection cannot render it for someone it was hidden from. */}
-        {activeTab === "music" && canCapture && <MusicSourcesPanel />}
+        {activeTab === "music" && (canCapture || canPlatformTag) && <MusicSourcesPanel />}
 
         {/* Appearance */}
         {activeTab === "appearance" && (

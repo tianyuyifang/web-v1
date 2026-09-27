@@ -225,9 +225,15 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
           // moment it opened: it cleared its own session, the aim never took,
           // and every capture came back no_target with the client looking
           // perfectly healthy.
+          //
+          // "platform" (QQ打标) is another somewhere-else, same as 唱卡: the
+          // connection has been claimed by a destination that is not this
+          // playlist, and leaving the panel open would show a green light over
+          // a run that receives nothing.
           const claimedElsewhere =
             (res.data.target === "playlist" && res.data.playlistId !== playlistId)
-            || res.data.target === "live";
+            || res.data.target === "live"
+            || res.data.target === "platform";
           if (claimedElsewhere) {
             setSession(null);
             forget(playlistId);

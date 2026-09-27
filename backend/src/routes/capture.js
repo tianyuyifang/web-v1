@@ -3,6 +3,7 @@ const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const prisma = require('../db/client');
 const captureService = require('../services/captureService');
+const platformTagService = require('../services/platformTagService');
 const songPrefService = require('../services/songPrefService');
 const songLibraryService = require('../services/songLibraryService');
 const markedSongsService = require('../services/markedSongsService');
@@ -114,6 +115,15 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
       });
     }
 
+    // 平台打标: aimed at one of the user's own QQ / NetEase playlists. Its own
+    // service and table; the branches below are untouched by it.
+    if (target === 'platform') {
+      return res.json(await platformTagService.ingest({
+        session: req.captureSession,
+        rawText: req.body && req.body.text,
+      }));
+    }
+
     const result = target === 'live'
       ? await captureService.ingestLive({
         session: req.captureSession,
@@ -167,7 +177,12 @@ router.post('/heartbeat', captureAuth, async (req, res, next) => {
       latestVersion: (await settingsService.getClientVersion()).latest,
       // What the client actually needs: which screens are worth scanning, and
       // whether to scan at all. Older clients ignore both fields.
-      target: req.captureSession.target,
+      // A platform run is reported to the client as an ordinary playlist run:
+      // the client knows 'playlist' / 'live' / 'none' and scans the 歌 P
+      // screens for anything that is not live, which is exactly what a
+      // platform run wants. The ref below is opaque to it and only has to
+      // change when the destination does, so its already-sent set resets.
+      target: req.captureSession.target === 'platform' ? 'playlist' : req.captureSession.target,
       // Which playlist, not just that there is one.
       //
       // Without this the client cannot see a move from one playlist to
@@ -180,7 +195,8 @@ router.post('/heartbeat', captureAuth, async (req, res, next) => {
       // Null when the target is not a playlist, so "aimed at 唱卡" and "aimed
       // at no playlist in particular" stay distinguishable from each other.
       playlistId: req.captureSession.target === 'playlist'
-        ? req.captureSession.playlistId : null,
+        ? req.captureSession.playlistId
+        : (req.captureSession.target === 'platform' ? req.captureSession.platformRef : null),
     });
   } catch (err) {
     next(err);

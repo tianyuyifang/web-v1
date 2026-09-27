@@ -229,9 +229,11 @@ async function getMe(userId) {
   // membership check without needing to know about tiers. A tier that grants
   // 加订 adds 'capture'; a hand-set override list still wins on its own.
   const tiers = await getTiers();
-  const effectiveEntitlements = hasAddOn(user, CAPTURE, tiers)
-    ? Array.from(new Set([...(user.entitlements || []), CAPTURE]))
-    : (user.entitlements || []);
+  const effectiveEntitlements = Array.from(new Set([
+    ...(user.entitlements || []),
+    ...(hasAddOn(user, CAPTURE, tiers) ? [CAPTURE] : []),
+    ...(hasAddOn(user, ADD_ONS.PLATFORM_TAGGING, tiers) ? [ADD_ONS.PLATFORM_TAGGING] : []),
+  ]));
   return {
     id: user.id,
     username: user.username,

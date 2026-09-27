@@ -7,6 +7,7 @@ export default {
   navPlaylists: "歌单",
   navHelp: "帮助",
   navLive: "唱卡",
+  navPlatformTag: "QQ打标",
   helpTitle: "帮助",
   helpTabFeedback: "反馈",
   myFeedback: "我的反馈",

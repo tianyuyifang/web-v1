@@ -285,6 +285,9 @@ async function setTarget({ userId, target, playlistId }) {
       // Cleared when not delivering to a playlist, so a stale id can never be
       // read as the destination by anything downstream.
       playlistId: target === 'playlist' ? playlistId : null,
+      // A 平台打标 destination is set by its own service; any re-aim from here
+      // leaves it, so it is cleared for the same reason playlistId is.
+      platformRef: null,
       // Kept in step for the heartbeat, which is how the client learns which
       // screens are worth scanning.
       mode: target === 'live' ? 'live' : 'playlist',
@@ -1265,6 +1268,8 @@ async function getConnection(userId) {
     client,
     target: session.target,
     playlist: session.playlist || null,
+    // "qq:<tid>" / "netease:<id>" while aimed at a platform playlist, else null.
+    platformRef: session.platformRef ?? null,
     lastSeenAt: session.lastSeenAt,
     // Which build is connected, or null from anything that predates reporting
     // it. The route compares it against the current one — the version numbers

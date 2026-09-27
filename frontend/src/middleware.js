@@ -34,5 +34,7 @@ export const config = {
     // Without this /live renders its shell to a signed-out visitor and then
     // shows "please sign in" instead of taking them there.
     "/live/:path*", "/live",
+    // Same reason as /live.
+    "/platform-tagging/:path*", "/platform-tagging",
   ],
 };

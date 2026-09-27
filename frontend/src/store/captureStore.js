@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { captureAPI } from "@/lib/api";
+import { captureAPI, platformTaggingAPI } from "@/lib/api";
 
 /**
  * The one capture connection, shared by everything that touches it.
@@ -125,7 +125,22 @@ const useCaptureStore = create((set, get) => ({
   },
 
   /** Stop delivering, without dropping the connection. */
-  stop: async () => get().aim("none"),
+  stop: async () => {
+    // A 平台打标 (QQ打标) run is stopped through its own route: /capture/target
+    // is behind the capture add-on, which a user of that feature need not
+    // hold. Every other target goes the way it always has.
+    if (get().connection?.target === "platform") {
+      try {
+        await platformTaggingAPI.stop();
+      } catch (err) {
+        set({ error: err.response?.data?.error?.message || "停止失败" });
+        return false;
+      }
+      await get().refresh();
+      return true;
+    }
+    return get().aim("none");
+  },
 
   /** Drop the connection entirely; the client must pair again. */
   disconnect: async () => {

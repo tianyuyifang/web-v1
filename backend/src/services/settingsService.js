@@ -231,11 +231,13 @@ const TIER_KEYS = Object.freeze(['normal', 'vip', 'super_vip', 'zhiyou']);
 const TIER_LABELS = Object.freeze({
   normal: '普通', vip: 'VIP', super_vip: '超级VIP', zhiyou: '挚友',
 });
+// platformTagging (平台打标) is in closed beta: 挚友 only until it is opened
+// from the admin page — no code change needed to widen it.
 const TIERS_DEFAULT = Object.freeze({
-  normal:    { capture: false, deviceLimit: 3 },
-  vip:       { capture: true,  deviceLimit: 3 },
-  super_vip: { capture: true,  deviceLimit: 5 },
-  zhiyou:    { capture: true,  deviceLimit: 8 },
+  normal:    { capture: false, deviceLimit: 3, platformTagging: false },
+  vip:       { capture: true,  deviceLimit: 3, platformTagging: false },
+  super_vip: { capture: true,  deviceLimit: 5, platformTagging: false },
+  zhiyou:    { capture: true,  deviceLimit: 8, platformTagging: true },
 });
 
 async function getTiers() {
@@ -262,13 +264,18 @@ async function setTiers(patch) {
     const p = (patch && patch[k]) || {};
     const capture = p.capture !== undefined ? p.capture : current[k].capture;
     const deviceLimit = p.deviceLimit !== undefined ? p.deviceLimit : current[k].deviceLimit;
+    const platformTagging = p.platformTagging !== undefined
+      ? p.platformTagging : current[k].platformTagging;
     if (typeof capture !== 'boolean') {
       throw new ValidationError({ [k]: ['加订必须是 true 或 false'] });
+    }
+    if (typeof platformTagging !== 'boolean') {
+      throw new ValidationError({ [k]: ['平台打标必须是 true 或 false'] });
     }
     if (!Number.isInteger(deviceLimit) || deviceLimit < 1) {
       throw new ValidationError({ [k]: ['设备上限必须是正整数'] });
     }
-    next[k] = { capture, deviceLimit };
+    next[k] = { capture, deviceLimit, platformTagging };
   }
   await set(TIERS_KEY, next);
   return next;

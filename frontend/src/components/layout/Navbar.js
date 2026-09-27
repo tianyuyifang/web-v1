@@ -12,7 +12,7 @@ import { feedbackAPI } from "@/lib/api";
 import { hasUnreadReply } from "@/lib/feedbackSeen";
 
 export default function Navbar() {
-  const { user, isAuthenticated, isAdmin, canCapture } = useAuth();
+  const { user, isAuthenticated, isAdmin, canCapture, canPlatformTag } = useAuth();
   const { theme } = useTheme();
   const init = useAuthStore((s) => s.init);
   const pathname = usePathname();
@@ -102,6 +102,9 @@ export default function Navbar() {
                   唱卡 screens since v14, so there is nothing left to hold this
                   back to admins. */}
               {canCapture && navLink("/live", t("navLive"))}
+              {/* 平台打标, closed beta: shown only to the tiers the admin page
+                  grants it to. Every route behind it is gated again. */}
+              {canPlatformTag && navLink("/platform-tagging", t("navPlatformTag"))}
               {navLink("/tools", t("navTools"))}
               {/* No /pricing here on purpose — it is reached from the account
                   page (套餐与续费) and the register-success screen, so it is
@@ -144,6 +147,7 @@ export default function Navbar() {
               itself on mobile (see above), so they are deliberately not
               repeated here — the menu holds only the less-frequent pages. */}
           <div className="flex flex-col gap-1">
+            {canPlatformTag && navLink("/platform-tagging", t("navPlatformTag"))}
             {navLink("/tools", t("navTools"))}
             {navLink("/updates", t("navUpdates"))}
             {navLink("/help", t("navHelp"), unread)}

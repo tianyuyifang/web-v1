@@ -324,6 +324,9 @@ async function getAccountInfo(cookie) {
     ok: true,
     vipType: json.account.vipType ?? 0,
     nickname: json.profile?.nickname || null,
+    // The numeric account id. Needed by the playlist listing, which is keyed
+    // on uid rather than on the cookie. Additive: earlier callers ignore it.
+    uid: json.account.id != null ? String(json.account.id) : null,
   };
 }
 
@@ -564,4 +567,122 @@ async function getPlaylist(playlistId, { cookie, batch = 100, maxSongs = 10000 }
   return { title, total, tracks };
 }
 
-module.exports = { createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo, resolveUrl, corsFriendlyUrl, getLyric, getPlaylist, QR_STATUS };
+// --- 平台打标: the user's own playlists and their "我喜欢的音乐" ----------
+//
+// As with the QQ counterpart, every call here is made as the user with their
+// own cookie. Verified 2026-09-18 on a real 黑胶 account over plain eapi — the
+// reference client reaches these over weapi, but eapi answers and needs no
+// RSA. The like endpoint is /api/radio/like, which is what the reference
+// client's `like` module sends.
+
+function refusedNetease(code, what) {
+  if (code === undefined) {
+    const bad = new Error(`网易云${what}返回了无法识别的响应`);
+    bad.code = 'SOURCE_BAD_RESPONSE';
+    bad.status = 502;
+    return bad;
+  }
+  // 301 is "needs login"; the rest are reported with their code.
+  const expired = code === 301 || code === 302;
+  const err = new Error(expired
+    ? '网易云登录已过期，请到账户页重新连接'
+    : `网易云${what}失败 (code ${code})`);
+  err.code = expired ? 'PLATFORM_CREDENTIAL_EXPIRED' : 'PLATFORM_CALL_FAILED';
+  err.status = expired ? 401 : 502;
+  err.platformCode = code;
+  return err;
+}
+
+/**
+ * Created and collected playlists together, as the platform lists them.
+ *
+ * Needs the account id, so this is two calls. Private lists (privacy 10) are
+ * only in the answer when the cookie is the owner's — anonymously the same
+ * uid returned 15 of 17 — which is why this never runs without one.
+ */
+async function listMyPlaylists(cookie) {
+  const acct = await getAccountInfo(cookie);
+  if (!acct.ok || !acct.uid) throw refusedNetease(301, '读取账号');
+
+  const { json } = await call('/api/user/playlist', {
+    uid: acct.uid, limit: '1000', offset: '0', includeVideo: 'true',
+  }, { cookie });
+  if (json?.code !== 200) throw refusedNetease(json?.code, '读取歌单');
+
+  return (json.playlist || []).map((p) => ({
+    ref: `netease:${p.id}`,
+    id: String(p.id),
+    dirId: null,
+    name: p.name || '',
+    count: p.trackCount ?? null,
+    cover: p.coverImgUrl || null,
+    // specialType 5 is the account-wide favourites; it is first in the
+    // platform's own ordering too.
+    isLikes: p.specialType === 5 && String(p.userId) === acct.uid,
+    kind: p.subscribed ? 'collected' : 'created',
+  }));
+}
+
+/**
+ * Every song in a playlist, in the shape a like needs. NetEase likes by the
+ * numeric id alone, so this is getPlaylist with the fields renamed.
+ */
+async function getPlaylistRows(playlistId, { cookie } = {}) {
+  const { title, total, tracks } = await getPlaylist(playlistId, { cookie });
+  return {
+    title,
+    total,
+    songs: tracks.map((t) => ({
+      id: t.externalId,
+      songType: 0,
+      mid: null,
+      title: t.title,
+      artist: t.artist,
+      durationSec: t.durationSec,
+      vipOnly: t.vipOnly,
+    })),
+  };
+}
+
+/**
+ * Which of these are already liked. The endpoint answers with the liked
+ * SUBSET of the ids sent — not a per-id boolean like QQ — so it is turned
+ * into a full map here and callers see one shape for both platforms.
+ */
+async function likedMap(cookie, ids) {
+  const list = [...new Set(ids.map(String))];
+  const out = new Map(list.map((id) => [id, false]));
+  for (let i = 0; i < list.length; i += 200) {
+    const slice = list.slice(i, i + 200);
+    const { json } = await call('/api/song/like/check', {
+      trackIds: JSON.stringify(slice.map(Number)),
+    }, { cookie });
+    if (json?.code !== 200) throw refusedNetease(json?.code, '查询喜欢状态');
+    for (const id of json.ids || []) out.set(String(id), true);
+  }
+  return out;
+}
+
+/** Like one song, then read the state back — the code alone is not trusted. */
+async function likeSong(cookie, id) {
+  const { json } = await call('/api/radio/like', {
+    alg: 'itembased', trackId: String(id), like: true, time: '3',
+  }, { cookie });
+  if (json?.code !== 200) throw refusedNetease(json?.code, '点赞');
+
+  const after = await likedMap(cookie, [id]);
+  if (!after.get(String(id))) {
+    const err = new Error('网易云返回成功但歌曲并未进入「我喜欢的音乐」');
+    err.code = 'PLATFORM_LIKE_UNVERIFIED';
+    err.status = 502;
+    throw err;
+  }
+  return { ok: true, changed: true };
+}
+
+module.exports = {
+  createQrCode, pollQrCode, shapeCredential, refreshCredential, getAccountInfo,
+  resolveUrl, corsFriendlyUrl, getLyric, getPlaylist, QR_STATUS,
+  // 平台打标
+  listMyPlaylists, getPlaylistRows, likedMap, likeSong,
+};

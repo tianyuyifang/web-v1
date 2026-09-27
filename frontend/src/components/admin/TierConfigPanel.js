@@ -49,6 +49,7 @@ export default function TierConfigPanel() {
       for (const [key] of TIER_ROWS) {
         patch[key] = {
           capture: !!tiers[key].capture,
+          platformTagging: !!tiers[key].platformTagging,
           deviceLimit: parseInt(tiers[key].deviceLimit, 10),
         };
       }
@@ -86,6 +87,7 @@ export default function TierConfigPanel() {
                 <tr className="border-b border-border text-left text-xs text-muted">
                   <th className="pb-2 pr-4 font-medium">档位</th>
                   <th className="pb-2 pr-4 font-medium">含加订版</th>
+                  <th className="pb-2 pr-4 font-medium">QQ打标</th>
                   <th className="pb-2 font-medium">设备上限</th>
                 </tr>
               </thead>
@@ -100,6 +102,16 @@ export default function TierConfigPanel() {
                         type="checkbox"
                         checked={!!tiers[key].capture}
                         onChange={(e) => setField(key, "capture", e.target.checked)}
+                        className="h-4 w-4 rounded border-border accent-primary"
+                      />
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      {/* 平台打标 (QQ / 网易云 歌单直接点赞)。内测期只勾挚友；
+                          开放时在这里勾其他档即可，不用改代码。 */}
+                      <input
+                        type="checkbox"
+                        checked={!!tiers[key].platformTagging}
+                        onChange={(e) => setField(key, "platformTagging", e.target.checked)}
                         className="h-4 w-4 rounded border-border accent-primary"
                       />
                     </td>

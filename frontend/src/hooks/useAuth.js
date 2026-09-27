@@ -17,6 +17,12 @@ export default function useAuth() {
     canCapture:
       user?.role === "ADMIN" ||
       (user?.entitlements || []).includes("capture"),
+    // 平台打标 (QQ / 网易云 歌单直接点赞). Same shape as canCapture and, like
+    // it, only decides what is shown — every route it reaches is gated again
+    // on the server.
+    canPlatformTag:
+      user?.role === "ADMIN" ||
+      (user?.entitlements || []).includes("platform_tagging"),
     // Holding any add-on means holding 加订版 — they are sold as one bundle.
     hasAddOnTier:
       user?.role === "ADMIN" || (user?.entitlements || []).length > 0,

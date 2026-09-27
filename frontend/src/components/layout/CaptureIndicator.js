@@ -54,6 +54,9 @@ function statusText(connection) {
 function targetText(connection) {
   if (!connection) return null;
   if (connection.target === "live") return "唱卡";
+  if (connection.target === "platform") {
+    return connection.platformRef?.startsWith("netease:") ? "QQ打标（网易云）" : "QQ打标";
+  }
   if (connection.target === "playlist") {
     return connection.playlist?.name ? `《${connection.playlist.name}》` : "歌单";
   }

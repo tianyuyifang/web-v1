@@ -425,14 +425,53 @@ model CaptureSession {
   /// 在不在玩，说明不了抓取本身好不好。旧客户端不报，保持 null。
   blindScans    Int? @map("blind_scans")
   lastReadAgo   Int? @map("last_read_ago")
+  /// Where a 平台打标 (QQ / NetEase) run delivers: "qq:<tid>" or
+  /// "netease:<id>". Only read when target is "platform". Its own column
+  /// rather than playlist_id because that one is a uuid FK onto our own
+  /// playlists, and a platform playlist is neither.
+  platformRef   String? @map("platform_ref")
 
   user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   playlist Playlist?      @relation(fields: [playlistId], references: [id], onDelete: Cascade)
   events   CaptureEvent[]
+  platformTagEvents PlatformTagEvent[]
 
   @@index([userId])
   @@index([playlistId])
   @@map("capture_sessions")
+}
+
+/// One captured title in a 平台打标 run: matched against a QQ / NetEase
+/// playlist the user owns and, on an exact match, liked in that platform
+/// account. Its own table, not capture_events — that table is read by the
+/// report, the marked list, the passage catalogue and the 30-day prune, and
+/// these rows belong to none of those.
+model PlatformTagEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  sessionId   String   @map("session_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  /// "qq" | "netease"
+  platform    String
+  /// Same string the session carries in platform_ref, pinned at capture time
+  /// so a later re-aim cannot move where an approval lands.
+  playlistRef String   @map("playlist_ref")
+  rawText     String   @map("raw_text")
+  /// liked | already_liked | pending | ambiguous | no_match | ignored | failed
+  outcome     String
+  /// [{externalId, songType, title, artist, kind, alreadyLiked}]
+  candidates  Json?
+  /// The platform song id that was liked (auto or on approve).
+  likedExternalId String? @map("liked_external_id")
+  error       String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  session CaptureSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, playlistRef, rawText])
+  @@index([sessionId, createdAt])
+  @@index([userId, createdAt])
+  @@map("platform_tag_events")
 }
 
 /// One captured string and what we resolved it to.

@@ -29,6 +29,10 @@ app.use((req, res, next) => {
 // Skipping entirely for SSE keeps res.write raw and unbuffered.
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/sse')) return next();
+  // The platform-tagging stream lives under its own router (per-route auth),
+  // so it is named here: compressed, its frames sit in the zlib buffer and
+  // never reach the page in real time.
+  if (req.path === '/api/platform-tagging/stream') return next();
   compression()(req, res, next);
 });
 app.use(cors({ origin: config.frontendUrl, credentials: true }));
@@ -51,6 +55,10 @@ app.use('/api/users',     authMiddleware, requireApproved, requireActiveSession,
 // for ingest. Deliberately NOT requireActiveSession at the mount: a capture
 // client must not consume a device slot and evict the user's browser login.
 app.use('/api/capture', require('./routes/capture'));
+
+// 平台打标 (QQ / 网易云 歌单直接点赞). Auth is per route inside, like capture:
+// its SSE stream must not hold a device slot.
+app.use('/api/platform-tagging', require('./routes/platformTagging'));
 
 // Feedback routes (submit = approved users, list/delete = admin)
 app.use('/api/feedback', authMiddleware, requireApproved, requireActiveSession, require('./routes/feedback'));

@@ -146,6 +146,9 @@ export const playlistsAPI = {
   list: (params) => api.get("/playlists", { params }),
   create: (data) => api.post("/playlists", data),
   getById: (id) => api.get(`/playlists/${id}`),
+  // Every clip's lyrics at once; `fingerprint` names the clip set so the
+  // response can be cached (see prefetchPlaylistLyrics).
+  getLyrics: (id, fingerprint) => api.get(`/playlists/${id}/lyrics?v=${fingerprint}`),
   update: (id, data) => api.put(`/playlists/${id}`, data),
   delete: (id) => api.delete(`/playlists/${id}`),
   copy: (id) => api.post(`/playlists/${id}/copy`),
@@ -175,6 +178,8 @@ export const playlistsAPI = {
   batchRemoveClips: (id, clipIds) => api.delete(`/playlists/${id}/clips/batch`, { data: { clipIds } }),
   reorderClips: (id, data) => api.put(`/playlists/${id}/clips/reorder`, data),
   batchUpdateClips: (id, updates) => api.put(`/playlists/${id}/clips/batch`, { updates }),
+  // The same change for many clips, as one statement on the server.
+  batchUpdateClipsSame: (id, clipIds, data) => api.put(`/playlists/${id}/clips/batch`, { clipIds, data }),
   updateClip: (id, clipId, data) =>
     api.put(`/playlists/${id}/clips/${clipId}`, data),
   swapClip: (id, clipId, newClipId) =>
@@ -313,6 +318,29 @@ export const captureAPI = {
   // device actually doing it. Fire-and-forget — a reading that fails to send is
   // worth nothing and must cost the singer nothing.
   perf: (data) => api.post("/capture/perf", data).catch(() => {}),
+};
+
+// --- 平台打标 (QQ / 网易云 歌单直接点赞) ---
+// Its own router and add-on. Only the connection is shared with capture.
+export const platformTaggingAPI = {
+  playlists: (platform) => api.get("/platform-tagging/playlists", { params: { platform } }),
+  songs: (ref, dirId) =>
+    api.get(`/platform-tagging/playlists/${encodeURIComponent(ref)}/songs`,
+      { params: dirId != null ? { dirId } : {} }),
+  connect: (opts = {}) => api.post("/platform-tagging/connect", opts, { timeout: 10000 }),
+  start: (playlistRef, dirId) =>
+    api.post("/platform-tagging/start", dirId != null ? { playlistRef, dirId } : { playlistRef },
+      { timeout: 20000 }),
+  // Through this router, not /capture/target: that one is gated on the
+  // capture add-on, which a beta user of this feature may not hold.
+  stop: () => api.post("/platform-tagging/stop", {}, { timeout: 10000 }),
+  feed: (sessionId, limit) =>
+    api.get("/platform-tagging/feed", { params: limit != null ? { sessionId, limit } : { sessionId } }),
+  approve: (eventId, externalId) =>
+    api.post(`/platform-tagging/events/${eventId}/approve`, externalId ? { externalId } : {}),
+  ignore: (eventId) => api.post(`/platform-tagging/events/${eventId}/ignore`),
+  like: (platform, id, songType) =>
+    api.post("/platform-tagging/like", { platform, id, songType }),
 };
 
 // --- Admin ---
@@ -573,6 +601,14 @@ export const getLiveSSEUrl = (sessionId) => {
   const params = new URLSearchParams({ clientId: pageStreamId });
   if (token) params.set("token", token);
   return `${base}/sse/capture/live/${sessionId}?${params.toString()}`;
+};
+
+/** Stream for a 平台打标 run. Same page-keyed de-duplication as 唱卡. */
+export const getPlatformTagSSEUrl = (sessionId) => {
+  const { base, token } = streamBase();
+  const params = new URLSearchParams({ sessionId, clientId: pageStreamId });
+  if (token) params.set("token", token);
+  return `${base}/platform-tagging/stream?${params.toString()}`;
 };
 
 export const getLikesSSEUrl = (playlistId) => {

@@ -142,10 +142,12 @@ export default function FloatingClipNav({ clips, playlistId }) {
 
   if (activeIndex < 0) return null;
 
-  // Default (no saved pos): bottom-center via CSS. Custom pos: absolute coords.
-  const style = pos
-    ? { left: pos.x, top: pos.y }
-    : { left: "50%", bottom: 24, transform: "translateX(-50%)" };
+  // Default (no saved pos): bottom-center via CSS — 24px up on wider screens,
+  // 64px on phones, where the page's fixed search bar (55px tall) used to
+  // cover the bottom half of the pill. In px, as before, not rem: a larger
+  // browser font size must not move it. Custom pos: absolute coords.
+  const style = pos ? { left: pos.x, top: pos.y } : undefined;
+  const defaultPos = pos ? "" : " left-1/2 -translate-x-1/2 bottom-[64px] sm:bottom-[24px]";
 
   return (
     <div
@@ -155,7 +157,7 @@ export default function FloatingClipNav({ clips, playlistId }) {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onClickCapture={onClickCapture}
-      className="fixed z-40 flex touch-none cursor-grab select-none items-center gap-1 rounded-full border border-border bg-surface/95 px-1.5 py-1.5 shadow-lg backdrop-blur active:cursor-grabbing"
+      className={`fixed z-40 flex touch-none cursor-grab select-none items-center gap-1 rounded-full border border-border bg-surface/95 px-1.5 py-1.5 shadow-lg backdrop-blur active:cursor-grabbing${defaultPos}`}
     >
       <button
         onClick={goPrev}

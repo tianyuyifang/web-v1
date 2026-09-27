@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getToken, setToken, clearToken } from "./auth";
+import { getToken, setToken, clearToken, getTokenPayload } from "./auth";
 
 const api = axios.create({
   baseURL: "/api",
@@ -20,15 +20,12 @@ api.interceptors.request.use((config) => {
 // Uses a flag to prevent multiple concurrent refresh calls.
 let isRefreshing = false;
 
+// Reading the payload with a bare atob threw on the "-"/"_" in some users'
+// tokens, so this returned null and those tokens were never refreshed: a hard
+// logout every 7 days.
 function getTokenExp() {
-  const token = getToken();
-  if (!token) return null;
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload.exp ? payload.exp * 1000 : null;
-  } catch {
-    return null;
-  }
+  const payload = getTokenPayload();
+  return payload?.exp ? payload.exp * 1000 : null;
 }
 
 function maybeRefreshToken() {

@@ -40,6 +40,10 @@
  *   - songs.lyrics        — reloaded from the .lrc file on disk
  *   - songs.duration      — re-read from the MP3 file via music-metadata
  *   - clips.lyrics        — re-sliced from the new LRC for each existing clip
+ *   - clips.version       — +1 for each clip whose lyrics changed, so browsers
+ *                           drop their cached copy (lyrics and audio)
+ *   No .lrc on disk: lyrics are left as they are (song and clips); only the
+ *   duration is updated.
  *
  * WHAT IS NOT TOUCHED:
  *   - songs.id, songs.file_path, songs.title, songs.artist, pinyin columns
@@ -160,22 +164,30 @@ async function updateSong({ title, artist }, opts) {
     };
   }
 
-  // 4. Update song row
+  // 4. Update song row. No .lrc on disk means nothing to reload, not "no
+  // lyrics": keep what is there rather than wipe the song and every clip.
   await prisma.song.update({
     where: { id: song.id },
     data: {
-      lyrics: newLyrics,
+      ...(newLyrics !== null && { lyrics: newLyrics }),
       ...(newDuration !== null && { duration: newDuration }),
     },
   });
 
   // 5. Re-slice lyrics for all existing clips
-  const clips = await prisma.clip.findMany({ where: { songId: song.id } });
+  const clips = newLyrics === null ? [] : await prisma.clip.findMany({ where: { songId: song.id } });
+  // A clip whose lyrics change gets a new version: browsers cache a clip's
+  // lyrics per (clip, version) for up to 30 days, so without it they keep
+  // showing the old ones. The bump also makes them fetch the clip's audio once
+  // more. Unchanged clips keep their version, so re-running is still harmless.
+  let lyricsChanged = 0;
   for (const clip of clips) {
     const clipLyrics = sliceLRC(newLyrics, clip.start, clip.start + clip.length);
+    const changed = clipLyrics !== clip.lyrics;
+    if (changed) lyricsChanged++;
     await prisma.clip.update({
       where: { id: clip.id },
-      data: { lyrics: clipLyrics },
+      data: { lyrics: clipLyrics, ...(changed && { version: { increment: 1 } }) },
     });
   }
 
@@ -184,6 +196,7 @@ async function updateSong({ title, artist }, opts) {
     id: song.id,
     hasLrc: !!newLyrics,
     clipsUpdated: clips.length,
+    lyricsChanged,
     oldDuration: song.duration,
     newDuration,
   };
@@ -218,7 +231,7 @@ async function main() {
         const lrcNote = result.hasLrc ? '' : ' | ⚠ no LRC file found';
         const clipsNote = result.status === 'dry_run'
           ? ' | dry run'
-          : ` | ${result.clipsUpdated} clip(s) re-sliced`;
+          : ` | ${result.clipsUpdated} clip(s) re-sliced, ${result.lyricsChanged} with new lyrics (version bumped)`;
         console.log(`  ✓  ${result.status === 'dry_run' ? 'Would update' : 'Updated'}   | ${row.title} — ${row.artist}${durationNote}${clipsNote}${lrcNote}`);
       }
     } catch (err) {

@@ -8,21 +8,14 @@ import VolumeControl from "@/components/player/VolumeControl";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import usePlayerStore from "@/store/playerStore";
 
-import { getToken } from "@/lib/auth";
+import { getTokenPayload } from "@/lib/auth";
 
 // Sentinel id used in the shared player store so ClipCreator participates
 // in the "only one player at a time" rule alongside useAudioPlayer instances.
 const CLIP_CREATOR_PLAYER_ID = "__clip_creator__";
 
 function checkIsAdmin() {
-  try {
-    const token = getToken();
-    if (!token) return false;
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload.role === "ADMIN";
-  } catch {
-    return false;
-  }
+  return getTokenPayload()?.role === "ADMIN";
 }
 
 export default function ClipCreator({ song, onClose, onClipCreated }) {

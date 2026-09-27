@@ -27,6 +27,22 @@ export function clearToken() {
   document.cookie = `${TOKEN_KEY}=; path=/; max-age=0`;
 }
 
+// The token's claims (exp, role, ...), or null when there is none or it can't
+// be read. The payload is base64url, and atob takes standard base64 only: it
+// throws on "-" and "_", which some usernames put in the payload (小芳 always
+// does). Read ASCII claims only — atob returns raw bytes, so a non-ASCII
+// username comes back garbled.
+export function getTokenPayload() {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(base64));
+  } catch {
+    return null;
+  }
+}
+
 export function isAuthenticated() {
   return !!getToken();
 }

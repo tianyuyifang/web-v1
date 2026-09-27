@@ -16,6 +16,7 @@ import { PRESET_COLORS } from "@/components/player/ColorTag";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import useLikes from "@/hooks/useLikes";
 import { preloadClips } from "@/lib/audioCache";
+import { prefetchPlaylistLyrics } from "@/lib/lyricsCache";
 
 // Lazy-load modals — only downloaded when opened
 const AddClipModal = dynamic(() => import("@/components/playlist/AddClipModal"), { ssr: false });
@@ -107,6 +108,9 @@ export default function PlaylistPage() {
     setLoading(true);
     Promise.all([playlistsAPI.getById(id), likesAPI.getAll(id)])
       .then(([playlistRes, likesRes]) => {
+        // Before setPlaylist: the cards mount on that render and each would
+        // otherwise fetch its own lyrics.
+        prefetchPlaylistLyrics(id, playlistRes.data.clips);
         setPlaylist(playlistRes.data);
         setLikedClips(likesRes.data.likes);
       })
@@ -129,7 +133,10 @@ export default function PlaylistPage() {
   }, []);
 
   const handleBulkImported = useCallback(() => {
-    playlistsAPI.getById(id).then((res) => setPlaylist(res.data));
+    playlistsAPI.getById(id).then((res) => {
+      prefetchPlaylistLyrics(id, res.data.clips);
+      setPlaylist(res.data);
+    });
   }, [id]);
 
   const handleClipRemoved = useCallback((clipId) => {
@@ -154,6 +161,22 @@ export default function PlaylistPage() {
     }));
     try {
       await playlistsAPI.batchUpdateClips(id, [{ clipId, ...updates }]);
+    } catch {
+      // silent
+    }
+  }, [id]);
+
+  // One change applied to many clips (batch mode). One state update and one
+  // request: a request per clip queued on the playlist's row lock on the
+  // server, holding a database connection each while it waited.
+  const handleClipsUpdated = useCallback(async (clipIds, updates) => {
+    const ids = new Set(clipIds);
+    setPlaylist((prev) => ({
+      ...prev,
+      clips: prev.clips.map((c) => (ids.has(c.clipId) ? { ...c, ...updates } : c)),
+    }));
+    try {
+      await playlistsAPI.batchUpdateClipsSame(id, clipIds, updates);
     } catch {
       // silent
     }
@@ -404,6 +427,7 @@ export default function PlaylistPage() {
             highlightedClipId={highlightedClipId}
             onClipRemoved={handleClipRemoved}
             onClipUpdated={handleClipUpdated}
+            onClipsUpdated={handleClipsUpdated}
             onClipSwapped={handleClipSwapped}
             onReorder={handleReorder}
             newlyAddedClipId={newlyAddedClipId}

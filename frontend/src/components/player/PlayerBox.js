@@ -116,10 +116,12 @@ export default memo(function PlayerBox({
     if (playFromStartClipId !== clipId) return;
     clearPlayFromStart();
     playFromStart();
+    // Centred on a phone: "nearest" parks the row against an edge, under the
+    // sticky header or the fixed search bar / floating nav at the bottom.
     document
       .getElementById(`playerbox-${clipId}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [playFromStartClipId, clipId, clearPlayFromStart, playFromStart]);
+      ?.scrollIntoView({ behavior: "smooth", block: isSm ? "nearest" : "center" });
+  }, [playFromStartClipId, clipId, clearPlayFromStart, playFromStart, isSm]);
 
 
   // --- Preload scheduler wiring ---
@@ -218,8 +220,13 @@ export default memo(function PlayerBox({
   })();
 
   // --- Phone collapsed view (below sm) ---
+  // The phone rows carry the card's id too (only one layout renders at a
+  // time, so it stays unique): scrolling to a card — the floating prev/next,
+  // the edit-mode scroll anchor — finds it by that id, and on a phone it used
+  // to find only the hidden desktop card, so nothing scrolled.
   const phoneCollapsedView = collapsed ? (
     <div
+      id={`playerbox-${clipId}`}
       onClick={() => onToggleExpand?.(clipId)}
       className={`flex cursor-pointer items-baseline gap-1.5 border-b border-border px-2 transition-colors hover:bg-surface-hover ${isLiked ? "opacity-40" : ""}`}
     >
@@ -246,6 +253,7 @@ export default memo(function PlayerBox({
   // --- Phone expanded view (below sm) ---
   const phoneExpandedView = collapsed ? null : (
     <div
+      id={`playerbox-${clipId}`}
       className={`relative border-b border-border bg-surface transition-all ${highlightClass} ${isLiked ? "opacity-40" : ""}`}
     >
       {/* Header row */}

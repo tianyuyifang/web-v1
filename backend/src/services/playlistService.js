@@ -113,6 +113,10 @@ async function getPlaylistById(playlistId, userId, clipQuery, userRole) {
         id: pc.clip.id,
         start: pc.clip.start,
         length: pc.clip.length,
+        // The client keys its audio and lyrics caches by (clipId, version).
+        // Missing here, a clip re-cut in place (version bumped, same id) kept
+        // playing the old audio from the browser's cache.
+        version: pc.clip.version,
         // lyrics intentionally omitted — fetched on-demand via GET /api/clips/:id/lyrics
         song: pc.clip.song,
       },
@@ -290,16 +294,22 @@ async function copyPlaylist(playlistId, userId) {
   return copied;
 }
 
+// The customisation fields a batch may set; anything else in the payload is ignored.
+function pickClipCustomization(data) {
+  const updateData = {};
+  if (data.speed !== undefined) updateData.speed = data.speed;
+  if (data.pitch !== undefined) updateData.pitch = data.pitch;
+  if (data.colorTag !== undefined) updateData.colorTag = data.colorTag;
+  if (data.comment !== undefined) updateData.comment = data.comment;
+  if (data.sectionLabel !== undefined) updateData.sectionLabel = data.sectionLabel;
+  return updateData;
+}
+
 async function batchUpdateClips(playlistId, updates) {
   // updates: [{ clipId, speed?, pitch?, colorTag?, comment? }, ...]
 const ops = updates
     .map(({ clipId, ...data }) => {
-      const updateData = {};
-      if (data.speed !== undefined) updateData.speed = data.speed;
-      if (data.pitch !== undefined) updateData.pitch = data.pitch;
-      if (data.colorTag !== undefined) updateData.colorTag = data.colorTag;
-      if (data.comment !== undefined) updateData.comment = data.comment;
-      if (data.sectionLabel !== undefined) updateData.sectionLabel = data.sectionLabel;
+      const updateData = pickClipCustomization(data);
       if (Object.keys(updateData).length === 0) return null;
       return prisma.playlistClip.update({
         where: { playlistId_clipId: { playlistId, clipId } },
@@ -314,6 +324,35 @@ const ops = updates
     ops.push(prisma.playlist.update({ where: { id: playlistId }, data: { updatedAt: new Date() } }));
     await prisma.$transaction(ops);
   }
+}
+
+// One change applied to many clips (batch mode's 应用并保存): a single
+// statement instead of one per clip. Sent as one request per clip, the batch
+// queued every transaction on this playlist's row (each touches updatedAt) and
+// held a pool connection for each while it waited. Clips no longer in the
+// playlist are skipped rather than failing the whole batch.
+async function batchUpdateClipsSame(playlistId, clipIds, data) {
+  const updateData = pickClipCustomization(data);
+  if (Object.keys(updateData).length === 0) return 0;
+  const [result] = await prisma.$transaction([
+    prisma.playlistClip.updateMany({
+      where: { playlistId, clipId: { in: clipIds } },
+      data: updateData,
+    }),
+    prisma.playlist.update({ where: { id: playlistId }, data: { updatedAt: new Date() } }),
+  ]);
+  return result.count;
+}
+
+// Every clip's lyrics for a playlist in one response. The page used to fetch
+// them one clip at a time — a request per card on open. Lyrics are per clip
+// version and never change for a given version.
+async function getPlaylistLyrics(playlistId) {
+  const rows = await prisma.playlistClip.findMany({
+    where: { playlistId },
+    select: { clip: { select: { id: true, version: true, lyrics: true } } },
+  });
+  return rows.map((r) => r.clip);
 }
 
 async function swapClip(playlistId, oldClipId, newClipId) {
@@ -401,6 +440,8 @@ module.exports = {
   reorderClips,
   updateClipCustomization,
   batchUpdateClips,
+  batchUpdateClipsSame,
+  getPlaylistLyrics,
   copyPlaylist,
   swapClip,
 };

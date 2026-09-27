@@ -372,6 +372,23 @@ router.get('/:id', playlistAccess, requireView, async (req, res, next) => {
   }
 });
 
+// GET /api/playlists/:id/lyrics — every clip's lyrics in one response.
+//
+// The client puts a fingerprint of the playlist's clip ids + versions in ?v=,
+// so one URL only ever names one set of lyrics, and a clip's lyrics never
+// change for a given version — cached like the per-clip endpoint, which the
+// page no longer calls once per card. private: the response is authorised
+// per user.
+router.get('/:id/lyrics', playlistAccess, requireView, async (req, res, next) => {
+  try {
+    const lyrics = await playlistService.getPlaylistLyrics(req.params.id);
+    res.setHeader('Cache-Control', 'private, max-age=2592000, immutable');
+    res.json({ lyrics });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /api/playlists/:id — update playlist
 router.put('/:id', playlistAccess, requireOwner, validate(updatePlaylistSchema), async (req, res, next) => {
   try {
@@ -440,9 +457,23 @@ router.put('/:id/clips/reorder', playlistAccess, requireOwner, validate(reorderC
 });
 
 // PUT /api/playlists/:id/clips/batch — batch update clip customizations (must be before /:clipId)
+//
+// Two shapes: { updates: [{ clipId, ...fields }] } for per-clip changes, or
+// { clipIds, data } for one change applied to many clips (batch mode). The
+// second is one statement, and stays small however many clips are selected —
+// the per-clip shape carrying a 500-character comment for 400 clips would pass
+// express.json's 100kb body limit.
 router.put('/:id/clips/batch', playlistAccess, requireOwner, async (req, res, next) => {
   try {
-    const { updates } = req.body;
+    const { updates, clipIds, data } = req.body;
+    if (clipIds !== undefined) {
+      if (!Array.isArray(clipIds) || clipIds.length === 0 || !clipIds.every((c) => typeof c === 'string')
+          || !data || typeof data !== 'object' || Array.isArray(data)) {
+        return res.status(400).json({ error: { message: 'clipIds array and data object are required' } });
+      }
+      const count = await playlistService.batchUpdateClipsSame(req.params.id, clipIds, data);
+      return res.json({ message: 'Clips updated', count });
+    }
     if (!Array.isArray(updates) || updates.length === 0) {
       return res.status(400).json({ error: { message: 'updates array is required' } });
     }

@@ -35,6 +35,8 @@ export default function useAudioPlayer({
   // their captured epoch against this ref to detect if they were superseded
   // (e.g. user clicked play twice during loading, or switched to another clip).
   const playEpochRef = useRef(0);
+  // Epoch of a play() still loading its clip, or null once it plays or fails.
+  const loadingEpochRef = useRef(null);
   const onClipEndedRef = useRef(onClipEnded);
   useEffect(() => { onClipEndedRef.current = onClipEnded; }, [onClipEnded]);
 
@@ -65,12 +67,26 @@ export default function useAudioPlayer({
 
     audioCtxRef.current = getSharedContext();
 
+    const key = `${clipId}_${clipVersion}`;
     const audioBuffer = await getAudioBuffer(clipId, clipVersion);
+    // The version changed while this was loading: play what was asked for,
+    // but don't keep it — the next play loads the current version.
+    if (bufferKeyRef.current !== key) return audioBuffer;
     bufferRef.current = audioBuffer;
     normGainRef.current = getNormGain(clipId, clipVersion);
     setIsLoaded(true);
     return audioBuffer;
-  }, [clipId]);
+  }, [clipId, clipVersion]);
+
+  // A clip re-cut in place keeps its id and gets a new version. Drop the
+  // buffer held for the old version so the next play loads the new audio.
+  // (normGain is left alone: it still belongs to whatever is playing, and the
+  // next load sets it.)
+  const bufferKeyRef = useRef(null);
+  useEffect(() => {
+    bufferKeyRef.current = `${clipId}_${clipVersion}`;
+    bufferRef.current = null;
+  }, [clipId, clipVersion]);
 
   // Stop and clean up the current shifter.
   // Bumps epoch so any in-flight play() invocations detect they were superseded.
@@ -126,6 +142,18 @@ export default function useAudioPlayer({
       setCurrentTime(0);
     }
   }, [activePlayerId, playerId, isPlaying, stopShifter]);
+
+  // Another player started a play while this one is still loading its clip:
+  // cancel ours. Otherwise the slow load finishes later, starts playing and
+  // stops the clip the user picked since. Only a pending load is cancelled —
+  // a player already playing stops when the new one becomes active, as before.
+  useEffect(() => usePlayerStore.subscribe((state, prev) => {
+    if (state.playRequestSeq === prev.playRequestSeq || state.playRequestBy === playerId) return;
+    if (loadingEpochRef.current !== null && loadingEpochRef.current === playEpochRef.current) {
+      loadingEpochRef.current = null;
+      stopShifter(); // bumps the epoch; the pending play() returns when its load ends
+    }
+  }), [playerId, stopShifter]);
 
   // Stop and rewind when every player is told to (store.stopAll). Subscribed
   // outside render, so the idle players it rewinds to 0 don't re-render.
@@ -205,6 +233,14 @@ export default function useAudioPlayer({
     // in-flight play() calls that haven't yet attached a shifter).
     stopShifter();
     const myEpoch = ++playEpochRef.current;
+    // Starting from silence is a new pick: announce it, so another player
+    // still loading its clip cancels itself (see the playRequest
+    // subscription). A restart of what is already playing — seek, replay —
+    // is not a new pick and leaves other players as they were.
+    if (!isPlayingRef.current) {
+      loadingEpochRef.current = myEpoch;
+      usePlayerStore.getState().requestPlay(playerId);
+    }
 
     try {
       const buffer = await loadBuffer();
@@ -253,9 +289,11 @@ export default function useAudioPlayer({
       shifterRef.current = shifter;
 
       startTimeTracking(ctx, offsetRef.current, speed);
+      if (loadingEpochRef.current === myEpoch) loadingEpochRef.current = null;
       setIsPlaying(true);
       setActivePlayer(playerId);
     } catch (err) {
+      if (loadingEpochRef.current === myEpoch) loadingEpochRef.current = null;
       console.error("Audio play error:", err);
     }
   }, [

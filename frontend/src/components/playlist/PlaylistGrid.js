@@ -175,6 +175,7 @@ export default function PlaylistGrid({
   highlightedClipId,
   onClipRemoved,
   onClipUpdated,
+  onClipsUpdated,
   onClipSwapped,
   onReorder,
   newlyAddedClipId,
@@ -371,19 +372,19 @@ export default function PlaylistGrid({
     return parts.join("\n");
   }, [batchDirty, batchSpeed, batchPitch, batchColorTag, batchComment, t]);
 
+  // Every selected clip gets the same change, so it goes out as one request
+  // (onClipsUpdated), not one per clip.
   const applyBatch = useCallback(() => {
     if (!selectedClips?.size || !batchDirty.size) return;
-    for (const clipId of selectedClips) {
-      const updates = {};
-      if (batchDirty.has("speed")) updates.speed = batchSpeed;
-      if (batchDirty.has("pitch")) updates.pitch = batchPitch;
-      if (batchDirty.has("colorTag")) updates.colorTag = batchColorTag;
-      if (batchDirty.has("comment")) updates.comment = batchComment;
-      if (Object.keys(updates).length > 0) onClipUpdated(clipId, updates);
-    }
+    const updates = {};
+    if (batchDirty.has("speed")) updates.speed = batchSpeed;
+    if (batchDirty.has("pitch")) updates.pitch = batchPitch;
+    if (batchDirty.has("colorTag")) updates.colorTag = batchColorTag;
+    if (batchDirty.has("comment")) updates.comment = batchComment;
+    if (Object.keys(updates).length > 0) onClipsUpdated([...selectedClips], updates);
     setShowBatchConfirm(false);
     onBatchDone?.();
-  }, [selectedClips, batchDirty, batchSpeed, batchPitch, batchColorTag, batchComment, onClipUpdated, onBatchDone]);
+  }, [selectedClips, batchDirty, batchSpeed, batchPitch, batchColorTag, batchComment, onClipsUpdated, onBatchDone]);
 
   // Shuffling only permutes the selected clips among the positions they
   // already occupy, so an unselected clip never moves. Returns the reordered

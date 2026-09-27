@@ -140,7 +140,7 @@ export default function ClipSwitcher({ songId, currentClipId, onSwap, onNewClip 
               onClick={() => { onNewClip?.(); setOpen(false); }}
               className="w-full border-t border-border px-3 py-2 text-left text-xs text-primary transition-colors hover:bg-surface-hover"
             >
-              + {t("newClipButton")}
+              {t("newClipButton")}
             </button>
           )}
         </div>

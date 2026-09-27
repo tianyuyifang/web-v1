@@ -73,7 +73,29 @@ export async function getClipBytes(clipId, version) {
     req.onsuccess = () => {
       const entry = req.result;
       if (!entry) {
-        resolve(null);
+        // Until the playlist API sent clip versions, playlist clips were
+        // stored under the bare clipId. A version-1 clip was never re-cut, so
+        // those bytes are the right ones: move them to the versioned key
+        // rather than download the clip again. A higher version means it was
+        // re-cut, and the bare-id bytes may be the old audio — fetch fresh.
+        if (version !== 1) {
+          resolve(null);
+          return;
+        }
+        const legacy = store.get(clipId);
+        legacy.onsuccess = () => {
+          const old = legacy.result;
+          if (!old) {
+            resolve(null);
+            return;
+          }
+          // delete first: never holds both copies, so a store near its quota
+          // can't abort the move
+          store.delete(clipId);
+          store.put({ ...old, key, lastAccessedAt: Date.now() });
+          resolve(old.bytes);
+        };
+        legacy.onerror = () => resolve(null);
         return;
       }
       // Touch lastAccessedAt for LRU

@@ -1,6 +1,6 @@
 "use client";
 
-import { clipsAPI } from "@/lib/api";
+import { clipsAPI, playlistsAPI } from "@/lib/api";
 
 /**
  * Shared in-memory cache for clip lyrics.
@@ -40,6 +40,62 @@ export function fetchLyrics(clipId, version) {
 
   cache.set(key, { lyrics: undefined, promise });
   return promise;
+}
+
+// FNV-1a over the playlist's clip ids + versions: a short, stable name for
+// one exact set of lyrics, so the batch response can be cached like the
+// per-clip ones (whose URLs carry ?v=version).
+function clipSetFingerprint(clips) {
+  const s = clips.map((pc) => `${pc.clipId}:${pc.clip?.version ?? ""}`).sort().join(",");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `${clips.length}-${h.toString(16)}`;
+}
+
+/**
+ * Fetch every clip's lyrics for a playlist in one request, before its cards
+ * mount. Each card used to fetch its own — a request per clip on open. Call it
+ * before rendering the cards: each clip gets a pending entry here, so a card's
+ * fetchLyrics waits for the batch instead of sending its own request.
+ *
+ * A clip missing from the batch (its version moved on) or a failed batch
+ * falls back to the per-clip fetch, which is what every card did before.
+ */
+export function prefetchPlaylistLyrics(playlistId, clips) {
+  if (!playlistId || !Array.isArray(clips) || clips.length === 0) return;
+  const wanted = clips.filter((pc) => !cache.has(getLyricsCacheKey(pc.clipId, pc.clip?.version)));
+  if (wanted.length === 0) return;
+
+  const batch = playlistsAPI.getLyrics(playlistId, clipSetFingerprint(clips)).then((res) => {
+    const byId = new Map();
+    for (const c of res.data?.lyrics || []) byId.set(c.id, c);
+    return byId;
+  });
+
+  for (const pc of wanted) {
+    const version = pc.clip?.version;
+    const key = getLyricsCacheKey(pc.clipId, version);
+    const fallback = () => {
+      cache.delete(key);
+      return fetchLyrics(pc.clipId, version);
+    };
+    const promise = batch.then(
+      (byId) => {
+        const row = byId.get(pc.clipId);
+        // Matched by id; a clip whose version moved on since the page loaded
+        // takes the per-clip path. (A clip without a version is taken as is.)
+        if (!row || (version != null && row.version !== version)) return fallback();
+        const lyrics = row.lyrics ?? null;
+        cache.set(key, { lyrics, promise: null });
+        return lyrics;
+      },
+      fallback
+    );
+    cache.set(key, { lyrics: undefined, promise });
+  }
 }
 
 /**

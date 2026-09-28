@@ -817,17 +817,22 @@ async function listMyPlaylists({ cookie, uin, musicKey, euin = null }) {
 
   // Different field names on this half (name/songnum). Its failure is not
   // the listing's failure: the created lists are what the feature is for.
-  let collected = [];
+  // Paged: the platform hands back 50 at most however large `size` is
+  // (measured: 69 collected lists, one call returned 50).
+  const collected = [];
   if (effectiveEuin) {
-    const { json: f } = await cgiPost({
-      req_1: {
-        module: 'music.musicasset.PlaylistFavRead',
-        method: 'CgiGetPlaylistFavInfo',
-        param: { uin: effectiveEuin, offset: 0, size: 200 },
-      },
-    }, cred);
-    if (f?.req_1?.code === 0) {
-      collected = (f.req_1.data?.v_list || []).map((p) => ({
+    const PAGE = 50;
+    for (let offset = 0; offset < 1000; offset += PAGE) {
+      const { json: f } = await cgiPost({
+        req_1: {
+          module: 'music.musicasset.PlaylistFavRead',
+          method: 'CgiGetPlaylistFavInfo',
+          param: { uin: effectiveEuin, offset, size: PAGE },
+        },
+      }, cred);
+      if (f?.req_1?.code !== 0) break;
+      const rows = f.req_1.data?.v_list || [];
+      collected.push(...rows.map((p) => ({
         ref: `qq:${p.tid}`,
         id: String(p.tid),
         dirId: p.dirId ?? null,
@@ -836,7 +841,9 @@ async function listMyPlaylists({ cookie, uin, musicKey, euin = null }) {
         cover: p.logo || null,
         isLikes: false,
         kind: 'collected',
-      }));
+      })));
+      const total = f.req_1.data?.total;
+      if (rows.length < PAGE || (Number.isInteger(total) && collected.length >= total)) break;
     }
   }
 

@@ -23,6 +23,28 @@ function Kinds({ b }) {
   );
 }
 
+/**
+ * The breaker, in one badge. Green is the ordinary state; amber means the
+ * cooldown is over and a single probe is out; red means the platform sent
+ * rate-limit codes three times inside five minutes and everything is being
+ * refused for the minutes shown.
+ */
+function BreakerBadge({ b }) {
+  if (!b) return null;
+  if (b.open) {
+    const min = Math.max(1, Math.ceil(b.retryAfterMs / 60000));
+    return <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-xs text-red-400">已熔断 · 剩 {min} 分钟</span>;
+  }
+  if (b.halfOpen) {
+    return <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-400">半开 · 试探中</span>;
+  }
+  return (
+    <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-xs text-green-400">
+      正常{b.failures ? ` · 近 5 分钟被拒 ${b.failures}/3` : ""}
+    </span>
+  );
+}
+
 function Sparkline({ values, limit }) {
   const max = Math.max(limit, ...values, 1);
   return (
@@ -61,7 +83,7 @@ export default function OutboundMeterPanel() {
         <h2 className="text-base font-semibold">平台外呼</h2>
       </div>
       <p className="mb-4 text-xs text-muted">
-        服务器对音乐平台的请求量。歌词不带凭证，只算这台机器的；写会改用户账号。超过每分钟阈值会记进日志。
+        服务器对音乐平台的请求量，以及熔断状态（平台 5 分钟内三次说「太频繁」就停 15 分钟）。歌词不带凭证，只算这台机器的；写 = 点赞/取消点赞，会改用户账号。超过每分钟阈值会记进日志。
       </p>
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
       {!data ? (
@@ -74,8 +96,11 @@ export default function OutboundMeterPanel() {
             const t = (b) => b.read + b.write + b.lyric;
             return (
               <div key={platform} className="rounded-lg border border-border/60 p-3">
-                <div className="mb-2 flex items-baseline justify-between">
-                  <span className="font-medium">{PLATFORM_LABEL[platform] || platform}</span>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium">{PLATFORM_LABEL[platform] || platform}</span>
+                    <BreakerBadge b={m.breaker} />
+                  </span>
                   <span className="text-xs text-muted">阈值 {m.limitPerMinute}/分钟</span>
                 </div>
                 <Sparkline values={m.recentMinutes} limit={m.limitPerMinute} />

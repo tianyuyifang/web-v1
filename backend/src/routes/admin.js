@@ -3,6 +3,7 @@ const adminService = require('../services/adminService');
 const settingsService = require('../services/settingsService');
 const redeemService = require('../services/redeemService');
 const outboundMeter = require('../services/outboundMeter');
+const breaker = require('../services/musicSourceBreaker');
 const validate = require('../middleware/validate');
 const { updateBillingSchema } = require('../validators/billing');
 
@@ -159,7 +160,13 @@ router.put('/tiers', async (req, res, next) => {
 // GET /api/admin/outbound — how much this server is calling the music
 // platforms: this minute, last hour, today, yesterday, by kind.
 router.get('/outbound', (req, res) => {
-  res.json(outboundMeter.snapshot());
+  // The breaker rides along: how much we sent, and whether the platform has
+  // told us to stop, are the two halves of one question.
+  const snapshot = outboundMeter.snapshot();
+  for (const platform of Object.keys(snapshot)) {
+    snapshot[platform].breaker = breaker.status(platform);
+  }
+  res.json(snapshot);
 });
 
 // GET /api/admin/capture-client — what the site tells clients is the newest build

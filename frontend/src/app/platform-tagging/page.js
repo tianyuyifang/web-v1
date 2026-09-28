@@ -278,15 +278,21 @@ export default function PlatformTaggingPage() {
   // The user changed their favourites in the platform's own app and wants the
   // page to catch up: one platform read for this list, on their say-so.
   const [refreshing, setRefreshing] = useState(false);
+  const selectedRefNow = useRef(null);
+  selectedRefNow.current = selected?.ref || null;
   const refreshList = async () => {
     if (!selected || refreshing) return;
+    const ref = selected.ref;
     setRefreshing(true);
     setSongsError("");
     try {
-      const res = await platformTaggingAPI.refresh(selected.ref, selected.dirId, selected.isLikes);
-      setSongs(res.data.songs || []);
+      const res = await platformTaggingAPI.refresh(ref, selected.dirId, selected.isLikes);
+      // The user may have moved to another list while this ran (a 30s call);
+      // its rows belong to the list that asked for them, not whatever is
+      // selected now.
+      if (selectedRefNow.current === ref) setSongs(res.data.songs || []);
     } catch (err) {
-      setSongsError(errMsg(err, "刷新失败"));
+      if (selectedRefNow.current === ref) setSongsError(errMsg(err, "刷新失败"));
     } finally {
       setRefreshing(false);
     }

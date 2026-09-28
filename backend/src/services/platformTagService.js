@@ -71,7 +71,9 @@ function sweep() {
 async function resolveDirId(userId, ref) {
   const { platform } = likes.parseRef(ref);
   if (platform !== 'qq') return null;
-  const lists = await likes.listPlaylists(userId, platform);
+  // Created lists only: the dirId is on one of those, and the collected
+  // half is up to three more platform calls that would tell us nothing.
+  const lists = await likes.listPlaylists(userId, platform, { collected: false });
   const hit = lists.find((p) => p.ref === ref);
   return hit ? hit.dirId ?? null : null;
 }
@@ -110,7 +112,12 @@ async function songsFor(userId, ref, dirId, isLikes = false) {
     return hit;
   }
 
-  const pending = (async () => {
+  // The placeholder is what the finished read replaces -- and only while it
+  // is still the entry in the cache. A refresh (or a sweep) that removed it
+  // in the meantime has said this read's answer is not wanted, and letting
+  // it land anyway would put an older snapshot over a newer one.
+  const placeholder = { at: Date.now(), pending: null };
+  placeholder.pending = (async () => {
     try {
       const { platform } = likes.parseRef(ref);
       const effectiveDirId = dirId ?? await resolveDirId(userId, ref);
@@ -126,15 +133,15 @@ async function songsFor(userId, ref, dirId, isLikes = false) {
         liked,
       };
       if (entry.isLikes) favouriteRefs.add(key);
-      songCache.set(key, entry);
+      if (songCache.get(key) === placeholder) songCache.set(key, entry);
       return entry;
     } catch (err) {
-      songCache.set(key, { at: Date.now(), error: err });
+      if (songCache.get(key) === placeholder) songCache.set(key, { at: Date.now(), error: err });
       throw err;
     }
   })();
-  songCache.set(key, { at: Date.now(), pending });
-  return pending;
+  songCache.set(key, placeholder);
+  return placeholder.pending;
 }
 
 function dropSongs(userId, ref) {
@@ -199,7 +206,14 @@ function setLikedState(userId, id, liked) {
  * button, not a timer: a timer would be outbound traffic on every open page.
  */
 async function refresh(userId, ref, dirId, isLikes = false) {
-  likes.parseRef(ref);
+  // A read already in flight is let finish first rather than raced: two
+  // reads of the same list at once is the traffic shape this cache exists
+  // to prevent, and the one just started is as fresh as this would be.
+  const cached = songCache.get(cacheKey(userId, ref));
+  if (cached && cached.pending) {
+    await cached.pending.catch(() => {});
+    return playlistWithLiked(userId, ref, dirId, isLikes);
+  }
   dropSongs(userId, ref);
   return playlistWithLiked(userId, ref, dirId, isLikes);
 }

@@ -36,4 +36,11 @@ assert.strictEqual(mergeCookies('MUSIC_U=old; __csrf=abc', []), 'MUSIC_U=old; __
 // Junk lines are ignored rather than producing empty names.
 assert.strictEqual(mergeCookies('', ['', '=x', 'A=1']), 'A=1');
 
+// A per-path expiry (empty value) must not blank a value that is still valid.
+assert.strictEqual(
+  mergeCookies('MUSIC_U=old', ['MUSIC_U=; Max-Age=0; Path=/eapi/feedback', 'MUSIC_U=new; Path=/']),
+  'MUSIC_U=new',
+);
+assert.strictEqual(mergeCookies('MUSIC_U=old', ['MUSIC_U=; Max-Age=0; Path=/x']), 'MUSIC_U=old');
+
 console.log('netease-cookie tests passed');

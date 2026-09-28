@@ -102,11 +102,11 @@ async function run(userId, platform, fn) {
 }
 
 /** Created + collected playlists, favourites first. */
-async function listPlaylists(userId, platform) {
+async function listPlaylists(userId, platform, { collected = true } = {}) {
   assertPlatform(platform);
   return run(userId, platform, async (cred) => {
     if (platform !== 'qq') return netease.listMyPlaylists(cred.cookie);
-    const { playlists, euin, euinResolved } = await qq.listMyPlaylists(cred);
+    const { playlists, euin, euinResolved } = await qq.listMyPlaylists({ ...cred, collected });
     // Resolved off a playlist this time: keep it, so the next listing is one
     // call fewer. Bookkeeping only; a failure to store costs nothing now.
     if (euinResolved) credentials.setEncryptUin(userId, 'qq', euin).catch(() => {});

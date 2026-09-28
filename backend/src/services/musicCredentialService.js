@@ -134,7 +134,13 @@ async function setCredential(userId, platform, cookie, extra = {}) {
     // this account collected. Null on older and pasted credentials, in which
     // case it is resolved from a playlist read once and stored via
     // setEncryptUin.
-    encryptUin: extra.encryptUin ?? null,
+    // Kept across a renewal of the same account when the caller has none to
+    // give -- it was resolved once and does not change; a different account
+    // (uin changed) starts over.
+    encryptUin: extra.encryptUin
+      ?? (sources[platform] && sources[platform].uin === (parsed.uin ?? extra.uin ?? null)
+        ? sources[platform].encryptUin ?? null
+        : null),
     /**
      * Whether this connection can renew itself.
      *
@@ -288,14 +294,17 @@ async function getCredential(userId, platform) {
 async function setEncryptUin(userId, platform, encryptUin) {
   assertPlatform(platform);
   if (!encryptUin) return;
-  const preferences = await readPreferences(userId);
-  const sources = { ...(preferences[NAMESPACE] || {}) };
-  if (!sources[platform]) return;
-  sources[platform] = { ...sources[platform], encryptUin: String(encryptUin) };
-  await prisma.user.update({
-    where: { id: userId },
-    data: { preferences: { ...preferences, [NAMESPACE]: sources } },
-  });
+  // One key, set in place in the database, not a read-modify-write of the
+  // whole preferences blob: this runs un-awaited beside anything else that
+  // may be writing the entry (a renewal, a re-scan), and a blob written from
+  // a stale read would put the old cookie and refresh key back.
+  const path = `{${NAMESPACE},${platform},encryptUin}`;
+  await prisma.$executeRaw`
+    UPDATE users
+    SET preferences = jsonb_set(preferences, ${path}::text[], to_jsonb(${String(encryptUin)}::text), true)
+    WHERE id = ${userId}::uuid
+      AND preferences #> ${`{${NAMESPACE},${platform}}`}::text[] IS NOT NULL
+  `;
 }
 
 /**

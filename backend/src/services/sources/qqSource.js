@@ -758,15 +758,17 @@ function refused(code, what) {
 /**
  * The playlists this account created, plus the ones it collected.
  *
- * Both lists come back in one round trip. GetPlaylistByUin answers everything
- * at once (bFinish, no paging — 298 lists measured); the collected list is
- * asked for alongside it and dropped if that half is refused, because the
- * created lists are what the feature is for and a collected list is a bonus.
+ * One call for the created lists (GetPlaylistByUin answers them all at once,
+ * bFinish, no paging -- 302 measured). The collected lists cost more: they
+ * are keyed on the account's euin, which may have to be read off a playlist
+ * first (one call), and come 50 to a page (69 measured → two calls). Those
+ * extra reads are optional in both senses -- callers can decline them, and
+ * their failure never takes the created lists down.
  *
  * "我喜欢" is an ordinary row here with dirId 201, and it is the row whose
  * tid names the favourites when they are read back.
  */
-async function listMyPlaylists({ cookie, uin, musicKey, euin = null }) {
+async function listMyPlaylists({ cookie, uin, musicKey, euin = null, collected: wantCollected = true }) {
   const cred = { cookie, uin, musicKey };
   const { json } = await cgiPost({
     req_1: {
@@ -797,11 +799,27 @@ async function listMyPlaylists({ cookie, uin, musicKey, euin = null }) {
   // measured 2026-09-27, the numeric uin answers 80050 and nothing. A login
   // stores the euin; an older or pasted credential has none, and it is then
   // read once off any own playlist's dirinfo and handed back for storing.
+  // Callers that only want the account's own lists (the dirId lookup on a
+  // cold capture read) stop here: everything below is extra platform calls.
+  if (!wantCollected) return { playlists: created, euin: euin || null, euinResolved: false };
+
+  // The optional reads below must not take the created lists down with them.
+  // A rate-limit answer on one of them still counts with the breaker (callCgi
+  // recorded it), but what the user asked for is already in hand.
+  const optional = async (fn) => {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.code === 'SOURCE_RATE_LIMITED' || err.code === 'SOURCE_HTTP_ERROR') return null;
+      throw err;
+    }
+  };
+
   let effectiveEuin = euin || null;
   let euinResolved = false;
   if (!effectiveEuin && created.length) {
     const first = created.find((p) => !p.isLikes) || created[0];
-    const { json: d } = await cgiPost({
+    const d = await optional(() => cgiPost({
       req_1: {
         module: 'music.srfDissInfo.DissInfo',
         method: 'CgiGetDiss',
@@ -810,8 +828,8 @@ async function listMyPlaylists({ cookie, uin, musicKey, euin = null }) {
           tag: true, userinfo: true, orderlist: true, song_begin: 0, song_num: 0,
         },
       },
-    }, cred);
-    effectiveEuin = d?.req_1?.data?.dirinfo?.encrypt_uin || null;
+    }, cred));
+    effectiveEuin = d?.json?.req_1?.data?.dirinfo?.encrypt_uin || null;
     euinResolved = Boolean(effectiveEuin);
   }
 
@@ -823,15 +841,15 @@ async function listMyPlaylists({ cookie, uin, musicKey, euin = null }) {
   if (effectiveEuin) {
     const PAGE = 50;
     for (let offset = 0; offset < 1000; offset += PAGE) {
-      const { json: f } = await cgiPost({
+      const f = await optional(() => cgiPost({
         req_1: {
           module: 'music.musicasset.PlaylistFavRead',
           method: 'CgiGetPlaylistFavInfo',
           param: { uin: effectiveEuin, offset, size: PAGE },
         },
-      }, cred);
-      if (f?.req_1?.code !== 0) break;
-      const rows = f.req_1.data?.v_list || [];
+      }, cred));
+      if (!f || f.json?.req_1?.code !== 0) break;
+      const rows = f.json.req_1.data?.v_list || [];
       collected.push(...rows.map((p) => ({
         ref: `qq:${p.tid}`,
         id: String(p.tid),
@@ -842,7 +860,7 @@ async function listMyPlaylists({ cookie, uin, musicKey, euin = null }) {
         isLikes: false,
         kind: 'collected',
       })));
-      const total = f.req_1.data?.total;
+      const total = f.json.req_1.data?.total;
       if (rows.length < PAGE || (Number.isInteger(total) && collected.length >= total)) break;
     }
   }

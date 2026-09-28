@@ -284,7 +284,12 @@ function mergeCookies(existing, setCookieLines) {
   const put = (pair) => {
     const eq = pair.indexOf('=');
     if (eq <= 0) return;
-    jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+    const value = pair.slice(eq + 1).trim();
+    // An empty value is how the platform expires a name on one path
+    // (`MUSIC_U=; Max-Age=0; Path=/eapi/feedback`) while reissuing it on
+    // another. Letting it win would blank a credential that is still valid.
+    if (!value) return;
+    jar.set(pair.slice(0, eq).trim(), value);
   };
   String(existing || '').split(';').map((s) => s.trim()).filter(Boolean).forEach(put);
   (setCookieLines || []).forEach((line) => put(String(line).split(';')[0]));
@@ -689,14 +694,27 @@ async function likedMap(cookie, ids) {
  * of likes costs one account read rather than one per song.
  */
 const UID_TTL_MS = 10 * 60 * 1000;
-const uidCache = new Map(); // cookie → { at, uid }
+const ACCOUNT_CACHE_MAX = 500;
+const accountCache = new Map(); // cookie → { at, uid, pid? }
+
+/** One entry per cookie, bounded: a renewed cookie is a new key. */
+function accountEntry(cookie) {
+  const hit = accountCache.get(cookie);
+  if (hit && Date.now() - hit.at < UID_TTL_MS) return hit;
+  if (accountCache.size >= ACCOUNT_CACHE_MAX) {
+    accountCache.delete(accountCache.keys().next().value);
+  }
+  const entry = { at: Date.now(), uid: null, pid: null };
+  accountCache.set(cookie, entry);
+  return entry;
+}
 
 async function uidFor(cookie) {
-  const hit = uidCache.get(cookie);
-  if (hit && Date.now() - hit.at < UID_TTL_MS) return hit.uid;
+  const entry = accountEntry(cookie);
+  if (entry.uid) return entry.uid;
   const acct = await getAccountInfo(cookie);
   if (!acct.ok || !acct.uid) throw refusedNetease(301, '读取账号');
-  uidCache.set(cookie, { at: Date.now(), uid: acct.uid });
+  entry.uid = acct.uid;
   return acct.uid;
 }
 
@@ -719,9 +737,11 @@ async function setLike(cookie, id, like) {
 
   // Second road: the favourites are a playlist, and the playlist write is a
   // different endpoint. Measured 2026-09-27 from the server: add and del both
-  // 200 with the read-back agreeing. Only for a refusal that is not "log in
-  // again" -- a dead cookie is dead on every road.
-  if (json?.code === 301 || json?.code === 302) return json;
+  // 200 with the read-back agreeing. Not taken for "log in again" (a dead
+  // cookie is dead on every road) nor for a rate-limit code: that is the
+  // platform asking us to stop, and answering it with three more calls is the
+  // opposite of what the breaker is for.
+  if (json?.code === 301 || json?.code === 302 || breaker.isRateLimit(json?.code)) return json;
   const pid = await favouritesIdFor(cookie);
   if (!pid) return json;
   const op = like ? 'add' : 'del';
@@ -739,15 +759,12 @@ async function setLike(cookie, id, like) {
 }
 
 /** The id of this account's "我喜欢的音乐" list, cached alongside the uid. */
-const favCache = new Map(); // cookie → { at, pid }
-
 async function favouritesIdFor(cookie) {
-  const hit = favCache.get(cookie);
-  if (hit && Date.now() - hit.at < UID_TTL_MS) return hit.pid;
+  const entry = accountEntry(cookie);
+  if (entry.pid) return entry.pid;
   const lists = await listMyPlaylists(cookie);
-  const pid = lists.find((l) => l.isLikes)?.id || null;
-  favCache.set(cookie, { at: Date.now(), pid });
-  return pid;
+  entry.pid = lists.find((l) => l.isLikes)?.id || null;
+  return entry.pid;
 }
 
 /** Like one song, then read the state back — the code alone is not trusted. */

@@ -357,9 +357,12 @@ router.get('/:id', playlistAccess, requireView, async (req, res, next) => {
     const body = JSON.stringify(playlist);
     const etag = `"${crypto.createHash('sha1').update(body).digest('base64').slice(0, 22)}"`;
     res.setHeader('ETag', etag);
-    // Allow short-lived browser cache with background revalidation.
+    // Revalidate on every load: the browser sends the ETag back and gets a
+    // bodiless 304 when nothing changed. A max-age / stale-while-revalidate
+    // here meant a reload or reopen within ~6 min showed the playlist as it
+    // was before the user's own edits (saved, but displayed stale).
     // Private because playlists may contain user-specific flags (isOwner, etc.)
-    res.setHeader('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'private, no-cache');
 
     if (req.headers['if-none-match'] === etag) {
       return res.status(304).end();

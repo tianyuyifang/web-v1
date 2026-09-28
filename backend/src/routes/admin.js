@@ -2,6 +2,7 @@ const router = require('express').Router();
 const adminService = require('../services/adminService');
 const settingsService = require('../services/settingsService');
 const redeemService = require('../services/redeemService');
+const outboundMeter = require('../services/outboundMeter');
 const validate = require('../middleware/validate');
 const { updateBillingSchema } = require('../validators/billing');
 
@@ -153,6 +154,12 @@ router.put('/tiers', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// GET /api/admin/outbound — how much this server is calling the music
+// platforms: this minute, last hour, today, yesterday, by kind.
+router.get('/outbound', (req, res) => {
+  res.json(outboundMeter.snapshot());
 });
 
 // GET /api/admin/capture-client — what the site tells clients is the newest build

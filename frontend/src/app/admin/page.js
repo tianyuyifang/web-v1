@@ -12,6 +12,7 @@ import LiveUsagePanel from "@/components/admin/LiveUsagePanel";
 import TaggingUsagePanel from "@/components/admin/TaggingUsagePanel";
 import CaptureClientPanel from "@/components/admin/CaptureClientPanel";
 import TierConfigPanel from "@/components/admin/TierConfigPanel";
+import OutboundMeterPanel from "@/components/admin/OutboundMeterPanel";
 import SignupPromoPanel from "@/components/admin/SignupPromoPanel";
 import ActivationCodesPanel from "@/components/admin/ActivationCodesPanel";
 import UpdatesPanel from "@/components/admin/UpdatesPanel";
@@ -371,7 +372,15 @@ export default function AdminPage() {
       {activeTab === "taggingUsage" && <TaggingUsagePanel />}
 
       {activeTab === "captureClient" && <CaptureClientPanel />}
-      {activeTab === "tiers" && <TierConfigPanel />}
+      {activeTab === "tiers" && (
+        <div className="space-y-6">
+          <TierConfigPanel />
+          {/* Beside the tier settings rather than on a tab of its own: it is
+              looked at when deciding how many people to open a platform
+              feature to, which is what this tab decides. */}
+          <OutboundMeterPanel />
+        </div>
+      )}
       {activeTab === "codes" && <ActivationCodesPanel />}
 
       {activeTab === "tools" && (

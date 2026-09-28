@@ -34,6 +34,7 @@ const breaker = require('../musicSourceBreaker');
 
 const PLATFORM = 'qq';
 const HOST = 'u.y.qq.com';
+const meter = require('../outboundMeter');
 const LYRIC_HOST = 'c.y.qq.com';
 const TIMEOUT_MS = 12000;
 
@@ -127,7 +128,20 @@ async function pace() {
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 }
 
+/**
+ * What kind of call this is, for the meter. Every QQ call leaves through
+ * request(), so this is the one place that sees them all: the lyric endpoint
+ * by its URL, a write by the module it names, everything else a read.
+ */
+function kindOf(url, body) {
+  if (/fcg_query_lyric/.test(url)) return 'lyric';
+  const reqs = body && typeof body === 'object' ? Object.values(body) : [];
+  if (reqs.some((r) => r && typeof r.module === 'string' && /Write/.test(r.module))) return 'write';
+  return 'read';
+}
+
 function request(url, { headers = {}, host, body = null } = {}) {
+  meter.record('qq', kindOf(url, body));
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const startedAt = Date.now();

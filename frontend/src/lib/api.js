@@ -383,6 +383,8 @@ export const adminAPI = {
   setUserTier: (id, tier) => api.patch(`/admin/users/${id}/tier`, { tier }),
   // The editable tier config: each tier's 加订 flag and device limit.
   getTiers: () => api.get("/admin/tiers"),
+  // Outbound calls to the music platforms, by kind, from this server.
+  getOutbound: () => api.get("/admin/outbound"),
   setTiers: (patch) => api.put("/admin/tiers", patch),
   extendOneMonth: (id) => api.post(`/admin/users/${id}/extend`),
   resetPassword: (id) => api.post(`/admin/users/${id}/reset-password`),

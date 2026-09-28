@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const https = require('https');
 const QRCode = require('qrcode');
 const breaker = require('../musicSourceBreaker');
+const meter = require('../outboundMeter');
 
 /** Breaker key. Matches the `platform` field carried on errors from here. */
 const PLATFORM = 'netease';
@@ -122,7 +123,11 @@ function fail(message, code, extra = {}) {
  * *sent* to `/eapi/...`. Signing the path it is sent to yields a valid-looking
  * request that the server rejects.
  */
+/** Endpoints that change the user's account, for the meter's write count. */
+const WRITE_PATHS = new Set(['/api/song/like', '/api/radio/like', '/api/playlist/manipulate/tracks']);
+
 function rawCall(apiPath, data, { cookie = '' } = {}) {
+  meter.record('netease', apiPath === '/api/song/lyric' ? 'lyric' : (WRITE_PATHS.has(apiPath) ? 'write' : 'read'));
   const header = clientHeader();
   const payload = { ...data, header };
   const body = Buffer.from(new URLSearchParams(eapiParams(apiPath, payload)).toString(), 'utf8');

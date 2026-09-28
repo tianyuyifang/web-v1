@@ -326,6 +326,11 @@ export const platformTaggingAPI = {
   songs: (ref, dirId, isLikes = false) =>
     api.get(`/platform-tagging/playlists/${encodeURIComponent(ref)}/songs`,
       { params: { ...(dirId != null ? { dirId } : {}), ...(isLikes ? { isLikes: 1 } : {}) } }),
+  // Re-read one list from the platform now (the user pressed 刷新).
+  refresh: (playlistRef, dirId, isLikes = false) =>
+    api.post("/platform-tagging/refresh",
+      { playlistRef, ...(dirId != null ? { dirId } : {}), isLikes: Boolean(isLikes) },
+      { timeout: 30000 }),
   connect: (opts = {}) => api.post("/platform-tagging/connect", opts, { timeout: 10000 }),
   start: (playlistRef, dirId, isLikes = false) =>
     api.post("/platform-tagging/start",

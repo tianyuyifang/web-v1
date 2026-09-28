@@ -14,6 +14,7 @@
  * is the traffic shape these platforms treat as automation.
  */
 const access = require('./musicCredentialAccess');
+const credentials = require('./musicCredentialService');
 const qq = require('./sources/qqSource');
 const netease = require('./sources/neteaseLogin');
 const { AppError, ValidationError } = require('../utils/errors');
@@ -103,9 +104,14 @@ async function run(userId, platform, fn) {
 /** Created + collected playlists, favourites first. */
 async function listPlaylists(userId, platform) {
   assertPlatform(platform);
-  return run(userId, platform, (cred) => (platform === 'qq'
-    ? qq.listMyPlaylists(cred)
-    : netease.listMyPlaylists(cred.cookie)));
+  return run(userId, platform, async (cred) => {
+    if (platform !== 'qq') return netease.listMyPlaylists(cred.cookie);
+    const { playlists, euin, euinResolved } = await qq.listMyPlaylists(cred);
+    // Resolved off a playlist this time: keep it, so the next listing is one
+    // call fewer. Bookkeeping only; a failure to store costs nothing now.
+    if (euinResolved) credentials.setEncryptUin(userId, 'qq', euin).catch(() => {});
+    return playlists;
+  });
 }
 
 /**

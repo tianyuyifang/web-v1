@@ -8,9 +8,15 @@ const { updateBilling, extendOneMonth, listUsers } = require('../src/services/ad
   });
 
   // updateBilling sets fields
+  // A future expiry, relative to today: a fixed date here passed until the
+  // calendar caught up with it and then failed every day after.
+  const future = new Date(Date.now() + 30 * 86400000);
+  future.setUTCHours(0, 0, 0, 0);
+  const plusOneMonth = new Date(future);
+  plusOneMonth.setUTCMonth(plusOneMonth.getUTCMonth() + 1);
   const updated = await updateBilling(u.id, {
     monthlyFee: '30.00', paymentStatus: 'PAID', billingNotes: 'wechat',
-    expiresAt: new Date('2026-08-01T00:00:00Z'),
+    expiresAt: future,
   });
   assert.strictEqual(Number(updated.monthlyFee), 30, 'fee saved');
   assert.strictEqual(updated.paymentStatus, 'PAID', 'status saved');
@@ -18,7 +24,7 @@ const { updateBilling, extendOneMonth, listUsers } = require('../src/services/ad
 
   // extendOneMonth from a future expiry -> +1 month from that expiry
   const ext = await extendOneMonth(u.id);
-  assert.strictEqual(ext.expiresAt.toISOString().slice(0, 10), '2026-09-01', 'extend from future expiry');
+  assert.strictEqual(ext.expiresAt.toISOString().slice(0, 10), plusOneMonth.toISOString().slice(0, 10), 'extend from future expiry');
 
   // extendOneMonth when expired -> ~1 month from today (just assert it is in the future)
   await updateBilling(u.id, { expiresAt: new Date('2020-01-01T00:00:00Z') });

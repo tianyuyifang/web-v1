@@ -31,6 +31,7 @@ async function save(userId, fresh) {
     openid: fresh.openid,
     unionid: fresh.unionid,
     strMusicId: fresh.strMusicId,
+    encryptUin: fresh.encryptUin,
     nickname: fresh.nickname,
     expiresAt: fresh.expiresAt,
     needRefreshInSec: fresh.needRefreshInSec,

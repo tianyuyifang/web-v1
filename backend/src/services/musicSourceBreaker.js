@@ -74,12 +74,17 @@ function entry(platform) {
 }
 
 /** Is this error the platform telling us to back off? */
-function isRateLimit(codeOrError) {
-  if (codeOrError == null) return false;
-  const code = typeof codeOrError === 'object'
+/** The platform code inside whatever a caller handed over. */
+function codeOf(codeOrError) {
+  if (codeOrError == null) return undefined;
+  return typeof codeOrError === 'object'
     ? (codeOrError.platformCode ?? codeOrError.code)
     : codeOrError;
-  return RATE_LIMIT_CODES.has(Number(code));
+}
+
+function isRateLimit(codeOrError) {
+  if (codeOrError == null) return false;
+  return RATE_LIMIT_CODES.has(Number(codeOf(codeOrError)));
 }
 
 /**
@@ -109,6 +114,7 @@ function assertClosed(platform, now = Date.now()) {
       s.openedAt = 0;
       s.failures = 0;
       s.firstFailureAt = 0;
+      console.warn(`[breaker] ${platform} half-open: cooldown served, letting one probe through`);
       return; // this caller is the probe
     }
     return;
@@ -173,6 +179,7 @@ function recordSuccess(platform) {
   s.firstFailureAt = 0;
   // The probe came back clean: the platform is serving us again, so leave
   // half-open and resume normal traffic.
+  if (s.halfOpenAt) console.warn(`[breaker] ${platform} closed: probe succeeded, traffic resumes`);
   s.halfOpenAt = 0;
   s.probeInFlight = false;
 }
@@ -199,6 +206,7 @@ function recordFailure(platform, codeOrError, now = Date.now()) {
     s.probeInFlight = false;
     s.openedAt = now;
     s.failures = DEFAULTS.threshold;
+    console.warn(`[breaker] ${platform} re-opened: probe refused (${codeOf(codeOrError)}), cooling down ${DEFAULTS.cooldownMs / 1000}s`);
     return true;
   }
 
@@ -211,6 +219,10 @@ function recordFailure(platform, codeOrError, now = Date.now()) {
 
   if (s.failures >= DEFAULTS.threshold) {
     s.openedAt = now;
+    // Said once per opening, not per failure: this is the moment every
+    // caller on this platform starts being refused, and the only trace of
+    // it used to be a run of 503s in nginx.
+    console.warn(`[breaker] ${platform} OPEN: ${s.failures} rate-limit answers (${codeOf(codeOrError)}) within ${DEFAULTS.windowMs / 1000}s, cooling down ${DEFAULTS.cooldownMs / 1000}s`);
     return true;
   }
   return false;

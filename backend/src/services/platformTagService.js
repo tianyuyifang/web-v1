@@ -190,6 +190,20 @@ function setLikedState(userId, id, liked) {
   }
 }
 
+/**
+ * Re-read one list from the platform now, on the user's say-so.
+ *
+ * The cache exists so a run never asks the platform twice for the same list;
+ * this is the one deliberate exception, for when the user has changed their
+ * favourites in the platform's own app and wants the page to catch up. A
+ * button, not a timer: a timer would be outbound traffic on every open page.
+ */
+async function refresh(userId, ref, dirId, isLikes = false) {
+  likes.parseRef(ref);
+  dropSongs(userId, ref);
+  return playlistWithLiked(userId, ref, dirId, isLikes);
+}
+
 /** The list with its liked state, for the page. Same cache the run uses. */
 async function playlistWithLiked(userId, ref, dirId, isLikes = false) {
   // A remembered failure is for the capture client, which retries blindly
@@ -512,7 +526,7 @@ async function stop({ userId }) {
 
 module.exports = {
   channel, start, stop, ingest, approve, ignore, getFeed,
-  playlistWithLiked, noteLiked, noteUnliked,
+  playlistWithLiked, refresh, noteLiked, noteUnliked,
   // For tests: the cache is the one piece of state here.
   dropSongs,
 };

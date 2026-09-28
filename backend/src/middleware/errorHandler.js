@@ -40,6 +40,11 @@ function errorHandler(err, req, res, next) {
 
   if (statusCode === 500) {
     console.error('Unhandled error:', err);
+  } else if (statusCode >= 502 && statusCode <= 504 && err.isOperational) {
+    // An upstream (a music platform) refusing us. One line, no stack: these
+    // used to leave no trace here at all -- the breaker opening and the
+    // platform's own rate-limit code were only visible as nginx 503s.
+    console.warn(`Upstream ${statusCode} ${err.code || ''} ${req.method} ${req.originalUrl}: ${err.message}`);
   }
 
   res.status(statusCode).json(response);

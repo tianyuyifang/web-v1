@@ -316,6 +316,10 @@ function shapeCredential(data, knownLoginType = null) {
     openid: data.openid || null,
     unionid: data.unionid || null,
     strMusicId: data.str_musicid || uin || null,
+    // The account's opaque id. The one thing the collected-playlists read
+    // accepts (a numeric uin answers 80050), so it is kept from login rather
+    // than fetched again every time.
+    encryptUin: data.encryptUin || null,
     nickname: data.nick || null,
     // The platform states both outright, so neither is inferred from a
     // cookie's own expiry attribute.

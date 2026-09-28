@@ -130,6 +130,11 @@ async function setCredential(userId, platform, cookie, extra = {}) {
     openid: extra.openid ?? null,
     unionid: extra.unionid ?? null,
     strMusicId: extra.strMusicId ?? null,
+    // QQ's opaque account id (euin). Not secret; needed to list the playlists
+    // this account collected. Null on older and pasted credentials, in which
+    // case it is resolved from a playlist read once and stored via
+    // setEncryptUin.
+    encryptUin: extra.encryptUin ?? null,
     /**
      * Whether this connection can renew itself.
      *
@@ -267,9 +272,30 @@ async function getCredential(userId, platform) {
   const cookie = vault.decrypt(entry.cookie);
   if (platform === 'qq') {
     const parsed = parseQqCookie(cookie);
-    return { cookie, uin: entry.uin || parsed.uin, musicKey: parsed.musicKey };
+    return {
+      cookie, uin: entry.uin || parsed.uin, musicKey: parsed.musicKey,
+      euin: entry.encryptUin || null,
+    };
   }
   return { cookie, ...parseNeteaseCookie(cookie) };
+}
+
+/**
+ * Remember a QQ account's euin once it has been resolved from a playlist
+ * read, so the next listing does not have to resolve it again. Nothing else
+ * on the entry changes.
+ */
+async function setEncryptUin(userId, platform, encryptUin) {
+  assertPlatform(platform);
+  if (!encryptUin) return;
+  const preferences = await readPreferences(userId);
+  const sources = { ...(preferences[NAMESPACE] || {}) };
+  if (!sources[platform]) return;
+  sources[platform] = { ...sources[platform], encryptUin: String(encryptUin) };
+  await prisma.user.update({
+    where: { id: userId },
+    data: { preferences: { ...preferences, [NAMESPACE]: sources } },
+  });
 }
 
 /**
@@ -388,6 +414,7 @@ module.exports = {
   getStatus,
   getCredential,
   recordCheck,
+  setEncryptUin,
   parseQqCookie,
   parseNeteaseCookie,
 };

@@ -33,6 +33,45 @@ function matchesQuery(searchText, fallback, query) {
   return query.split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
 }
 
+/**
+ * Second chance for a typo. Only when the substring pass found nothing: the
+ * query and each word of the search text are compared as bigram sets, and
+ * rows scoring at least 0.5 are returned best first. Measured on real search
+ * strings: misspellings ("qingtain", "daoxaing") score 0.67-0.88 against
+ * their song, unrelated songs stay at or below 0.38. Nothing here calls the
+ * server; a few thousand rows is milliseconds.
+ */
+function bigrams(s) {
+  const t = ` ${s} `;
+  const out = new Set();
+  for (let i = 0; i < t.length - 1; i += 1) out.add(t.slice(i, i + 2));
+  return out;
+}
+
+function similarity(a, b) {
+  const A = bigrams(a);
+  const B = bigrams(b);
+  let hit = 0;
+  A.forEach((x) => { if (B.has(x)) hit += 1; });
+  return A.size ? hit / A.size : 0;
+}
+
+function fuzzyRank(rows, textOf, query, limit = 20) {
+  const q = query.replace(/\s+/g, "");
+  if (q.length < 3) return [];
+  return rows
+    .map((row) => {
+      const words = String(textOf(row) || "").toLowerCase().split(/\s+/).filter(Boolean);
+      let best = 0;
+      for (const w of words) best = Math.max(best, similarity(q, w));
+      return { row, best };
+    })
+    .filter((x) => x.best >= 0.5)
+    .sort((a, b) => b.best - a.best)
+    .slice(0, limit)
+    .map((x) => x.row);
+}
+
 const PLATFORM_LABEL = { qq: "QQ 音乐", netease: "网易云" };
 
 function errMsg(err, fallback) {
@@ -225,14 +264,33 @@ export default function PlatformTaggingPage() {
     if (!songs) return [];
     const q = filter.trim().toLowerCase();
     if (!q) return songs;
-    return songs.filter((s) => matchesQuery(s.searchText, `${s.title} ${s.artist}`, q));
+    const exact = songs.filter((s) => matchesQuery(s.searchText, `${s.title} ${s.artist}`, q));
+    return exact.length ? exact : fuzzyRank(songs, (s) => s.searchText || `${s.title} ${s.artist}`, q);
   }, [songs, filter]);
 
   const visiblePlaylists = useMemo(() => {
     const q = listFilter.trim().toLowerCase();
     if (!q) return playlists;
-    return playlists.filter((p) => matchesQuery(p.searchText, p.name, q));
+    const exact = playlists.filter((p) => matchesQuery(p.searchText, p.name, q));
+    return exact.length ? exact : fuzzyRank(playlists, (p) => p.searchText || p.name, q);
   }, [playlists, listFilter]);
+
+  // The user changed their favourites in the platform's own app and wants the
+  // page to catch up: one platform read for this list, on their say-so.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshList = async () => {
+    if (!selected || refreshing) return;
+    setRefreshing(true);
+    setSongsError("");
+    try {
+      const res = await platformTaggingAPI.refresh(selected.ref, selected.dirId, selected.isLikes);
+      setSongs(res.data.songs || []);
+    } catch (err) {
+      setSongsError(errMsg(err, "刷新失败"));
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (authLoading) return null;
   if (!user) return null;
@@ -337,9 +395,18 @@ export default function PlatformTaggingPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="truncate text-lg font-semibold">{selected.name}</h2>
-                      <p className="text-xs text-muted">
-                        {songs ? `${songs.length} 首` : ""}
-                        {songs ? ` · 已喜欢 ${songs.filter((s) => s.alreadyLiked).length}` : ""}
+                      <p className="flex items-center gap-2 text-xs text-muted">
+                        <span>
+                          {songs ? `${songs.length} 首` : ""}
+                          {songs ? ` · 已喜欢 ${songs.filter((s) => s.alreadyLiked).length}` : ""}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={refreshList}
+                          disabled={refreshing || songsLoading}
+                          title="在平台 App 里改了收藏后，按这里重新读取这个歌单"
+                          className="rounded border border-border px-1.5 py-0.5 text-[0.65rem] text-muted hover:text-theme disabled:opacity-40"
+                        >{refreshing ? "刷新中…" : "刷新"}</button>
                       </p>
                     </div>
                     <div className="flex items-center gap-2">

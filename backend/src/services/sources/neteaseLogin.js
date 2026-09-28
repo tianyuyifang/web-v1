@@ -263,11 +263,32 @@ async function pollQrCode(unikey) {
   }
   if (status !== 'done') return { status };
 
-  const cookie = setCookie.map((line) => line.split(';')[0]).join('; ');
+  const cookie = mergeCookies('', setCookie);
   if (!/MUSIC_U=/.test(cookie)) {
     throw fail('扫码成功但未能取得登录凭证', 'QR_BAD_RESPONSE');
   }
   return { status: 'done', cookie };
+}
+
+/**
+ * Fold Set-Cookie lines into a cookie string, one value per name.
+ *
+ * The platform answers a login with the same name several times over
+ * (MUSIC_R_T / MUSIC_A_T for each domain and path); joined as they arrive
+ * that made a 28-key cookie with 7 distinct names, on every account that ever
+ * scanned in (76 of 76 measured). Later lines win, and names the response
+ * did not mention keep the value they had.
+ */
+function mergeCookies(existing, setCookieLines) {
+  const jar = new Map();
+  const put = (pair) => {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) return;
+    jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+  };
+  String(existing || '').split(';').map((s) => s.trim()).filter(Boolean).forEach(put);
+  (setCookieLines || []).forEach((line) => put(String(line).split(';')[0]));
+  return [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
 /**
@@ -297,10 +318,10 @@ async function refreshCredential(cookie) {
   if (json?.code !== 200) {
     throw fail('网易云续期失败，请重新扫码连接', 'QR_REFRESH_FAILED', { platformCode: json?.code });
   }
-  const fresh = setCookie.map((line) => line.split(';')[0]).join('; ');
-  // The endpoint can answer 200 without reissuing anything; in that case the
-  // existing cookie is still valid and is kept rather than blanked.
-  return { cookie: /MUSIC_U=/.test(fresh) ? fresh : cookie };
+  // Merged onto the existing cookie, not swapped for the new lines: the
+  // endpoint can answer 200 while reissuing only some names (or none), and
+  // whatever it did not mention is still valid.
+  return { cookie: mergeCookies(cookie, setCookie) };
 }
 
 /**
@@ -694,7 +715,39 @@ async function setLike(cookie, id, like) {
   const { json } = await call('/api/song/like', {
     trackId: String(id), userid, like: Boolean(like),
   }, { cookie });
-  return json;
+  if (json?.code === 200) return json;
+
+  // Second road: the favourites are a playlist, and the playlist write is a
+  // different endpoint. Measured 2026-09-27 from the server: add and del both
+  // 200 with the read-back agreeing. Only for a refusal that is not "log in
+  // again" -- a dead cookie is dead on every road.
+  if (json?.code === 301 || json?.code === 302) return json;
+  const pid = await favouritesIdFor(cookie);
+  if (!pid) return json;
+  const op = like ? 'add' : 'del';
+  let { json: alt } = await call('/api/playlist/manipulate/tracks', {
+    op, pid: String(pid), trackIds: JSON.stringify([Number(id)]), imme: 'true',
+  }, { cookie });
+  // 512 is the platform asking for the ids twice; the reference client does
+  // exactly this and nothing else.
+  if (alt?.code === 512) {
+    ({ json: alt } = await call('/api/playlist/manipulate/tracks', {
+      op, pid: String(pid), trackIds: JSON.stringify([Number(id), Number(id)]), imme: 'true',
+    }, { cookie }));
+  }
+  return alt?.code === 200 ? alt : json;
+}
+
+/** The id of this account's "我喜欢的音乐" list, cached alongside the uid. */
+const favCache = new Map(); // cookie → { at, pid }
+
+async function favouritesIdFor(cookie) {
+  const hit = favCache.get(cookie);
+  if (hit && Date.now() - hit.at < UID_TTL_MS) return hit.pid;
+  const lists = await listMyPlaylists(cookie);
+  const pid = lists.find((l) => l.isLikes)?.id || null;
+  favCache.set(cookie, { at: Date.now(), pid });
+  return pid;
 }
 
 /** Like one song, then read the state back — the code alone is not trusted. */
@@ -732,4 +785,6 @@ module.exports = {
   resolveUrl, corsFriendlyUrl, getLyric, getPlaylist, QR_STATUS,
   // 平台打标
   listMyPlaylists, getPlaylistRows, likedMap, likeSong, unlikeSong,
+  // For tests.
+  mergeCookies,
 };

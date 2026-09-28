@@ -72,6 +72,23 @@ router.get('/playlists/:ref/songs', ...web, async (req, res, next) => {
   }
 });
 
+// POST /api/platform-tagging/refresh { playlistRef, dirId?, isLikes? }
+// Re-read one list from the platform now. Limited like a write: it is a
+// platform call the user triggers by hand.
+router.post('/refresh', ...web, writeLimiter, async (req, res, next) => {
+  try {
+    const { playlistRef, dirId, isLikes } = req.body || {};
+    res.json(await tags.refresh(
+      req.user.id,
+      likes.parseRef(playlistRef).ref,
+      Number.isInteger(dirId) ? dirId : null,
+      isLikes === true,
+    ));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/platform-tagging/connect — open a capture connection.
 // The same connection the playlist page and 唱卡 use; only the gate differs,
 // so a beta user without the capture add-on can still pair a client.

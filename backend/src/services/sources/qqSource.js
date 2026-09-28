@@ -766,19 +766,15 @@ function refused(code, what) {
  * "我喜欢" is an ordinary row here with dirId 201, and it is the row whose
  * tid names the favourites when they are read back.
  */
-async function listMyPlaylists({ cookie, uin, musicKey }) {
+async function listMyPlaylists({ cookie, uin, musicKey, euin = null }) {
+  const cred = { cookie, uin, musicKey };
   const { json } = await cgiPost({
     req_1: {
       module: 'music.musicasset.PlaylistBaseRead',
       method: 'GetPlaylistByUin',
       param: { uin: String(uin) },
     },
-    req_2: {
-      module: 'music.musicasset.PlaylistFavRead',
-      method: 'CgiGetPlaylistFavInfo',
-      param: { uin: String(uin), offset: 0, size: 200 },
-    },
-  }, { cookie, uin, musicKey });
+  }, cred);
 
   const code = json?.req_1?.code;
   if (code !== 0) throw refused(code, '读取歌单');
@@ -794,23 +790,57 @@ async function listMyPlaylists({ cookie, uin, musicKey }) {
     kind: 'created',
   }));
 
-  // Different field names on this half (name/songnum), and its own code.
-  const collected = json.req_2?.code === 0
-    ? (json.req_2.data?.v_list || []).map((p) => ({
-      ref: `qq:${p.tid}`,
-      id: String(p.tid),
-      dirId: p.dirId ?? null,
-      name: p.name || '',
-      count: p.songnum ?? null,
-      cover: p.logo || null,
-      isLikes: false,
-      kind: 'collected',
-    }))
-    : [];
-
   // Favourites first, then the rest in the platform's own order.
   created.sort((a, b) => Number(b.isLikes) - Number(a.isLikes));
-  return [...created, ...collected];
+
+  // The collected (other people's) lists are keyed on the account's euin;
+  // measured 2026-09-27, the numeric uin answers 80050 and nothing. A login
+  // stores the euin; an older or pasted credential has none, and it is then
+  // read once off any own playlist's dirinfo and handed back for storing.
+  let effectiveEuin = euin || null;
+  let euinResolved = false;
+  if (!effectiveEuin && created.length) {
+    const first = created.find((p) => !p.isLikes) || created[0];
+    const { json: d } = await cgiPost({
+      req_1: {
+        module: 'music.srfDissInfo.DissInfo',
+        method: 'CgiGetDiss',
+        param: {
+          disstid: first.isLikes ? 0 : Number(first.id), dirid: first.dirId,
+          tag: true, userinfo: true, orderlist: true, song_begin: 0, song_num: 0,
+        },
+      },
+    }, cred);
+    effectiveEuin = d?.req_1?.data?.dirinfo?.encrypt_uin || null;
+    euinResolved = Boolean(effectiveEuin);
+  }
+
+  // Different field names on this half (name/songnum). Its failure is not
+  // the listing's failure: the created lists are what the feature is for.
+  let collected = [];
+  if (effectiveEuin) {
+    const { json: f } = await cgiPost({
+      req_1: {
+        module: 'music.musicasset.PlaylistFavRead',
+        method: 'CgiGetPlaylistFavInfo',
+        param: { uin: effectiveEuin, offset: 0, size: 200 },
+      },
+    }, cred);
+    if (f?.req_1?.code === 0) {
+      collected = (f.req_1.data?.v_list || []).map((p) => ({
+        ref: `qq:${p.tid}`,
+        id: String(p.tid),
+        dirId: p.dirId ?? null,
+        name: p.name || '',
+        count: p.songnum ?? null,
+        cover: p.logo || null,
+        isLikes: false,
+        kind: 'collected',
+      }));
+    }
+  }
+
+  return { playlists: [...created, ...collected], euin: effectiveEuin, euinResolved };
 }
 
 /**

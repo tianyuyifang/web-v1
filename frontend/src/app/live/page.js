@@ -94,6 +94,11 @@ const KEEP_BATCHES = 40;
 const SSE_SILENCE_MS = 15000;
 /** Checked several times per timeout so the deadline is met, not lapped. */
 const SSE_WATCHDOG_MS = 5000;
+/**
+ * Coming back fires visibilitychange and focus together; one refetch serves
+ * both. Also the most a desktop user clicking between windows can cause.
+ */
+const RETURN_THROTTLE_MS = 5000;
 
 // Cards asked of the feed: the server's own ceiling (LIVE_FEED_MAX_TAKE in
 // captureService), which is also where the count the poll compares against
@@ -605,23 +610,62 @@ export default function LivePage() {
       if (Date.now() - lastMessageAt > SSE_SILENCE_MS) connect();
     }, SSE_WATCHDOG_MS);
 
-    // Back on screen: reconnect now instead of waiting for the watchdog, and
-    // let the reconnect's own open handler pull in what was missed.
-    const onVisible = () => {
-      if (document.visibilityState !== "visible" || closed) return;
+    // Back on screen: refetch the cards, and reconnect now instead of waiting
+    // for the watchdog — the reconnect's own open handler pulls in what was
+    // missed.
+    //
+    // The refetch always happens: a card's mapping and marks are pushed only
+    // when a song is captured, so an edit made in another tab or on another
+    // device (a mapping configured, a note changed) reaches this page only
+    // through it. The reconnect happens only when the stream has gone quiet:
+    // a tab that was merely behind another one (or a window that lost focus)
+    // keeps receiving heartbeats, and tearing that working link down bought
+    // nothing. A phone that froze the tab delivered nothing while away, so it
+    // is stale here and reconnects exactly as before.
+    //
+    // visibilitychange and focus both fire on one return, so the second is
+    // dropped: once per RETURN_THROTTLE_MS, as data libraries do for focus
+    // revalidation.
+    let lastReturnAt = 0;
+    const reconnect = () => {
+      if (closed) return;
       loadFeed(session.id);
       connect();
     };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    window.addEventListener("online", onVisible);
+    const onReturn = () => {
+      if (closed || document.visibilityState !== "visible") return;
+      const now = Date.now();
+      // An error counts as traffic (see "error" above), so a stream the browser
+      // gave up on (CLOSED, no retry coming) can look fresh; rebuild that too.
+      // A dead stream is never throttled: connect() marks it fresh, so the
+      // event arriving right behind this one takes the refetch-only path and
+      // is dropped there.
+      const open = es && es.readyState !== EventSource.CLOSED;
+      if (!open || now - lastMessageAt >= SSE_SILENCE_MS) {
+        lastReturnAt = now;
+        reconnect();
+        return;
+      }
+      if (now - lastReturnAt < RETURN_THROTTLE_MS) return;
+      lastReturnAt = now;
+      loadFeed(session.id);
+    };
+    // The network changed under the socket: rebuild whatever it last heard.
+    const onOnline = () => {
+      if (document.visibilityState !== "visible") return;
+      lastReturnAt = Date.now();
+      reconnect();
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    window.addEventListener("online", onOnline);
 
     return () => {
       closed = true;
       clearInterval(watchdog);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-      window.removeEventListener("online", onVisible);
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
+      window.removeEventListener("online", onOnline);
       if (es) { try { es.close(); } catch { /* already gone */ } }
     };
   }, [session, upsert, loadFeed]);

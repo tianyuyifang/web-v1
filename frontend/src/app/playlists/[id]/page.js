@@ -216,7 +216,7 @@ export default function PlaylistPage() {
 
   const handleDeleteConfirm = useCallback(async () => {
     await playlistsAPI.delete(id);
-    router.push("/dashboard");
+    router.push("/playlists");
   }, [id, router]);
 
   const handleUnlikeAll = useCallback(async () => {

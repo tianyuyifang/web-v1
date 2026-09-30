@@ -13,6 +13,9 @@ import { captureAPI, platformTaggingAPI } from "@/lib/api";
  * is short-lived and single-use, so a copy kept here outlives its usefulness
  * and shows the user something that no longer works.
  */
+// The Navbar poll in flight, shared by its callers — see poll().
+let pollInFlight = null;
+
 const useCaptureStore = create((set, get) => ({
   /** Server's view: { sessionId, client, target, playlist, pairCode, ... } or null. */
   connection: null,
@@ -34,6 +37,19 @@ const useCaptureStore = create((set, get) => ({
       set({ loaded: true });
       return get().connection;
     }
+  },
+
+  /**
+   * refresh() for the Navbar's background poll: while one is in flight, callers
+   * share it. The Navbar mounts two indicators (desktop row and phone row, one
+   * hidden by CSS) and each polled on its own — every check went out twice.
+   * Only the poll shares: refresh() right after an action (aim) must not be
+   * answered by a request that left before the action did.
+   */
+  poll: () => {
+    if (pollInFlight) return pollInFlight;
+    pollInFlight = get().refresh().finally(() => { pollInFlight = null; });
+    return pollInFlight;
   },
 
   connect: async () => {

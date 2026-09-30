@@ -242,6 +242,18 @@ export default function useAudioPlayer({
       usePlayerStore.getState().requestPlay(playerId);
     }
 
+    // Unlock audio now, inside the tap. iOS lets an AudioContext start only
+    // within 5 s of a user gesture, and the download below can take longer on a
+    // slow evening link — the resume after it is then refused and the tap plays
+    // nothing. Not awaited; the resume after the download stays as the fallback,
+    // and on a play that is not a tap (auto-advance) this does nothing.
+    const unlockCtx = getSharedContext();
+    if (unlockCtx.state !== "running") unlockCtx.resume().catch(() => {});
+    // Fetched alongside the clip rather than after it: the first play of a page
+    // used to wait one more round trip for this chunk once the audio was in.
+    const soundTouch = import(/* webpackChunkName: "soundtouchjs" */ "soundtouchjs");
+    soundTouch.catch(() => {}); // a play aborted before awaiting it must not leave it unhandled
+
     try {
       const buffer = await loadBuffer();
       // Aborted? Another play/stop happened during the load.
@@ -255,8 +267,8 @@ export default function useAudioPlayer({
         if (myEpoch !== playEpochRef.current) return;
       }
 
-      // Import SoundTouch dynamically (it's ESM-friendly)
-      const { PitchShifter } = await import(/* webpackChunkName: "soundtouchjs" */ "soundtouchjs");
+      // SoundTouch, requested above in parallel with the download.
+      const { PitchShifter } = await soundTouch;
       if (myEpoch !== playEpochRef.current) return;
 
       // Create gain node for volume

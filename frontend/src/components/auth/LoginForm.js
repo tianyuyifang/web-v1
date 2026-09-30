@@ -37,7 +37,7 @@ export default function LoginForm() {
       if (data.user?.role === "PENDING") {
         setBlocked(data.user?.previousRole ? "disabled" : "pending");
       } else {
-        window.location.href = "/dashboard";
+        window.location.href = "/playlists";
       }
     } catch (err) {
       // The password was right, the account is PENDING. Show the matching panel

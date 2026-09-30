@@ -76,7 +76,7 @@ export default function Navbar() {
       <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-4 py-2.5 sm:px-6">
         <div className="flex items-center gap-5">
           <Link
-            href="/dashboard"
+            href="/playlists"
             className="flex items-center gap-2 text-lg font-bold tracking-tight"
             style={{ color: "var(--text)" }}
           >

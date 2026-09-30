@@ -95,6 +95,11 @@ const SSE_SILENCE_MS = 15000;
 /** Checked several times per timeout so the deadline is met, not lapped. */
 const SSE_WATCHDOG_MS = 5000;
 
+// Cards asked of the feed: the server's own ceiling (LIVE_FEED_MAX_TAKE in
+// captureService), which is also where the count the poll compares against
+// stops. The two must match or the poll reads a permanent shortfall.
+const LIVE_FEED_LIMIT = 200;
+
 // No local copy of the run is kept. The server knows whether captures are
 // being recognised, and a browser-side copy only ever disagreed with it: it
 // existed solely in the tab that pressed 开始识别, so every other way of
@@ -167,6 +172,14 @@ export default function LivePage() {
   const [session, setSession] = useState(null);
   const [pairCode, setPairCode] = useState(null);
   const [cards, setCards] = useState([]);
+  // Every capture this page has been told of — pushed or fetched, shown or
+  // filtered out. What the poll compares with the server's count.
+  const knownIdsRef = useRef(new Set());
+  // Refetches in flight, the newest one's number, and the pushes that arrived
+  // meanwhile (see loadFeed).
+  const feedInFlightRef = useRef(0);
+  const feedSeqRef = useRef(0);
+  const pushedDuringFeedRef = useRef([]);
   const [client, setClient] = useState("waiting");
   // APK 版本落后（服务端连接后比对得出），以及用户这一局是否已手动收起提醒。
   // dismiss 只活在内存里 —— 不落库、不写 cookie，重开唱卡就重置，所以只要没
@@ -407,6 +420,14 @@ export default function LivePage() {
    * makes that harmless instead of showing the song twice.
    */
   const upsert = useCallback((card) => {
+    // Counted before the filter below: the server's count includes the
+    // captures this page leaves off screen, so comparing it with the cards on
+    // screen read as "missing something" forever and refetched every 15s.
+    if (!card || !card.eventId) return;
+    knownIdsRef.current.add(card.eventId);
+    // A refetch is on its way: it would replace the list with a snapshot that
+    // may predate this card. Kept, and laid back on top when it lands.
+    if (feedInFlightRef.current > 0) pushedDuringFeedRef.current.push(card);
     // A half-read capture never reaches the list — see isCardWorthShowing. It
     // has to be filtered here rather than at render, because the rounds are
     // built from this list: left in, one of these opens a round of its own and
@@ -425,15 +446,45 @@ export default function LivePage() {
   }, []);
 
   const loadFeed = useCallback(async (sessionId) => {
+    // Two can overlap (the stream's open and a return to the tab both ask):
+    // only the newest one's answer is taken, so an older snapshot landing last
+    // cannot overwrite a newer one.
+    const mine = ++feedSeqRef.current;
+    feedInFlightRef.current += 1;
     try {
-      // The feed now spans a day rather than one connection, so ask for enough to
-    // fill it: the busiest measured account sang 553 songs in 24 hours, and 150
-    // rounds of that is more than anyone scrolls.
-    const res = await captureAPI.liveFeed(sessionId, 150);
+      // The feed spans a day rather than one connection. Asked for the server's
+      // own ceiling, which is also where its count for the poll below stops —
+      // asking for fewer (it was 150) left anyone past that many captures a day
+      // "missing" cards forever, refetching every 15s.
+      const res = await captureAPI.liveFeed(sessionId, LIVE_FEED_LIMIT);
+      if (mine !== feedSeqRef.current) return;
+      const raw = res.data.cards || [];
+      const pushed = pushedDuringFeedRef.current;
+      // Every capture the page now knows of, shown or not — see upsert.
+      knownIdsRef.current = new Set([...raw, ...pushed].map((c) => c.eventId).filter(Boolean));
       // Filtered on the way in, exactly as pushed cards are: a refetch must not
       // put back what a push already left out, or every reconnect would undo it.
-      const fresh = keepShowableCards(res.data.cards || []);
-      setCards(fresh);
+      const fresh = keepShowableCards(raw);
+      // Cards pushed while this was on its way: one the snapshot lacks is newer
+      // than it, and goes back on — a refetch never takes a card off the screen
+      // that was already on it. One the snapshot has keeps the snapshot's
+      // version (current mapping and marks) — only its words may be behind,
+      // and the server only ever grows those, so the longer set of words wins.
+      // Position does not matter: rounds are ordered by createdAt (toBatches).
+      setCards(() => {
+        const list = fresh.slice();
+        const at = new Map(list.map((c, i) => [c.eventId, i]));
+        for (const c of pushed) {
+          if (!c || !c.eventId) continue;
+          const i = at.get(c.eventId);
+          if (i === undefined) {
+            if (isCardWorthShowing(c)) { at.set(c.eventId, list.length); list.push(c); }
+          } else if ((c.lyric || "").length > (list[i].lyric || "").length) {
+            list[i] = { ...list[i], lyric: c.lyric, stage: c.stage };
+          }
+        }
+        return list;
+      });
       // The feed carries each card's stored preferences, so seeding here costs
       // no extra request. Merged rather than replaced: a card the singer just
       // marked may have scrolled out of this window, and its marks should not
@@ -450,6 +501,10 @@ export default function LivePage() {
     } catch {
       // A failed refetch is not worth a message: the stream is still live and
       // the next card will arrive on its own.
+    } finally {
+      feedInFlightRef.current -= 1;
+      // Kept while any refetch is out: the newest one lays them back on top.
+      if (feedInFlightRef.current === 0) pushedDuringFeedRef.current = [];
     }
   }, []);
 
@@ -584,8 +639,6 @@ export default function LivePage() {
    * having to detect anything about the connection at all. Both windows are
    * the same 15s, so a card lost to any cause surfaces within one of them.
    */
-  const cardCountRef = useRef(0);
-  cardCountRef.current = cards.length;
   useEffect(() => {
     if (!session) return undefined;
     let stop = false;
@@ -595,10 +648,13 @@ export default function LivePage() {
         if (stop) return;
         setClient(res.data.client);
         setOutdated(Boolean(res.data.clientOutdated));
-        // Held fewer than the server has: something was pushed while this page
-        // was not listening. The feed is the authority, so take it whole.
+        // Knows of fewer than the server has: something was pushed while this
+        // page was not listening. The feed is the authority, so take it whole.
+        // Compared with every capture known here, not the cards on screen: the
+        // count includes the ones the page filters out (see upsert).
         const serverCount = res.data.liveEventCount;
-        if (typeof serverCount === "number" && serverCount > cardCountRef.current) {
+        if (typeof serverCount === "number" && serverCount > knownIdsRef.current.size
+            && feedInFlightRef.current === 0) {
           loadFeed(session.id);
         }
         // Closed elsewhere, or aimed at something else: either way this page
@@ -613,7 +669,7 @@ export default function LivePage() {
     tick();
     const id = setInterval(tick, 15000);
     return () => { stop = true; clearInterval(id); };
-    // cards is read through a ref rather than depended on: the poll must keep
+    // What it knows is read through a ref rather than depended on: the poll must keep
     // its own cadence, not restart every time a card arrives.
   }, [session, loadFeed]);
 
@@ -655,6 +711,9 @@ export default function LivePage() {
 
   const playCard = useCallback(async (card) => {
     if (!card.mapping) return;
+    // Before any await: the audio has to be started inside the tap on iOS — see
+    // unlockAudio.
+    player.unlockAudio();
     setPlayError("");
     /**
      * Whether a separated vocal track exists is a fact about one recording, so
@@ -1168,6 +1227,10 @@ export default function LivePage() {
       setSession(s);
       setPairCode(conn.pairCode || null);
       setCards([]);
+      // A new run: anything still on its way belongs to the old one.
+      knownIdsRef.current = new Set();
+      feedSeqRef.current += 1;
+      pushedDuringFeedRef.current = [];
       // 新的一局：把上一局收起的提醒重新放开，只要还没更新就会再次提示。
       setUpdateDismissed(false);
     } catch (err) {
@@ -1190,6 +1253,10 @@ export default function LivePage() {
     setSession(null);
     setPairCode(null);
     setCards([]);
+    // A refetch still on its way would put the finished run back on screen.
+    knownIdsRef.current = new Set();
+    feedSeqRef.current += 1;
+    pushedDuringFeedRef.current = [];
   }, [session, stopAudio, stopDelivery]);
 
   // Teardown lives in the hook, which also has to close the AudioContext.

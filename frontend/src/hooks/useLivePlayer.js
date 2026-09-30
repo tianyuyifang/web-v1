@@ -713,8 +713,24 @@ export default function useLivePlayer() {
     if (ctxRef.current) ctxRef.current.close().catch(() => {});
   }, [teardownGraph]);
 
+  /**
+   * Create and start the AudioContext inside the tap that opens a card.
+   *
+   * iOS lets an AudioContext start only within 5 s of a user gesture. This one
+   * used to be created after the whole song downloaded (warmBuffer), outside
+   * any tap, so a remembered key or 只听人声 that applied itself more than 5 s
+   * after the tap could not start its graph. warmBuffer reuses what this makes.
+   * Call it synchronously, before the first await of the tap handler.
+   */
+  const unlockAudio = useCallback(() => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!ctxRef.current) ctxRef.current = new Ctx();
+    if (ctxRef.current.state !== "running") ctxRef.current.resume().catch(() => {});
+  }, []);
+
   return {
-    load, toggle, seek, stop, swapSource,
+    load, toggle, seek, stop, swapSource, unlockAudio,
     setPitch, setSpeed, setVolume, setVocalsOnly,
     isPlaying, current, duration, pitch, speed, volume, canShift,
     // Temporary — see perfRef.

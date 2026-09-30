@@ -9,7 +9,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     if (isAuthenticated()) {
-      router.replace("/dashboard");
+      router.replace("/playlists");
     } else {
       router.replace("/login");
     }

@@ -252,8 +252,12 @@ export const captureAPI = {
   setTarget: (target, playlistId) =>
     api.post("/capture/target", playlistId ? { target, playlistId } : { target },
       { timeout: 10000 }),
+  // Timed out rather than left to hang: while one is outstanding the page's
+  // missed-card check stands down, so a request stalled on a frozen tab or a
+  // wifi-to-4G handover would switch it off until the browser gave up.
   liveFeed: (sessionId, limit) =>
-    api.get(`/capture/sessions/${sessionId}/live${limit ? `?limit=${limit}` : ""}`),
+    api.get(`/capture/sessions/${sessionId}/live${limit ? `?limit=${limit}` : ""}`,
+      { timeout: 20000 }),
 
   // What this singer has settled on for a recording: key, tempo, a note,
   // colour flags. Keyed on the recording rather than the game song, so it

@@ -40,7 +40,7 @@ export default function AdminUserPlaylistsPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!user || !isAdmin) {
-      router.push("/dashboard");
+      router.push("/playlists");
       return;
     }
     fetchPlaylists();

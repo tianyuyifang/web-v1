@@ -74,17 +74,19 @@ function relative(iso) {
 }
 
 export default function CaptureIndicator({ compact = false }) {
-  const { connection, refresh, connect, stop, disconnect, loading, error } =
+  const { connection, poll, connect, stop, disconnect, loading, error } =
     useCaptureStore();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const boxRef = useRef(null);
 
+  // poll, not refresh: the Navbar renders this twice (desktop and phone rows)
+  // and the two share one request instead of each sending its own.
   useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, POLL_MS);
+    poll();
+    const id = setInterval(poll, POLL_MS);
     return () => clearInterval(id);
-  }, [refresh]);
+  }, [poll]);
 
   // Close on an outside click, the way every other popover on the web behaves.
   useEffect(() => {

@@ -76,6 +76,8 @@ app.use('/api/music-sources', authMiddleware, requireApproved, requireActiveSess
 // requireMappingEditor -- a mapping decides what plays for everyone. The route
 // file says which is which, and a route added there without a gate is open.
 app.use('/api/mappings', authMiddleware, requireApproved, requireActiveSession, require('./routes/mappings'));
+// 唱卡: the browser asking QQ for a play URL from the singer's own address.
+app.use('/api/qq-direct', authMiddleware, requireApproved, requireActiveSession, require('./routes/qqDirect'));
 
 // Admin routes (auth + ADMIN role only)
 app.use('/api/admin', authMiddleware, requireRole('ADMIN'), requireActiveSession, require('./routes/admin'));

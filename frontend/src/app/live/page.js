@@ -46,6 +46,7 @@ import {
 import { PlayIcon, PauseIcon, BusyIcon, UnmappedIcon } from "@/components/live/TransportIcons";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { isCardWorthShowing, keepShowableCards } from "@/lib/liveCards";
+import * as qqDirect from "@/lib/qqDirect";
 
 // "独家" rather than "曲库": these are songs we hold ourselves, so they play
 // without a platform account and cannot be delisted out from under a singer.
@@ -513,6 +514,10 @@ export default function LivePage() {
     }
   }, []);
 
+  // QQ play URLs may be asked for from this browser (档位设置). No request of
+  // its own: the mode comes on the status poll below (noteMode).
+  useEffect(() => qqDirect.init(), []);
+
   /**
    * Show whatever the connection is actually doing, on every visit.
    *
@@ -692,6 +697,8 @@ export default function LivePage() {
         if (stop) return;
         setClient(res.data.client);
         setOutdated(Boolean(res.data.clientOutdated));
+        // Who resolves QQ play URLs (档位设置), carried on this same poll.
+        qqDirect.noteMode(res.data.qqDirectMode);
         // Knows of fewer than the server has: something was pushed while this
         // page was not listening. The feed is the authority, so take it whole.
         // Compared with every capture known here, not the cards on screen: the
@@ -793,9 +800,11 @@ export default function LivePage() {
     // devices that actually find this slow, because the cure differs per leg.
     const tOpen = Date.now();
     try {
-      const res = await mappingAPI.preview(card.mapping.mappingId, undefined, {
-        tier: quality, vocalsOnly,
-      });
+      // The server's answer as before, or -- per 档位设置 -- QQ's own, asked
+      // from this browser. Same shape either way.
+      let res = await qqDirect.resolve(card.mapping, { tier: quality, vocalsOnly }, () => (
+        mappingAPI.preview(card.mapping.mappingId, undefined, { tier: quality, vocalsOnly })
+      ), { elementHasPlayed: player.elementHasPlayed() });
       const resolveMs = Date.now() - tOpen;
       // Every timing the player takes for this card comes back through here,
       // labelled by kind: `play` is the wait before sound, `ready` the wait
@@ -838,7 +847,21 @@ export default function LivePage() {
         return;
       }
       loadedFor.current = key;
-      await player.load(url);
+      try {
+        await (res.serverInstead ? qqDirect.withStartLimit(player.load(url)) : player.load(url));
+      } catch (loadErr) {
+        // A URL QQ handed this browser directly that will not play here (or
+        // has not started in a few seconds): the server's answer instead, which
+        // is what the card had before. Not for a refusal to autoplay or an
+        // interrupted load -- those are not the URL.
+        const urlFault = loadErr?.name !== "NotAllowedError" && loadErr?.name !== "AbortError";
+        if (!res.serverInstead || !urlFault) throw loadErr;
+        res = await res.serverInstead(loadErr?.name === "StartTimeout" ? "timeout" : "error");
+        // Another card was opened meanwhile: this answer is no longer wanted.
+        if (loadedFor.current !== key) return;
+        if (!res.data?.url) throw loadErr;
+        await player.load(res.data.url);
+      }
       // What actually played, not what was asked for: the server may have had
       // to substitute, and telling the player otherwise would have it separate
       // channels on a file that has none.
@@ -846,6 +869,9 @@ export default function LivePage() {
       // After the sound starts, so saying it never delays hearing it.
       const note = fallbackNotice(res.data, { tier: quality, vocalsOnly });
       if (note) setPlayError(note);
+      // Shadow timing: after the sound has started, and once this song has
+      // finished downloading, so it neither delays nor competes with it.
+      res.afterPlay?.(player.bufferReady);
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "播放失败");
     } finally {
@@ -1025,7 +1051,10 @@ export default function LivePage() {
     const tSwap = Date.now();
     let tResolved = tSwap;
     try {
-      const res = await mappingAPI.preview(card.mapping.mappingId, undefined, next);
+      // A switch plays through a new audio element (swapSource).
+      let res = await qqDirect.resolve(card.mapping, next, () => (
+        mappingAPI.preview(card.mapping.mappingId, undefined, next)
+      ), { elementHasPlayed: false });
       tResolved = Date.now();
       const { url, kind, songId } = res.data;
       // A local song has no tiers and no separated vocals; it plays as it is.
@@ -1043,7 +1072,21 @@ export default function LivePage() {
       // was asked for. The server falls back rather than refusing, so a url
       // coming back no longer means the request was met.
       if (next.vocalsOnly) setVocalsAvailable(res.data.vocalsPlayed === true);
-      await player.swapSource(url);
+      const swapped = await player.swapSource(url);
+      // A URL from QQ directly that would not load: the server's instead.
+      if (swapped === false && res.serverInstead) {
+        // swapSource cannot say whether it failed or ran out of time: treated
+        // as slow, which is the milder of the two.
+        res = await res.serverInstead("timeout");
+        // Another card was opened meanwhile: not this one's to swap in.
+        if (loadedFor.current !== card.eventId) return;
+        if (!res.data?.url) {
+          setPlayError("这首歌暂时播放不了");
+          return;
+        }
+        if (next.vocalsOnly) setVocalsAvailable(res.data.vocalsPlayed === true);
+        await player.swapSource(res.data.url);
+      }
       // Guarded: this sits inside the try that governs the swap, so a
       // synchronous throw from the reporting call — which its own .catch()
       // cannot intercept — would skip the setVocalsOnly below and leave the
@@ -1065,6 +1108,7 @@ export default function LivePage() {
       await player.setVocalsOnly(res.data.vocalsPlayed === true);
       const note = fallbackNotice(res.data, next);
       if (note) setPlayError(note);
+      res.afterPlay?.(player.bufferReady);
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "切换失败");
     }

@@ -307,9 +307,81 @@ async function setClientVersion(patch) {
   return next;
 }
 
+// --- QQ play-URL resolving: from the server's address or the singer's own ----
+//
+// 唱卡 asks QQ for a signed play URL on every card it opens -- by far the bulk
+// of what this server sends QQ on its users' behalf. The browser can ask QQ
+// itself (JSONP, measured working 2026-09-30) so the request leaves from the
+// singer's own address instead. Three modes, switchable here without a deploy:
+//
+//   server  -- as before: the server resolves; the browser never calls QQ.
+//   shadow  -- the server still resolves and its URL plays; once the sound has
+//              started, the browser resolves the same song too, only to time
+//              it and compare the answer. Nothing the singer hears changes.
+//   browser -- the browser resolves first; if it has not answered within the
+//              time this device usually waits for the server, the server is
+//              asked as well and whichever answers first plays.
+//
+// `adminsOnly` keeps any mode but `server` to ADMIN accounts while it is being
+// tried. `hedgeMs` is the default wait before also asking the server, used
+// until a device has timed the server path itself.
+const QQ_DIRECT_KEY = 'qqDirectResolve';
+const QQ_DIRECT_MODES = Object.freeze(['server', 'shadow', 'browser']);
+const QQ_DIRECT_DEFAULT = Object.freeze({ mode: 'server', adminsOnly: true, hedgeMs: 500 });
+
+// Read on every 唱卡 status poll (every 15 s per open page), so held briefly in
+// memory. Writes go through setQqDirect in this same process and clear it.
+const QQ_DIRECT_CACHE_MS = 10 * 1000;
+let qqDirectCache = null; // { value, at }
+// Bumped by every write, so a read that began before it cannot cache the old value.
+let qqDirectGeneration = 0;
+
+async function getQqDirect() {
+  if (qqDirectCache && Date.now() - qqDirectCache.at < QQ_DIRECT_CACHE_MS) return qqDirectCache.value;
+  const generation = qqDirectGeneration;
+  const raw = await get(QQ_DIRECT_KEY, null);
+  const value = { ...QQ_DIRECT_DEFAULT, ...(raw || {}) };
+  if (generation === qqDirectGeneration) qqDirectCache = { value, at: Date.now() };
+  return value;
+}
+
+/** A patch. Checked rather than trusted: the mode decides who calls QQ from where. */
+async function setQqDirect(patch) {
+  const current = await getQqDirect();
+  const next = { ...current, ...(patch || {}) };
+  if (!QQ_DIRECT_MODES.includes(next.mode)) {
+    throw new ValidationError({ mode: ['模式只能是 server / shadow / browser'] });
+  }
+  if (typeof next.adminsOnly !== 'boolean') {
+    throw new ValidationError({ adminsOnly: ['必须是 true 或 false'] });
+  }
+  // The same bounds the browser clamps to (lib/qqDirect HEDGE_MIN/MAX_MS).
+  if (!Number.isInteger(next.hedgeMs) || next.hedgeMs < 250 || next.hedgeMs > 2000) {
+    throw new ValidationError({ hedgeMs: ['对冲等待必须是 250–2000 之间的整数毫秒'] });
+  }
+  const clean = { mode: next.mode, adminsOnly: next.adminsOnly, hedgeMs: next.hedgeMs };
+  qqDirectGeneration += 1;
+  await set(QQ_DIRECT_KEY, clean);
+  qqDirectGeneration += 1;
+  qqDirectCache = null;
+  return clean;
+}
+
+/** The mode that applies to this user: `server` for non-admins while adminsOnly is on. */
+async function qqDirectFor(role) {
+  const s = await getQqDirect();
+  if (s.mode !== 'server' && s.adminsOnly && role !== 'ADMIN') return { ...s, mode: 'server' };
+  return s;
+}
+
 module.exports = {
   PROMO_KEY,
   CLIENT_VERSION_KEY,
+  QQ_DIRECT_KEY,
+  QQ_DIRECT_MODES,
+  getQqDirect,
+  setQqDirect,
+  qqDirectFor,
   getClientVersion,
   setClientVersion,
   getSignupPromo,

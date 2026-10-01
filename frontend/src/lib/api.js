@@ -389,6 +389,9 @@ export const adminAPI = {
   getTiers: () => api.get("/admin/tiers"),
   // Outbound calls to the music platforms, by kind, from this server.
   getOutbound: () => api.get("/admin/outbound"),
+  // QQ play-URL switch (server / shadow / browser) and what browsers reported.
+  getQqDirect: () => api.get("/admin/qq-direct"),
+  setQqDirect: (patch) => api.put("/admin/qq-direct", patch),
   setTiers: (patch) => api.put("/admin/tiers", patch),
   extendOneMonth: (id) => api.post(`/admin/users/${id}/extend`),
   resetPassword: (id) => api.post(`/admin/users/${id}/reset-password`),
@@ -460,6 +463,13 @@ export const musicSourcesAPI = {
 // because 唱卡 needs them to play a song and offer other recordings of it.
 // Everything else 403s for a non-editor. Check the route file before assuming
 // a call here is safe to make from a page ordinary members can reach.
+// 唱卡 asking QQ for a play URL from the singer's own address (lib/qqDirect).
+export const qqDirectAPI = {
+  session: () => api.get("/qq-direct/session"),
+  // `calls`: QQ calls made outside any sample (the idle CDN warm-up).
+  report: (samples, calls = 0) => api.post("/qq-direct/report", { samples, calls }).catch(() => {}),
+};
+
 export const mappingAPI = {
   counts: () => api.get("/mappings/counts"),
   list: ({ bucket = "pending", q = "", cursor = null, take = 50 } = {}) => {

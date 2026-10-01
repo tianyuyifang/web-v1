@@ -13,6 +13,7 @@ import TaggingUsagePanel from "@/components/admin/TaggingUsagePanel";
 import CaptureClientPanel from "@/components/admin/CaptureClientPanel";
 import TierConfigPanel from "@/components/admin/TierConfigPanel";
 import OutboundMeterPanel from "@/components/admin/OutboundMeterPanel";
+import QqDirectPanel from "@/components/admin/QqDirectPanel";
 import SignupPromoPanel from "@/components/admin/SignupPromoPanel";
 import ActivationCodesPanel from "@/components/admin/ActivationCodesPanel";
 import UpdatesPanel from "@/components/admin/UpdatesPanel";
@@ -379,6 +380,9 @@ export default function AdminPage() {
               looked at when deciding how many people to open a platform
               feature to, which is what this tab decides. */}
           <OutboundMeterPanel />
+          {/* Beside the meter it changes: switching QQ resolving to the
+              singers' own addresses is what moves the numbers above. */}
+          <QqDirectPanel />
         </div>
       )}
       {activeTab === "codes" && <ActivationCodesPanel />}

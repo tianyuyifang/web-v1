@@ -21,6 +21,7 @@
  * same question over ordinary HTTP, verified against the live endpoint.
  */
 const https = require('https');
+const meter = require('../outboundMeter');
 const { shapeCredential } = require('./qqLogin');
 const mqttWatcher = require('./qqMqttWatcher');
 
@@ -47,6 +48,7 @@ function fail(message, code, extra = {}) {
 
 /** One musicu.fcg call. Everything here is POST JSON; no cookies involved. */
 function call(method, param, comm = {}) {
+  meter.record('qq', 'login');
   const body = Buffer.from(JSON.stringify({
     comm: { ...CLIENT, format: 'json', inCharset: 'utf-8', outCharset: 'utf-8', ...comm },
     req_1: { module: 'music.login.LoginServer', method, param },

@@ -4,6 +4,7 @@ const settingsService = require('../services/settingsService');
 const redeemService = require('../services/redeemService');
 const outboundMeter = require('../services/outboundMeter');
 const breaker = require('../services/musicSourceBreaker');
+const qqDirectStats = require('../services/qqDirectStats');
 const validate = require('../middleware/validate');
 const { updateBillingSchema } = require('../validators/billing');
 
@@ -163,10 +164,40 @@ router.get('/outbound', (req, res) => {
   // The breaker rides along: how much we sent, and whether the platform has
   // told us to stop, are the two halves of one question.
   const snapshot = outboundMeter.snapshot();
+  // Calls users' own browsers made, beside the server's — kept apart because
+  // they leave from the users' addresses, not this one. Inside each platform
+  // rather than beside them: an admin page still running the previous build
+  // walks the top level as platforms, and an unknown field there is ignored
+  // where an unknown key would break it.
+  const userIp = outboundMeter.userIpSnapshot();
   for (const platform of Object.keys(snapshot)) {
     snapshot[platform].breaker = breaker.status(platform);
+    snapshot[platform].userIp = userIp[platform] || null;
   }
   res.json(snapshot);
+});
+
+// GET /api/admin/qq-direct — the QQ play-URL switch, and what the browsers
+// have reported so far (shadow timings, browser-mode outcomes).
+router.get('/qq-direct', async (req, res, next) => {
+  try {
+    res.json({
+      settings: await settingsService.getQqDirect(),
+      last24h: qqDirectStats.summary(24),
+      last48h: qqDirectStats.summary(48),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/qq-direct — patch { mode, adminsOnly, hedgeMs }
+router.put('/qq-direct', async (req, res, next) => {
+  try {
+    res.json({ settings: await settingsService.setQqDirect(req.body) });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // GET /api/admin/capture-client — what the site tells clients is the newest build

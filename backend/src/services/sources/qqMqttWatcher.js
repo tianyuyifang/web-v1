@@ -17,6 +17,7 @@
  * state out of process, which is a large change for a rare and cheap failure.
  */
 const mqtt = require('mqtt');
+const meter = require('../outboundMeter');
 
 const WS_URL = 'wss://mu.y.qq.com/ws/handshake';
 
@@ -77,6 +78,8 @@ function connectAndSubscribe(qrcodeID, { signal } = {}) {
     const bad = finish(reject);
 
     const attempt = () => {
+      // One connection (or one hop to another broker) per scan being watched.
+      meter.record('qq', 'login');
       const client = mqtt.connect(url, {
         ...OPTIONS,
         clientId: qrcodeID,

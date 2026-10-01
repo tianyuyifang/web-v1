@@ -21,6 +21,7 @@
  * Verified end to end on 2026-08-17.
  */
 const https = require('https');
+const meter = require('../outboundMeter');
 
 const APPID = 'wx48db31d50e334801';
 const REDIRECT = 'https://y.qq.com/portal/wx_redirect.html?login_type=2&surl=https://y.qq.com/';
@@ -39,6 +40,9 @@ const WX_STATUS = {
 };
 
 function request(url, { headers = {}, method = 'GET', body = null, timeoutMs = 15000 } = {}) {
+  // Every sign-in and renewal call (WeChat/QQ QR pages, scan polling, code
+  // exchange, key renewal) leaves through here, from this server's address.
+  meter.record('qq', 'login');
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const payload = body ? Buffer.from(JSON.stringify(body), 'utf8') : null;

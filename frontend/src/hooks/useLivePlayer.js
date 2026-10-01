@@ -149,6 +149,16 @@ export default function useLivePlayer() {
     return el;
   }, []);
 
+  // Audio elements that have started sound at least once. Recorded only, never
+  // acted on here: lib/qqDirect asks it, because on Apple's WebKit an element
+  // that has already played may be started again by code, while a fresh one
+  // must be started from the tap itself (see elementHasPlayed below).
+  const playedRef = useRef(null);
+  const played = useCallback(() => {
+    if (!playedRef.current) playedRef.current = new WeakSet();
+    return playedRef.current;
+  }, []);
+
   const element = useCallback(() => {
     if (elRef.current) return elRef.current;
     const el = new Audio();
@@ -455,7 +465,9 @@ export default function useLivePlayer() {
     if (!ready) { next.src = ""; return false; }
 
     try { next.currentTime = at; } catch { /* streams that refuse a seek */ }
-    await next.play().catch(() => {});
+    // Same as before -- a refusal is swallowed and the hand-over goes ahead --
+    // except that a success is now remembered.
+    if (await next.play().then(() => true, () => false)) played().add(next);
 
     // Hand over: the old element stops only once the new one is making sound.
     const old = elRef.current;
@@ -476,7 +488,7 @@ export default function useLivePlayer() {
     if (wasShifting) shiftingRef.current = false;
     setIsPlaying(true);
     return true;
-  }, [element, positionNow, teardownGraph, warmBuffer, attachElementListeners]);
+  }, [element, positionNow, teardownGraph, warmBuffer, attachElementListeners, played]);
 
   /** Load a URL and start playing it through the element. */
   const load = useCallback(async (url) => {
@@ -493,11 +505,12 @@ export default function useLivePlayer() {
     // playing and costs them nothing.
     const tPlay = Date.now();
     await el.play();
+    played().add(el);
     try { report('play', { ms: Date.now() - tPlay }); } catch { /* never break playback */ }
     setIsPlaying(true);
     // Deliberately not awaited: the point is that sound has already started.
     warmBuffer(url);
-  }, [element, teardownGraph, warmBuffer, report]);
+  }, [element, teardownGraph, warmBuffer, report, played]);
 
   const toggle = useCallback(async () => {
     const el = element();
@@ -729,8 +742,13 @@ export default function useLivePlayer() {
     if (ctxRef.current.state !== "running") ctxRef.current.resume().catch(() => {});
   }, []);
 
+  /** Has the element that plays next already made sound once? */
+  const elementHasPlayed = useCallback(() => !!elRef.current && !!playedRef.current && playedRef.current.has(elRef.current), []);
+  /** Has the current song finished downloading (warmBuffer)? Read only, for lib/qqDirect. */
+  const bufferReady = useCallback(() => !!bufferRef.current, []);
+
   return {
-    load, toggle, seek, stop, swapSource, unlockAudio,
+    load, toggle, seek, stop, swapSource, unlockAudio, elementHasPlayed, bufferReady,
     setPitch, setSpeed, setVolume, setVocalsOnly,
     isPlaying, current, duration, pitch, speed, volume, canShift,
     // Temporary — see perfRef.

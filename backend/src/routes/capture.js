@@ -337,9 +337,15 @@ router.delete('/sessions/:id', ...web, async (req, res, next) => {
 // Cheap enough to poll; the panel uses it to explain an empty list.
 router.get('/sessions/:id/status', ...web, async (req, res, next) => {
   try {
-    res.json(await captureService.getStatus({
-      userId: req.user.id, sessionId: req.params.id,
-    }));
+    // Who resolves QQ play URLs for this user (档位设置 → QQ 播放解析). On the
+    // poll the page already makes, so the switch costs no request of its own;
+    // read alongside the status rather than after it, so it adds no wait. A
+    // failure to read it must not cost the page its status: `server` then.
+    const [status, qqDirectMode] = await Promise.all([
+      captureService.getStatus({ userId: req.user.id, sessionId: req.params.id }),
+      settingsService.qqDirectFor(req.user.role).then((s) => s.mode).catch(() => 'server'),
+    ]);
+    res.json({ ...status, qqDirectMode });
   } catch (err) {
     next(err);
   }

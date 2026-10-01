@@ -127,7 +127,9 @@ function fail(message, code, extra = {}) {
 const WRITE_PATHS = new Set(['/api/song/like', '/api/radio/like', '/api/playlist/manipulate/tracks']);
 
 function rawCall(apiPath, data, { cookie = '' } = {}) {
-  meter.record('netease', apiPath === '/api/song/lyric' ? 'lyric' : (WRITE_PATHS.has(apiPath) ? 'write' : 'read'));
+  meter.record('netease', apiPath === '/api/song/lyric' ? 'lyric'
+    : WRITE_PATHS.has(apiPath) ? 'write'
+      : apiPath.startsWith('/api/login/') ? 'login' : 'read');
   const header = clientHeader();
   const payload = { ...data, header };
   const body = Buffer.from(new URLSearchParams(eapiParams(apiPath, payload)).toString(), 'utf8');
@@ -405,6 +407,8 @@ function corsFriendlyUrl(rawUrl, hasCors) {
  * either breaks playback or breaks a URL that already worked.
  */
 function hostSendsCors(rawUrl) {
+  // A request to NetEase's CDN from this server's address, so it is counted.
+  meter.record('netease', 'probe');
   return new Promise((resolve) => {
     let u;
     try {

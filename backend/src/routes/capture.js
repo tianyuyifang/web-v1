@@ -12,6 +12,10 @@ const { authMiddleware, requireApproved, requireActiveSession } = require('../mi
 const captureAuth = require('../middleware/captureAuth');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
 const settingsService = require('../services/settingsService');
+const apkChannel = require('../services/apkChannel');
+const apkLikes = require('../services/apkLikeService');
+const gepSingers = require('../services/gepSingerService');
+const { misrouted, cleanFrom } = require('../services/captureRouting');
 const noEtag = require('../middleware/noEtag');
 
 /**
@@ -87,6 +91,34 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
     // lets an old client -- which knows nothing about targets -- keep working
     // untouched while the destination moves underneath it.
     const target = req.captureSession.target;
+    const body = req.body || {};
+    const text = String(body.text == null ? '' : body.text).trim();
+    // Which view the title came from ('gep' | 'live'), and the 歌P game's
+    // assigned singer read in the same scan. Both from v28 clients only.
+    const from = cleanFrom(body.from);
+    const singer = from === 'gep' && typeof body.singer === 'string'
+      ? body.singer.trim().slice(0, 64) || null
+      : null;
+
+    // 歌手库: a 歌P title and the singer it was offered under, recorded
+    // whatever the round is aimed at -- the pair is a fact about the game.
+    // Fire-and-forget; never delays or fails the capture.
+    if (singer && text) gepSingers.note(singer, text);
+
+    // Read for one round, filed under another: the client had not yet heard
+    // that the user switched (see captureRouting). Dropped, with a 200 so the
+    // client does not re-send it every 2s, and with where captures go now so
+    // a v28 client switches at once instead of at its next heartbeat.
+    if (target !== 'none' && misrouted({ target, from, text })) {
+      // The round the title was read for: the other one.
+      captureService.logNoTarget(req.captureSession, text, target === 'live' ? 'playlist' : 'live');
+      await captureService.touchSession(req.captureSession);
+      return res.json({
+        outcome: 'wrong_mode',
+        rawText: text,
+        ...await apkChannel.targetFor(req.captureSession),
+      });
+    }
 
     // Connected but not delivering: the user has paired and not yet said what
     // they are doing. Dropping is deliberate -- the alternative is guessing a
@@ -121,6 +153,7 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
       return res.json(await platformTagService.ingest({
         session: req.captureSession,
         rawText: req.body && req.body.text,
+        singer,
       }));
     }
 
@@ -144,6 +177,8 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
         side: req.body && req.body.side,
         // Optional: clients before v9 do not send it.
         row: req.body && req.body.row,
+        // Optional: clients before v28 do not send it.
+        singer,
       });
     res.json(result);
   } catch (err) {
@@ -177,27 +212,67 @@ router.post('/heartbeat', captureAuth, async (req, res, next) => {
       latestVersion: (await settingsService.getClientVersion()).latest,
       // What the client actually needs: which screens are worth scanning, and
       // whether to scan at all. Older clients ignore both fields.
-      // A platform run is reported to the client as an ordinary playlist run:
-      // the client knows 'playlist' / 'live' / 'none' and scans the 歌 P
-      // screens for anything that is not live, which is exactly what a
-      // platform run wants. The ref below is opaque to it and only has to
-      // change when the destination does, so its already-sent set resets.
-      target: req.captureSession.target === 'platform' ? 'playlist' : req.captureSession.target,
-      // Which playlist, not just that there is one.
       //
-      // Without this the client cannot see a move from one playlist to
-      // another: target reads "playlist" before and after, so the string it
-      // compares is unchanged and its already-sent set is never cleared. Every
-      // song it had tagged into the first playlist was then skipped for the
-      // second. Measured on production: across ten playlist switches, the
-      // number of songs re-sent to the new destination was zero, every time.
+      // target: a platform run is reported to the client as an ordinary
+      // playlist run: the client knows 'playlist' / 'live' / 'none' and scans
+      // the 歌 P screens for anything that is not live, which is exactly what
+      // a platform run wants.
       //
-      // Null when the target is not a playlist, so "aimed at 唱卡" and "aimed
-      // at no playlist in particular" stay distinguishable from each other.
-      playlistId: req.captureSession.target === 'playlist'
-        ? req.captureSession.playlistId
-        : (req.captureSession.target === 'platform' ? req.captureSession.platformRef : null),
+      // playlistId: which playlist, not just that there is one. Without it the
+      // client cannot see a move from one playlist to another: target reads
+      // "playlist" before and after, so its already-sent set was never cleared
+      // and every song tagged into the first playlist was skipped for the
+      // second (measured on production: zero re-sent across ten switches).
+      // For a platform run the ref stands in for it. Null when the target is
+      // not a playlist, so "aimed at 唱卡" and "aimed at no playlist in
+      // particular" stay distinguishable.
+      //
+      // realTarget / platform / stream: new in v28 clients, ignored by older
+      // ones -- see captureRouting.clientTarget and apkChannel.
+      ...await apkChannel.targetFor(req.captureSession),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/capture/apk/stream?v=&caps= — the push channel to the client.
+// Opened by v28+ clients only while the heartbeat says `stream: true` (QQ打标
+// on QQ, admin switch on). Capture-token auth, like everything the client
+// calls; no device slot. Exempt from compression in server.js.
+router.get('/apk/stream', captureAuth, async (req, res, next) => {
+  try {
+    const version = Number.parseInt(req.query.v, 10);
+    const caps = String(req.query.caps || '').split(',').map((c) => c.trim()).filter(Boolean).slice(0, 8);
+    const attached = await apkChannel.attach(req.captureSession, res, {
+      version: Number.isInteger(version) ? version : null,
+      caps,
+    });
+    if (!attached) res.status(409).json({ error: { message: 'No stream for this session', status: 409 } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/capture/apk/claim { cmdId } — the phone takes a QQ like it was
+// sent. 409 when the command is no longer its to take (the server already
+// did it); the phone then does nothing.
+router.post('/apk/claim', captureAuth, async (req, res, next) => {
+  try {
+    const job = await apkLikes.claim(req.captureSession, req.body && req.body.cmdId);
+    if (!job) return res.status(409).json({ error: { message: 'Command not available', status: 409 } });
+    res.set('Cache-Control', 'no-store');
+    return res.json(job);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/capture/apk/result { cmdId, ok, alreadyLiked?, code?, calls? }
+router.post('/apk/result', captureAuth, async (req, res, next) => {
+  try {
+    const taken = apkLikes.result(req.captureSession, req.body && req.body.cmdId, req.body);
+    res.json({ ok: taken });
   } catch (err) {
     next(err);
   }

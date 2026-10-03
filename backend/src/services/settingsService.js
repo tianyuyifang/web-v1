@@ -374,6 +374,59 @@ async function qqDirectFor(role) {
   return s;
 }
 
+// --- QQ打标: who performs the like -- this server, or the user's own phone ---
+//
+// The capture client (APK) can make the QQ write itself, from the user's own
+// network, instead of this server doing it from its address. Off by default:
+// with `enabled` false nothing about QQ打标 changes at all -- the client is not
+// even told to open its push channel.
+//
+// `adminsOnly` keeps it to ADMIN accounts while it is tried. `auto` / `approve`
+// / `manual` choose which likes go through the phone: the automatic exact
+// match, the 待确认 button, and the heart on the list. Each falls back to the
+// server whenever the phone does not answer in time, so a like is never lost.
+const APK_LIKES_KEY = 'apkLikes';
+const APK_LIKES_DEFAULT = Object.freeze({
+  enabled: false, adminsOnly: true, auto: true, approve: false, manual: false,
+});
+const APK_LIKES_FIELDS = Object.freeze(['enabled', 'adminsOnly', 'auto', 'approve', 'manual']);
+
+// Read on every QQ打标 like and on QQ打标 heartbeats, so held briefly in memory.
+const APK_LIKES_CACHE_MS = 10 * 1000;
+let apkLikesCache = null; // { value, at }
+let apkLikesGeneration = 0;
+
+async function getApkLikes() {
+  if (apkLikesCache && Date.now() - apkLikesCache.at < APK_LIKES_CACHE_MS) return apkLikesCache.value;
+  const generation = apkLikesGeneration;
+  const raw = await get(APK_LIKES_KEY, null);
+  const value = { ...APK_LIKES_DEFAULT, ...(raw || {}) };
+  if (generation === apkLikesGeneration) apkLikesCache = { value, at: Date.now() };
+  return value;
+}
+
+async function setApkLikes(patch) {
+  const current = await getApkLikes();
+  const next = { ...current, ...(patch || {}) };
+  for (const f of APK_LIKES_FIELDS) {
+    if (typeof next[f] !== 'boolean') throw new ValidationError({ [f]: ['必须是 true 或 false'] });
+  }
+  const clean = Object.fromEntries(APK_LIKES_FIELDS.map((f) => [f, next[f]]));
+  apkLikesGeneration += 1;
+  await set(APK_LIKES_KEY, clean);
+  apkLikesGeneration += 1;
+  apkLikesCache = null;
+  return clean;
+}
+
+/** The settings when they apply to this user at all, else null. */
+async function apkLikesFor(role) {
+  const s = await getApkLikes();
+  if (!s.enabled) return null;
+  if (s.adminsOnly && role !== 'ADMIN') return null;
+  return s;
+}
+
 module.exports = {
   PROMO_KEY,
   CLIENT_VERSION_KEY,
@@ -382,6 +435,10 @@ module.exports = {
   getQqDirect,
   setQqDirect,
   qqDirectFor,
+  APK_LIKES_KEY,
+  getApkLikes,
+  setApkLikes,
+  apkLikesFor,
   getClientVersion,
   setClientVersion,
   getSignupPromo,

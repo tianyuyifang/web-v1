@@ -5,6 +5,7 @@ const redeemService = require('../services/redeemService');
 const outboundMeter = require('../services/outboundMeter');
 const breaker = require('../services/musicSourceBreaker');
 const qqDirectStats = require('../services/qqDirectStats');
+const apkLikes = require('../services/apkLikeService');
 const validate = require('../middleware/validate');
 const { updateBillingSchema } = require('../validators/billing');
 
@@ -195,6 +196,25 @@ router.get('/qq-direct', async (req, res, next) => {
 router.put('/qq-direct', async (req, res, next) => {
   try {
     res.json({ settings: await settingsService.setQqDirect(req.body) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/apk-likes — QQ打标: whether the user's phone performs the
+// likes, and how that has gone since the last restart.
+router.get('/apk-likes', async (req, res, next) => {
+  try {
+    res.json({ settings: await settingsService.getApkLikes(), stats: apkLikes.snapshot() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/apk-likes — patch { enabled, adminsOnly, auto, approve, manual }
+router.put('/apk-likes', async (req, res, next) => {
+  try {
+    res.json({ settings: await settingsService.setApkLikes(req.body) });
   } catch (err) {
     next(err);
   }

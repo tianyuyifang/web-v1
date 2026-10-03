@@ -20,6 +20,7 @@ const { searchTextFor } = require('../utils/searchText');
 const requireAddOn = require('../middleware/requireAddOn');
 const captureService = require('../services/captureService');
 const likes = require('../services/platformLikeService');
+const apkLikes = require('../services/apkLikeService');
 const tags = require('../services/platformTagService');
 const { addClient } = require('../services/sseManager');
 const noEtag = require('../middleware/noEtag');
@@ -216,7 +217,7 @@ function likeTarget(body) {
 router.post('/like', ...web, writeLimiter, async (req, res, next) => {
   try {
     const { platform, id, songType } = likeTarget(req.body);
-    const result = await likes.like(req.user.id, platform, { id, songType });
+    const result = await apkLikes.like(req.user.id, platform, { id, songType }, { purpose: 'manual' });
     tags.noteLiked(req.user.id, id);
     res.json(result);
   } catch (err) {
@@ -229,7 +230,7 @@ router.post('/like', ...web, writeLimiter, async (req, res, next) => {
 router.post('/unlike', ...web, writeLimiter, async (req, res, next) => {
   try {
     const { platform, id, songType } = likeTarget(req.body);
-    const result = await likes.unlike(req.user.id, platform, { id, songType });
+    const result = await apkLikes.unlike(req.user.id, platform, { id, songType }, { purpose: 'manual' });
     tags.noteUnliked(req.user.id, id);
     res.json(result);
   } catch (err) {

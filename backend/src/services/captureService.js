@@ -8,6 +8,8 @@ const { ensureLiked } = require('./likeService');
 const { resolveGameSong } = require('./mappingResolveService');
 const { mappingTitleKey, artistKey } = require('./songKeyService');
 const { broadcast } = require('./sseManager');
+const apkChannel = require('./apkChannel');
+const gepSingers = require('./gepSingerService');
 const settingsService = require('./settingsService');
 const { AppError, NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 
@@ -293,6 +295,10 @@ async function setTarget({ userId, target, playlistId }) {
       mode: target === 'live' ? 'live' : 'playlist',
     },
   });
+  // Told to the capture client now rather than on its next heartbeat, when it
+  // holds the push channel open (only ever during QQ打标; see apkChannel).
+  // Never throws, and does nothing when no channel is open.
+  apkChannel.pushTarget(updated);
 
   return updated;
 }
@@ -533,7 +539,7 @@ async function touchSession(session, clientVersion, health) {
  * Nothing is liked here — matching only proposes. The user approves each
  * match by hand via approveEvent.
  */
-async function ingestText({ session, rawText, side, row }) {
+async function ingestText({ session, rawText, side, row, singer = null }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
 
@@ -601,9 +607,35 @@ async function ingestText({ session, rawText, side, row }) {
   });
 
   // A song that matched but has no clip in this playlist is not actionable.
-  const actionable = enriched.filter((c) => c.inPlaylist);
+  let actionable = enriched.filter((c) => c.inPlaylist);
+
+  // 歌手库: nothing actionable from the title itself, so try the site titles
+  // an editor attached to it under this game's singer. Whatever turns up is a
+  // proposal (kind 'alias'): the page only ever auto-approves kind 'exact'.
+  if (!actionable.length && singer) {
+    const siteTitles = await gepSingers.siteTitlesFor(singer, text);
+    if (siteTitles.length) {
+      const pool = [];
+      for (const st of siteTitles) pool.push(...await fetchCandidateSongs(st));
+      const viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs: pool });
+      const aliasClips = await clipsInPlaylist(playlistId, viaAlias.map((c) => c.songId));
+      const aliasEnriched = viaAlias.map((c) => {
+        const own = aliasClips.filter((cl) => cl.song.id === c.songId)
+          .map((cl) => ({ clipId: cl.id, start: cl.start, length: cl.length, position: cl.position }))
+          .sort((a, b) => a.start - b.start);
+        return { ...c, clips: own, inPlaylist: own.length > 0 };
+      }).filter((c) => c.inPlaylist);
+      if (aliasEnriched.length) {
+        const ids = new Set(aliasEnriched.map((c) => c.songId));
+        enriched.splice(0, enriched.length, ...aliasEnriched, ...enriched.filter((c) => !ids.has(c.songId)));
+        actionable = aliasEnriched;
+      }
+    }
+  }
+
   let outcome = matchOutcome;
-  if (matchOutcome !== 'no_match' && !actionable.length) outcome = 'not_in_playlist';
+  if (actionable.length && matchOutcome === 'no_match') outcome = 'pending';
+  if (outcome !== 'no_match' && !actionable.length) outcome = 'not_in_playlist';
   else if (actionable.length > 1) outcome = 'ambiguous';
   else if (actionable.length === 1) {
     outcome = actionable[0].clips.length === 1 ? 'pending' : 'ambiguous';

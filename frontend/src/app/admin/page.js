@@ -14,6 +14,7 @@ import CaptureClientPanel from "@/components/admin/CaptureClientPanel";
 import TierConfigPanel from "@/components/admin/TierConfigPanel";
 import OutboundMeterPanel from "@/components/admin/OutboundMeterPanel";
 import QqDirectPanel from "@/components/admin/QqDirectPanel";
+import ApkLikesPanel from "@/components/admin/ApkLikesPanel";
 import SignupPromoPanel from "@/components/admin/SignupPromoPanel";
 import ActivationCodesPanel from "@/components/admin/ActivationCodesPanel";
 import UpdatesPanel from "@/components/admin/UpdatesPanel";
@@ -383,6 +384,9 @@ export default function AdminPage() {
           {/* Beside the meter it changes: switching QQ resolving to the
               singers' own addresses is what moves the numbers above. */}
           <QqDirectPanel />
+          {/* Same reasoning: QQ打标's likes leaving from the user's phone is
+              the other switch that moves the write numbers above. */}
+          <ApkLikesPanel />
         </div>
       )}
       {activeTab === "codes" && <ActivationCodesPanel />}

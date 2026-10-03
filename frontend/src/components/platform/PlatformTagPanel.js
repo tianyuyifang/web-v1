@@ -264,4 +264,6 @@ const KIND_LABEL = {
   punct: "标点不同",
   ellipsis: "被省略",
   loose: "近似",
+  // Found through the 歌P singer library's 网站歌名, not the title itself.
+  alias: "歌手库对应",
 };

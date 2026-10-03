@@ -24,6 +24,7 @@ import { mappingAPI, musicSourcesAPI, getStreamUrl } from "@/lib/api";
 import TrackLyricPanel from "@/components/mappings/TrackLyricPanel";
 import UnconfiguredPanel from "@/components/mappings/UnconfiguredPanel";
 import PassagePanel from "@/components/mappings/PassagePanel";
+import GepSingerPanel from "@/components/mappings/GepSingerPanel";
 import useAuth from "@/hooks/useAuth";
 
 // Two levels on purpose: 歌曲 and 歌词段落 are different subjects, and the
@@ -144,7 +145,7 @@ export default function MappingsPage() {
     // 未配置 is not a bucket of mapping rows and has no cursor to page; its own
     // panel fetches and holds what it needs. Asking the list route for it would
     // fail validation, and the spinner below would never clear.
-    if (bucket === "unconfigured" || bucket === "passages") { setLoading(false); return; }
+    if (bucket === "unconfigured" || bucket === "passages" || bucket === "gepSingers") { setLoading(false); return; }
     setLoading(true);
     setError("");
     try {
@@ -549,20 +550,21 @@ export default function MappingsPage() {
           setExpanded(null);
           setNextCursor(null);
         };
-        const group = bucket === "passages" ? "passages" : "songs";
+        const group = bucket === "passages" || bucket === "gepSingers" ? bucket : "songs";
         return (
           <>
             <div className="mb-3 flex flex-wrap gap-2">
               {[
                 { key: "songs", label: "歌曲" },
                 { key: "passages", label: "歌词段落" },
+                { key: "gepSingers", label: "歌P 歌手" },
               ].map((g) => (
                 <button
                   key={g.key}
                   type="button"
                   onClick={() => {
                     if (g.key === group) return;
-                    switchTo(g.key === "passages" ? "passages" : "pending");
+                    switchTo(g.key === "songs" ? "pending" : g.key);
                   }}
                   className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
                     group === g.key
@@ -613,7 +615,9 @@ export default function MappingsPage() {
 
       {bucket === "passages" && <PassagePanel />}
 
-      {bucket !== "unconfigured" && bucket !== "passages" && (
+      {bucket === "gepSingers" && <GepSingerPanel />}
+
+      {bucket !== "unconfigured" && bucket !== "passages" && bucket !== "gepSingers" && (
       <form
         className="mb-4 flex gap-2"
         onSubmit={(e) => { e.preventDefault(); setSubmittedQuery(query); }}
@@ -654,9 +658,9 @@ export default function MappingsPage() {
         </div>
       )}
 
-      {bucket !== "unconfigured" && loading && rows.length === 0 && <div className="p-6 text-sm text-muted">加载中…</div>}
+      {bucket !== "unconfigured" && bucket !== "gepSingers" && loading && rows.length === 0 && <div className="p-6 text-sm text-muted">加载中…</div>}
 
-      {bucket !== "unconfigured" && !loading && rows.length === 0 && (
+      {bucket !== "unconfigured" && bucket !== "gepSingers" && !loading && rows.length === 0 && (
         <div className="rounded-xl border border-border bg-surface p-6 text-sm text-muted">
           {/* The submitted term, not the input: typing without pressing enter
               must not relabel an empty bucket as "no matches". */}
@@ -676,7 +680,7 @@ export default function MappingsPage() {
 
           The lyric panel takes what is left. It reads perfectly well narrow,
           being short centred lines, so the width is worth more here. */}
-      {bucket !== "unconfigured" && bucket !== "passages" && (
+      {bucket !== "unconfigured" && bucket !== "passages" && bucket !== "gepSingers" && (
       <div className="lg:grid lg:grid-cols-[minmax(0,48rem)_1fr] lg:items-start lg:gap-4">
         <div className="min-w-0">
       <ul className="space-y-1">

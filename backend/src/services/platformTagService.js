@@ -20,6 +20,9 @@
 const prisma = require('../db/client');
 const { matchTitle } = require('./captureMatchService');
 const likes = require('./platformLikeService');
+const apkLikes = require('./apkLikeService');
+const apkChannel = require('./apkChannel');
+const gepSingers = require('./gepSingerService');
 const { searchTextFor } = require('../utils/searchText');
 const captureService = require('./captureService');
 const { broadcast } = require('./sseManager');
@@ -269,6 +272,9 @@ async function start({ userId, playlistRef, dirId = null, isLikes = false }) {
       mode: 'playlist',
     },
   });
+  // Told to the capture client now rather than on its next heartbeat, when it
+  // holds the push channel open (only ever during QQ打标; see apkChannel).
+  apkChannel.pushTarget(updated);
 
   return {
     session: updated,
@@ -304,7 +310,7 @@ function toCandidate(c, song, alreadyLiked) {
  *   failed         the like was attempted and the platform refused
  *   duplicate      (not stored) this run already saw this title for this list
  */
-async function ingest({ session, rawText }) {
+async function ingest({ session, rawText, singer = null }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
 
@@ -371,7 +377,13 @@ async function ingest({ session, rawText }) {
     } else {
       try {
         // knownUnliked: the sweep above has just answered for this id.
-        const res = await likes.like(userId, platform, { id: song.id, songType: song.songType, knownUnliked: true });
+        // apkLikes: the user's own phone does it when allowed, else exactly
+        // the server call this always was.
+        const res = await apkLikes.like(
+          userId, platform,
+          { id: song.id, songType: song.songType, knownUnliked: true },
+          { purpose: 'auto', session: fresh },
+        );
         outcome = res.alreadyLiked ? 'already_liked' : 'liked';
         likedExternalId = song.id;
         shaped = [toCandidate(candidates[0], song, true)];
@@ -379,6 +391,25 @@ async function ingest({ session, rawText }) {
       } catch (err) {
         outcome = 'failed';
         error = err.message || String(err);
+      }
+    }
+  }
+
+  // 歌手库: a title that matched nothing gets a second try through the site
+  // titles an editor attached to it under this game's singer. Only ever
+  // offered for approval -- it comes after the auto-like above, which was
+  // decided from the title's own match, and its candidates are kind 'alias',
+  // which no path treats as safe to like unasked.
+  if (matchOutcome === 'no_match' && singer) {
+    const siteTitles = await gepSingers.siteTitlesFor(singer, text);
+    if (siteTitles.length) {
+      const viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs });
+      if (viaAlias.length) {
+        outcome = viaAlias.length === 1 ? 'pending' : 'ambiguous';
+        shaped = viaAlias.map((c) => {
+          const song = byId.get(String(c.songId));
+          return toCandidate(c, song, liked.get(String(c.songId)) === true);
+        });
       }
     }
   }
@@ -463,7 +494,11 @@ async function approve({ userId, eventId, externalId }) {
   let error = null;
   let failure = null;
   try {
-    const res = await likes.like(userId, event.platform, { id: pick.externalId, songType: pick.songType });
+    const res = await apkLikes.like(
+      userId, event.platform,
+      { id: pick.externalId, songType: pick.songType },
+      { purpose: 'approve' },
+    );
     outcome = res.alreadyLiked ? 'already_liked' : 'liked';
     noteLiked(userId, pick.externalId);
   } catch (err) {

@@ -24,6 +24,7 @@ const passages = require('../services/lyricPassageStore');
 const passageReview = require('../services/lyricPassageReview');
 const unconfigured = require('../services/unconfiguredService');
 const artists = require('../services/dashedArtistService');
+const gepSingers = require('../services/gepSingerService');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { requireMappingEditor, markMappingEditor } = require('../middleware/auth');
 
@@ -295,6 +296,70 @@ router.delete('/dashed-artists/:id', requireMappingEditor, async (req, res, next
     const parsed = z.string().uuid().safeParse(req.params.id);
     if (!parsed.success) throw new NotFoundError('Artist');
     res.json(await artists.remove(parsed.data));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* --- 歌P singer library (「歌手」tab) --------------------------------------
+ * Every route gated: the library feeds suggestions into everyone's 待确认. */
+
+/** GET /api/mappings/gep-singers?q= — singers with their song counts. */
+router.get('/gep-singers', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await gepSingers.listSingers({ query: String(req.query.q || '').slice(0, 100) }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** GET /api/mappings/gep-singers/songs?singer= — one singer's songs and site titles. */
+router.get('/gep-singers/songs', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await gepSingers.listSongs(String(req.query.singer || '').slice(0, 64)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const gepSongBody = z.object({
+  singer: z.string().min(1).max(64),
+  title: z.string().min(1).max(130),
+});
+
+/** POST /api/mappings/gep-singers/songs — add one by hand. */
+router.post('/gep-singers/songs', requireMappingEditor, validate(gepSongBody), async (req, res, next) => {
+  try {
+    res.json(await gepSingers.addSong(req.validated.singer, req.validated.title));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** DELETE /api/mappings/gep-singers/songs/:id — misread, or no longer in the game. */
+router.delete('/gep-singers/songs/:id', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await gepSingers.deleteSong(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const gepAliasBody = z.object({ siteTitle: z.string().min(1).max(120) });
+
+/** POST /api/mappings/gep-singers/songs/:id/aliases — how the site writes it. */
+router.post('/gep-singers/songs/:id/aliases', requireMappingEditor, validate(gepAliasBody), async (req, res, next) => {
+  try {
+    res.json(await gepSingers.addAlias(req.params.id, req.validated.siteTitle));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** DELETE /api/mappings/gep-singers/aliases/:id */
+router.delete('/gep-singers/aliases/:id', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await gepSingers.deleteAlias(req.params.id));
   } catch (err) {
     next(err);
   }

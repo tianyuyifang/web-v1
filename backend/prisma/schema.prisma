@@ -1015,3 +1015,46 @@ model ActivationCode {
   @@index([createdAt])
   @@map("activation_codes")
 }
+
+/// 歌P: one song the game has offered under one assigned singer.
+///
+/// A 歌P game names one singer and both teams take turns singing that singer's
+/// songs, so every title read in it belongs to that singer. The capture client
+/// (from v28) reads the singer beside each title and the server records the
+/// pair here; editors can also add pairs by hand and delete wrong or outdated
+/// ones on the review page (「歌手」tab). A deleted pair is simply gone -- if
+/// the game shows it again, it is recorded again.
+///
+/// `title` is the game's text with the surrounding 《》 removed, otherwise as
+/// shown -- not normalised, so it keeps matching the next read exactly.
+model GepSingerSong {
+  id        String   @id @default(uuid()) @db.Uuid
+  singer    String
+  title     String
+  /// "game" (recorded from play) or "manual" (added on the review page).
+  source    String   @default("game")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  aliases GepSongAlias[]
+
+  @@unique([singer, title])
+  @@index([title])
+  @@map("gep_singer_songs")
+}
+
+/// How one game title is written on the site / the platform playlist.
+///
+/// When a captured 歌P title matches nothing in the destination list, these
+/// are tried instead -- and what they find is only ever offered as 待确认,
+/// never liked automatically, so a wrong entry here costs a click, not a like.
+model GepSongAlias {
+  id           String   @id @default(uuid()) @db.Uuid
+  singerSongId String   @map("singer_song_id") @db.Uuid
+  siteTitle    String   @map("site_title")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  singerSong GepSingerSong @relation(fields: [singerSongId], references: [id], onDelete: Cascade)
+
+  @@unique([singerSongId, siteTitle])
+  @@map("gep_song_aliases")
+}

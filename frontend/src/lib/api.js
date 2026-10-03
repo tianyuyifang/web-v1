@@ -392,6 +392,9 @@ export const adminAPI = {
   // QQ play-URL switch (server / shadow / browser) and what browsers reported.
   getQqDirect: () => api.get("/admin/qq-direct"),
   setQqDirect: (patch) => api.put("/admin/qq-direct", patch),
+  // QQ打标: whether the user's own phone performs the likes, and how it went.
+  getApkLikes: () => api.get("/admin/apk-likes"),
+  setApkLikes: (patch) => api.put("/admin/apk-likes", patch),
   setTiers: (patch) => api.put("/admin/tiers", patch),
   extendOneMonth: (id) => api.post(`/admin/users/${id}/extend`),
   resetPassword: (id) => api.post(`/admin/users/${id}/reset-password`),
@@ -598,6 +601,13 @@ export const mappingAPI = {
   dashedArtists: () => api.get("/mappings/dashed-artists"),
   addDashedArtist: (body) => api.post("/mappings/dashed-artists", body),
   removeDashedArtist: (id) => api.delete(`/mappings/dashed-artists/${id}`),
+  // 歌P singer library (「歌手」tab): singer -> songs -> site titles.
+  gepSingers: (q = "") => api.get("/mappings/gep-singers", { params: q ? { q } : {} }),
+  gepSongs: (singer) => api.get("/mappings/gep-singers/songs", { params: { singer } }),
+  addGepSong: (singer, title) => api.post("/mappings/gep-singers/songs", { singer, title }),
+  removeGepSong: (id) => api.delete(`/mappings/gep-singers/songs/${id}`),
+  addGepAlias: (songId, siteTitle) => api.post(`/mappings/gep-singers/songs/${songId}/aliases`, { siteTitle }),
+  removeGepAlias: (id) => api.delete(`/mappings/gep-singers/aliases/${id}`),
 };
 
 /**

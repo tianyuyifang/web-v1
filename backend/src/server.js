@@ -33,6 +33,8 @@ app.use((req, res, next) => {
   // so it is named here: compressed, its frames sit in the zlib buffer and
   // never reach the page in real time.
   if (req.path === '/api/platform-tagging/stream') return next();
+  // The capture client's push channel, for the same reason.
+  if (req.path === '/api/capture/apk/stream') return next();
   compression()(req, res, next);
 });
 app.use(cors({ origin: config.frontendUrl, credentials: true }));

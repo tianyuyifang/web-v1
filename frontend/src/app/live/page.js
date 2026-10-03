@@ -1458,7 +1458,7 @@ export default function LivePage() {
             <strong className="mb-0.5 block font-semibold text-amber-500">
               打标 App 是旧版本
             </strong>
-            新系统上旧版会「连着却读不到歌」。请到
+            请到
             <a href="/tools" className="mx-1 font-semibold text-amber-500 underline underline-offset-2">
               工具页
             </a>

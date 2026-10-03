@@ -207,6 +207,11 @@ const CLIENT_VERSION_KEY = 'captureClientVersion';
 // cleared the set) "fixed" it -- the same class of bug as v8, and the reason a
 // burst of 5 titles could card only 3. minSupported stays at 1: an old client
 // still captures on a fresh pairing, and the upgrade prompt covers it.
+// v28 says which view each title came from (`from`) and sends the 歌P game's
+// singer; reads nothing until the first heartbeat answers and switches at
+// once on a wrong_mode reply; holds the push channel (and performs QQ打标
+// likes) only when the server asks. minSupported stays at 1: the server's
+// mis-route check covers older clients by title shape.
 const CLIENT_VERSION_DEFAULT = Object.freeze({
   latest: 21,
   minSupported: 1,

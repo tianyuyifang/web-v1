@@ -74,6 +74,7 @@ router.put('/:platform', writeLimiter, validate(setSchema), async (req, res, nex
   try {
     const platform = readPlatform(req);
     await svc.setCredential(req.user.id, platform, req.validated.cookie);
+    access.clearRenewCooldown(req.user.id);
     // Ask the platform whether the credential actually works before answering.
     // A cookie that parses can still be dead, and finding that out here costs
     // one request but saves the user pasting again after playback fails.
@@ -220,6 +221,7 @@ router.get('/qq/qrcode/:uuid', pollLimiter, noEtag, async (req, res, next) => {
     // Every field the renewal call needs is stored now. Storing only what
     // playback uses would leave the first renewal to fail three days later,
     // when the key is already dying and there is no way to recover it.
+    access.clearRenewCooldown(req.user.id);
     const source = await svc.setCredential(req.user.id, provider.platform, cred.cookie, {
       method: 'qr',
       // Stated by flows that know; undefined elsewhere, where it is derived.
@@ -277,6 +279,7 @@ router.post('/qq/refresh', writeLimiter, async (req, res, next) => {
     }
 
     const fresh = await qqLogin.refreshCredential(saved);
+    access.clearRenewCooldown(req.user.id);
     const source = await svc.setCredential(req.user.id, 'qq', fresh.cookie, {
       method: 'qr',
       uin: fresh.uin,

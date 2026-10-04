@@ -26,6 +26,11 @@ async function save(userId, fresh) {
   await credentials.setCredential(userId, 'qq', fresh.cookie, {
     method: 'qr',
     uin: fresh.uin,
+    // Kept as the manual renewal (routes/musicSources /qq/refresh) keeps
+    // them: without loginType the next renewal guesses the parameter set from
+    // the key's prefix, which misreads an app-QR (type 6) login.
+    loginType: fresh.loginType,
+    accessToken: fresh.accessToken,
     refreshKey: fresh.refreshKey,
     refreshToken: fresh.refreshToken,
     openid: fresh.openid,
@@ -38,22 +43,91 @@ async function save(userId, fresh) {
   });
 }
 
+/**
+ * One renewal per user at a time, and none for a while after one failed.
+ *
+ * Several requests for the same user arrive together (a page opening, a run
+ * starting), and each would otherwise start its own renewal of the same
+ * account -- the shape the reference client avoids with a per-account lock.
+ * And a renewal that fails (a dead refresh key) would otherwise be retried on
+ * every single use, each attempt a login call from this server's address that
+ * cannot succeed. The cooldown is short enough that a passing network fault
+ * heals within minutes.
+ */
+const RENEW_COOLDOWN_MS = 15 * 60 * 1000;
+// A network fault or a garbled answer is not the platform refusing: tried
+// again a minute later rather than a quarter of an hour.
+const RENEW_TRANSIENT_COOLDOWN_MS = 60 * 1000;
+// A key minted this recently is not dead: QQ answers "credential expired" for
+// a single withheld file too, and renewing on every such tap was a login call
+// per tap that could not help.
+const RENEW_MIN_AGE_MS = 10 * 60 * 1000;
+// A scheduled renewal never for a key under six hours old, whatever the
+// stored expiry says: if a renewal ever came back without moving the expiry
+// forward, each use would otherwise renew again (the old pattern). At most
+// four a day per user, even then. Checked inside the single flight, so a use
+// that read "due" just before another request's renewal landed does not
+// renew a second time.
+const SCHEDULED_MIN_AGE_MS = 6 * 60 * 60 * 1000;
+const renewing = new Map(); // userId -> Promise<boolean>
+const renewFailedAt = new Map(); // userId -> { at, ms }
+
+function inCooldown(userId) {
+  const f = renewFailedAt.get(userId);
+  if (!f) return false;
+  if (Date.now() - f.at < f.ms) return true;
+  renewFailedAt.delete(userId);
+  return false;
+}
+
+/** A credential was stored afresh (scan, paste, manual renewal): its renewals start clean. */
+function clearRenewCooldown(userId) {
+  renewFailedAt.delete(userId);
+}
+
+function ageMs(saved) {
+  const at = saved.savedAt ? new Date(saved.savedAt).getTime() : NaN;
+  return Number.isNaN(at) ? Infinity : Date.now() - at;
+}
+
+/**
+ * Renew this user's QQ credential once; true when a fresh one was stored.
+ * Not when the stored key is younger than `minAgeMs`.
+ */
+function renewOnce(userId, minAgeMs = 0) {
+  const inFlight = renewing.get(userId);
+  if (inFlight) return inFlight;
+  const p = (async () => {
+    const saved = await credentials.getRefreshable(userId, 'qq');
+    if (!saved || ageMs(saved) < minAgeMs) return false;
+    try {
+      await save(userId, await qqLogin.refreshCredential(saved));
+      renewFailedAt.delete(userId);
+      return true;
+    } catch (err) {
+      const refused = err.code === 'QR_REFRESH_FAILED' || err.code === 'QR_NOT_REFRESHABLE';
+      renewFailedAt.set(userId, { at: Date.now(), ms: refused ? RENEW_COOLDOWN_MS : RENEW_TRANSIENT_COOLDOWN_MS });
+      if (renewFailedAt.size > 5000) renewFailedAt.clear();
+      // Recorded so the account page can say why, but not thrown: see above.
+      await credentials.recordCheck(userId, 'qq', { ok: false, error: err.message })
+        .catch(() => { /* bookkeeping only */ });
+      return false;
+    }
+  })().finally(() => renewing.delete(userId));
+  renewing.set(userId, p);
+  return p;
+}
+
 async function getFreshCredential(userId, platform) {
   if (platform !== 'qq') return credentials.getCredential(userId, platform);
 
   let renewed = false;
   try {
-    if (await credentials.needsRefresh(userId, 'qq')) {
-      const saved = await credentials.getRefreshable(userId, 'qq');
-      if (saved) {
-        await save(userId, await qqLogin.refreshCredential(saved));
-        renewed = true;
-      }
+    if (!inCooldown(userId) && await credentials.needsRefresh(userId, 'qq')) {
+      renewed = await renewOnce(userId, SCHEDULED_MIN_AGE_MS);
     }
   } catch (err) {
-    // Recorded so the account page can say why, but not thrown: see above.
-    await credentials.recordCheck(userId, 'qq', { ok: false, error: err.message })
-      .catch(() => { /* bookkeeping only */ });
+    // needsRefresh reading the store failed: proceed with what is stored.
   }
 
   const cred = await credentials.getCredential(userId, platform);
@@ -70,18 +144,18 @@ async function getFreshCredential(userId, platform) {
  * broken and only a fresh scan can fix it, so retrying would just be noise
  * against a platform that already said no.
  */
-async function renewAfterRejection(userId) {
+async function renewAfterRejection(userId, usedKey = null) {
+  // Another request renewed it meanwhile: the caller was refused on the old
+  // key, and the stored one is worth the one retry -- no renewal needed.
+  const stored = await credentials.getCredential(userId, 'qq');
+  if (stored && usedKey && stored.musicKey && stored.musicKey !== usedKey) return stored;
+  // A renewal that failed minutes ago will fail again: the chain is broken
+  // until the user rescans, and asking again is only noise from our address.
+  if (inCooldown(userId)) return null;
   const saved = await credentials.getRefreshable(userId, 'qq');
-  if (!saved) return null;
-  try {
-    const fresh = await qqLogin.refreshCredential(saved);
-    await save(userId, fresh);
-    return credentials.getCredential(userId, 'qq');
-  } catch (err) {
-    await credentials.recordCheck(userId, 'qq', { ok: false, error: err.message })
-      .catch(() => { /* bookkeeping only */ });
-    return null;
-  }
+  if (!saved || ageMs(saved) < RENEW_MIN_AGE_MS) return null;
+  const ok = await renewOnce(userId, RENEW_MIN_AGE_MS);
+  return ok ? credentials.getCredential(userId, 'qq') : null;
 }
 
 /**
@@ -147,4 +221,4 @@ async function verifyNetease(userId) {
   }
 }
 
-module.exports = { getFreshCredential, renewAfterRejection, verifyCredential };
+module.exports = { getFreshCredential, renewAfterRejection, verifyCredential, clearRenewCooldown };

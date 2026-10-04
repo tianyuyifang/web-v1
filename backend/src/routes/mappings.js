@@ -755,7 +755,7 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
     // a key can die earlier than the platform said it would, and the user
     // should not have to rescan for something we can fix silently.
     if (!result?.url && result?.reason === 'credential-expired') {
-      const renewed = await renewAfterRejection(userId);
+      const renewed = await renewAfterRejection(userId, cred.musicKey);
       if (renewed) result = await resolveWithFallback(renewed);
 
       if (!result?.url) {

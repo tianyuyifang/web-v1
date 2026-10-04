@@ -339,6 +339,8 @@ async function getRefreshable(userId, platform) {
     accessTokenExpiresAt: entry.accessTokenExpiresAt ?? null,
     expiresAt: entry.expiresAt ?? null,
     needRefreshInSec: entry.needRefreshInSec ?? null,
+    // When this key was stored: a key minted minutes ago is not dead.
+    savedAt: entry.savedAt ?? null,
   };
 }
 
@@ -350,22 +352,35 @@ async function getRefreshable(userId, platform) {
  * exists because renewing slightly early is free while renewing late is not:
  * once the key dies the refresh chain dies with it and the user has to rescan.
  */
-const REFRESH_MARGIN_MS = 12 * 60 * 60 * 1000;
+const REFRESH_MARGIN_MS = 48 * 60 * 60 * 1000;
+// Renewal happens only when a credential is used, so the margin has to cover
+// the gap between uses: with 12 h a singer who plays once a day at the same
+// hour found the 72 h key dead on day 3, having never used it in its last 12 h.
+// 48 h renews a key once it is a day old -- still at most one renewal a day per
+// active user. A key with no stated expiry is renewed once it is a day old.
+const NO_EXPIRY_RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
 
 async function needsRefresh(userId, platform) {
   const preferences = await readPreferences(userId);
   const entry = (preferences[NAMESPACE] || {})[platform];
   if (!entry?.refreshKey) return false;
 
-  // The platform states when it wants to see a renewal. That beats a margin of
-  // our own, which cannot know the real schedule — and got this wrong once
-  // already by reading the access token's lifetime instead of the key's.
-  if (entry.needRefreshInSec != null && entry.savedAt) {
+  // The platform states when it wants to see a renewal -- when it states one.
+  // QQ answers needRefreshKeyIn 0 on every login and renewal (all 89 stored
+  // credentials, 2026-10-03), and 0 read as "now" made every use of a
+  // credential renew it first: ~900 login calls a day from this server's one
+  // address for 40-odd accounts. The maintained reference client
+  // (L-1124/QQMusicApi) ignores the field and renews on the key's own
+  // lifetime; so does this unless the platform gives a real, positive answer.
+  if (entry.needRefreshInSec > 0 && entry.savedAt) {
     const due = new Date(entry.savedAt).getTime() + entry.needRefreshInSec * 1000;
     if (!Number.isNaN(due)) return Date.now() >= due;
   }
 
-  if (!entry.expiresAt) return false;
+  if (!entry.expiresAt) {
+    const saved = entry.savedAt ? new Date(entry.savedAt).getTime() : NaN;
+    return !Number.isNaN(saved) && Date.now() - saved >= NO_EXPIRY_RENEW_AFTER_MS;
+  }
   const left = new Date(entry.expiresAt).getTime() - Date.now();
   if (Number.isNaN(left)) return false;
   return left <= REFRESH_MARGIN_MS;

@@ -88,7 +88,7 @@ async function run(userId, platform, fn) {
     return await fn(cred);
   } catch (err) {
     if (platform === 'qq' && err.code === 'PLATFORM_CREDENTIAL_EXPIRED') {
-      const fresh = await access.renewAfterRejection(userId);
+      const fresh = await access.renewAfterRejection(userId, cred && cred.musicKey);
       if (fresh) {
         try {
           return await fn(fresh);

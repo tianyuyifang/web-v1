@@ -794,12 +794,22 @@ export default function LivePage() {
       return;
     }
 
+    // Same rule as unlockAudio, for the element: on Apple's WebKit in 用户 IP
+    // mode a moment of silence unlocks it inside the tap, so this card can
+    // play QQ's own URL rather than the server's. Still before the first await;
+    // after the same-card check, so a re-tap is never answered with silence.
+    // Waited for (briefly) just before resolving. Admins only until it has
+    // been confirmed on a real iPhone.
+    const priming = user?.role === "ADMIN" && qqDirect.primeWanted() ? player.primeElement() : null;
+
     setBusy(true);
     // Temporary: the three legs of the wait before the key can be shifted —
     // resolving an address, downloading the file, decoding it. Timed on the
     // devices that actually find this slow, because the cure differs per leg.
     const tOpen = Date.now();
     try {
+      // At most PRIME_WAIT_MS, and only when priming was started above.
+      if (priming) await priming;
       // The server's answer as before, or -- per 档位设置 -- QQ's own, asked
       // from this browser. Same shape either way.
       let res = await qqDirect.resolve(card.mapping, { tier: quality, vocalsOnly }, () => (
@@ -852,11 +862,16 @@ export default function LivePage() {
       } catch (loadErr) {
         // A URL QQ handed this browser directly that will not play here (or
         // has not started in a few seconds): the server's answer instead, which
-        // is what the card had before. Not for a refusal to autoplay or an
-        // interrupted load -- those are not the URL.
-        const urlFault = loadErr?.name !== "NotAllowedError" && loadErr?.name !== "AbortError";
-        if (!res.serverInstead || !urlFault) throw loadErr;
-        res = await res.serverInstead(loadErr?.name === "StartTimeout" ? "timeout" : "error");
+        // is what the card had before. Not for an interrupted load (another
+        // card took over). A refusal to autoplay is not the URL's fault either:
+        // it is only recorded (no server request, no mark) and the card fails
+        // as before.
+        const refused = loadErr?.name === "NotAllowedError";
+        if (!res.serverInstead || loadErr?.name === "AbortError") throw loadErr;
+        res = await res.serverInstead(
+          refused ? "notallowed" : loadErr?.name === "StartTimeout" ? "timeout" : "error",
+          player.mediaErrorCode(),
+        );
         // Another card was opened meanwhile: this answer is no longer wanted.
         if (loadedFor.current !== key) return;
         if (!res.data?.url) throw loadErr;
@@ -877,7 +892,7 @@ export default function LivePage() {
     } finally {
       setBusy(false);
     }
-  }, [player, quality, vocalsOnly]);
+  }, [player, quality, vocalsOnly, user]);
 
   /**
    * Navigating away is a close too.

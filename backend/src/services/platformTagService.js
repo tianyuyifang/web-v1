@@ -152,6 +152,76 @@ function dropSongs(userId, ref) {
 }
 
 /**
+ * A list the user's own browser read from QQ (用户 IP mode), put where a
+ * server read would have put it -- so the page, starting a run and matching
+ * its captures all use it without this server asking QQ.
+ *
+ * It describes the user's own account and only ever drives likes into that
+ * same account, so it is taken as given (after the route's shape checks),
+ * like a list the server read. It replaces whatever was cached for the list,
+ * including a server read still in flight (whose result then lands nowhere).
+ */
+const SUPPLIED_PER_USER = 8;
+const supplied = new Map(); // userId -> refs supplied, oldest first
+// The list each user's run is aimed at: never the one evicted for browsing,
+// or the next capture would read it again from this server's address.
+const runRefs = new Map(); // userId -> ref
+
+function noteRunRef(userId, ref) {
+  runRefs.set(userId, ref);
+  if (runRefs.size > 5000) runRefs.clear();
+}
+
+function supplySongs(userId, ref, { title, songs, likedIds, dirId = null, isLikes = false, readMs = 0 }) {
+  sweep();
+  const key = cacheKey(userId, ref);
+  // Bounded per user: a list of 5000 songs costs a few MB here, and clicking
+  // through many lists must not pile them all up for the cache's lifetime.
+  // Only entries still holding what the browser supplied count (and are ever
+  // dropped): one since replaced by a server read, or a read in flight, is
+  // left alone -- dropping it would cost that read again.
+  const isSupplied = (r) => songCache.get(cacheKey(userId, r))?.supplied === true;
+  const mine = (supplied.get(userId) || []).filter((r) => r !== ref && isSupplied(r));
+  mine.push(ref);
+  const running = runRefs.get(userId);
+  while (mine.length > SUPPLIED_PER_USER) {
+    const oldest = mine.findIndex((r) => r !== running);
+    songCache.delete(cacheKey(userId, mine.splice(oldest, 1)[0]));
+  }
+  supplied.set(userId, mine);
+  if (supplied.size > 5000) supplied.clear();
+  if (isLikes || dirId === likes.QQ_LIKES_DIR_ID) favouriteRefs.add(key);
+  const liked = new Map();
+  const likedSet = new Set(likedIds.map(String));
+  for (const s of songs) {
+    s.searchText = searchTextFor(s.title, s.artist);
+    liked.set(String(s.id), likedSet.has(String(s.id)));
+  }
+  songCache.set(key, {
+    at: Date.now(),
+    dirId,
+    isLikes: favouriteRefs.has(key),
+    title,
+    songs,
+    liked,
+    supplied: true,
+  });
+  // A like or unlike made while the browser was reading is newer than what
+  // it read: replayed on top, as a server read in flight is patched when it
+  // lands (setLikedState). The read's own duration bounds which ones, with a
+  // margin for the trip back.
+  const since = Date.now() - Math.max(0, Math.min(Number(readMs) || 0, 10 * 60 * 1000)) - 5000;
+  for (const c of recentLikes.get(userId) || []) {
+    if (c.at >= since) setLikedState(userId, c.id, c.liked, { record: false });
+  }
+  return {
+    title,
+    total: songs.length,
+    songs: songs.map((x) => ({ ...x, alreadyLiked: liked.get(String(x.id)) === true })),
+  };
+}
+
+/**
  * A like happened (here or by hand on the page): every cached list this user
  * holds now knows, so the heart column and the "already liked" rule agree with
  * the platform without another sweep.
@@ -175,7 +245,17 @@ function noteUnliked(userId, id) {
  * A read still in flight is patched when it lands, or the rows it caches
  * would predate the like for the whole TTL.
  */
-function setLikedState(userId, id, liked) {
+const recentLikes = new Map(); // userId -> [{ id, liked, at }], the last ten minutes
+const RECENT_LIKES_MS = 10 * 60 * 1000;
+
+function setLikedState(userId, id, liked, { record = true } = {}) {
+  if (record) {
+    const now = Date.now();
+    const list = (recentLikes.get(userId) || []).filter((c) => now - c.at < RECENT_LIKES_MS);
+    list.push({ id: String(id), liked, at: now });
+    recentLikes.set(userId, list.slice(-200));
+    if (recentLikes.size > 5000) recentLikes.clear();
+  }
   const prefix = `${userId}|`;
   const sid = String(id);
   let song = null;
@@ -221,6 +301,23 @@ async function refresh(userId, ref, dirId, isLikes = false) {
   return playlistWithLiked(userId, ref, dirId, isLikes);
 }
 
+/**
+ * The list as cached, without reading the platform: null when it is not
+ * cached (or only a failure or a read in flight is). Lets the page in 用户 IP
+ * mode reuse what is here before reading from the browser again.
+ */
+function cachedPlaylistWithLiked(userId, ref) {
+  sweep();
+  const hit = songCache.get(cacheKey(userId, ref));
+  if (!hit || hit.error || hit.pending || hit.stale || !hit.songs) return null;
+  hit.at = Date.now();
+  return {
+    title: hit.title,
+    total: hit.songs.length,
+    songs: hit.songs.map((x) => ({ ...x, alreadyLiked: hit.liked.get(String(x.id)) === true })),
+  };
+}
+
 /** The list with its liked state, for the page. Same cache the run uses. */
 async function playlistWithLiked(userId, ref, dirId, isLikes = false) {
   // A remembered failure is for the capture client, which retries blindly
@@ -259,6 +356,8 @@ async function start({ userId, playlistRef, dirId = null, isLikes = false }) {
   // the account is exactly when a retry is wanted.
   const cached = songCache.get(cacheKey(userId, ref));
   if (cached && cached.error) dropSongs(userId, ref);
+  // Before the read: a list being read for the run is not evicted meanwhile.
+  noteRunRef(userId, ref);
   const list = await songsFor(userId, ref, dirId, isLikes);
 
   const updated = await prisma.captureSession.update({
@@ -328,6 +427,7 @@ async function ingest({ session, rawText, singer = null }) {
   const ref = fresh.platformRef;
   const { platform } = likes.parseRef(ref);
   const userId = fresh.userId;
+  noteRunRef(userId, ref);
 
   const existing = await prisma.platformTagEvent.findUnique({
     where: { sessionId_playlistRef_rawText: { sessionId: fresh.id, playlistRef: ref, rawText: text } },
@@ -575,7 +675,7 @@ async function stop({ userId }) {
 
 module.exports = {
   channel, start, stop, ingest, approve, ignore, getFeed,
-  playlistWithLiked, refresh, noteLiked, noteUnliked,
+  playlistWithLiked, refresh, noteLiked, noteUnliked, supplySongs, cachedPlaylistWithLiked,
   // For tests: the cache is the one piece of state here.
   dropSongs,
 };

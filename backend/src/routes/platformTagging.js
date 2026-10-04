@@ -24,6 +24,11 @@ const apkLikes = require('../services/apkLikeService');
 const tags = require('../services/platformTagService');
 const { addClient } = require('../services/sseManager');
 const noEtag = require('../middleware/noEtag');
+const { z } = require('zod');
+const settingsService = require('../services/settingsService');
+const credentials = require('../services/musicCredentialService');
+const { getFreshCredential } = require('../services/musicCredentialAccess');
+const meter = require('../services/outboundMeter');
 
 const requirePlatformTaggingAddOn = requireAddOn(
   ADD_ONS.PLATFORM_TAGGING,
@@ -67,9 +72,175 @@ router.get('/playlists/:ref/songs', ...web, async (req, res, next) => {
     // isLikes: whether this is the favourites list, as the listing said. Cache
     // bookkeeping only (which entry a like invalidates), never a write.
     const isLikes = req.query.isLikes === '1' || req.query.isLikes === 'true';
-    res.json(await tags.playlistWithLiked(req.user.id, ref, Number.isInteger(dirId) ? dirId : null, isLikes));
+    // cachedOnly: the page in 用户 IP mode asks for what is already here
+    // before reading the list from the browser again -- never a platform read.
+    if (req.query.cachedOnly === '1') {
+      const hit = tags.cachedPlaylistWithLiked(req.user.id, ref);
+      return hit ? res.json(hit) : res.status(204).end();
+    }
+    return res.json(await tags.playlistWithLiked(req.user.id, ref, Number.isInteger(dirId) ? dirId : null, isLikes));
   } catch (err) {
     next(err);
+  }
+});
+
+// --- 用户 IP reads ---------------------------------------------------------
+//
+// When 档位设置 → QQ 播放解析 is 用户 IP for this user, the page reads its QQ
+// lists from the user's own browser (lib/qqTagReads) instead of this server:
+// the same calls, answered to the user's own address. These three routes are
+// all the server does for it -- hand over the account values the reads need
+// (never the cookie), and take back what was read. Anything that fails on the
+// way, the page asks the routes above, as before.
+
+const readLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user.id,
+  message: { error: { message: '操作过于频繁，请稍后再试', status: 429 } },
+});
+
+/** Calls the browser says it made to QQ, for the outbound meter's user-IP column. */
+function countUserIpCalls(body) {
+  const n = Number(body && body.calls);
+  // A 5000-song list is 5 pages plus 100 liked-state batches.
+  if (Number.isInteger(n) && n > 0) meter.recordUserIp('qq', Math.min(n, 120));
+}
+
+/** Browser-read data is taken only while the user is in 用户 IP mode. */
+async function browserMode(req) {
+  const s = await settingsService.qqDirectFor(req.user.role);
+  return s.mode === 'browser';
+}
+
+function notBrowserMode(res) {
+  // The page falls back to the server's read on any refusal.
+  return res.status(409).json({ error: { message: 'Lists are read by the server', status: 409 } });
+}
+
+/**
+ * The browser read as the account connected now. A page holds its account
+ * values for a few minutes; if the user connected another QQ account in the
+ * meantime, what it read belongs to the old one and must not be kept for the
+ * new one (its lists, or its euin stored on the new credential).
+ */
+async function sameAccount(req, uin) {
+  const cred = await credentials.getCredential(req.user.id, 'qq');
+  return Boolean(cred && cred.uin && String(cred.uin) === uin);
+}
+
+function otherAccount(res) {
+  // The page drops its account values and asks again.
+  return res.status(409).json({ error: { message: 'QQ account changed', status: 409, code: 'ACCOUNT_CHANGED' } });
+}
+
+// GET /api/platform-tagging/qq-read-session — the account values for reading
+// this user's QQ lists from their browser, or { mode: 'server' }.
+router.get('/qq-read-session', ...web, readLimiter, async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const s = await settingsService.qqDirectFor(req.user.role);
+    if (s.mode !== 'browser') return res.json({ mode: 'server' });
+    const cred = await getFreshCredential(req.user.id, 'qq');
+    if (!cred || !cred.uin || !cred.musicKey) return res.json({ mode: 'server', reason: 'no-credential' });
+    return res.json({
+      mode: 'browser',
+      uin: String(cred.uin),
+      musicKey: cred.musicKey,
+      // Not a secret: the account's public id, needed for its collected lists.
+      euin: cred.euin || null,
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+const listedPlaylist = z.object({
+  ref: z.string().regex(/^qq:[A-Za-z0-9_-]{1,64}$/),
+  id: z.string().max(64),
+  dirId: z.number().int().nullable(),
+  name: z.string().max(200),
+  count: z.number().int().min(0).nullable(),
+  cover: z.string().max(500).nullable(),
+  isLikes: z.boolean(),
+  kind: z.enum(['created', 'collected']),
+});
+const accountUin = z.string().regex(/^\d{1,20}$/);
+const annotateBody = z.object({
+  uin: accountUin,
+  playlists: z.array(listedPlaylist).max(2000),
+  euin: z.string().regex(/^[A-Za-z0-9_*+=/-]{4,100}$/).nullable().optional(),
+  calls: z.number().int().optional(),
+});
+
+// POST /api/platform-tagging/playlists/annotate — the listing the browser read,
+// given the same search text the server-read listing carries.
+router.post('/playlists/annotate', ...web, readLimiter, async (req, res, next) => {
+  try {
+    if (!(await browserMode(req))) return notBrowserMode(res);
+    const parsed = annotateBody.safeParse(req.body || {});
+    if (!parsed.success) throw new ValidationError(parsed.error.flatten().fieldErrors);
+    const { playlists, euin, uin } = parsed.data;
+    countUserIpCalls(req.body);
+    if (!(await sameAccount(req, uin))) return otherAccount(res);
+    // Resolved off a playlist by the browser: keep it, as the server read does.
+    if (euin) credentials.setEncryptUin(req.user.id, 'qq', euin).catch(() => {});
+    return res.json({ playlists: playlists.map((p) => ({ ...p, searchText: searchTextFor(p.name) })) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// One song as a row: [id, songType, mid, title, artist, durationSec, vipOnly].
+// Rows rather than objects so a 5000-song list stays well under nginx's 1 MB
+// body limit (the field names alone were a third of it).
+const suppliedSong = z.tuple([
+  z.string().regex(/^\d{1,20}$/),
+  z.number().int().min(0).max(1000),
+  z.string().max(40).nullable(),
+  z.string().max(300),
+  z.string().max(500),
+  z.number().int().min(0).max(100000).nullable(),
+  z.boolean(),
+]);
+const supplyBody = z.object({
+  uin: accountUin,
+  title: z.string().max(300).nullable(),
+  rows: z.array(suppliedSong).max(5000),
+  readMs: z.number().int().min(0).optional(),
+  likedIds: z.array(z.string().regex(/^\d{1,20}$/)).max(5000),
+  dirId: z.number().int().nullable().optional(),
+  isLikes: z.boolean().optional(),
+  calls: z.number().int().optional(),
+});
+
+// POST /api/platform-tagging/playlists/:ref/supply — one list's songs and
+// liked state as the browser read them. Answers like GET .../songs.
+router.post('/playlists/:ref/supply', ...web, readLimiter, async (req, res, next) => {
+  try {
+    const { ref, platform } = likes.parseRef(req.params.ref);
+    if (platform !== 'qq') throw new ValidationError({ playlistRef: ['只支持 QQ 歌单'] });
+    if (!(await browserMode(req))) return notBrowserMode(res);
+    const parsed = supplyBody.safeParse(req.body || {});
+    if (!parsed.success) throw new ValidationError(parsed.error.flatten().fieldErrors);
+    countUserIpCalls(req.body);
+    const b = parsed.data;
+    if (!(await sameAccount(req, b.uin))) return otherAccount(res);
+    const songs = b.rows.map(([id, songType, mid, title, artist, durationSec, vipOnly]) => ({
+      id, songType, mid, title, artist, durationSec, vipOnly,
+    }));
+    return res.json(tags.supplySongs(req.user.id, ref, {
+      title: b.title,
+      songs,
+      likedIds: b.likedIds,
+      dirId: b.dirId ?? null,
+      isLikes: b.isLikes === true,
+      readMs: b.readMs || 0,
+    }));
+  } catch (err) {
+    return next(err);
   }
 });
 

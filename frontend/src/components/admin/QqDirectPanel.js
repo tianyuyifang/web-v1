@@ -90,8 +90,13 @@ function Stats({ s }) {
           <Row label="触发对冲（也问了网站）">{br.hedged}</Row>
           <Row label="地址播不了，改用网站的">
             <span className={br.playFailed ? "text-red-400" : ""}>{br.playFailed}</span>
+            {br.playFailed ? (
+              <span className="ml-1">
+                （<Counts map={br.failKinds} labels={{ error: "播放出错", timeout: "4 秒没开始", notallowed: "iPhone 不许自动播放" }} />）
+              </span>
+            ) : null}
           </Row>
-          <Row label="直接走网站（原因）"><Counts map={br.skippedFor} labels={{ page: "本页停用", device: "设备更快/播不了", gesture: "iPhone 首次播放" }} /></Row>
+          <Row label="直接走网站（原因）"><Counts map={br.skippedFor} labels={{ page: "本页停用", device: "近 1 小时播不了", gesture: "iPhone 首次播放" }} /></Row>
           <Row label="设备重新测速">{br.reprobes ?? 0}</Row>
           <Row label="用户 IP 结果"><Counts map={br.directReasons} labels={REASON_LABEL} /></Row>
         </dl>
@@ -207,7 +212,7 @@ export default function QqDirectPanel() {
                 onChange={(e) => setForm({ ...form, hedgeMs: e.target.value })}
                 className="w-24 rounded border border-border bg-background px-2 py-1 text-sm text-theme"
               />
-              <span className="text-xs text-muted">毫秒（设备自己量出走网站的时间后，以设备的为准）</span>
+              <span className="text-xs text-muted">毫秒（设备自己量出走网站的时间后，以设备的为准；最少等 1 秒）</span>
             </label>
           </div>
 

@@ -22,6 +22,7 @@ import useCaptureStore from "@/store/captureStore";
 import { musicSourcesAPI, platformTaggingAPI } from "@/lib/api";
 import PlatformTagPanel from "@/components/platform/PlatformTagPanel";
 import PlatformLikeButton from "@/components/platform/PlatformLikeButton";
+import * as qqTagReads from "@/lib/qqTagReads";
 
 /**
  * Substring match on the server-built search text: the name, its pinyin run
@@ -73,6 +74,50 @@ function fuzzyRank(rows, textOf, query, limit = 20) {
 }
 
 const PLATFORM_LABEL = { qq: "QQ 音乐", netease: "网易云" };
+
+/**
+ * QQ lists are read from this browser when 档位设置 → QQ 播放解析 is 用户 IP
+ * for this user (lib/qqTagReads), so the request leaves from the user's own
+ * address. Anything else -- NetEase, the server mode, any failure on the way --
+ * is the server's read, exactly as before.
+ */
+async function readPlaylists(platform) {
+  if (platform === "qq") {
+    try {
+      const s = await qqTagReads.readSession();
+      if (s) return await qqTagReads.listPlaylists(s);
+    } catch { /* the server's read below */ }
+  }
+  const res = await platformTaggingAPI.playlists(platform);
+  return res.data.playlists || [];
+}
+
+async function readSongs(sel, { refresh = false, alive = () => true } = {}) {
+  if (sel.ref.startsWith("qq:")) {
+    try {
+      const s = await qqTagReads.readSession();
+      if (s) {
+        // What the server already holds for this list (read moments ago, or
+        // in use by a run) is reused rather than read again -- unless the user
+        // asked for a fresh read.
+        if (!refresh) {
+          const hit = await platformTaggingAPI.songs(sel.ref, sel.dirId, sel.isLikes, { cachedOnly: true });
+          if (hit.status === 200 && hit.data?.songs) return hit.data;
+        }
+        return await qqTagReads.readPlaylistSongs(s, sel, alive);
+      }
+    } catch (err) {
+      // Moved on to another list: nothing more to read, from anywhere --
+      // whatever the browser read failed with.
+      if (err?.code === "stopped" || !alive()) throw err;
+      /* the server's read below */
+    }
+  }
+  const res = refresh
+    ? await platformTaggingAPI.refresh(sel.ref, sel.dirId, sel.isLikes)
+    : await platformTaggingAPI.songs(sel.ref, sel.dirId, sel.isLikes);
+  return res.data;
+}
 
 function errMsg(err, fallback) {
   return err?.response?.data?.error?.message || err?.message || fallback;
@@ -148,8 +193,8 @@ export default function PlatformTaggingPage() {
     let alive = true;
     setListLoading(true);
     setListError("");
-    platformTaggingAPI.playlists(platform)
-      .then((res) => { if (alive) setPlaylists(res.data.playlists || []); })
+    readPlaylists(platform)
+      .then((list) => { if (alive) setPlaylists(list); })
       .catch((err) => { if (alive) setListError(errMsg(err, "读取歌单失败")); })
       .finally(() => { if (alive) setListLoading(false); });
     return () => { alive = false; };
@@ -169,8 +214,8 @@ export default function PlatformTaggingPage() {
     setSongsLoading(true);
     setSongsError("");
     setFilter("");
-    platformTaggingAPI.songs(selected.ref, selected.dirId, selected.isLikes)
-      .then((res) => { if (alive) setSongs(res.data.songs || []); })
+    readSongs(selected, { alive: () => alive })
+      .then((data) => { if (alive) setSongs(data.songs || []); })
       .catch((err) => { if (alive) { setSongs([]); setSongsError(errMsg(err, "读取歌曲失败")); } })
       .finally(() => { if (alive) setSongsLoading(false); });
     return () => { alive = false; };
@@ -286,11 +331,11 @@ export default function PlatformTaggingPage() {
     setRefreshing(true);
     setSongsError("");
     try {
-      const res = await platformTaggingAPI.refresh(ref, selected.dirId, selected.isLikes);
+      const data = await readSongs(selected, { refresh: true });
       // The user may have moved to another list while this ran (a 30s call);
       // its rows belong to the list that asked for them, not whatever is
       // selected now.
-      if (selectedRefNow.current === ref) setSongs(res.data.songs || []);
+      if (selectedRefNow.current === ref) setSongs(data.songs || []);
     } catch (err) {
       if (selectedRefNow.current === ref) setSongsError(errMsg(err, "刷新失败"));
     } finally {

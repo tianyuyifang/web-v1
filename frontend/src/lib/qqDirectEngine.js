@@ -41,7 +41,7 @@
 import { qqDirectAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import {
-  normalise, cdnRequest, parseCdn, detailRequest, parseMediaMid, attemptsFor, vkeyRequest, pick,
+  normalise, cdnRequest, parseCdn, detailRequest, parseMediaMid, attemptsFor, vkeyRequest, pick, comm,
 } from "@/lib/qqDirectCore";
 
 const ENDPOINT = "https://u.y.qq.com/cgi-bin/musicu.fcg";
@@ -86,9 +86,17 @@ const REPROBE_EVERY = 5;
 const REPORT_EVERY_MS = 20000;
 const REPORT_BATCH = 10;
 const REPORT_MAX = 20;
-// A device where a URL from QQ would not play skips QQ for this long.
+// A device where a URL from QQ would not play skips QQ for this long. Was a
+// day: one failed start sent a phone to the server for the whole evening
+// (2026-10-03, 137 plays for one user after a single failure), while the same
+// device's QQ answers were otherwise both fine and faster.
 const UNPLAYABLE_KEY = "qqDirect.unplayableUntil";
-const UNPLAYABLE_MS = 24 * 3600 * 1000;
+const UNPLAYABLE_MS = 60 * 60 * 1000;
+// Least wait before the server is asked as well. The device's own server time
+// alone (median ~270 ms) had the server asked on every slower-than-usual QQ
+// answer -- a request from the site's address for a song the browser was
+// about to get anyway. A second is still far inside the start limit.
+const HEDGE_FLOOR_MS = 1000;
 // Apple's WebKit: every iOS browser and Safari. Not Chrome/Edge/Android, which
 // remember that the page has been interacted with.
 const APPLE_WEBKIT = typeof navigator !== "undefined"
@@ -161,6 +169,10 @@ const FRAME_HTML = `<!doctype html><meta charset="utf-8"><script>
     };
     s.onerror = function () { reply({ id: d.id, ok: false, code: "script-error" }); };
     s.onload = function () { reply({ id: d.id, ok: false, code: "bad-response" }); };
+    // Account reads (QQ打标 lists) answer empty to a Referer from another
+    // site, and fully to none (measured 2026-10-03), so those go without one.
+    // Play-URL calls keep the browser's default, as they always have.
+    if (d.noRef) s.referrerPolicy = "no-referrer";
     s.src = d.url + "&callback=" + cb + "&jsonpCallback=" + cb;
     document.head.appendChild(s);
   });
@@ -212,7 +224,7 @@ function ensureFrame() {
  * One JSONP call to musicu.fcg, made inside the sandbox. Resolves with the
  * parsed object, or rejects with code timeout / script-error / bad-response.
  */
-async function jsonp(data, timeoutMs) {
+async function jsonp(data, timeoutMs, noRef = false) {
   const f = await ensureFrame();
   return new Promise((resolve, reject) => {
     const id = randomHex(8);
@@ -223,6 +235,7 @@ async function jsonp(data, timeoutMs) {
     pending.set(id, { resolve, reject, timer });
     f.contentWindow.postMessage({
       id,
+      noRef,
       url: `${ENDPOINT}?format=jsonp&inCharset=utf8&outCharset=utf-8&data=${encodeURIComponent(JSON.stringify(data))}`,
     }, "*");
   });
@@ -230,6 +243,18 @@ async function jsonp(data, timeoutMs) {
 
 function usable(s) {
   return !!(s && s.mode !== "server" && s.uin && s.musicKey);
+}
+
+/**
+ * One read of the user's own QQ data (QQ打标 lists), from this browser, inside
+ * the same sandbox. `req1` is the request item; the account goes in `comm`
+ * like every other call. Sent without a Referer (see the frame). Resolves
+ * with the item's answer, or rejects with a coded error.
+ */
+export async function readQq(account, req1, timeoutMs = DIRECT_TIMEOUT_MS) {
+  const j = await jsonp({ comm: comm(account), req_1: req1 }, timeoutMs, true);
+  if (!j || typeof j !== "object" || !j.req_1) throw fail("bad-response");
+  return j.req_1;
 }
 
 // ---------------------------------------------------------------- session
@@ -376,7 +401,7 @@ function median(v) {
 function hedgeMs(fallback) {
   const v = readHistory(SERVER_MS_KEY);
   const base = v.length >= HISTORY_MIN ? median(v) : fallback;
-  return Math.min(HEDGE_MAX_MS, Math.max(HEDGE_MIN_MS, base || 500));
+  return Math.max(HEDGE_FLOOR_MS, Math.min(HEDGE_MAX_MS, Math.max(HEDGE_MIN_MS, base || 500)));
 }
 
 function markUnplayable() {
@@ -384,16 +409,25 @@ function markUnplayable() {
 }
 
 function unplayableHere() {
-  try { return Number(localStorage.getItem(UNPLAYABLE_KEY) || 0) > Date.now(); } catch { return false; }
+  try {
+    const now = Date.now();
+    const until = Number(localStorage.getItem(UNPLAYABLE_KEY) || 0);
+    if (until <= now) return false;
+    // A mark written under the old, day-long rule is cut to the current one.
+    if (until - now > UNPLAYABLE_MS) localStorage.setItem(UNPLAYABLE_KEY, String(now + UNPLAYABLE_MS));
+    return true;
+  } catch { return false; }
 }
 
-/** This device's own record says QQ answers it slower than the server does, or its URLs do not play here. */
+/**
+ * This device goes to the server first only when QQ's URLs have recently
+ * failed to play here. It used to also when QQ merely answered it slower than
+ * the server -- measured 2026-10-03 the gap was 10-100 ms, and every such tap
+ * was a request from the site's address. Playing from the user's own address
+ * comes first now; the hedge still covers a QQ answer that is really slow.
+ */
 function deviceSaysServer() {
-  if (unplayableHere()) return true;
-  const sv = readHistory(SERVER_MS_KEY);
-  const dv = readHistory(DIRECT_MS_KEY);
-  if (sv.length < HISTORY_MIN || dv.length < HISTORY_MIN) return false;
-  return median(dv) > median(sv);
+  return unplayableHere();
 }
 
 // ---------------------------------------------------------------- reporting
@@ -593,20 +627,44 @@ function browserMode(mid, o, s, askServer, ctx) {
   };
   // A URL from QQ that did not play: the server's instead. A real playback
   // error means QQ's CDN does not work from here, so this page stops asking QQ
-  // and the device skips it for a day; a URL that was merely slow to start is
-  // one miss, like a card QQ had no file for.
-  const serverInstead = async (why = "error") => {
+  // and the device skips it for an hour; a URL that was merely slow to start is
+  // one miss, like a card QQ had no file for. A refusal to start the audio
+  // (Apple's autoplay rule) says nothing about the URL and costs nothing.
+  //
+  // `why`: "error" | "timeout" | "notallowed"; `mediaError`: the element's
+  // MediaError code when there was one. Both reported, so a failure can be
+  // told apart afterwards -- until now every one read the same.
+  // The server's answer when the hedge already asked for it: a QQ URL that
+  // won the race and then would not play reuses it rather than asking the
+  // server a second time for the same card.
+  let hedgeAsk = null;
+  const serverInstead = async (why = "error", mediaError = null) => {
+    if (why === "notallowed") {
+      // Recorded only. The server's URL would be refused by the same rule
+      // (the tap is over), so asking for it would be a wasted request from
+      // the server's address -- the card fails as it always did, and the
+      // URL stays cached for the next tap.
+      report({ ...base, winner: "none", playFailed: true, failKind: why, mediaError: null, waitMs: 0, calls: 0 });
+      return { data: null };
+    }
     urlCache.delete(key);
     if (why === "error") {
       sticky = true;
       cdn = null;
       markUnplayable();
-    } else {
+    } else if (why === "timeout") {
       misses += 1;
       if (misses >= MISSES_BEFORE_STICKY) sticky = true;
     }
-    const { res, ms } = await timedServer(askServer);
-    return fromServer(res, { directReason: "unplayable", playFailed: true, serverMs: Math.round(ms), waitMs: Math.round(ms) });
+    const { res, ms } = await (hedgeAsk ? hedgeAsk.catch(() => timedServer(askServer)) : timedServer(askServer));
+    return fromServer(res, {
+      directReason: "unplayable",
+      playFailed: true,
+      failKind: why,
+      mediaError: Number.isInteger(mediaError) ? mediaError : null,
+      serverMs: Math.round(ms),
+      waitMs: Math.round(ms),
+    });
   };
 
   const hit = urlCache.get(key);
@@ -617,8 +675,9 @@ function browserMode(mid, o, s, askServer, ctx) {
     return Promise.resolve(res);
   }
 
-  // Not trying QQ here: the page has given up, this device is faster via the
-  // server, or (Apple's WebKit) the element has never played.
+  // Not trying QQ here: the page has given up, QQ's URLs did not play on this
+  // device within the last hour, or (Apple's WebKit) the element has never
+  // played.
   const skip = sticky ? "page"
     : deviceSaysServer() ? "device"
       : gestureBlocked ? "gesture" : null;
@@ -673,7 +732,8 @@ function browserMode(mid, o, s, askServer, ctx) {
       if (serverStarted || settled) return;
       serverStarted = true;
       sample.hedged = !directOver;
-      timedServer(askServer)
+      hedgeAsk = timedServer(askServer);
+      hedgeAsk
         .then(({ res, ms }) => {
           sample.serverMs = Math.round(ms);
           sample.serverOk = !!res?.data?.url;

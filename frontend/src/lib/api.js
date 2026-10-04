@@ -327,9 +327,10 @@ export const platformTaggingAPI = {
   playlists: (platform) => api.get("/platform-tagging/playlists", { params: { platform } }),
   // dirId: QQ needs it to read 我喜欢. isLikes: tells the server which cached
   // list is the favourites, the one a like changes the rows of.
-  songs: (ref, dirId, isLikes = false) =>
+  // cachedOnly: only what the server already holds (204 when nothing).
+  songs: (ref, dirId, isLikes = false, { cachedOnly = false } = {}) =>
     api.get(`/platform-tagging/playlists/${encodeURIComponent(ref)}/songs`,
-      { params: { ...(dirId != null ? { dirId } : {}), ...(isLikes ? { isLikes: 1 } : {}) } }),
+      { params: { ...(dirId != null ? { dirId } : {}), ...(isLikes ? { isLikes: 1 } : {}), ...(cachedOnly ? { cachedOnly: 1 } : {}) } }),
   // Re-read one list from the platform now (the user pressed 刷新).
   refresh: (playlistRef, dirId, isLikes = false) =>
     api.post("/platform-tagging/refresh",
@@ -354,6 +355,12 @@ export const platformTaggingAPI = {
     api.post("/platform-tagging/like", { platform, id, songType, playlistRef }),
   unlike: (platform, id, songType, playlistRef) =>
     api.post("/platform-tagging/unlike", { platform, id, songType, playlistRef }),
+  // 用户 IP mode (lib/qqTagReads): the account values for reading QQ lists
+  // from this browser, and handing back what was read.
+  qqReadSession: () => api.get("/platform-tagging/qq-read-session"),
+  annotatePlaylists: (body) => api.post("/platform-tagging/playlists/annotate", body),
+  supplySongs: (ref, body) =>
+    api.post(`/platform-tagging/playlists/${encodeURIComponent(ref)}/supply`, body, { timeout: 30000 }),
 };
 
 // --- Admin ---

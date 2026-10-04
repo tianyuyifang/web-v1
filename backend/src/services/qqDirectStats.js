@@ -62,6 +62,11 @@ function clean(raw) {
     directHost: typeof raw.directHost === 'string' && /^[a-z0-9.-]{1,80}$/i.test(raw.directHost) ? raw.directHost : null,
     // browser: a URL from QQ that the player could not play, replaced by the server's.
     playFailed: bool(raw.playFailed),
+    // ...and how: a player error, no start within the limit, or the browser
+    // refusing to start audio (Apple's autoplay rule) -- plus the element's
+    // MediaError code (1-4) when it gave one.
+    failKind: pick(raw.failKind, new Set(['error', 'timeout', 'notallowed'])),
+    mediaError: Number.isInteger(raw.mediaError) && raw.mediaError >= 1 && raw.mediaError <= 4 ? raw.mediaError : null,
     // why the browser was not tried at all (browser mode): page / device
     // choice, or an iPhone-family element that has not played yet.
     skippedFor: pick(raw.skippedFor, new Set(['page', 'device', 'gesture'])),
@@ -159,6 +164,7 @@ function summary(hours = 24, now = Date.now()) {
       hedged: browser.filter((s) => s.hedged === true).length,
       directReasons: countBy(browser, 'directReason'),
       playFailed: browserAll.filter((s) => s.playFailed === true).length,
+      failKinds: countBy(browserAll.filter((s) => s.playFailed === true && s.failKind), 'failKind'),
       skippedFor: countBy(browser.filter((s) => s.skippedFor), 'skippedFor'),
       reprobes: reprobes.length,
     },

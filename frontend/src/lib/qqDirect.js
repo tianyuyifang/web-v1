@@ -102,6 +102,26 @@ export function resolve(mapping, opts, askServer, ctx) {
   return engine.resolve(mapping, opts, askServer, ctx, mode);
 }
 
+// Apple's WebKit (every iOS browser, WeChat on iOS, Safari) -- the same test
+// lib/qqDirectEngine uses, kept here so the tap can ask without the engine.
+const APPLE_WEBKIT = typeof navigator !== "undefined"
+  && /AppleWebKit/.test(navigator.userAgent)
+  && !/Chrome\/|Chromium\/|Android/.test(navigator.userAgent);
+
+/**
+ * Should this tap unlock the audio element first?
+ *
+ * On Apple's WebKit a fresh element starts only from the tap itself, and the
+ * browser's own answer from QQ arrives by postMessage, which WebKit does not
+ * count as part of the tap. So until an element had played, the first card of
+ * a page went to the server. Playing a moment of silence inside the tap
+ * unlocks the element; once that has really played, QQ's own URL may follow.
+ * Only where it matters: Apple's WebKit, in `browser` mode.
+ */
+export function primeWanted() {
+  return APPLE_WEBKIT && mode === "browser" && Date.now() - modeAt < MODE_STALE_MS && !!engine;
+}
+
 /**
  * For a URL that came from QQ directly: the player's start, given up on after
  * DIRECT_START_MS so a stalled CDN costs a few seconds rather than however long

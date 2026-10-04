@@ -198,6 +198,7 @@ assert.ok(!/\btoggleLike\b/.test(src), 'platformTagService must not call toggleL
 
     // --- a playlist that cannot be read: 503 to the client, one platform call --
     const before = calls.filter((c) => c[0] === 'songs').length;
+    const workingSongs = stub.getPlaylistSongs;
     stub.getPlaylistSongs = async () => { calls.push(['songs', 'broken']); const e = new Error('QQ 音乐登录已过期'); e.status = 401; throw e; };
     await prisma.captureSession.update({ where: { id: session.id }, data: { platformRef: 'qq:999' } });
     await assert.rejects(tags.ingest({ session: await fresh(), rawText: '达尔文' }), (e) => e.statusCode === 503 && /登录已过期/.test(e.message));
@@ -218,6 +219,26 @@ assert.ok(!/\btoggleLike\b/.test(src), 'platformTagService must not call toggleL
     assert.strictEqual(row.target, 'none');
     assert.strictEqual(row.platformRef, null);
     await assert.rejects(tags.ingest({ session: row, rawText: '达尔文' }), /No capture target/);
+
+    // --- a run's list supplied by the browser survives browsing 8 others --------
+    const song = (id) => ({ id, songType: 0, mid: null, title: `t${id}`, artist: 'a', durationSec: null, vipOnly: false });
+    tags.supplySongs(user.id, 'qq:500', { title: 'run', songs: [song('1')], likedIds: [] });
+    const runReadsBefore = calls.filter((c) => c[0] === 'songs').length;
+    await tags.start({ userId: user.id, playlistRef: 'qq:500', dirId: 512 });
+    for (let i = 0; i < 9; i += 1) tags.supplySongs(user.id, `qq:${600 + i}`, { title: 'x', songs: [song('2')], likedIds: [] });
+    assert.ok(tags.cachedPlaylistWithLiked(user.id, 'qq:500'), "the run's list is not evicted");
+    assert.strictEqual(tags.cachedPlaylistWithLiked(user.id, 'qq:600'), null, 'the oldest browsed list is');
+    assert.strictEqual(calls.filter((c) => c[0] === 'songs').length, runReadsBefore, 'no platform read for any of it');
+    await tags.stop({ userId: user.id });
+
+    // --- a supplied list since re-read by the server is not dropped for browsing
+    stub.getPlaylistSongs = workingSongs;
+    tags.supplySongs(user.id, 'qq:700', { title: 'b', songs: [song('3')], likedIds: [] });
+    await tags.refresh(user.id, 'qq:700', 512);
+    const reReadsBefore = calls.filter((c) => c[0] === 'songs').length;
+    for (let i = 0; i < 9; i += 1) tags.supplySongs(user.id, `qq:${800 + i}`, { title: 'x', songs: [song('4')], likedIds: [] });
+    assert.ok(tags.cachedPlaylistWithLiked(user.id, 'qq:700'), "a server-read entry is never evicted by browser supplies");
+    assert.strictEqual(calls.filter((c) => c[0] === 'songs').length, reReadsBefore, 'and costs no read');
 
     // --- nothing leaked into capture_events ------------------------------------
     const leaked = await prisma.captureEvent.count({ where: { sessionId: session.id } });

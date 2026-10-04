@@ -38,7 +38,17 @@ app.use((req, res, next) => {
   compression()(req, res, next);
 });
 app.use(cors({ origin: config.frontendUrl, credentials: true }));
-app.use(express.json());
+// A QQ打标 list read by the user's own browser (用户 IP mode) comes back here
+// whole -- up to 5000 songs (or an account's whole listing), past the default
+// 100 kB. Only those two routes get the larger limit; every other body keeps
+// the default.
+const jsonDefault = express.json();
+const jsonSuppliedList = express.json({ limit: '3mb' });
+app.use((req, res, next) => (
+  /^\/api\/platform-tagging\/playlists\/(?:[^/]+\/supply|annotate)$/.test(req.path)
+    ? jsonSuppliedList(req, res, next)
+    : jsonDefault(req, res, next)
+));
 
 // Public routes (no auth required)
 // Rate limiting is applied per-endpoint inside auth.js (only on login + register)

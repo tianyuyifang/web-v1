@@ -18,6 +18,29 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * useAudioPlayer is not reused: it is built around clipId and our own cached
  * buffers, and everything here comes from a platform CDN.
  */
+
+/** Longest the tap waits for the unlocking silence (primeElement) to play. */
+const PRIME_WAIT_MS = 300;
+
+let silentUrl = null;
+/** 0.1 s of silence as a WAV data URL (8 kHz, 8-bit mono), built once. */
+function silentWavUrl() {
+  if (silentUrl) return silentUrl;
+  const n = 800;
+  const b = new Uint8Array(44 + n);
+  const v = new DataView(b.buffer);
+  const ascii = (at, s) => { for (let i = 0; i < s.length; i += 1) b[at + i] = s.charCodeAt(i); };
+  ascii(0, "RIFF"); v.setUint32(4, 36 + n, true); ascii(8, "WAVE");
+  ascii(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+  ascii(36, "data"); v.setUint32(40, n, true);
+  b.fill(128, 44); // 8-bit PCM is unsigned: 128 is silence
+  let s = "";
+  for (let i = 0; i < b.length; i += 1) s += String.fromCharCode(b[i]);
+  silentUrl = `data:audio/wav;base64,${btoa(s)}`;
+  return silentUrl;
+}
+
 export default function useLivePlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -742,13 +765,50 @@ export default function useLivePlayer() {
     if (ctxRef.current.state !== "running") ctxRef.current.resume().catch(() => {});
   }, []);
 
+  /**
+   * Unlock the element on Apple's WebKit by playing a moment of silence.
+   *
+   * Call synchronously inside the tap, like unlockAudio. An element that has
+   * played once may be started again by code later; a fresh one only from the
+   * tap itself. Resolves true once the silence has really played (and the
+   * element is recorded as played), false if it was refused or took longer
+   * than PRIME_WAIT_MS -- in which case nothing relies on it. Only touches an
+   * element that has never played, so a song that is loaded or paused is never
+   * disturbed.
+   */
+  const primeElement = useCallback(() => {
+    const el = element();
+    if (played().has(el)) return Promise.resolve(true);
+    // A song is loaded (even one that never started): leave it alone.
+    if (urlRef.current || (el.src && !el.paused)) return Promise.resolve(false);
+    let starting;
+    try {
+      el.src = silentWavUrl();
+      starting = el.play();
+    } catch {
+      return Promise.resolve(false);
+    }
+    const primed = Promise.resolve(starting).then(() => {
+      played().add(el);
+      try { el.pause(); } catch { /* fine */ }
+      return true;
+    }, () => false);
+    return Promise.race([primed, new Promise((r) => setTimeout(() => r(false), PRIME_WAIT_MS))]);
+  }, [element, played]);
+
+  /** The current element's MediaError code (1-4), if it has one. For reporting only. */
+  const mediaErrorCode = useCallback(() => {
+    const code = elRef.current && elRef.current.error && elRef.current.error.code;
+    return Number.isInteger(code) ? code : null;
+  }, []);
+
   /** Has the element that plays next already made sound once? */
   const elementHasPlayed = useCallback(() => !!elRef.current && !!playedRef.current && playedRef.current.has(elRef.current), []);
   /** Has the current song finished downloading (warmBuffer)? Read only, for lib/qqDirect. */
   const bufferReady = useCallback(() => !!bufferRef.current, []);
 
   return {
-    load, toggle, seek, stop, swapSource, unlockAudio, elementHasPlayed, bufferReady,
+    load, toggle, seek, stop, swapSource, unlockAudio, primeElement, mediaErrorCode, elementHasPlayed, bufferReady,
     setPitch, setSpeed, setVolume, setVocalsOnly,
     isPlaying, current, duration, pitch, speed, volume, canShift,
     // Temporary — see perfRef.

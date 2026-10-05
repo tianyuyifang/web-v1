@@ -17,9 +17,9 @@
  * audio element start only from the tap itself, and a JSONP answer arrives by
  * postMessage, which does not count. An element that has already played
  * (primed with silence inside the tap, see useLivePlayer.primeElement) may be
- * started by code; one that has not still goes to the server path, until the
- * priming is confirmed on a real iPhone. Shadow mode never plays QQ's own URL
- * and is unaffected.
+ * started by code; one that could not be primed asks for another tap -- never
+ * the server (confirmed on a real iPhone 2026-10-05). Shadow mode never plays
+ * QQ's own URL and is unaffected.
  *
  * QQ's JSONP answers are scripts, so they run inside a sandboxed iframe (no
  * same-origin): QQ's code can reach nothing of this page -- not its storage,
@@ -615,9 +615,9 @@ function unreachable(code) {
  * the card shows: a URL, or why there is none. A dead key is renewed by the
  * server and QQ is asked again from here.
  *
- * One exception, kept until it is confirmed on a real iPhone: on Apple's
- * WebKit an element that has never played cannot start a URL that arrives by
- * postMessage, so that card still goes to the server (skippedFor "gesture").
+ * On Apple's WebKit an element that could not be unlocked in the tap cannot
+ * start a URL that arrives by postMessage: that tap asks for another
+ * (skippedFor "gesture"), still without the server.
  */
 function browserMode(mid, o, s, askServer, ctx) {
   const key = cacheKey(mid, o);
@@ -654,15 +654,14 @@ function browserMode(mid, o, s, askServer, ctx) {
     return Promise.resolve(res);
   }
 
+  // The element could not be unlocked in this tap (the silence was refused or
+  // too slow): QQ's URL would not be allowed to start, and the server is not
+  // asked instead. The next tap unlocks it (verified on a real iPhone).
   if (gestureBlocked) {
-    return timedServer(askServer).then(({ res, ms }) => {
-      remember(key, res?.data, false);
-      report({
-        ...base, winner: "server", serverOk: !!res?.data?.url, directReason: "skipped",
-        skippedFor: "gesture", serverMs: Math.round(ms), waitMs: Math.round(ms),
-      });
-      return res;
-    });
+    report({ ...base, winner: "none", directReason: "skipped", skippedFor: "gesture", waitMs: 0, calls: 0 });
+    const e = new Error("element-locked");
+    e.response = { data: { error: { message: "请点播放键再试一次（iPhone 第一次播放需要多点一下）" } } };
+    return Promise.reject(e);
   }
 
   const t0 = now();

@@ -796,11 +796,11 @@ export default function LivePage() {
 
     // Same rule as unlockAudio, for the element: on Apple's WebKit in 用户 IP
     // mode a moment of silence unlocks it inside the tap, so this card can
-    // play QQ's own URL rather than the server's. Still before the first await;
-    // after the same-card check, so a re-tap is never answered with silence.
-    // Waited for (briefly) just before resolving. Admins only until it has
-    // been confirmed on a real iPhone.
-    const priming = user?.role === "ADMIN" && qqDirect.primeWanted() ? player.primeElement() : null;
+    // play QQ's own URL. Still before the first await; after the same-card
+    // check, so a re-tap is never answered with silence. Waited for (briefly)
+    // just before resolving. Confirmed on a real iPhone 2026-10-05 (first card
+    // and vocals switches all direct); for everyone since.
+    const priming = qqDirect.primeWanted() ? player.primeElement() : null;
 
     setBusy(true);
     // Temporary: the three legs of the wait before the key can be shifted —
@@ -901,7 +901,7 @@ export default function LivePage() {
     } finally {
       setBusy(false);
     }
-  }, [player, quality, vocalsOnly, user]);
+  }, [player, quality, vocalsOnly]);
 
   /**
    * Navigating away is a close too.
@@ -1072,7 +1072,7 @@ export default function LivePage() {
     // WebKit that element must be unlocked inside this tap, before any await,
     // or a URL that arrives by postMessage cannot start it. Same gate as the
     // card's own priming.
-    const priming = user?.role === "ADMIN" && qqDirect.primeWanted() ? player.primeSpare() : null;
+    const priming = qqDirect.primeWanted() ? player.primeSpare() : null;
     // Temporary: a quality or vocals switch fetches a different file for a song
     // already sounding, so the singer waits through a second resolve and a
     // second load with the music still playing. How long that takes is its own
@@ -1144,7 +1144,7 @@ export default function LivePage() {
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "切换失败");
     }
-  }, [openId, cards, playing, player, user]);
+  }, [openId, cards, playing, player]);
 
   const changeQuality = useCallback((tier) => {
     setQualityState(tier);

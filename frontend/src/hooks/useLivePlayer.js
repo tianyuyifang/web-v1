@@ -810,14 +810,16 @@ export default function useLivePlayer() {
    * Call synchronously inside the tap, like unlockAudio. An element that has
    * played once may be started again by code later; a fresh one only from the
    * tap itself. Resolves with how it went (see primeSilently): "already" when
-   * the element has played before, "busy" when a song is loaded (even one that
-   * never started) -- it is never disturbed -- or the result of the silence.
+   * the element has played before, "busy" when something is sounding -- it is
+   * never disturbed -- or the result of the silence.
    */
   const primeElement = useCallback(() => {
     const el = element();
     if (played().has(el)) return Promise.resolve("already");
-    // A song is loaded (even one that never started): leave it alone.
-    if (urlRef.current || (el.src && !el.paused)) return Promise.resolve("busy");
+    // Something sounding: never disturbed. A song that was loaded but never
+    // started (refused, failed) is not "busy" -- left there, it would keep the
+    // element locked, and every tap would be asked again.
+    if (el.src && !el.paused) return Promise.resolve("busy");
     return primeSilently(el, played);
   }, [element, played]);
 

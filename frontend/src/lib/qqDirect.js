@@ -145,7 +145,8 @@ const APPLE_WEBKIT = typeof navigator !== "undefined"
   && !/Chrome\/|Chromium\/|Android/.test(navigator.userAgent);
 
 /**
- * Should this tap unlock the audio element first?
+ * Should this tap unlock the audio element first? (Everyone on Apple's WebKit
+ * in 用户 IP mode since 2026-10-05.)
  *
  * On Apple's WebKit a fresh element starts only from the tap itself, and the
  * browser's own answer from QQ arrives by postMessage, which WebKit does not

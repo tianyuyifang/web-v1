@@ -1,25 +1,35 @@
 /**
- * QQ打标 likes performed by the user's own phone.
+ * QQ打标 likes, performed from the user's own address -- never this server's.
  *
- * A drop-in for platformLikeService.like / unlike: same arguments, same result,
- * same errors. When the phone may take the like (switch on for this user and
- * this kind of like, QQ, the capture client's stream open and able), the
- * command goes to the phone, which writes to QQ from the user's own network.
- * Otherwise -- and whenever the phone does not finish in time, or reports a
- * failure -- the server does it exactly as it always has.
+ * Since 2026-10-04 QQ打标 talks to QQ only from the user's browser or phone,
+ * with no fallback to the site's address (platformLikeService refuses QQ
+ * outright). A like the capture path decides on is offered, in turn, to:
  *
- * The exchange is claim-then-act, so the phone and the fallback never both
- * write for one command unless the phone has already started:
+ *   1. the QQ打标 page, when one is open with its executor stream connected
+ *      (it writes through its own JSONP sandbox, lib/qqTagWrites);
+ *   2. the capture client on the phone, when its push stream is open and able
+ *      (APK v28+, QqWriter) and the 手机执行 switch allows it;
  *
- *   server  --cmd {cmdId, op}-->            phone      (SSE, no secret in it)
- *   phone   --POST claim {cmdId}-->         server     -> credential, song
- *   phone   writes to QQ, reads it back
- *   phone   --POST result {cmdId, ok}-->    server
+ * and when neither takes it, the caller is told so (NO_USER_IP_EXECUTOR) and
+ * the capture waits in 待确认 for the user. Likes the user makes on the page
+ * (the heart, the 待确认 button) are written by the page itself and only
+ * reported here -- see routes/platformTagging.
  *
- * Unclaimed after CLAIM_MS: the command is withdrawn (a late claim is refused)
- * and the server likes it. Claimed but no result after RESULT_MS: the server
- * likes it too. Both writes are idempotent on QQ (adding a liked song changes
- * nothing; the state is read back either way), so the rare overlap is harmless.
+ * NetEase cannot be reached from a browser at all; its likes are the server's,
+ * as before, and the whole of 网易云打标 is behind its own switch.
+ *
+ * The exchange with either executor is claim-then-act, so two never write for
+ * one command unless the first has already started:
+ *
+ *   server  --cmd {cmdId, op}-->        executor  (SSE, no secret in it)
+ *   executor --POST claim {cmdId}-->    server    -> song (+ phone: credential)
+ *   executor writes to QQ, reads it back
+ *   executor --POST result {cmdId, ok}--> server
+ *
+ * Unclaimed after CLAIM_MS: withdrawn (a late claim is refused) and offered
+ * to the next. Claimed but no result in time: the next is offered it too.
+ * Writes are idempotent on QQ (adding a liked song changes nothing; the state
+ * is read back either way), so the rare overlap is harmless.
  */
 const crypto = require('crypto');
 const prisma = require('../db/client');
@@ -28,22 +38,32 @@ const access = require('./musicCredentialAccess');
 const settingsService = require('./settingsService');
 const apkChannel = require('./apkChannel');
 const meter = require('./outboundMeter');
+const { broadcast } = require('./sseManager');
+const { AppError } = require('../utils/errors');
 
 const CLAIM_MS = 2500;
+// The phone's window (its budget logic is built around this, APK v28).
 const RESULT_MS = 6000;
-/** Allowance for the claim reply's trip to the phone, taken off its budget. */
+// The page's: room to wait out QQ's 2001 once (5 s) when its first write
+// answered quickly. Kept so page + phone together (2.5 + 8 + 2.5 + 6 s) stay
+// inside the capture client's 20 s ingest wait.
+const PAGE_RESULT_MS = 8000;
+/** Allowance for the claim reply's trip to the executor, taken off its budget. */
 const CLAIM_REPLY_MARGIN_MS = 1000;
 const CAP = 'qqlike';
 
 /** cmdId -> command; only while in flight. */
 const pending = new Map();
 
+/** userId -> Set of open executor streams (QQ打标 pages that can write). */
+const pageExecutors = new Map();
+
 // --- counters for the admin panel (process memory, since the last restart) ---
 const stats = {
   since: new Date().toISOString(),
-  byPurpose: {}, // purpose -> { phone, unclaimed, timeout, phoneFailed, noCredential }
-  phoneMs: [], // last 200 phone round trips, push to result
-  fallback: { ok: 0, failed: 0 },
+  byPurpose: {}, // purpose -> { page, phone, unclaimed, timeout, failed, noExecutor, ... }
+  phoneMs: [], // last 200 executor round trips, push to result
+  fallback: { ok: 0, failed: 0 }, // kept for the admin page; no server fallback for QQ any more
   failCodes: {},
 };
 
@@ -66,12 +86,50 @@ function snapshot() {
     fallback: stats.fallback,
     failCodes: stats.failCodes,
     inFlight: pending.size,
+    pagesOpen: [...pageExecutors.values()].reduce((n, set) => n + set.size, 0),
   };
 }
 
+// --- the page as executor -------------------------------------------------------
+
 /**
- * The switch's settings when they apply to this user and platform, else null.
- * Fails closed: any error reads as "off", which is the behaviour before.
+ * A QQ打标 page opened its executor stream. Kept while the response is open,
+ * so "a page can take this" is known without asking it.
+ */
+function attachPageExecutor(userId, res) {
+  let set = pageExecutors.get(userId);
+  if (!set) pageExecutors.set(userId, (set = new Set()));
+  set.add(res);
+  const forget = () => {
+    set.delete(res);
+    if (!set.size && pageExecutors.get(userId) === set) pageExecutors.delete(userId);
+  };
+  // Only the response's own close: a listener on the socket would pile up
+  // on a reused upstream connection. A socket that dies silently is pruned
+  // by pageAvailable.
+  res.once('close', forget);
+}
+
+function pageAvailable(userId) {
+  const set = pageExecutors.get(userId);
+  if (!set) return false;
+  // A stream whose socket died without a close event (behind a proxy that
+  // happens) is dropped here, so it does not cost each like a claim wait.
+  for (const res of set) if (res.destroyed || res.writableEnded) set.delete(res);
+  if (!set.size) pageExecutors.delete(userId);
+  return set.size > 0;
+}
+
+/** The same channel platformTagService broadcasts on (not required here: a cycle). */
+function pageChannel(userId) {
+  return `platform-tag:${userId}`;
+}
+
+// --- the phone as executor --------------------------------------------------------
+
+/**
+ * The 手机执行 switch's settings when they apply to this user, else null.
+ * Fails closed: any error reads as "phone not used".
  */
 async function switchFor(userId, platform) {
   try {
@@ -88,13 +146,10 @@ async function switchFor(userId, platform) {
   }
 }
 
-/**
- * The session whose phone should take this like, or null for the server.
- * Fails closed: any error reads as "server", which is the behaviour before.
- */
+/** The session whose phone can take this like now, or null. */
 async function phoneFor(userId, s, purpose, sessionHint) {
   try {
-    if (!s[purpose]) return null;
+    if (!s || !s[purpose]) return null;
     if (sessionHint && sessionHint.userId === userId && apkChannel.canRun(sessionHint.id, CAP)) {
       return sessionHint;
     }
@@ -108,68 +163,63 @@ async function phoneFor(userId, s, purpose, sessionHint) {
   }
 }
 
-function runOnPhone(session, purpose, op, args, serverPath) {
-  return new Promise((resolve, reject) => {
+// --- one offer to one executor ----------------------------------------------------
+
+/**
+ * Offer a command to one executor. Resolves { ok: true, result } once it has
+ * done it, or { ok: false, why } -- never rejects.
+ */
+function offer({ executor, userId, session = null, purpose, op, args }) {
+  return new Promise((resolve) => {
     const cmd = {
       id: crypto.randomUUID(),
-      userId: session.userId,
-      sessionId: session.id,
+      executor,
+      userId,
+      sessionId: session ? session.id : null,
       purpose,
       op,
       songId: String(args.id),
       songType: Number(args.songType) || 0,
-      // A like the caller has not just checked is checked by the phone first,
-      // as the server path does (platformLikeService.like knownUnliked).
+      // A like the caller has not just checked is checked by the executor first.
       precheck: op === 'like' && !args.knownUnliked,
       state: 'sent',
       sentAt: Date.now(),
+      resultMs: executor === 'page' ? PAGE_RESULT_MS : RESULT_MS,
       timer: null,
     };
-
-    const settle = (fn) => {
+    const settle = (value) => {
       clearTimeout(cmd.timer);
       pending.delete(cmd.id);
-      fn();
+      resolve(value);
     };
-
-    cmd.toServer = (why) => {
-      cmd.state = 'server';
-      bump(purpose, why);
-      console.log(`[apklike] ${op} ${cmd.songId} -> server (${why})`);
-      settle(() => {
-        serverPath().then((res) => {
-          stats.fallback.ok += 1;
-          resolve(res);
-        }, (err) => {
-          stats.fallback.failed += 1;
-          reject(err);
-        });
-      });
+    cmd.fail = (why) => {
+      if (cmd.state === 'done' || cmd.state === 'withdrawn') return;
+      cmd.state = 'withdrawn';
+      bump(purpose, `${executor}:${why}`);
+      console.log(`[userip-like] ${op} ${cmd.songId} ${executor} -> ${why}`);
+      settle({ ok: false, why });
     };
-
     cmd.done = (result) => {
+      if (cmd.state === 'done' || cmd.state === 'withdrawn') return;
       cmd.state = 'done';
       const ms = Date.now() - cmd.sentAt;
       stats.phoneMs.push(ms);
       if (stats.phoneMs.length > 200) stats.phoneMs.shift();
-      bump(purpose, 'phone');
-      console.log(`[apklike] ${op} ${cmd.songId} by phone in ${ms}ms${result.alreadyLiked ? ' (already liked)' : ''}`);
-      settle(() => resolve(result));
+      bump(purpose, executor);
+      console.log(`[userip-like] ${op} ${cmd.songId} by ${executor} in ${ms}ms${result.alreadyLiked ? ' (already liked)' : ''}`);
+      settle({ ok: true, result });
     };
-
     pending.set(cmd.id, cmd);
-    cmd.timer = setTimeout(() => {
-      if (cmd.state === 'sent') cmd.toServer('unclaimed');
-    }, CLAIM_MS);
-    apkChannel.send(session.id, 'cmd', { cmdId: cmd.id, op });
+    cmd.timer = setTimeout(() => { if (cmd.state === 'sent') cmd.fail('unclaimed'); }, CLAIM_MS);
+    if (executor === 'page') broadcast(pageChannel(userId), 'qq-cmd', { cmdId: cmd.id, op });
+    else apkChannel.send(session.id, 'cmd', { cmdId: cmd.id, op });
   });
 }
 
 /**
- * One user's likes and unlikes, one at a time, whoever performs them --
- * while the switch is on. The server's own writes are already queued per user
- * (platformLikeService); a phone write is not in that queue, so without this
- * a slow phone unlike could land after a later like the user made by hand.
+ * One user's likes and unlikes, one at a time, whoever performs them: an
+ * unlike must not land after a later like, and QQ answers 2001 to the same
+ * song flipped back and forth within seconds.
  */
 const queues = new Map(); // userId -> Promise
 
@@ -183,17 +233,45 @@ function inOrder(userId, fn) {
   return next;
 }
 
+function noExecutor(tried) {
+  const triedPage = tried.some((t) => t.startsWith('page:') && t !== 'page:closed');
+  const triedPhone = tried.some((t) => t.startsWith('phone:') && t !== 'phone:offline');
+  const refused = tried.some((t) => t.endsWith(':failed'));
+  const message = refused
+    ? '没能点赞：QQ 没有接受（网站不会代点），请稍后在网页上重试'
+    : triedPage || triedPhone
+      ? '没能点赞：打标网页/手机没有及时完成（网站不会代点），请在网页上确认'
+      : '没能点赞：打标网页和手机都不在线（网站不会代点），请在网页上确认';
+  const e = new AppError(message, 503);
+  e.code = 'NO_USER_IP_EXECUTOR';
+  e.tried = tried;
+  return e;
+}
+
 async function perform(op, userId, platform, args, purpose, session) {
-  const serverPath = () => (op === 'like'
-    ? likes.like(userId, platform, args)
-    : likes.unlike(userId, platform, args));
-  const s = await switchFor(userId, platform);
-  // Switch off, or off for this kind of like: exactly the call it always was,
-  // and never queued behind a slow phone.
-  if (!s || !s[purpose]) return serverPath();
+  // NetEase: the server's, as it always was (the route gates 网易云打标).
+  if (platform !== 'qq') {
+    return op === 'like' ? likes.like(userId, platform, args) : likes.unlike(userId, platform, args);
+  }
   return inOrder(userId, async () => {
-    const phone = await phoneFor(userId, s, purpose, session);
-    return phone ? runOnPhone(phone, purpose, op, args, serverPath) : serverPath();
+    const tried = [];
+    if (pageAvailable(userId)) {
+      const r = await offer({ executor: 'page', userId, purpose, op, args });
+      if (r.ok) return r.result;
+      tried.push(`page:${r.why}`);
+    } else {
+      tried.push('page:closed');
+    }
+    const phone = await phoneFor(userId, await switchFor(userId, platform), purpose, session);
+    if (phone) {
+      const r = await offer({ executor: 'phone', userId, session: phone, purpose, op, args });
+      if (r.ok) return r.result;
+      tried.push(`phone:${r.why}`);
+    } else {
+      tried.push('phone:offline');
+    }
+    bump(purpose, 'noExecutor');
+    throw noExecutor(tried);
   });
 }
 
@@ -207,22 +285,31 @@ function unlike(userId, platform, args, { purpose, session = null } = {}) {
   return perform('unlike', userId, platform, args, purpose, session);
 }
 
+// --- claims and results -----------------------------------------------------------
+
+function arm(cmd) {
+  cmd.state = 'claimed';
+  cmd.claimedAt = Date.now();
+  clearTimeout(cmd.timer);
+  cmd.timer = setTimeout(() => { if (cmd.state === 'claimed') cmd.fail('timeout'); }, cmd.resultMs);
+}
+
+function budget(cmd) {
+  // What is left of the window, less a margin for the reply's trip: the
+  // executor starts no write after this.
+  return Math.max(0, cmd.resultMs - (Date.now() - cmd.claimedAt) - CLAIM_REPLY_MARGIN_MS);
+}
+
 /**
  * The phone takes a command. Returns what it needs to act, or null when the
  * command is not its to take (withdrawn, someone else's, already taken).
  */
 async function claim(session, cmdId) {
   const cmd = pending.get(String(cmdId || ''));
-  if (!cmd || cmd.sessionId !== session.id || cmd.state !== 'sent') return null;
-  cmd.state = 'claimed';
-  cmd.claimedAt = Date.now();
-  clearTimeout(cmd.timer);
+  if (!cmd || cmd.executor !== 'phone' || cmd.sessionId !== session.id || cmd.state !== 'sent') return null;
   // Armed now, not after the credential read: a renewal inside that read can
   // take seconds, and the command must not sit without a deadline meanwhile.
-  cmd.timer = setTimeout(() => {
-    if (cmd.state === 'claimed') cmd.toServer('timeout');
-  }, RESULT_MS);
-
+  arm(cmd);
   let cred = null;
   try {
     cred = await access.getFreshCredential(cmd.userId, 'qq');
@@ -232,7 +319,7 @@ async function claim(session, cmdId) {
   // Withdrawn while the credential was read? Then it is no longer the phone's.
   if (cmd.state !== 'claimed') return null;
   if (!cred || !cred.cookie || !cred.uin || !cred.musicKey) {
-    cmd.toServer('noCredential');
+    cmd.fail('noCredential');
     return null;
   }
   return {
@@ -240,37 +327,74 @@ async function claim(session, cmdId) {
     id: cmd.songId,
     songType: cmd.songType,
     precheck: cmd.precheck,
-    // What is left of the window before the server does it itself, less a
-    // margin for the reply's trip: the phone starts no write after this. The
-    // window is counted from the claim, so a slow credential read above eats
-    // into it rather than pushing the phone's writes past the fallback.
-    budgetMs: Math.max(0, RESULT_MS - (Date.now() - cmd.claimedAt) - CLAIM_REPLY_MARGIN_MS),
+    budgetMs: budget(cmd),
     cred: { cookie: cred.cookie, uin: String(cred.uin), musicKey: cred.musicKey },
   };
 }
 
-/** The phone's answer. Anything but a verified success goes to the server. */
-function result(session, cmdId, body) {
+/**
+ * A page takes a command. No credential in the answer: the page holds its own
+ * account values (qq-read-session) and checks they are for `uin`.
+ */
+async function claimPage(userId, cmdId) {
   const cmd = pending.get(String(cmdId || ''));
-  if (!cmd || cmd.sessionId !== session.id || cmd.state !== 'claimed') return false;
+  if (!cmd || cmd.executor !== 'page' || cmd.userId !== userId || cmd.state !== 'sent') return null;
+  arm(cmd);
+  let cred = null;
+  try {
+    cred = await access.getFreshCredential(userId, 'qq');
+  } catch {
+    cred = null;
+  }
+  if (cmd.state !== 'claimed') return null;
+  if (!cred || !cred.uin) {
+    cmd.fail('noCredential');
+    return null;
+  }
+  return {
+    op: cmd.op,
+    id: cmd.songId,
+    songType: cmd.songType,
+    precheck: cmd.precheck,
+    budgetMs: budget(cmd),
+    uin: String(cred.uin),
+  };
+}
+
+function settleResult(cmd, body) {
   const b = body || {};
   // Counted whatever the outcome: these requests left from the user's address.
-  const calls = Number.isInteger(b.calls) ? b.calls : 0;
+  const calls = Number.isInteger(b.calls) ? Math.min(b.calls, 20) : 0;
   if (calls > 0) meter.recordUserIp('qq', calls);
   if (b.ok === true) {
-    cmd.done(cmd.op === 'like'
-      ? { ok: true, alreadyLiked: b.alreadyLiked === true }
-      : { ok: true });
+    cmd.done(cmd.op === 'like' ? { ok: true, alreadyLiked: b.alreadyLiked === true } : { ok: true });
   } else {
     const code = String(b.code == null ? 'unknown' : b.code).slice(0, 40);
     stats.failCodes[code] = (stats.failCodes[code] || 0) + 1;
-    cmd.toServer('phoneFailed');
+    // Out of time, or holding another account's values: the executor did not
+    // try, so QQ did not refuse -- the next one is asked, and with nobody
+    // left the capture waits in 待确认 rather than showing as failed.
+    cmd.fail(code === 'late' || code === 'account-changed' ? 'unavailable' : 'failed');
   }
   return true;
 }
 
+/** The phone's answer. */
+function result(session, cmdId, body) {
+  const cmd = pending.get(String(cmdId || ''));
+  if (!cmd || cmd.executor !== 'phone' || cmd.sessionId !== session.id || cmd.state !== 'claimed') return false;
+  return settleResult(cmd, body);
+}
+
+/** A page's answer. */
+function resultPage(userId, cmdId, body) {
+  const cmd = pending.get(String(cmdId || ''));
+  if (!cmd || cmd.executor !== 'page' || cmd.userId !== userId || cmd.state !== 'claimed') return false;
+  return settleResult(cmd, body);
+}
+
 module.exports = {
-  like, unlike, claim, result, snapshot, CAP,
+  like, unlike, claim, result, claimPage, resultPage, attachPageExecutor, pageAvailable, snapshot, CAP,
   // For tests.
-  _pending: pending, CLAIM_MS, RESULT_MS,
+  _pending: pending, CLAIM_MS, RESULT_MS, PAGE_RESULT_MS,
 };

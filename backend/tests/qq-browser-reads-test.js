@@ -36,19 +36,17 @@ const ok = (c, m) => { assert.ok(c, m); passed += 1; console.log('  ✓', m); };
     await new Promise((r) => setTimeout(r, 10500)); // the server's settings cache
   };
   try {
-    // --- session: server mode, then browser without / with a credential
+    // --- session: QQ打标 is user-IP only, whatever 唱卡's play-URL mode is
     await setMode('server');
     let r = await call('GET', '/platform-tagging/qq-read-session');
-    ok(r.status === 200 && r.body.mode === 'server', 'mode server: the server reads, no account values');
-    await setMode('browser');
-    r = await call('GET', '/platform-tagging/qq-read-session');
-    ok(r.body.mode === 'server' && r.body.reason === 'no-credential', 'browser mode, no QQ connected: the server reads');
+    ok(r.status === 200 && r.body.mode === 'none' && r.body.reason === 'no-credential', 'no QQ connected: nothing handed over, and no server read either');
     await creds.setCredential(user.id, 'qq', 'uin=10001; qm_keyst=W_Xfake', {
       method: 'qr', uin: '10001', refreshKey: 'rk',
       expiresAt: new Date(Date.now() + 72 * 3600 * 1000).toISOString(), needRefreshInSec: 0,
     });
     r = await call('GET', '/platform-tagging/qq-read-session');
-    ok(r.body.mode === 'browser' && r.body.uin === '10001' && r.body.musicKey === 'W_Xfake', 'browser mode: uin + musicKey handed over');
+    ok(r.body.mode === 'browser' && r.body.uin === '10001' && r.body.musicKey === 'W_Xfake', '唱卡 on 网站 IP, QQ打标 still the browser: uin + musicKey handed over');
+    ok(r.body.loginType === 1, 'login type for the browser\'s writes (W_X key: 1)');
     ok(!('cookie' in r.body) && !JSON.stringify(r.body).includes('qm_keyst'), 'the cookie is never handed over');
 
     // --- annotate
@@ -108,12 +106,39 @@ const ok = (c, m) => { assert.ok(c, m); passed += 1; console.log('  ✓', m); };
     r = await call('POST', '/platform-tagging/playlists/annotate', { playlists: [] });
     ok(r.status === 400, 'no uin: refused');
 
-    // --- browser data is refused outside 用户 IP mode
+    // --- not tied to 唱卡's mode: taken whatever it is
     await setMode('server');
     r = await call('POST', '/platform-tagging/playlists/qq:777/supply', { uin: '10001', title: null, rows, likedIds: [] });
-    ok(r.status === 409, 'server mode: supply refused');
+    ok(r.status === 200, '唱卡 on 网站 IP: QQ打标 supply still taken');
     r = await call('POST', '/platform-tagging/playlists/annotate', { uin: '10001', playlists: [] });
-    ok(r.status === 409, 'server mode: annotate refused');
+    ok(r.status === 200, '唱卡 on 网站 IP: annotate still taken');
+
+    // --- the server never reads QQ for QQ打标
+    r = await call('GET', '/platform-tagging/playlists?platform=qq');
+    ok(r.status === 409 && r.body.error.code === 'QQ_USER_IP_ONLY', 'QQ listing by the server: refused');
+    r = await call('GET', '/platform-tagging/playlists/qq:999/songs?dirId=3');
+    ok(r.status === 409 && r.body.error.code === 'QQ_LIST_NOT_LOADED', 'QQ songs the page has not supplied: refused, not read');
+    r = await call('POST', '/platform-tagging/refresh', { playlistRef: 'qq:777', dirId: 3 });
+    ok(r.status === 409, 'QQ refresh by the server: refused');
+
+    // --- 网易云打标 is off unless switched on
+    r = await call('GET', '/platform-tagging/config');
+    ok(r.status === 200 && r.body.netease === false, 'config: NetEase not offered by default');
+    r = await call('GET', '/platform-tagging/playlists?platform=netease');
+    ok(r.status === 403 && r.body.error.code === 'NETEASE_TAGGING_OFF', 'NetEase listing refused while off');
+
+    // --- the page's own likes: recorded, and its claims checked
+    r = await call('POST', '/platform-tagging/user-ip/recorded', { op: 'like', id: '1001', calls: 3 });
+    ok(r.status === 200, 'a like the page made is recorded');
+    r = await call('POST', '/platform-tagging/user-ip/recorded', { op: 'boom', id: 'x' });
+    ok(r.status === 400, 'a malformed record is refused');
+    r = await call('POST', '/platform-tagging/user-ip/claim', { cmdId: 'nope' });
+    ok(r.status === 409, 'a claim for no command is refused');
+    // A page from before (it asked the server to like QQ): told to reload, no write.
+    r = await call('POST', '/platform-tagging/like', { platform: 'qq', id: '1001', songType: 0, playlistRef: 'qq:777' });
+    ok(r.status === 409 && r.body.error.code === 'QQ_USER_IP_ONLY' && /刷新/.test(r.body.error.message), 'old page QQ heart: 409 reload, not 503');
+    r = await call('POST', '/platform-tagging/unlike', { platform: 'qq', id: '1001', songType: 0, playlistRef: 'qq:777' });
+    ok(r.status === 409, 'old page QQ unlike: 409 reload');
 
     // --- in-process: a like made while the browser was reading is not lost
     const uid = user.id;

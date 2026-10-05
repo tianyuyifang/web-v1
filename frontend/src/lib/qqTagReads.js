@@ -8,11 +8,11 @@
  * would have, so starting a run and matching its captures need no request from
  * the server's address.
  *
- * Only when the server says so: /platform-tagging/qq-read-session answers
- * `browser` only while 档位设置 → QQ 播放解析 is 用户 IP for this user, and
- * hands over the account values the reads need -- never the cookie. Every
- * function here rejects on any failure, and the page then asks the server as
- * before; nothing is ever half-read.
+ * Always, with no switch and no fallback (2026-10-04): QQ打标 never reaches QQ
+ * from the site's address. /platform-tagging/qq-read-session hands over the
+ * account values the reads need -- never the cookie. Every function here
+ * rejects on any failure and the page says so; nothing is ever half-read, and
+ * the server is never asked to read instead.
  *
  * Verified 2026-10-03 against a real account, GET with the account in `comm`
  * and no Referer: the listing (301 lists), 我喜欢 (23/23), a 4350-song list in
@@ -25,7 +25,7 @@ const LIKES_DIR_ID = 201;
 const SESSION_TTL_MS = 5 * 60 * 1000;
 const READ_TIMEOUT_MS = 15000;
 
-let session = null; // { at, mode, uin, musicKey, euin }
+let session = null; // { at, mode, uin, musicKey, loginType, euin }
 let engine = null;
 
 async function loadEngine() {
@@ -33,16 +33,25 @@ async function loadEngine() {
   return engine;
 }
 
-/** The account values, or null when this user's lists are read by the server. */
+/**
+ * The account values. Rejects when there are none (no QQ account connected,
+ * or the site could not be asked), with a message the page shows.
+ */
 export async function readSession() {
-  if (session && Date.now() - session.at < SESSION_TTL_MS) return session.mode === "browser" ? session : null;
+  if (session && Date.now() - session.at < SESSION_TTL_MS && session.mode === "browser") return session;
+  let data;
   try {
-    const res = await platformTaggingAPI.qqReadSession();
-    session = { at: Date.now(), ...res.data };
-  } catch {
-    session = { at: Date.now() - SESSION_TTL_MS + 60 * 1000, mode: "server" };
+    data = (await platformTaggingAPI.qqReadSession()).data;
+  } catch (err) {
+    session = null;
+    throw err;
   }
-  return session.mode === "browser" && session.uin && session.musicKey ? session : null;
+  if (!data || data.mode !== "browser" || !data.uin || !data.musicKey) {
+    session = null;
+    throw new Error("还没连接 QQ 音乐账号，请到 账户 → 音乐账号 扫码连接");
+  }
+  session = { at: Date.now(), ...data };
+  return session;
 }
 
 /** Forget the account values (e.g. QQ said the key is dead), so the next read asks again. */
@@ -50,8 +59,38 @@ export function dropSession() {
   session = null;
 }
 
+/**
+ * QQ answered 1000 (the key is dead): the server renews it -- a login only it
+ * can make -- and the new values are fetched. One renewal at a time for the
+ * page. Resolves with the fresh session, or null when nothing more can be
+ * done without a new scan.
+ */
+let renewing = null;
+export function renewAfterRefusal(s) {
+  if (!renewing) {
+    renewing = (async () => {
+      try {
+        const r = await platformTaggingAPI.renewKey(s.musicKey);
+        dropSession();
+        if (!r.data?.renewed) return null;
+        return await readSession();
+      } catch {
+        return null;
+      }
+    })().finally(() => { renewing = null; });
+  }
+  return renewing;
+}
+
 function refused(code) {
-  const e = new Error(`QQ read refused (code ${code})`);
+  const message = code === 1000
+    ? "QQ 登录已失效，请到 账户 → 音乐账号 重新扫码"
+    : code === "empty" || code === "partial"
+      ? "QQ 没有返回完整的歌单，请重试"
+      : code === "timeout" || code === "script-error" || code === "bad-response"
+        ? "连不上 QQ 音乐，请重试"
+        : `QQ 暂时没有回应（${code}），请稍后重试`;
+  const e = new Error(message);
   e.code = code;
   return e;
 }
@@ -68,7 +107,19 @@ async function call(s, req1, count, alive = () => true) {
   if (!alive()) throw stopped();
   const m = await loadEngine();
   count.calls += 1;
-  const r = await m.readQq(s, req1, READ_TIMEOUT_MS);
+  const ask = () => m.readQq(s, req1, READ_TIMEOUT_MS).catch((err) => { throw refused(err?.code || "bad-response"); });
+  let r = await ask();
+  // A dead key: renewed by the server once per read, then asked again with
+  // the new values (kept on `s`, so the rest of this read uses them too).
+  if (r.code === 1000 && !count.renewed) {
+    count.renewed = true;
+    const fresh = await renewAfterRefusal(s);
+    if (fresh) {
+      Object.assign(s, fresh);
+      count.calls += 1;
+      r = await ask();
+    }
+  }
   if (r.code !== 0) {
     if (r.code === 1000) dropSession();
     throw refused(r.code);

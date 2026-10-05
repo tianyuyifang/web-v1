@@ -220,6 +220,25 @@ router.put('/apk-likes', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/netease-tagging — whether 网易云打标 is offered (default off:
+// NetEase can only be reached from this server's address).
+router.get('/netease-tagging', async (req, res, next) => {
+  try {
+    res.json({ settings: await settingsService.getNeteaseTagging() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/netease-tagging — { enabled }
+router.put('/netease-tagging', async (req, res, next) => {
+  try {
+    res.json({ settings: await settingsService.setNeteaseTagging(req.body) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/admin/capture-client — what the site tells clients is the newest build
 router.get('/capture-client', async (req, res, next) => {
   try {

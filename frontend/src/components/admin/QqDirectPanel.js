@@ -13,7 +13,7 @@ import { adminAPI } from "@/lib/api";
 const MODES = [
   ["server", "网站 IP", "和以前完全一样：服务器去问 QQ。"],
   ["shadow", "仅测速", "照旧用网站 IP 的地址播放；歌开始播放后，浏览器再从用户 IP 问一次，只计时、核对，不使用。用户感觉不到。"],
-  ["browser", "用户 IP", "浏览器先直连 QQ；超过这台设备平时走网站的时间还没回，就同时问服务器，谁先回用谁。失败自动回退网站 IP。"],
+  ["browser", "用户 IP", "只由浏览器直连 QQ，不再回退网站 IP：QQ 没给地址就显示原因，key 过期由服务器续期后浏览器重取。例外（待 iPhone 真机验证后去掉）：iPhone 上播放器未解锁时的首张卡、非管理员在 iPhone 上切换音质/纯人声，暂走网站。只管唱卡；QQ打标 无论这里怎么选都只走用户 IP。"],
 ];
 
 const REASON_LABEL = {
@@ -87,17 +87,16 @@ function Stats({ s }) {
           <Row label="样本">{br.n}</Row>
           <Row label="等待中位 / 90%">{ms(br.waitMs.p50)} / {ms(br.waitMs.p90)}</Row>
           <Row label="谁的地址被用了"><Counts map={br.winners} labels={WINNER_LABEL} /></Row>
-          <Row label="触发对冲（也问了网站）">{br.hedged}</Row>
-          <Row label="地址播不了，改用网站的">
+          <Row label="地址播不了（不再改用网站）">
             <span className={br.playFailed ? "text-red-400" : ""}>{br.playFailed}</span>
             {br.playFailed ? (
               <span className="ml-1">
-                （<Counts map={br.failKinds} labels={{ error: "播放出错", timeout: "4 秒没开始", notallowed: "iPhone 不许自动播放" }} />）
+                （<Counts map={br.failKinds} labels={{ error: "播放出错", timeout: "切换没加载出来", notallowed: "iPhone 不许自动播放" }} />）
               </span>
             ) : null}
           </Row>
           <Row label="直接走网站（原因）"><Counts map={br.skippedFor} labels={{ page: "本页停用", device: "近 1 小时播不了", gesture: "iPhone 首次播放" }} /></Row>
-          <Row label="设备重新测速">{br.reprobes ?? 0}</Row>
+          <Row label="iPhone 静音解锁"><Counts map={br.primes} labels={{ ok: "成功", timeout: "超时", refused: "被拒", already: "已解锁", busy: "有歌在放" }} /></Row>
           <Row label="用户 IP 结果"><Counts map={br.directReasons} labels={REASON_LABEL} /></Row>
         </dl>
       </div>
@@ -200,19 +199,6 @@ export default function QqDirectPanel() {
                 className="h-4 w-4 rounded border-border accent-primary"
               />
               只对管理员生效
-            </label>
-            <label className="flex items-center gap-2">
-              默认对冲等待
-              <input
-                type="number"
-                step="50"
-                min="250"
-                max="2000"
-                value={form.hedgeMs}
-                onChange={(e) => setForm({ ...form, hedgeMs: e.target.value })}
-                className="w-24 rounded border border-border bg-background px-2 py-1 text-sm text-theme"
-              />
-              <span className="text-xs text-muted">毫秒（设备自己量出走网站的时间后，以设备的为准；最少等 1 秒）</span>
             </label>
           </div>
 

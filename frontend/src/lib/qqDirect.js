@@ -22,9 +22,6 @@
 // A mode not confirmed by a status poll for this long is not trusted on a tap
 // (a page frozen in the background): that tap takes the server path.
 const MODE_STALE_MS = 60 * 1000;
-// A URL that came from QQ directly and has not started playing within this is
-// given up on (the page then takes serverInstead).
-const DIRECT_START_MS = 4000;
 
 let mode = null; // as last reported by the status poll
 let modeAt = 0;
@@ -86,20 +83,59 @@ export function noteMode(next) {
  * `askServer()` itself, called at once and returned as is.
  *
  * Otherwise it resolves like an axios response ({ data }), and rejects with
- * the server's own error when the server path was needed and failed -- so the
- * page's handling is unchanged. Two optional extras on the response:
+ * an error the page shows as it is (err.response.data.error.message). Two
+ * optional extras on the response:
  *   afterPlay(quiet)      -- call once the sound has started (shadow timing);
  *                            `quiet()` says the song's own download is done.
- *   serverInstead(why)    -- present when the URL came from QQ directly; call
- *                            it if that URL will not play ("error") or has not
- *                            started in time ("timeout"), for the server's.
+ *   onPlayFail(why, code) -- present when the URL came from QQ directly; call
+ *                            it if that URL will not play ("error" /
+ *                            "timeout" / "notallowed"). It records the failure
+ *                            and, for an older cached URL, asks QQ once more;
+ *                            the server is never asked (browser mode).
  * `ctx.elementHasPlayed`: whether the audio element this URL goes to has made
- * sound before (Apple's WebKit, see lib/qqDirectEngine).
+ * sound before (Apple's WebKit, see lib/qqDirectEngine); `ctx.prime`: how the
+ * silent unlock of that element went, reported with the sample.
  */
 export function resolve(mapping, opts, askServer, ctx) {
+  if (mapping?.source !== "QQ" || !mapping.externalId) return askServer();
+  // 用户 IP: never the server for a play URL -- not even when the last status
+  // poll is a little old (a page just back from the background) or the engine
+  // is still downloading. Only a switch the poll has actually reported moves
+  // the page off it.
+  if (mode === "browser") {
+    if (engine) return engine.resolve(mapping, opts, askServer, ctx, "browser");
+    return loadEngine().then((m) => {
+      if (m) {
+        // Loaded on this tap (an earlier load failed): it has not heard the
+        // mode from a poll yet, and would not fetch the account values.
+        m.noteMode("browser");
+        return m.resolve(mapping, opts, askServer, ctx, "browser");
+      }
+      const e = new Error("engine-unavailable");
+      e.response = { data: { error: { message: "连不上 QQ 音乐，请再点一次" } } };
+      throw e;
+    });
+  }
   const fresh = mode && mode !== "server" && Date.now() - modeAt < MODE_STALE_MS;
-  if (!fresh || !engine || mapping?.source !== "QQ" || !mapping.externalId) return askServer();
+  if (!fresh || !engine) return askServer();
   return engine.resolve(mapping, opts, askServer, ctx, mode);
+}
+
+/**
+ * For a URL that came from QQ directly: the player's start, given up on after
+ * `ms` so a stalled CDN shows an error instead of an endless spinner. Nothing
+ * else is asked: the page stops the player and says so.
+ */
+export function withStartLimit(starting, ms) {
+  starting.catch(() => {});
+  return Promise.race([
+    starting,
+    new Promise((_, reject) => setTimeout(() => {
+      const e = new Error("did not start");
+      e.name = "StartTimeout";
+      reject(e);
+    }, ms)),
+  ]);
 }
 
 // Apple's WebKit (every iOS browser, WeChat on iOS, Safari) -- the same test
@@ -122,20 +158,3 @@ export function primeWanted() {
   return APPLE_WEBKIT && mode === "browser" && Date.now() - modeAt < MODE_STALE_MS && !!engine;
 }
 
-/**
- * For a URL that came from QQ directly: the player's start, given up on after
- * DIRECT_START_MS so a stalled CDN costs a few seconds rather than however long
- * the browser waits. The original start is left to settle on its own (it is
- * superseded by the next load).
- */
-export function withStartLimit(starting) {
-  starting.catch(() => {});
-  return Promise.race([
-    starting,
-    new Promise((_, reject) => setTimeout(() => {
-      const e = new Error("did not start");
-      e.name = "StartTimeout";
-      reject(e);
-    }, DIRECT_START_MS)),
-  ]);
-}

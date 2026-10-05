@@ -15,7 +15,7 @@ const rateLimit = require('express-rate-limit');
 const prisma = require('../db/client');
 const { authMiddleware, requireApproved, requireActiveSession } = require('../middleware/auth');
 const { ADD_ONS } = require('../utils/entitlements');
-const { ValidationError } = require('../utils/errors');
+const { ValidationError, AppError } = require('../utils/errors');
 const { searchTextFor } = require('../utils/searchText');
 const requireAddOn = require('../middleware/requireAddOn');
 const captureService = require('../services/captureService');
@@ -27,7 +27,7 @@ const noEtag = require('../middleware/noEtag');
 const { z } = require('zod');
 const settingsService = require('../services/settingsService');
 const credentials = require('../services/musicCredentialService');
-const { getFreshCredential } = require('../services/musicCredentialAccess');
+const { getFreshCredential, renewAfterRejection } = require('../services/musicCredentialAccess');
 const meter = require('../services/outboundMeter');
 
 const requirePlatformTaggingAddOn = requireAddOn(
@@ -48,10 +48,38 @@ const writeLimiter = rateLimit({
   message: { error: { message: '操作过于频繁，请稍后再试', status: 429 } },
 });
 
+/**
+ * 网易云打标 is off unless an admin turns it on: NetEase can only be reached
+ * from this server's address (2026-10-04). QQ打标 is always on and never
+ * reaches QQ from here at all (platformLikeService refuses).
+ */
+async function assertPlatformOffered(platform) {
+  if (platform !== 'netease') return;
+  const s = await settingsService.getNeteaseTagging();
+  if (!s.enabled) {
+    const e = new AppError('网易云打标暂不提供', 403);
+    e.code = 'NETEASE_TAGGING_OFF';
+    throw e;
+  }
+}
+
+// GET /api/platform-tagging/config — what the page may offer.
+router.get('/config', ...web, async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json({ netease: (await settingsService.getNeteaseTagging()).enabled });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/platform-tagging/playlists?platform=qq|netease
+// NetEase only: QQ lists are read by the user's browser (lib/qqTagReads) and
+// a QQ listing here is refused (QQ_USER_IP_ONLY).
 router.get('/playlists', ...web, async (req, res, next) => {
   try {
     const platform = String(req.query.platform || '');
+    await assertPlatformOffered(platform);
     const playlists = await likes.listPlaylists(req.user.id, platform);
     // Pinyin for the name, so the list is searchable by initials too.
     res.json({ playlists: playlists.map((p) => ({ ...p, searchText: searchTextFor(p.name) })) });
@@ -66,7 +94,8 @@ router.get('/playlists', ...web, async (req, res, next) => {
 // clicking again is one platform read, not three.
 router.get('/playlists/:ref/songs', ...web, async (req, res, next) => {
   try {
-    const { ref } = likes.parseRef(req.params.ref);
+    const { ref, platform } = likes.parseRef(req.params.ref);
+    await assertPlatformOffered(platform);
     const dirId = req.query.dirId != null && req.query.dirId !== ''
       ? Number(req.query.dirId) : null;
     // isLikes: whether this is the favourites list, as the listing said. Cache
@@ -84,14 +113,13 @@ router.get('/playlists/:ref/songs', ...web, async (req, res, next) => {
   }
 });
 
-// --- 用户 IP reads ---------------------------------------------------------
+// --- 用户 IP ------------------------------------------------------------------
 //
-// When 档位设置 → QQ 播放解析 is 用户 IP for this user, the page reads its QQ
-// lists from the user's own browser (lib/qqTagReads) instead of this server:
-// the same calls, answered to the user's own address. These three routes are
-// all the server does for it -- hand over the account values the reads need
-// (never the cookie), and take back what was read. Anything that fails on the
-// way, the page asks the routes above, as before.
+// QQ打标 reads and writes QQ only from the user's own browser (lib/qqTagReads,
+// lib/qqTagWrites) or phone -- never from here, and with no switch (2026-10-04).
+// These routes are all the server does for it: hand over the account values
+// the browser needs (never the cookie), take back what it read, and take
+// part in the likes it performs.
 
 const readLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -107,17 +135,6 @@ function countUserIpCalls(body) {
   const n = Number(body && body.calls);
   // A 5000-song list is 5 pages plus 100 liked-state batches.
   if (Number.isInteger(n) && n > 0) meter.recordUserIp('qq', Math.min(n, 120));
-}
-
-/** Browser-read data is taken only while the user is in 用户 IP mode. */
-async function browserMode(req) {
-  const s = await settingsService.qqDirectFor(req.user.role);
-  return s.mode === 'browser';
-}
-
-function notBrowserMode(res) {
-  // The page falls back to the server's read on any refusal.
-  return res.status(409).json({ error: { message: 'Lists are read by the server', status: 409 } });
 }
 
 /**
@@ -137,21 +154,39 @@ function otherAccount(res) {
 }
 
 // GET /api/platform-tagging/qq-read-session — the account values for reading
-// this user's QQ lists from their browser, or { mode: 'server' }.
+// and writing this user's QQ from their browser; { mode: 'none' } when no QQ
+// account is connected.
 router.get('/qq-read-session', ...web, readLimiter, async (req, res, next) => {
   try {
     res.set('Cache-Control', 'no-store');
-    const s = await settingsService.qqDirectFor(req.user.role);
-    if (s.mode !== 'browser') return res.json({ mode: 'server' });
     const cred = await getFreshCredential(req.user.id, 'qq');
-    if (!cred || !cred.uin || !cred.musicKey) return res.json({ mode: 'server', reason: 'no-credential' });
+    if (!cred || !cred.uin || !cred.musicKey) return res.json({ mode: 'none', reason: 'no-credential' });
     return res.json({
       mode: 'browser',
       uin: String(cred.uin),
       musicKey: cred.musicKey,
+      // 1 = WeChat, 2 = QQ account: what a write tells QQ in `comm`
+      // (tmeLoginType). Read off the key the way QQ's own clients do; an
+      // app-scan WeChat login answers to 1 too (tested 2026-10-04).
+      loginType: String(cred.musicKey).startsWith('W_X') ? 1 : 2,
       // Not a secret: the account's public id, needed for its collected lists.
       euin: cred.euin || null,
     });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/platform-tagging/renew { usedKey } — QQ told the browser its key is
+// dead. The server renews it (a login, which only it can make; guarded by the
+// same cooldown and minimum key age as every renewal) and the page fetches
+// the new values and asks QQ again itself. `renewed` false: only a new scan helps.
+router.post('/renew', ...web, readLimiter, async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const usedKey = typeof req.body?.usedKey === 'string' ? req.body.usedKey.slice(0, 400) : null;
+    const fresh = await renewAfterRejection(req.user.id, usedKey);
+    return res.json({ renewed: !!(fresh && fresh.musicKey && fresh.musicKey !== usedKey) });
   } catch (err) {
     return next(err);
   }
@@ -179,7 +214,6 @@ const annotateBody = z.object({
 // given the same search text the server-read listing carries.
 router.post('/playlists/annotate', ...web, readLimiter, async (req, res, next) => {
   try {
-    if (!(await browserMode(req))) return notBrowserMode(res);
     const parsed = annotateBody.safeParse(req.body || {});
     if (!parsed.success) throw new ValidationError(parsed.error.flatten().fieldErrors);
     const { playlists, euin, uin } = parsed.data;
@@ -222,7 +256,6 @@ router.post('/playlists/:ref/supply', ...web, readLimiter, async (req, res, next
   try {
     const { ref, platform } = likes.parseRef(req.params.ref);
     if (platform !== 'qq') throw new ValidationError({ playlistRef: ['只支持 QQ 歌单'] });
-    if (!(await browserMode(req))) return notBrowserMode(res);
     const parsed = supplyBody.safeParse(req.body || {});
     if (!parsed.success) throw new ValidationError(parsed.error.flatten().fieldErrors);
     countUserIpCalls(req.body);
@@ -244,12 +277,58 @@ router.post('/playlists/:ref/supply', ...web, readLimiter, async (req, res, next
   }
 });
 
+const recordedBody = z.object({
+  op: z.enum(['like', 'unlike']),
+  id: z.string().regex(/^\d{1,20}$/),
+  calls: z.number().int().min(0).max(20).optional(),
+});
+
+// POST /api/platform-tagging/user-ip/recorded { op, id, calls } — the page
+// liked or unliked a song itself (the heart), from the user's own address:
+// every cached list learns it, as when the server used to do it.
+router.post('/user-ip/recorded', ...web, writeLimiter, async (req, res, next) => {
+  try {
+    const parsed = recordedBody.safeParse(req.body || {});
+    if (!parsed.success) throw new ValidationError(parsed.error.flatten().fieldErrors);
+    const { op, id, calls } = parsed.data;
+    if (calls) meter.recordUserIp('qq', calls);
+    if (op === 'like') tags.noteLiked(req.user.id, id);
+    else tags.noteUnliked(req.user.id, id);
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/platform-tagging/user-ip/claim { cmdId } — a page takes an
+// auto-like the server offered it on its stream (apkLikeService).
+router.post('/user-ip/claim', ...web, async (req, res, next) => {
+  try {
+    const job = await apkLikes.claimPage(req.user.id, req.body && req.body.cmdId);
+    if (!job) return res.status(409).json({ error: { message: 'Not yours to take', status: 409 } });
+    return res.json(job);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/platform-tagging/user-ip/result { cmdId, ok, alreadyLiked?, code?, calls? }
+router.post('/user-ip/result', ...web, async (req, res, next) => {
+  try {
+    const taken = apkLikes.resultPage(req.user.id, req.body && req.body.cmdId, req.body);
+    return res.json({ ok: taken });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // POST /api/platform-tagging/refresh { playlistRef, dirId?, isLikes? }
 // Re-read one list from the platform now. Limited like a write: it is a
 // platform call the user triggers by hand.
 router.post('/refresh', ...web, writeLimiter, async (req, res, next) => {
   try {
     const { playlistRef, dirId, isLikes } = req.body || {};
+    await assertPlatformOffered(likes.parseRef(playlistRef).platform);
     res.json(await tags.refresh(
       req.user.id,
       likes.parseRef(playlistRef).ref,
@@ -290,6 +369,7 @@ router.post('/connect', ...web, async (req, res, next) => {
 router.post('/start', ...web, writeLimiter, async (req, res, next) => {
   try {
     const { playlistRef, dirId, isLikes } = req.body || {};
+    await assertPlatformOffered(likes.parseRef(playlistRef).platform);
     const result = await tags.start({
       userId: req.user.id,
       playlistRef,
@@ -336,10 +416,16 @@ router.get('/feed', ...web, noEtag, async (req, res, next) => {
 // POST /api/platform-tagging/events/:id/approve { externalId? }
 router.post('/events/:id/approve', ...web, writeLimiter, async (req, res, next) => {
   try {
+    const b = req.body || {};
+    const br = b.browserResult;
     res.json(await tags.approve({
       userId: req.user.id,
       eventId: req.params.id,
-      externalId: req.body && req.body.externalId,
+      externalId: b.externalId,
+      // QQ: written by the page from the user's own address; only reported here.
+      browserResult: br && typeof br === 'object' && typeof br.ok === 'boolean'
+        ? { ok: br.ok, alreadyLiked: br.alreadyLiked === true, message: typeof br.message === 'string' ? br.message : null }
+        : null,
     }));
   } catch (err) {
     next(err);
@@ -365,6 +451,18 @@ router.post('/events/:id/ignore', ...web, async (req, res, next) => {
  * on the platform whose list it came from -- and a `platform` field that
  * disagrees with it is a bad request, not a tie to break.
  */
+/**
+ * A QQ heart reaching the server comes from a page loaded before 2026-10-04:
+ * the current page writes QQ itself (lib/qqTagWrites) and only reports it.
+ * The server does not write to QQ, so that page is told to reload.
+ */
+function refuseOldQqHeart(platform) {
+  if (platform !== 'qq') return;
+  const e = new AppError('请刷新页面后再点（QQ打标改为由你的浏览器点赞）', 409);
+  e.code = 'QQ_USER_IP_ONLY';
+  throw e;
+}
+
 function likeTarget(body) {
   const { platform, id, songType, playlistRef } = body || {};
   let target = platform == null ? '' : String(platform);
@@ -388,6 +486,8 @@ function likeTarget(body) {
 router.post('/like', ...web, writeLimiter, async (req, res, next) => {
   try {
     const { platform, id, songType } = likeTarget(req.body);
+    refuseOldQqHeart(platform);
+    await assertPlatformOffered(platform);
     const result = await apkLikes.like(req.user.id, platform, { id, songType }, { purpose: 'manual' });
     tags.noteLiked(req.user.id, id);
     res.json(result);
@@ -401,6 +501,8 @@ router.post('/like', ...web, writeLimiter, async (req, res, next) => {
 router.post('/unlike', ...web, writeLimiter, async (req, res, next) => {
   try {
     const { platform, id, songType } = likeTarget(req.body);
+    refuseOldQqHeart(platform);
+    await assertPlatformOffered(platform);
     const result = await apkLikes.unlike(req.user.id, platform, { id, songType }, { purpose: 'manual' });
     tags.noteUnliked(req.user.id, id);
     res.json(result);
@@ -425,11 +527,14 @@ router.get('/stream', authMiddleware, requireApproved, requirePlatformTaggingAdd
 
     const rawClientId = String(req.query.clientId || '');
     const clientId = /^[A-Za-z0-9]{1,32}$/.test(rawClientId) ? rawClientId : null;
+    const executor = req.query.exec === '1';
     addClient(
       tags.channel(req.user.id),
       res,
-      clientId ? `platform:${sessionId}:${clientId}` : undefined,
+      clientId ? `platform:${sessionId}:${clientId}${executor ? ':exec' : ''}` : undefined,
     );
+    // A page that performs the auto-likes itself (lib/qqTagWrites).
+    if (executor) apkLikes.attachPageExecutor(req.user.id, res);
     return undefined;
   } catch (err) {
     return next(err);

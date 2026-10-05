@@ -19,8 +19,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * buffers, and everything here comes from a platform CDN.
  */
 
-/** Longest the tap waits for the unlocking silence (primeElement) to play. */
-const PRIME_WAIT_MS = 300;
+/**
+ * Longest the tap waits for the unlocking silence (primeElement) to play.
+ * Was 300 ms: on a real iPhone (2026-10-04) the silence had not started by
+ * then, so the first cards were taken as locked and went to the server. The
+ * wait ends as soon as the silence plays; this only bounds a refusal that
+ * never answers.
+ */
+const PRIME_WAIT_MS = 1500;
 
 let silentUrl = null;
 /** 0.1 s of silence as a WAV data URL (8 kHz, 8-bit mono), built once. */
@@ -39,6 +45,28 @@ function silentWavUrl() {
   for (let i = 0; i < b.length; i += 1) s += String.fromCharCode(b[i]);
   silentUrl = `data:audio/wav;base64,${btoa(s)}`;
   return silentUrl;
+}
+
+/**
+ * Play a moment of silence on `el` -- called inside a tap -- and resolve with
+ * how it went: "ok" once it has really played (and is recorded in `played()`),
+ * "refused" when the browser said no, "timeout" when it had not answered
+ * within PRIME_WAIT_MS. Nothing relies on it unless it says "ok".
+ */
+function primeSilently(el, played) {
+  let starting;
+  try {
+    el.src = silentWavUrl();
+    starting = el.play();
+  } catch {
+    return Promise.resolve("refused");
+  }
+  const primed = Promise.resolve(starting).then(() => {
+    played().add(el);
+    try { el.pause(); } catch { /* fine */ }
+    return "ok";
+  }, () => "refused");
+  return Promise.race([primed, new Promise((r) => setTimeout(() => r("timeout"), PRIME_WAIT_MS))]);
 }
 
 export default function useLivePlayer() {
@@ -82,6 +110,9 @@ export default function useLivePlayer() {
   const [canShift, setCanShift] = useState(false);
 
   const elRef = useRef(null);
+  // An element unlocked inside a quality/vocals tap (primeSpare), taken by the
+  // next swapSource instead of a fresh one.
+  const spareRef = useRef(null);
   const urlRef = useRef(null);
 
   const ctxRef = useRef(null);
@@ -464,7 +495,12 @@ export default function useLivePlayer() {
     const at = shiftingRef.current ? positionNow() : (el.currentTime || 0);
     const wasShifting = shiftingRef.current;
 
-    const next = new Audio();
+    // The element unlocked inside the tap that asked for this (Apple's WebKit),
+    // or a fresh one.
+    const spare = spareRef.current;
+    spareRef.current = null;
+    const next = spare || new Audio();
+    if (spare) { try { spare.pause(); } catch { /* fine */ } }
     next.preload = "auto";
     next.crossOrigin = "anonymous";
     next.src = url;
@@ -735,6 +771,9 @@ export default function useLivePlayer() {
       elRef.current.pause();
       elRef.current.src = "";
     }
+    // Nothing loaded any more: a later load of the same URL is a load, and
+    // the element counts as free for the silent unlock.
+    urlRef.current = null;
     decodeForRef.current = null;
     bufferRef.current = null;
     setCanShift(false);
@@ -770,31 +809,29 @@ export default function useLivePlayer() {
    *
    * Call synchronously inside the tap, like unlockAudio. An element that has
    * played once may be started again by code later; a fresh one only from the
-   * tap itself. Resolves true once the silence has really played (and the
-   * element is recorded as played), false if it was refused or took longer
-   * than PRIME_WAIT_MS -- in which case nothing relies on it. Only touches an
-   * element that has never played, so a song that is loaded or paused is never
-   * disturbed.
+   * tap itself. Resolves with how it went (see primeSilently): "already" when
+   * the element has played before, "busy" when a song is loaded (even one that
+   * never started) -- it is never disturbed -- or the result of the silence.
    */
   const primeElement = useCallback(() => {
     const el = element();
-    if (played().has(el)) return Promise.resolve(true);
+    if (played().has(el)) return Promise.resolve("already");
     // A song is loaded (even one that never started): leave it alone.
-    if (urlRef.current || (el.src && !el.paused)) return Promise.resolve(false);
-    let starting;
-    try {
-      el.src = silentWavUrl();
-      starting = el.play();
-    } catch {
-      return Promise.resolve(false);
-    }
-    const primed = Promise.resolve(starting).then(() => {
-      played().add(el);
-      try { el.pause(); } catch { /* fine */ }
-      return true;
-    }, () => false);
-    return Promise.race([primed, new Promise((r) => setTimeout(() => r(false), PRIME_WAIT_MS))]);
+    if (urlRef.current || (el.src && !el.paused)) return Promise.resolve("busy");
+    return primeSilently(el, played);
   }, [element, played]);
+
+  /**
+   * The same unlock for the element a quality/vocals switch will play through
+   * (swapSource builds a second element). Call synchronously inside the tap.
+   */
+  const primeSpare = useCallback(() => {
+    if (spareRef.current && played().has(spareRef.current)) return Promise.resolve("already");
+    const el = new Audio();
+    el.crossOrigin = "anonymous";
+    spareRef.current = el;
+    return primeSilently(el, played);
+  }, [played]);
 
   /** The current element's MediaError code (1-4), if it has one. For reporting only. */
   const mediaErrorCode = useCallback(() => {
@@ -808,7 +845,7 @@ export default function useLivePlayer() {
   const bufferReady = useCallback(() => !!bufferRef.current, []);
 
   return {
-    load, toggle, seek, stop, swapSource, unlockAudio, primeElement, mediaErrorCode, elementHasPlayed, bufferReady,
+    load, toggle, seek, stop, swapSource, unlockAudio, primeElement, primeSpare, mediaErrorCode, elementHasPlayed, bufferReady,
     setPitch, setSpeed, setVolume, setVocalsOnly,
     isPlaying, current, duration, pitch, speed, volume, canShift,
     // Temporary — see perfRef.

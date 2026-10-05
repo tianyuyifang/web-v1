@@ -346,8 +346,13 @@ export const platformTaggingAPI = {
   stop: () => api.post("/platform-tagging/stop", {}, { timeout: 10000 }),
   feed: (sessionId, limit) =>
     api.get("/platform-tagging/feed", { params: limit != null ? { sessionId, limit } : { sessionId } }),
-  approve: (eventId, externalId) =>
-    api.post(`/platform-tagging/events/${eventId}/approve`, externalId ? { externalId } : {}),
+  // QQ: the page writes the like itself (lib/qqTagWrites) and reports how it
+  // went as `browserResult`; NetEase: the server does it.
+  approve: (eventId, externalId, browserResult) =>
+    api.post(`/platform-tagging/events/${eventId}/approve`, {
+      ...(externalId ? { externalId } : {}),
+      ...(browserResult ? { browserResult } : {}),
+    }),
   ignore: (eventId) => api.post(`/platform-tagging/events/${eventId}/ignore`),
   // playlistRef: the list on screen, so the server keeps that one's cache
   // and refreshes the others (the favourites list changes on every like).
@@ -357,7 +362,16 @@ export const platformTaggingAPI = {
     api.post("/platform-tagging/unlike", { platform, id, songType, playlistRef }),
   // 用户 IP mode (lib/qqTagReads): the account values for reading QQ lists
   // from this browser, and handing back what was read.
-  qqReadSession: () => api.get("/platform-tagging/qq-read-session"),
+  qqReadSession: () => api.get("/platform-tagging/qq-read-session", { timeout: 10000 }),
+  // QQ said the key is dead: the server renews it (a login only it can make).
+  renewKey: (usedKey) => api.post("/platform-tagging/renew", { usedKey }, { timeout: 15000 }),
+  // What the page may offer (网易云打标 is off unless an admin turns it on).
+  config: () => api.get("/platform-tagging/config"),
+  // The page liked/unliked a QQ song itself; the server's cached lists learn it.
+  recorded: (body) => api.post("/platform-tagging/user-ip/recorded", body),
+  // An automatic like offered to this page: take it, then say how it went.
+  claimLike: (cmdId) => api.post("/platform-tagging/user-ip/claim", { cmdId }, { timeout: 8000 }),
+  likeResult: (body) => api.post("/platform-tagging/user-ip/result", body, { timeout: 8000 }),
   annotatePlaylists: (body) => api.post("/platform-tagging/playlists/annotate", body),
   supplySongs: (ref, body) =>
     api.post(`/platform-tagging/playlists/${encodeURIComponent(ref)}/supply`, body, { timeout: 30000 }),
@@ -402,6 +416,8 @@ export const adminAPI = {
   // QQ打标: whether the user's own phone performs the likes, and how it went.
   getApkLikes: () => api.get("/admin/apk-likes"),
   setApkLikes: (patch) => api.put("/admin/apk-likes", patch),
+  getNeteaseTagging: () => api.get("/admin/netease-tagging"),
+  setNeteaseTagging: (patch) => api.put("/admin/netease-tagging", patch),
   setTiers: (patch) => api.put("/admin/tiers", patch),
   extendOneMonth: (id) => api.post(`/admin/users/${id}/extend`),
   resetPassword: (id) => api.post(`/admin/users/${id}/reset-password`),
@@ -476,6 +492,8 @@ export const musicSourcesAPI = {
 // 唱卡 asking QQ for a play URL from the singer's own address (lib/qqDirect).
 export const qqDirectAPI = {
   session: () => api.get("/qq-direct/session"),
+  // QQ said the key is dead: the server renews it; the page then asks QQ again itself.
+  renew: (usedKey) => api.post("/qq-direct/renew", { usedKey }),
   // `calls`: QQ calls made outside any sample (the idle CDN warm-up).
   report: (samples, calls = 0) => api.post("/qq-direct/report", { samples, calls }).catch(() => {}),
 };
@@ -646,9 +664,12 @@ export const getLiveSSEUrl = (sessionId) => {
 };
 
 /** Stream for a 平台打标 run. Same page-keyed de-duplication as 唱卡. */
-export const getPlatformTagSSEUrl = (sessionId) => {
+// `exec`: this page performs the run's QQ likes (lib/qqTagWrites); a stream of
+// its own, so the feed's stream and this one do not retire each other.
+export const getPlatformTagSSEUrl = (sessionId, { exec = false } = {}) => {
   const { base, token } = streamBase();
   const params = new URLSearchParams({ sessionId, clientId: pageStreamId });
+  if (exec) params.set("exec", "1");
   if (token) params.set("token", token);
   return `${base}/platform-tagging/stream?${params.toString()}`;
 };

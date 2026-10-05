@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { platformTaggingAPI, getPlatformTagSSEUrl } from "@/lib/api";
+import * as qqTagWrites from "@/lib/qqTagWrites";
 
 const LIKED = new Set(["liked", "already_liked"]);
 const ACTIONABLE = new Set(["pending", "ambiguous"]);
@@ -64,34 +65,56 @@ export default function PlatformTagPanel({ sessionId, onLiked }) {
         .catch(() => {});
     };
 
-    const es = new EventSource(getPlatformTagSSEUrl(sessionId));
+    // The browser retries a dropped stream by itself, but gives up for good
+    // when a retry is answered with an error (the 502 of a restarting
+    // server): opened again here, with a growing pause.
+    let es = null;
+    let retryMs = 2000;
+    let timer = null;
+    const listen = (target) => {
+      target.addEventListener("open", () => { retryMs = 2000; loadFeed(); });
+      target.addEventListener("error", () => {
+        if (!alive || target.readyState !== 2) return;
+        target.close();
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (!alive) return;
+          es = new EventSource(getPlatformTagSSEUrl(sessionId));
+          esRef.current = es;
+          listen(es);
+        }, retryMs);
+        retryMs = Math.min(retryMs * 2, 30000);
+      });
+      // The server could not read the playlist (a lapsed platform login, most
+      // likely). Captures are being refused meanwhile; say so, here, where the
+      // user is looking.
+      target.addEventListener("platform-tag-error", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.sessionId && data.sessionId !== sessionId) return;
+          setError(data.message || "读取歌单失败");
+        } catch {
+          /* malformed */
+        }
+      });
+      target.addEventListener("platform-tag-event", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.outcome === "duplicate") return;
+          if (data.sessionId && data.sessionId !== sessionId) return;
+          upsert(data);
+        } catch {
+          /* malformed */
+        }
+      });
+    };
+    es = new EventSource(getPlatformTagSSEUrl(sessionId));
     esRef.current = es;
-    es.addEventListener("open", loadFeed);
-    // The server could not read the playlist (a lapsed platform login, most
-    // likely). Captures are being refused meanwhile; say so, here, where the
-    // user is looking.
-    es.addEventListener("platform-tag-error", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.sessionId && data.sessionId !== sessionId) return;
-        setError(data.message || "读取歌单失败");
-      } catch {
-        /* malformed */
-      }
-    });
-    es.addEventListener("platform-tag-event", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.outcome === "duplicate") return;
-        if (data.sessionId && data.sessionId !== sessionId) return;
-        upsert(data);
-      } catch {
-        /* malformed */
-      }
-    });
+    listen(es);
     return () => {
       alive = false;
-      es.close();
+      clearTimeout(timer);
+      if (es) es.close();
       esRef.current = null;
     };
   }, [sessionId, upsert, onLiked]);
@@ -103,7 +126,7 @@ export default function PlatformTagPanel({ sessionId, onLiked }) {
       const res = await fn();
       upsert(res.data);
     } catch (err) {
-      setError(err.response?.data?.error?.message || "操作失败");
+      setError(err.response?.data?.error?.message || err.message || "操作失败");
       // A failed approve is written server-side as `failed`; pull it so the
       // row moves to the right column even when the response was the error.
       platformTaggingAPI.feed(sessionId).then((r) => setEvents(r.data.events || [])).catch(() => {});
@@ -112,8 +135,18 @@ export default function PlatformTagPanel({ sessionId, onLiked }) {
     }
   }, [sessionId, upsert]);
 
-  const approve = (ev, externalId) =>
-    act(ev.eventId, () => platformTaggingAPI.approve(ev.eventId, externalId));
+  // QQ: this page writes the like from the user's own address, then the server
+  // records how it went; NetEase: the server does it.
+  const approve = (ev, externalId) => act(ev.eventId, async () => {
+    if (ev.platform !== "qq") return platformTaggingAPI.approve(ev.eventId, externalId);
+    const cands = ev.candidates || [];
+    const pick = externalId
+      ? cands.find((c) => String(c.externalId) === String(externalId))
+      : (cands.length === 1 ? cands[0] : null);
+    if (!pick) throw new Error("请选择一首歌");
+    const browserResult = await qqTagWrites.approveLike({ id: pick.externalId, songType: pick.songType });
+    return platformTaggingAPI.approve(ev.eventId, pick.externalId, browserResult);
+  });
   const ignore = (ev) => act(ev.eventId, () => platformTaggingAPI.ignore(ev.eventId));
 
   const liked = events.filter((e) => LIKED.has(e.outcome));
@@ -121,6 +154,9 @@ export default function PlatformTagPanel({ sessionId, onLiked }) {
   const failed = events.filter((e) => e.outcome === "failed");
   const unmatched = events.filter((e) => e.outcome === "no_match" && !dismissed.has(e.eventId));
   const ignored = events.filter((e) => e.outcome === "ignored").length;
+  // Captured while the server had no copy of the list (a restart): matched as
+  // soon as this page has read the list again.
+  const unread = events.filter((e) => e.outcome === "unread" || e.outcome === "matching").length;
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
@@ -131,6 +167,7 @@ export default function PlatformTagPanel({ sessionId, onLiked }) {
         <span>未匹配 <b>{unmatched.length}</b></span>
         {failed.length > 0 && <span>失败 <b className="text-red-400">{failed.length}</b></span>}
         {ignored > 0 && <span>已忽略 {ignored}</span>}
+        {unread > 0 && <span className="text-yellow-400">处理中 / 等歌单读取 {unread}</span>}
       </div>
 
       {error && <div className="mb-3 text-xs text-red-400">{error}</div>}
@@ -228,6 +265,9 @@ function PendingRow({ event, busy, onApprove, onIgnore }) {
           <div className="truncate font-medium" title={event.rawText}>{event.rawText}</div>
           {isFailed && (
             <div className="text-xs text-red-400">点赞失败：{event.error || "平台未接受"}</div>
+          )}
+          {!isFailed && event.error && (
+            <div className="text-xs text-yellow-400">{event.error}</div>
           )}
         </div>
         <button

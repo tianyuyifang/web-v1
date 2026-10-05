@@ -70,6 +70,9 @@ function clean(raw) {
     // why the browser was not tried at all (browser mode): page / device
     // choice, or an iPhone-family element that has not played yet.
     skippedFor: pick(raw.skippedFor, new Set(['page', 'device', 'gesture'])),
+    // Apple's WebKit: how the silent unlock of the element went on this tap
+    // (useLivePlayer.primeSilently), so a locked first card can be explained.
+    prime: pick(raw.prime, new Set(['ok', 'timeout', 'refused', 'already', 'busy'])),
     // a device that goes to the server re-timing QQ now and then (kept out of
     // the shadow figures, which would otherwise lean toward slow devices).
     reprobe: bool(raw.reprobe),
@@ -165,6 +168,7 @@ function summary(hours = 24, now = Date.now()) {
       directReasons: countBy(browser, 'directReason'),
       playFailed: browserAll.filter((s) => s.playFailed === true).length,
       failKinds: countBy(browserAll.filter((s) => s.playFailed === true && s.failKind), 'failKind'),
+      primes: countBy(browserAll.filter((s) => s.prime), 'prime'),
       skippedFor: countBy(browser.filter((s) => s.skippedFor), 'skippedFor'),
       reprobes: reprobes.length,
     },

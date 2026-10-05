@@ -26,6 +26,7 @@ const gepSingers = require('./gepSingerService');
 const { searchTextFor } = require('../utils/searchText');
 const captureService = require('./captureService');
 const { broadcast } = require('./sseManager');
+const settingsService = require('./settingsService');
 const { AppError, ValidationError, NotFoundError } = require('../utils/errors');
 
 const MAX_TEXT_LENGTH = 200;
@@ -52,6 +53,10 @@ function channel(userId) {
  */
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FAIL_TTL_MS = 60 * 1000;
+// A QQ list exists here only because the user's browser read and supplied it
+// (the server never reads QQ), so it is kept for as long as a run lasts --
+// re-reading it means asking the page to do it again.
+const SUPPLIED_TTL_MS = 6 * 60 * 60 * 1000;
 const songCache = new Map(); // `${userId}|${ref}` -> { at, dirId, title, songs, liked, error }
 
 function cacheKey(userId, ref) {
@@ -62,7 +67,13 @@ function cacheKey(userId, ref) {
 function sweep() {
   const now = Date.now();
   for (const [k, v] of songCache) {
-    if (now - v.at > (v.error ? FAIL_TTL_MS : CACHE_TTL_MS)) songCache.delete(k);
+    // The long life is for the list a run is aimed at; others the browser
+    // supplied while browsing go after the usual ten minutes (a 5000-song
+    // list is several MB here).
+    const [uid, ref] = k.split('|');
+    const runList = v.supplied && runRefs.get(uid) === ref;
+    const ttl = v.error ? FAIL_TTL_MS : runList ? SUPPLIED_TTL_MS : CACHE_TTL_MS;
+    if (now - v.at > ttl) songCache.delete(k);
   }
 }
 
@@ -98,11 +109,22 @@ async function resolveDirId(userId, ref) {
  */
 const favouriteRefs = new Set(); // `${userId}|${ref}`
 
+/**
+ * A QQ list that is not here: the server does not read QQ (QQ打标 is user-IP
+ * only), so the page has to read it and supply it again.
+ */
+function listNotLoaded() {
+  const e = new AppError('这个歌单还没从你的浏览器读取，请在 QQ打标 页面打开它', 409);
+  e.code = 'QQ_LIST_NOT_LOADED';
+  return e;
+}
+
 async function songsFor(userId, ref, dirId, isLikes = false) {
   sweep();
   const key = cacheKey(userId, ref);
   if (isLikes) favouriteRefs.add(key);
   const hit = songCache.get(key);
+  if (!hit && likes.parseRef(ref).platform === 'qq') throw listNotLoaded();
   if (hit) {
     if (hit.error) throw hit.error;
     // A read in flight is shared: the client sends every title on screen in
@@ -214,6 +236,9 @@ function supplySongs(userId, ref, { title, songs, likedIds, dirId = null, isLike
   for (const c of recentLikes.get(userId) || []) {
     if (c.at >= since) setLikedState(userId, c.id, c.liked, { record: false });
   }
+  // Captures that arrived while this list was missing (a restart mid-run)
+  // are matched now. Not awaited: the page is waiting for the list.
+  rematchUnread(userId, ref).catch((err) => console.warn('[platform-tag] rematch failed:', err.message));
   return {
     title,
     total: songs.length,
@@ -289,6 +314,9 @@ function setLikedState(userId, id, liked, { record = true } = {}) {
  * button, not a timer: a timer would be outbound traffic on every open page.
  */
 async function refresh(userId, ref, dirId, isLikes = false) {
+  // QQ: the page re-reads it itself (lib/qqTagReads) -- never here, and the
+  // copy a run uses is not dropped on the way to refusing.
+  if (likes.parseRef(ref).platform === 'qq') throw listNotLoaded();
   // A read already in flight is let finish first rather than raced: two
   // reads of the same list at once is the traffic shape this cache exists
   // to prevent, and the one just started is as fresh as this would be.
@@ -320,6 +348,12 @@ function cachedPlaylistWithLiked(userId, ref) {
 
 /** The list with its liked state, for the page. Same cache the run uses. */
 async function playlistWithLiked(userId, ref, dirId, isLikes = false) {
+  // QQ: only what the page supplied, as it is -- nothing dropped, nothing read.
+  if (likes.parseRef(ref).platform === 'qq') {
+    const hit = cachedPlaylistWithLiked(userId, ref);
+    if (hit) return hit;
+    throw listNotLoaded();
+  }
   // A remembered failure is for the capture client, which retries blindly
   // every 2s. A person clicking the list is asking for a fresh attempt -- and
   // has probably just reconnected the account -- so the memory is dropped.
@@ -353,7 +387,9 @@ async function start({ userId, playlistRef, dirId = null, isLikes = false }) {
   // Read at the button, so an unreadable list fails here and not on the first
   // capture. A list the page has just loaded is reused as it is; only a
   // remembered failure is cleared, because pressing 开始 after reconnecting
-  // the account is exactly when a retry is wanted.
+  // the account is exactly when a retry is wanted. A QQ list is never read
+  // here: one the page has not supplied is refused (QQ_LIST_NOT_LOADED) and
+  // the page supplies it and asks again.
   const cached = songCache.get(cacheKey(userId, ref));
   if (cached && cached.error) dropSongs(userId, ref);
   // Before the read: a list being read for the run is not evicted meanwhile.
@@ -374,6 +410,7 @@ async function start({ userId, playlistRef, dirId = null, isLikes = false }) {
   // Told to the capture client now rather than on its next heartbeat, when it
   // holds the push channel open (only ever during QQ打标; see apkChannel).
   apkChannel.pushTarget(updated);
+  await settleUnread(updated.id, ref).catch(() => {});
 
   return {
     session: updated,
@@ -434,11 +471,22 @@ async function ingest({ session, rawText, singer = null }) {
   });
   if (existing) return { outcome: 'duplicate', eventId: existing.id, rawText: text };
 
+  // 网易云打标 switched off (a run started before): nothing read from or
+  // written to NetEase here -- the capture is only recorded.
+  if (await neteaseOff(platform)) {
+    const held = await claimRow({ fresh, userId, platform, ref, text, outcome: 'pending', error: '网易云打标暂不提供' });
+    if (!held.row) return held.payload;
+    const payload = toPayload(held.row);
+    broadcast(channel(userId), 'platform-tag-event', payload);
+    return payload;
+  }
+
   let songs;
   let liked;
   try {
     ({ songs, liked } = await songsFor(userId, ref));
   } catch (err) {
+    if (err.code === 'QQ_LIST_NOT_LOADED') return keepUnread({ fresh, userId, platform, ref, text, singer });
     // Told to the page (which can say "reconnect your account") and refused
     // to the client as a temporary failure, so it keeps the title and tries
     // again on its next sweep -- against the cached failure, not the platform.
@@ -455,6 +503,200 @@ async function ingest({ session, rawText, singer = null }) {
     }
     throw new AppError(err.message || '读取歌单失败', 503);
   }
+  // The row first, the like after: a like can take seconds (the user's page
+  // or phone does it), and a client that gives up waiting re-sends the title
+  // -- it then finds the row and gets 'duplicate', never a second like.
+  const held = await claimRow({ fresh, userId, platform, ref, text, outcome: 'matching' });
+  if (!held.row) return held.payload;
+  let event;
+  try {
+    const decided = await decide({ userId, platform, text, songs, liked, singer, session: fresh });
+    event = await prisma.platformTagEvent.update({
+      where: { id: held.row.id },
+      data: {
+        outcome: decided.outcome,
+        candidates: decided.shaped.length ? decided.shaped : undefined,
+        likedExternalId: decided.likedExternalId,
+        error: decided.error,
+      },
+    });
+  } catch (err) {
+    // Never left 'matching' (the panel shows no such row, and a re-send is a
+    // duplicate): matched again once the list is next supplied.
+    await prisma.platformTagEvent.update({ where: { id: held.row.id }, data: { outcome: 'unread' } }).catch(() => {});
+    throw err;
+  }
+
+  const payload = toPayload(event);
+  broadcast(channel(userId), 'platform-tag-event', payload);
+  return payload;
+}
+
+/**
+ * Create this capture's row, or find it is a duplicate: { row } or
+ * { payload } (the duplicate answer). Two reads of the same screen racing
+ * past the findUnique in ingest end here; the first one wins.
+ */
+async function claimRow({ fresh, userId, platform, ref, text, outcome, error = null, candidates }) {
+  try {
+    const row = await prisma.platformTagEvent.create({
+      data: { sessionId: fresh.id, userId, platform, playlistRef: ref, rawText: text, outcome, error, candidates },
+    });
+    return { row };
+  } catch (err) {
+    if (err.code === 'P2002') {
+      const row = await prisma.platformTagEvent.findUnique({
+        where: { sessionId_playlistRef_rawText: { sessionId: fresh.id, playlistRef: ref, rawText: text } },
+      });
+      return { payload: { outcome: 'duplicate', eventId: row?.id ?? null, rawText: text } };
+    }
+    throw err;
+  }
+}
+
+/**
+ * A capture for a QQ list the server does not hold (a restart since the page
+ * supplied it). Kept as 'unread' -- answered to the client as received, so it
+ * is not re-sent every sweep -- and the page is asked to read the list again;
+ * supplySongs then matches it (rematchUnread).
+ */
+const NEED_LIST_EVERY_MS = 10 * 1000;
+const needListAt = new Map(); // `${userId}|${ref}` -> last time the page was asked
+
+async function keepUnread({ fresh, userId, platform, ref, text, singer = null }) {
+  // The 歌P singer read with the title rides along, for the rematch's alias step.
+  const held = await claimRow({
+    fresh, userId, platform, ref, text, outcome: 'unread', candidates: singer ? [{ singer }] : undefined,
+  });
+  if (!held.row) return held.payload;
+  // Asked once per few seconds, not once per capture: a sweep sends a whole
+  // screen of titles at once, and each ask is a full list read by the page.
+  const key = cacheKey(userId, ref);
+  const last = needListAt.get(key) || 0;
+  if (Date.now() - last >= NEED_LIST_EVERY_MS) {
+    needListAt.set(key, Date.now());
+    if (needListAt.size > 5000) needListAt.clear();
+    broadcast(channel(userId), 'platform-tag-need-list', { sessionId: fresh.id, playlistRef: ref });
+  }
+  const payload = toPayload(held.row);
+  broadcast(channel(userId), 'platform-tag-event', payload);
+  // The page may have supplied the list while this row was being written:
+  // then nothing else would ever match it.
+  if (songCache.get(key)?.songs) {
+    rematchUnread(userId, ref).catch((err) => console.warn('[platform-tag] rematch failed:', err.message));
+  }
+  return payload;
+}
+
+/**
+ * Match the 'unread' captures of the live run on `ref`, now that the list is
+ * here. One pass at a time per list (two supplies at once would otherwise
+ * like the same song twice), and again once more if asked meanwhile. Each
+ * row is taken ('unread' → 'matching') before anything is done with it.
+ */
+const rematching = new Map(); // `${userId}|${ref}` -> { again }
+
+async function rematchUnread(userId, ref) {
+  const key = cacheKey(userId, ref);
+  const running = rematching.get(key);
+  if (running) { running.again = true; return; }
+  const state = { again: false };
+  rematching.set(key, state);
+  try {
+    do {
+      state.again = false;
+      await rematchPass(userId, ref);
+    } while (state.again);
+  } finally {
+    rematching.delete(key);
+  }
+}
+
+// A row 'matching' this long was left by a restart (or a crash) mid-like.
+const STALE_MATCHING_MS = 60 * 1000;
+
+async function rematchPass(userId, ref) {
+  const live = await prisma.captureSession.findMany({
+    where: { userId, platformRef: ref, endedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  if (!live.length) return;
+  const rows = await prisma.platformTagEvent.findMany({
+    where: {
+      sessionId: { in: live.map((x) => x.id) },
+      playlistRef: ref,
+      OR: [
+        { outcome: 'unread' },
+        { outcome: 'matching', updatedAt: { lt: new Date(Date.now() - STALE_MATCHING_MS) } },
+      ],
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 500,
+  });
+  if (!rows.length) return;
+  const { platform } = likes.parseRef(ref);
+  for (const row of rows) {
+    const hit = songCache.get(cacheKey(userId, ref));
+    if (!hit || !hit.songs) return;
+    const session = await prisma.captureSession.findUnique({ where: { id: row.sessionId } });
+    // Only the live run's: an old run's leftovers stay as they were.
+    if (!session || session.endedAt || session.platformRef !== ref) continue;
+    // Taken only as it was found: 'unread', or 'matching' and still stale (a
+    // like in progress refreshes nothing, but a newer pass would have).
+    // Compared by age, not equality: the column keeps microseconds.
+    const taken = await prisma.platformTagEvent.updateMany({
+      where: row.outcome === 'unread'
+        ? { id: row.id, outcome: 'unread' }
+        : { id: row.id, outcome: 'matching', updatedAt: { lt: new Date(Date.now() - STALE_MATCHING_MS) } },
+      data: { outcome: 'matching' },
+    });
+    if (!taken.count) continue;
+    const singer = Array.isArray(row.candidates) && row.candidates[0] && typeof row.candidates[0].singer === 'string'
+      ? row.candidates[0].singer : null;
+    let updated;
+    try {
+      const decided = await decide({
+        userId, platform, text: row.rawText, songs: hit.songs, liked: hit.liked, singer, session,
+      });
+      updated = await prisma.platformTagEvent.update({
+        where: { id: row.id },
+        data: {
+          outcome: decided.outcome,
+          candidates: decided.shaped.length ? decided.shaped : null,
+          likedExternalId: decided.likedExternalId,
+          error: decided.error,
+        },
+      });
+    } catch (err) {
+      await prisma.platformTagEvent.update({ where: { id: row.id }, data: { outcome: 'unread' } }).catch(() => {});
+      throw err;
+    }
+    broadcast(channel(userId), 'platform-tag-event', toPayload(updated));
+  }
+}
+
+/**
+ * 'unread' captures of this session left on a list it is no longer aimed at
+ * can never be matched: settled, so the page stops waiting for them.
+ */
+async function settleUnread(sessionId, keepRef = null) {
+  await prisma.platformTagEvent.updateMany({
+    where: { sessionId, outcome: { in: ['unread', 'matching'] }, ...(keepRef ? { playlistRef: { not: keepRef } } : {}) },
+    data: { outcome: 'no_match', error: keepRef ? '歌单已切换，没来得及匹配' : '打标已停止，没来得及匹配' },
+  });
+}
+
+/** 网易云打标 switched off: nothing is written to NetEase from here. */
+async function neteaseOff(platform) {
+  if (platform !== 'netease') return false;
+  return !(await settingsService.getNeteaseTagging()).enabled;
+}
+
+/**
+ * What a capture comes to, against the list: the match, and -- for the one
+ * case acted on without asking -- the like, by the user's page or phone.
+ */
+async function decide({ userId, platform, text, songs, liked, singer, session }) {
   const { outcome: matchOutcome, candidates } = matchTitle(text, songs);
   const byId = new Map(songs.map((s) => [String(s.id), s]));
 
@@ -474,22 +716,29 @@ async function ingest({ session, rawText, singer = null }) {
       outcome = 'already_liked';
       likedExternalId = song.id;
       shaped = [toCandidate(candidates[0], song, true)];
+    } else if (await neteaseOff(platform)) {
+      outcome = 'pending';
+      error = '网易云打标暂不提供';
     } else {
       try {
         // knownUnliked: the sweep above has just answered for this id.
-        // apkLikes: the user's own phone does it when allowed, else exactly
-        // the server call this always was.
+        // apkLikes: QQ -- the user's page, else their phone, never this
+        // server; NetEase -- the server, as before.
         const res = await apkLikes.like(
           userId, platform,
           { id: song.id, songType: song.songType, knownUnliked: true },
-          { purpose: 'auto', session: fresh },
+          { purpose: 'auto', session },
         );
         outcome = res.alreadyLiked ? 'already_liked' : 'liked';
         likedExternalId = song.id;
         shaped = [toCandidate(candidates[0], song, true)];
         noteLiked(userId, song.id);
       } catch (err) {
-        outcome = 'failed';
+        // Nobody on the user's side could do it (page closed, phone away):
+        // left for the user to confirm, with why. One that tried and was
+        // refused by QQ is a failure, as before.
+        const refused = Array.isArray(err.tried) && err.tried.some((t) => t.endsWith(':failed'));
+        outcome = err.code === 'NO_USER_IP_EXECUTOR' && !refused ? 'pending' : 'failed';
         error = err.message || String(err);
       }
     }
@@ -513,37 +762,7 @@ async function ingest({ session, rawText, singer = null }) {
       }
     }
   }
-
-  let event;
-  try {
-    event = await prisma.platformTagEvent.create({
-      data: {
-        sessionId: fresh.id,
-        userId,
-        platform,
-        playlistRef: ref,
-        rawText: text,
-        outcome,
-        candidates: shaped.length ? shaped : undefined,
-        likedExternalId,
-        error,
-      },
-    });
-  } catch (err) {
-    // Two reads of the same screen racing past the findUnique above. The
-    // first one won; report it as the duplicate it is.
-    if (err.code === 'P2002') {
-      const row = await prisma.platformTagEvent.findUnique({
-        where: { sessionId_playlistRef_rawText: { sessionId: fresh.id, playlistRef: ref, rawText: text } },
-      });
-      return { outcome: 'duplicate', eventId: row?.id ?? null, rawText: text };
-    }
-    throw err;
-  }
-
-  const payload = toPayload(event);
-  broadcast(channel(userId), 'platform-tag-event', payload);
-  return payload;
+  return { outcome, shaped, likedExternalId, error };
 }
 
 function toPayload(e) {
@@ -579,10 +798,15 @@ async function ownEvent(userId, eventId) {
  * when there is one. Whatever the user picks, it has to be one of the
  * candidates the match produced — this is not a free-form like.
  */
-async function approve({ userId, eventId, externalId }) {
+async function approve({ userId, eventId, externalId, browserResult = null }) {
   const event = await ownEvent(userId, eventId);
   if (!['pending', 'ambiguous', 'failed'].includes(event.outcome)) {
-    throw new AppError('This capture has already been handled', 409);
+    throw new AppError('这条已经处理过了（可能在另一个页面）', 409);
+  }
+  if (await neteaseOff(event.platform)) {
+    const e = new AppError('网易云打标暂不提供', 403);
+    e.code = 'NETEASE_TAGGING_OFF';
+    throw e;
   }
   const cands = event.candidates || [];
   const pick = externalId
@@ -593,18 +817,36 @@ async function approve({ userId, eventId, externalId }) {
   let outcome;
   let error = null;
   let failure = null;
-  try {
-    const res = await apkLikes.like(
-      userId, event.platform,
-      { id: pick.externalId, songType: pick.songType },
-      { purpose: 'approve' },
-    );
-    outcome = res.alreadyLiked ? 'already_liked' : 'liked';
-    noteLiked(userId, pick.externalId);
-  } catch (err) {
-    outcome = 'failed';
-    error = err.message || String(err);
-    failure = err;
+  if (event.platform === 'qq') {
+    // Written by the page from the user's own address, then reported here:
+    // the server never writes to QQ. A page without that ability is old.
+    if (!browserResult || typeof browserResult.ok !== 'boolean') {
+      const e = new AppError('请刷新页面后再确认（QQ打标改为由你的浏览器点赞）', 409);
+      e.code = 'QQ_USER_IP_ONLY';
+      throw e;
+    }
+    if (browserResult.ok) {
+      outcome = browserResult.alreadyLiked === true ? 'already_liked' : 'liked';
+      noteLiked(userId, pick.externalId);
+    } else {
+      outcome = 'failed';
+      error = String(browserResult.message || 'QQ 未接受').slice(0, 200);
+      failure = { statusCode: 502, code: 'QQ_REFUSED' };
+    }
+  } else {
+    try {
+      const res = await apkLikes.like(
+        userId, event.platform,
+        { id: pick.externalId, songType: pick.songType },
+        { purpose: 'approve' },
+      );
+      outcome = res.alreadyLiked ? 'already_liked' : 'liked';
+      noteLiked(userId, pick.externalId);
+    } catch (err) {
+      outcome = 'failed';
+      error = err.message || String(err);
+      failure = err;
+    }
   }
 
   const updated = await prisma.platformTagEvent.update({
@@ -667,9 +909,12 @@ async function getFeed({ userId, sessionId, limit = 300 }) {
  */
 async function stop({ userId }) {
   const session = await captureService.setTarget({ userId, target: 'none' });
-  // The run is over; its lists need not wait for the sweep.
+  if (session) await settleUnread(session.id).catch(() => {});
+  // The run is over; lists the server read need not wait for the sweep.
+  // Lists the user's browser supplied stay (bounded per user): dropping them
+  // would only mean reading them from the browser again on the next start.
   const prefix = `${userId}|`;
-  for (const k of [...songCache.keys()]) if (k.startsWith(prefix)) songCache.delete(k);
+  for (const [k, v] of [...songCache.entries()]) if (k.startsWith(prefix) && !v.supplied) songCache.delete(k);
   return { session };
 }
 

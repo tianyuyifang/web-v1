@@ -8,7 +8,7 @@
 const router = require('express').Router();
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const settings = require('../services/settingsService');
-const { getFreshCredential } = require('../services/musicCredentialAccess');
+const { getFreshCredential, renewAfterRejection } = require('../services/musicCredentialAccess');
 const stats = require('../services/qqDirectStats');
 const meter = require('../services/outboundMeter');
 const prisma = require('../db/client');
@@ -64,6 +64,26 @@ router.get('/session', limiter(240), async (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * POST /api/qq-direct/renew { usedKey } — QQ told the browser its key is dead.
+ * The server renews it (a login call only the server can make) and the page
+ * then fetches the new key and asks QQ again itself: the play URL is never
+ * fetched from here. `renewed` false means nothing more can be done without a
+ * new scan (refused before, or the key is minutes old and so not the cause).
+ */
+router.post('/renew', limiter(20), async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const s = await settings.qqDirectFor(req.user.role);
+    if (s.mode !== 'browser' || !(await canUseLive(req.user.id))) return res.json({ renewed: false });
+    const usedKey = typeof req.body?.usedKey === 'string' ? req.body.usedKey.slice(0, 400) : null;
+    const fresh = await renewAfterRejection(req.user.id, usedKey);
+    return res.json({ renewed: !!(fresh && fresh.musicKey && fresh.musicKey !== usedKey) });
+  } catch (err) {
+    return next(err);
   }
 });
 

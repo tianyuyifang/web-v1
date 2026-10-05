@@ -23,6 +23,7 @@ import { musicSourcesAPI, platformTaggingAPI } from "@/lib/api";
 import PlatformTagPanel from "@/components/platform/PlatformTagPanel";
 import PlatformLikeButton from "@/components/platform/PlatformLikeButton";
 import * as qqTagReads from "@/lib/qqTagReads";
+import * as qqTagWrites from "@/lib/qqTagWrites";
 
 /**
  * Substring match on the server-built search text: the name, its pinyin run
@@ -76,42 +77,28 @@ function fuzzyRank(rows, textOf, query, limit = 20) {
 const PLATFORM_LABEL = { qq: "QQ 音乐", netease: "网易云" };
 
 /**
- * QQ lists are read from this browser when 档位设置 → QQ 播放解析 is 用户 IP
- * for this user (lib/qqTagReads), so the request leaves from the user's own
- * address. Anything else -- NetEase, the server mode, any failure on the way --
- * is the server's read, exactly as before.
+ * QQ lists are read from this browser only (lib/qqTagReads): QQ打标 never
+ * reaches QQ from the site's address, not even when the browser's read fails
+ * -- the failure is shown instead (2026-10-04). NetEase can only be read by
+ * the server, as before.
  */
 async function readPlaylists(platform) {
-  if (platform === "qq") {
-    try {
-      const s = await qqTagReads.readSession();
-      if (s) return await qqTagReads.listPlaylists(s);
-    } catch { /* the server's read below */ }
-  }
+  if (platform === "qq") return qqTagReads.listPlaylists(await qqTagReads.readSession());
   const res = await platformTaggingAPI.playlists(platform);
   return res.data.playlists || [];
 }
 
 async function readSongs(sel, { refresh = false, alive = () => true } = {}) {
   if (sel.ref.startsWith("qq:")) {
-    try {
-      const s = await qqTagReads.readSession();
-      if (s) {
-        // What the server already holds for this list (read moments ago, or
-        // in use by a run) is reused rather than read again -- unless the user
-        // asked for a fresh read.
-        if (!refresh) {
-          const hit = await platformTaggingAPI.songs(sel.ref, sel.dirId, sel.isLikes, { cachedOnly: true });
-          if (hit.status === 200 && hit.data?.songs) return hit.data;
-        }
-        return await qqTagReads.readPlaylistSongs(s, sel, alive);
-      }
-    } catch (err) {
-      // Moved on to another list: nothing more to read, from anywhere --
-      // whatever the browser read failed with.
-      if (err?.code === "stopped" || !alive()) throw err;
-      /* the server's read below */
+    const s = await qqTagReads.readSession();
+    // What the server already holds for this list (supplied moments ago, or
+    // in use by a run) is reused rather than read again -- unless the user
+    // asked for a fresh read. Never a read by the server.
+    if (!refresh) {
+      const hit = await platformTaggingAPI.songs(sel.ref, sel.dirId, sel.isLikes, { cachedOnly: true });
+      if (hit.status === 200 && hit.data?.songs) return hit.data;
     }
+    return qqTagReads.readPlaylistSongs(s, sel, alive);
   }
   const res = refresh
     ? await platformTaggingAPI.refresh(sel.ref, sel.dirId, sel.isLikes)
@@ -129,6 +116,8 @@ export default function PlatformTaggingPage() {
   const refreshConnection = useCaptureStore((s) => s.refresh);
 
   const [sources, setSources] = useState(null); // { qq: status, netease: status }
+  // A NetEase account is connected but 网易云打标 is not offered.
+  const [neteaseHidden, setNeteaseHidden] = useState(false);
   const [platform, setPlatform] = useState(null);
   const [playlists, setPlaylists] = useState([]);
   const [listError, setListError] = useState("");
@@ -147,13 +136,19 @@ export default function PlatformTaggingPage() {
   const [copied, setCopied] = useState(false);
   const restoredRef = useRef(false);
 
-  // Which platforms this account has connected.
+  // Which platforms this account has connected (and which this page offers).
   useEffect(() => {
     if (!user) return;
-    musicSourcesAPI.list()
-      .then((res) => {
+    Promise.all([
+      musicSourcesAPI.list(),
+      platformTaggingAPI.config().then((r) => r.data?.netease === true).catch(() => false),
+    ])
+      .then(([res, netease]) => {
         const map = {};
-        (res.data.sources || []).forEach((s) => { map[s.platform] = s; });
+        (res.data.sources || []).forEach((s) => {
+          if (s.platform === "netease" && !netease) { setNeteaseHidden(Boolean(s.connected)); return; }
+          map[s.platform] = s;
+        });
         setSources(map);
         // First connected platform wins as the default tab; a run already
         // aimed at a platform overrides it below.
@@ -173,6 +168,40 @@ export default function PlatformTaggingPage() {
 
   const aimedRef = connection?.target === "platform" ? connection.platformRef : null;
   const runningHere = Boolean(aimedRef && selected && aimedRef === selected.ref);
+
+  // While a QQ run is live, this page performs its automatic likes (the server
+  // offers them here first, then to the phone -- never the site's address),
+  // and reads the list again when the server has lost its copy (a restart):
+  // the server never reads QQ itself.
+  const playlistsRef = useRef([]);
+  playlistsRef.current = playlists;
+  const runSessionId = aimedRef && aimedRef.startsWith("qq:") ? connection?.sessionId || null : null;
+  useEffect(() => {
+    if (!runSessionId || !aimedRef) return undefined;
+    // One re-read at a time, and not again within a few seconds: every
+    // capture that finds the list missing asks for it, and each read is the
+    // whole list read again from the user's address.
+    let inflight = null;
+    let lastAt = 0;
+    const resupply = () => {
+      if (inflight || Date.now() - lastAt < 5000) return inflight;
+      inflight = (async () => {
+        const sel = playlistsRef.current.find((p) => p.ref === aimedRef);
+        if (!sel) return; // read when the list is opened (the songs effect below)
+        try {
+          const hit = await platformTaggingAPI.songs(sel.ref, sel.dirId, sel.isLikes, { cachedOnly: true });
+          if (hit.status === 200) return;
+          const data = await readSongs(sel, { refresh: true });
+          if (selectedRefNow.current === sel.ref) setSongs(data.songs || []);
+        } catch { /* shown when the list is opened */ }
+      })().finally(() => { inflight = null; lastAt = Date.now(); });
+      return inflight;
+    };
+    return qqTagWrites.startExecutor(runSessionId, {
+      onOpen: resupply,
+      onNeedList: (d) => { if (d.playlistRef === aimedRef) resupply(); },
+    });
+  }, [runSessionId, aimedRef]);
 
   // A reload mid-run: reopen the playlist the connection is aimed at.
   useEffect(() => {
@@ -236,14 +265,23 @@ export default function PlatformTaggingPage() {
       // QQ id sent as "netease" would act on whatever NetEase track has that
       // number, in the user's real favourites.
       const p = selected.ref.split(":")[0];
-      if (song.alreadyLiked) {
+      const unliking = song.alreadyLiked;
+      let finalOp = unliking ? "unlike" : "like";
+      if (p === "qq") {
+        // Written by this browser, from the user's own address (never the site's).
+        const res = await qqTagWrites.manual({ op: finalOp, id: song.id, songType: song.songType });
+        finalOp = res.op;
+      } else if (unliking) {
         await platformTaggingAPI.unlike(p, song.id, song.songType, selected.ref);
+      } else {
+        await platformTaggingAPI.like(p, song.id, song.songType, selected.ref);
+      }
+      if (finalOp === "unlike") {
         // On the favourites list itself the row is gone, not just unlit.
         setSongs((prev) => prev && (selected.isLikes
           ? prev.filter((s) => String(s.id) !== String(song.id))
           : prev.map((s) => (String(s.id) === String(song.id) ? { ...s, alreadyLiked: false } : s))));
       } else {
-        await platformTaggingAPI.like(p, song.id, song.songType, selected.ref);
         markLiked(song.id);
       }
     } catch (err) {
@@ -269,7 +307,16 @@ export default function PlatformTaggingPage() {
       // Through this page's own route, so the gate is this feature's add-on.
       if (!current) await platformTaggingAPI.connect({});
       try {
-        await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
+        try {
+          await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
+        } catch (err) {
+          // The server holds no copy of this QQ list (it never reads QQ
+          // itself): read it here again, hand it over, and start once more.
+          if (err.response?.data?.error?.code !== "QQ_LIST_NOT_LOADED") throw err;
+          const data = await readSongs(selected, { refresh: true });
+          if (selectedRefNow.current === selected.ref) setSongs(data.songs || []);
+          await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
+        }
       } catch (err) {
         // The connection the server knew about has since expired or been
         // stopped elsewhere: open a fresh one and aim once more, the way the
@@ -382,7 +429,7 @@ export default function PlatformTaggingPage() {
 
       {sources && connected.length === 0 && (
         <div className="rounded-xl border border-border bg-surface p-6 text-sm">
-          <p className="mb-2">还没连接任何平台账号。</p>
+          <p className="mb-2">还没连接 QQ 音乐账号。{neteaseHidden ? "（网易云打标暂不提供）" : ""}</p>
           <p className="text-muted">
             先到 <Link href="/account" className="text-primary underline">账户 → 音乐账号</Link> 扫码连接 QQ 音乐或网易云，再回到这里。
           </p>

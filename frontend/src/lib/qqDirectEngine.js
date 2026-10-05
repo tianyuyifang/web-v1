@@ -8,26 +8,18 @@
  *              finished downloading (the network is quiet again, so the timing
  *              is fair), the browser asks QQ for the same song too, only to
  *              time it, compare the answer and check the file downloads.
- *   browser -- the browser asks QQ first. If no answer has come within the
- *              time this device usually waits for the server, the server is
- *              asked as well and whichever answers first plays.
- *
- * Never slower than the server path is the rule, so the browser stops trying
- * on its own wherever it is not winning:
- *   - this page, after QQ could not be reached, after two cards where the
- *     browser found no file (or a URL that would not start) but the server
- *     did, or after two races the server won;
- *   - this device, while its own history says QQ answers it slower than the
- *     server does (re-measured now and then, after the sound has started),
- *     or for a day after a URL from QQ failed to play here.
+ *   browser -- QQ only, from this device: the server is never asked for a
+ *              play URL (2026-10-04, no fallback to the site's address --
+ *              see browserMode). A dead key is renewed by the server and QQ
+ *              is asked again from here.
  *
  * Apple's WebKit (every iPhone browser, WeChat on iOS, Safari) lets a fresh
- * audio element start only from the tap itself. Whether the old XHR path and a
- * JSONP answer count the same there could not be tested without a phone, so
- * QQ is asked only when it cannot matter: on an element that has already
- * played (later cards on the page). The first card of a page and
- * quality/vocals switches (which build a new element) stay on the server path
- * on those devices. Shadow mode never plays QQ's own URL and is unaffected.
+ * audio element start only from the tap itself, and a JSONP answer arrives by
+ * postMessage, which does not count. An element that has already played
+ * (primed with silence inside the tap, see useLivePlayer.primeElement) may be
+ * started by code; one that has not still goes to the server path, until the
+ * priming is confirmed on a real iPhone. Shadow mode never plays QQ's own URL
+ * and is unaffected.
  *
  * QQ's JSONP answers are scripts, so they run inside a sandboxed iframe (no
  * same-origin): QQ's code can reach nothing of this page -- not its storage,
@@ -71,32 +63,9 @@ const SERVER_MS_KEY = "qqDirect.serverMs";
 const DIRECT_MS_KEY = "qqDirect.directMs";
 const HISTORY_KEEP = 20;
 const HISTORY_MIN = 5;
-// Same bounds the server accepts for the default (settingsService).
-const HEDGE_MIN_MS = 250;
-const HEDGE_MAX_MS = 2000;
-// After the server has failed, how much longer QQ's own answer is waited for
-// before the server's error is shown.
-const ERROR_GRACE_MS = 500;
-// Page-level give-ups.
-const MISSES_BEFORE_STICKY = 2;
-const LOSSES_BEFORE_STICKY = 2;
-// On a device that goes to the server first, how often QQ is still timed
-// (after the sound has started) so the device can change its mind.
-const REPROBE_EVERY = 5;
 const REPORT_EVERY_MS = 20000;
 const REPORT_BATCH = 10;
 const REPORT_MAX = 20;
-// A device where a URL from QQ would not play skips QQ for this long. Was a
-// day: one failed start sent a phone to the server for the whole evening
-// (2026-10-03, 137 plays for one user after a single failure), while the same
-// device's QQ answers were otherwise both fine and faster.
-const UNPLAYABLE_KEY = "qqDirect.unplayableUntil";
-const UNPLAYABLE_MS = 60 * 60 * 1000;
-// Least wait before the server is asked as well. The device's own server time
-// alone (median ~270 ms) had the server asked on every slower-than-usual QQ
-// answer -- a request from the site's address for a song the browser was
-// about to get anyway. A second is still far inside the start limit.
-const HEDGE_FLOOR_MS = 1000;
 // Apple's WebKit: every iOS browser and Safari. Not Chrome/Edge/Android, which
 // remember that the page has been interacted with.
 const APPLE_WEBKIT = typeof navigator !== "undefined"
@@ -111,10 +80,6 @@ let cdn = null; // { hosts, guid, at }
 let cdnInflight = null;
 let cdnFailedAt = 0;
 const urlCache = new Map(); // key -> { data, at, direct }
-let sticky = false; // this page has stopped asking QQ directly
-let misses = 0; // browser found no file / its URL did not start, server's did
-let losses = 0; // consecutive races the server won
-let serverFirstTaps = 0;
 let queue = [];
 let flushTimer = null;
 // QQ calls made outside a reported sample (the background CDN warm-up).
@@ -257,6 +222,31 @@ export async function readQq(account, req1, timeoutMs = DIRECT_TIMEOUT_MS) {
   return j.req_1;
 }
 
+/**
+ * One write to the user's own QQ (QQ打标 likes), from this browser, in the
+ * same sandbox and without a Referer. Writes are refused (code 1000) with the
+ * web-style account fields the reads use; QQ's Android client fields are
+ * accepted without any cookie -- as L-1124/QQMusicApi sends every call --
+ * tested 2026-10-04 on QQ, WeChat and app-scan accounts (like, unlike, read
+ * back). `account`: { uin, musicKey, loginType }. Resolves with the item's
+ * answer ({ code, data }), or rejects with a coded error.
+ */
+export async function writeQq(account, req1, timeoutMs = DIRECT_TIMEOUT_MS) {
+  const comm = {
+    ct: "11",
+    cv: "20090008",
+    v: "20090008",
+    chid: "10003505",
+    qq: String(account.uin),
+    authst: account.musicKey,
+    tmeAppID: "qqmusic",
+    tmeLoginType: String(account.loginType || (String(account.musicKey).startsWith("W_X") ? 1 : 2)),
+  };
+  const j = await jsonp({ comm, req_1: req1 }, timeoutMs, true);
+  if (!j || typeof j !== "object" || !j.req_1) throw fail("bad-response");
+  return j.req_1;
+}
+
 // ---------------------------------------------------------------- session
 
 /**
@@ -340,8 +330,8 @@ async function askQq(mid, o, s, count) {
   if (o.vocalsOnly) {
     count.calls += 1;
     mediaMid = parseMediaMid(await jsonp(detailRequest(mid), DIRECT_TIMEOUT_MS));
-    // A refusal here is the server's error, not "this song has no stem".
-    if (mediaMid === undefined) throw fail("bad-response");
+    // A refusal here is not "this song has no stem": said as such.
+    if (mediaMid === undefined) throw fail("detail-refused");
   }
 
   const attempts = attemptsFor(mid, o, mediaMid);
@@ -392,44 +382,6 @@ function note(key, ms) {
   } catch { /* a private window: defaults are used */ }
 }
 
-function median(v) {
-  const s = [...v].sort((a, b) => a - b);
-  return s.length ? s[Math.floor(s.length / 2)] : null;
-}
-
-/** How long to give QQ before also asking the server: what the server usually takes here. */
-function hedgeMs(fallback) {
-  const v = readHistory(SERVER_MS_KEY);
-  const base = v.length >= HISTORY_MIN ? median(v) : fallback;
-  return Math.max(HEDGE_FLOOR_MS, Math.min(HEDGE_MAX_MS, Math.max(HEDGE_MIN_MS, base || 500)));
-}
-
-function markUnplayable() {
-  try { localStorage.setItem(UNPLAYABLE_KEY, String(Date.now() + UNPLAYABLE_MS)); } catch { /* best effort */ }
-}
-
-function unplayableHere() {
-  try {
-    const now = Date.now();
-    const until = Number(localStorage.getItem(UNPLAYABLE_KEY) || 0);
-    if (until <= now) return false;
-    // A mark written under the old, day-long rule is cut to the current one.
-    if (until - now > UNPLAYABLE_MS) localStorage.setItem(UNPLAYABLE_KEY, String(now + UNPLAYABLE_MS));
-    return true;
-  } catch { return false; }
-}
-
-/**
- * This device goes to the server first only when QQ's URLs have recently
- * failed to play here. It used to also when QQ merely answered it slower than
- * the server -- measured 2026-10-03 the gap was 10-100 ms, and every such tap
- * was a request from the site's address. Playing from the user's own address
- * comes first now; the hedge still covers a QQ answer that is really slow.
- */
-function deviceSaysServer() {
-  return unplayableHere();
-}
-
 // ---------------------------------------------------------------- reporting
 
 function send(batch, extra, keepalive) {
@@ -477,9 +429,6 @@ function onVisibility() {
 export function activate() {
   if (active) return;
   active = true;
-  sticky = false;
-  misses = 0;
-  losses = 0;
   document.addEventListener("visibilitychange", onVisibility);
 }
 
@@ -517,11 +466,27 @@ export function noteMode(next) {
  */
 export function resolve(mapping, opts, askServer, ctx, mode) {
   const s = session;
-  if (!usable(s) || s.mode !== mode) return askServer();
   const mid = String(mapping.externalId);
   const o = normalise(opts);
+  // 用户 IP with the account values not in hand (still loading, being renewed,
+  // a failed fetch): waited for, briefly -- never the server instead.
+  if (mode === "browser" && !(usable(s) && s.mode === "browser")) return browserOnceReady(mid, o, askServer, ctx || {});
+  if (!usable(s) || s.mode !== mode) return askServer();
   if (mode === "shadow") return shadowMode(mid, o, s, askServer);
   return browserMode(mid, o, s, askServer, ctx || {});
+}
+
+const SESSION_WAIT_MS = 4000;
+
+async function browserOnceReady(mid, o, askServer, ctx) {
+  const s = await Promise.race([loadSession(), new Promise((r) => setTimeout(() => r(null), SESSION_WAIT_MS))]);
+  if (usable(s) && s.mode === "browser") return browserMode(mid, o, s, askServer, ctx);
+  // No QQ account connected, or no 唱卡: the server answers with its own
+  // message and cannot ask QQ without an account either.
+  if (s && s.mode === "server" && (s.reason === "no-credential" || s.reason === "no-add-on")) return askServer();
+  const e = new Error("session-unavailable");
+  e.response = { data: { error: { message: "QQ 连接还没准备好，请再点一次" } } };
+  throw e;
 }
 
 /** Run `fn` once `quiet()` says so, or after QUIET_WAIT_MS, whichever first. */
@@ -579,9 +544,6 @@ function measure(mid, o, s, serverData, serverMs, mode, reprobe = false) {
         directHost: host,
         calls: count.calls,
       });
-      // The device was sent to the server because QQ's URLs would not play;
-      // they play again, so it may try QQ again.
-      if (playable === true && reprobe) { try { localStorage.removeItem(UNPLAYABLE_KEY); } catch { /* fine */ } }
     })
     .catch((err) => {
       report({ ...base, directReason: err?.code || "bad-response", directMs: Math.round(now() - t0), calls: count.calls });
@@ -612,194 +574,143 @@ function remember(key, data, direct) {
   while (urlCache.size > URL_CACHE_MAX) urlCache.delete(urlCache.keys().next().value);
 }
 
-/** browser: QQ first, the server alongside once this device's usual wait has passed. */
+/**
+ * QQ said the browser's key is dead: the server renews it (a login only the
+ * server can make) and the new key is fetched; QQ is then asked again from
+ * here. One renewal at a time for the whole page. Null when nothing more can
+ * be done without a new scan.
+ */
+let renewing = null;
+function renewAndReload(s) {
+  if (!renewing) {
+    renewing = (async () => {
+      try {
+        const r = await qqDirectAPI.renew(s.musicKey);
+        if (!r.data?.renewed) return null;
+        session = null;
+        const fresh = await loadSession();
+        return usable(fresh) && fresh.mode === "browser" ? fresh : null;
+      } catch {
+        return null;
+      }
+    })().finally(() => { renewing = null; });
+  }
+  return renewing;
+}
+
+/** An error the page shows as it is (it reads err.response.data.error.message). */
+function unreachable(code) {
+  const e = new Error("qq-unreachable");
+  const message = code === "detail-refused"
+    ? "纯人声暂时取不到，请稍后再试（或先关掉纯人声）"
+    : "连不上 QQ 音乐，请再点一次";
+  e.response = { data: { error: { message } } };
+  return e;
+}
+
+/**
+ * browser: QQ only, from this device. The server is never asked for a play URL
+ * here -- not alongside a slow answer, not after a failure (2026-10-04: each
+ * of those was a request from the site's one address). What QQ says is what
+ * the card shows: a URL, or why there is none. A dead key is renewed by the
+ * server and QQ is asked again from here.
+ *
+ * One exception, kept until it is confirmed on a real iPhone: on Apple's
+ * WebKit an element that has never played cannot start a URL that arrives by
+ * postMessage, so that card still goes to the server (skippedFor "gesture").
+ */
 function browserMode(mid, o, s, askServer, ctx) {
   const key = cacheKey(mid, o);
   const base = { mode: "browser", tier: o.tier, vocals: o.vocalsOnly };
-  // Apple's WebKit with an element that has never played: QQ's URL must not be
-  // what it starts with (see the header) -- cached or fresh.
+  if (ctx.prime) base.prime = ctx.prime;
   const gestureBlocked = APPLE_WEBKIT && !ctx.elementHasPlayed;
 
-  const fromServer = (res, extra) => {
-    remember(key, res?.data, false);
-    report({ ...base, winner: "server", serverOk: !!res?.data?.url, ...extra });
-    return res;
-  };
-  // A URL from QQ that did not play: the server's instead. A real playback
-  // error means QQ's CDN does not work from here, so this page stops asking QQ
-  // and the device skips it for an hour; a URL that was merely slow to start is
-  // one miss, like a card QQ had no file for. A refusal to start the audio
-  // (Apple's autoplay rule) says nothing about the URL and costs nothing.
-  //
-  // `why`: "error" | "timeout" | "notallowed"; `mediaError`: the element's
-  // MediaError code when there was one. Both reported, so a failure can be
-  // told apart afterwards -- until now every one read the same.
-  // The server's answer when the hedge already asked for it: a QQ URL that
-  // won the race and then would not play reuses it rather than asking the
-  // server a second time for the same card.
-  let hedgeAsk = null;
-  const serverInstead = async (why = "error", mediaError = null) => {
-    if (why === "notallowed") {
-      // Recorded only. The server's URL would be refused by the same rule
-      // (the tap is over), so asking for it would be a wasted request from
-      // the server's address -- the card fails as it always did, and the
-      // URL stays cached for the next tap.
-      report({ ...base, winner: "none", playFailed: true, failKind: why, mediaError: null, waitMs: 0, calls: 0 });
+  // A URL from QQ that would not play: recorded, and -- when it was an older
+  // URL from the cache -- asked of QQ once more. Never of the server.
+  const playFailed = (fromCache) => async (why = "error", mediaError = null) => {
+    urlCache.delete(key);
+    report({
+      ...base, winner: "none", playFailed: true, failKind: why,
+      mediaError: Number.isInteger(mediaError) ? mediaError : null, waitMs: 0, calls: 0,
+    });
+    if (why === "notallowed" || !fromCache) return { data: null };
+    try {
+      const count = { calls: 0 };
+      const data = await askQq(mid, o, usable(session) ? session : s, count);
+      unreportedCalls += count.calls;
+      if (!data.url) return { data: null };
+      remember(key, data, true);
+      return { data };
+    } catch {
       return { data: null };
     }
-    urlCache.delete(key);
-    if (why === "error") {
-      sticky = true;
-      cdn = null;
-      markUnplayable();
-    } else if (why === "timeout") {
-      misses += 1;
-      if (misses >= MISSES_BEFORE_STICKY) sticky = true;
-    }
-    const { res, ms } = await (hedgeAsk ? hedgeAsk.catch(() => timedServer(askServer)) : timedServer(askServer));
-    return fromServer(res, {
-      directReason: "unplayable",
-      playFailed: true,
-      failKind: why,
-      mediaError: Number.isInteger(mediaError) ? mediaError : null,
-      serverMs: Math.round(ms),
-      waitMs: Math.round(ms),
-    });
   };
 
   const hit = urlCache.get(key);
   if (hit && Date.now() - hit.at < URL_TTL_MS && !(hit.direct && gestureBlocked)) {
     report({ ...base, winner: "cache", waitMs: 0, directReason: "skipped", calls: 0 });
     const res = { data: { ...hit.data, cached: true } };
-    if (hit.direct) res.serverInstead = serverInstead;
+    if (hit.direct) res.onPlayFail = playFailed(true);
     return Promise.resolve(res);
   }
 
-  // Not trying QQ here: the page has given up, QQ's URLs did not play on this
-  // device within the last hour, or (Apple's WebKit) the element has never
-  // played.
-  const skip = sticky ? "page"
-    : deviceSaysServer() ? "device"
-      : gestureBlocked ? "gesture" : null;
-  if (skip) {
+  if (gestureBlocked) {
     return timedServer(askServer).then(({ res, ms }) => {
-      fromServer(res, { directReason: "skipped", skippedFor: skip, serverMs: Math.round(ms), waitMs: Math.round(ms) });
-      // Now and then, once the song has downloaded, see whether QQ got faster.
-      if (skip === "device") {
-        serverFirstTaps += 1;
-        // Recorded as a (re-probe) shadow measurement: the tap itself has
-        // already been counted above.
-        if (serverFirstTaps % REPROBE_EVERY === 0) res.afterPlay = (quiet) => whenQuiet(quiet, () => measure(mid, o, s, res.data, ms, "shadow", true));
-      }
+      remember(key, res?.data, false);
+      report({
+        ...base, winner: "server", serverOk: !!res?.data?.url, directReason: "skipped",
+        skippedFor: "gesture", serverMs: Math.round(ms), waitMs: Math.round(ms),
+      });
       return res;
     });
   }
 
   const t0 = now();
-  const sample = { ...base, hedged: false, calls: 0 };
   const count = { calls: 0 };
+  const sample = { ...base, hedged: false };
+  const finish = (winner) => {
+    sample.winner = winner;
+    sample.waitMs = Math.round(now() - t0);
+    sample.calls = count.calls;
+    report(sample);
+  };
 
-  return new Promise((resolvePlay, rejectPlay) => {
-    let settled = false;
-    let serverStarted = false;
-    let serverError = null;
-    let serverAnswered = null; // the server's response once it is in
-    let directOver = false;
-    let serverOver = false;
-    let reported = false;
-    let refreshAfterServer = false;
+  return (async () => {
+    let data;
+    try {
+      data = await askQq(mid, o, s, count);
+    } catch (err) {
+      sample.directReason = err?.code === "detail-refused" ? "bad-response" : err?.code || "bad-response";
+      sample.directMs = Math.round(now() - t0);
+      finish("none");
+      throw unreachable(err?.code);
+    }
+    sample.directMs = Math.round(now() - t0);
+    sample.directReason = data.url ? "ok" : data.reason || "unavailable";
 
-    const done = () => {
-      if (reported || !(directOver && (serverOver || !serverStarted))) return;
-      reported = true;
-      sample.calls = count.calls;
-      // Pages give up where they are not winning.
-      if (sample.winner === "server" && sample.hedged) losses += 1;
-      else if (sample.winner === "direct") losses = 0;
-      if (losses >= LOSSES_BEFORE_STICKY) sticky = true;
-      report(sample);
-    };
-    const settle = (fn, value, winner) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      sample.winner = winner;
-      sample.waitMs = Math.round(now() - t0);
-      fn(value);
-    };
-
-    const startServer = () => {
-      if (serverStarted || settled) return;
-      serverStarted = true;
-      sample.hedged = !directOver;
-      hedgeAsk = timedServer(askServer);
-      hedgeAsk
-        .then(({ res, ms }) => {
-          sample.serverMs = Math.round(ms);
-          sample.serverOk = !!res?.data?.url;
-          remember(key, res?.data, false);
-          serverOver = true;
-          serverAnswered = res;
-          // The browser had no file where the server found one: a second time
-          // and this page stops asking QQ (a region-locked address, a dead key).
-          if (directOver && sample.directReason !== "ok" && res?.data?.url) {
-            misses += 1;
-            if (misses >= MISSES_BEFORE_STICKY) sticky = true;
-          }
-          // A dead key: the server has just renewed it, so now is when a fresh
-          // one can be fetched without racing that renewal.
-          if (refreshAfterServer) loadSession();
-          settle(resolvePlay, res, "server");
-          done();
-        })
-        .catch((err) => {
-          serverOver = true;
-          serverError = err;
-          sample.serverOk = false;
-          // QQ's own answer may still come, but a failure must not be much
-          // slower than it was: a short grace, then the server's error shows.
-          if (directOver) settle(rejectPlay, err, "none");
-          else setTimeout(() => settle(rejectPlay, err, "none"), ERROR_GRACE_MS);
-          done();
-        });
-    };
-
-    const timer = setTimeout(startServer, hedgeMs(s.hedgeMs));
-
-    askQq(mid, o, s, count)
-      .then((data) => {
-        directOver = true;
-        sample.directMs = Math.round(now() - t0);
-        sample.directReason = data.url ? "ok" : data.reason || "unavailable";
-        if (data.url) {
-          note(DIRECT_MS_KEY, now() - t0);
-          sample.directTier = data.playedTier;
-          sample.directVocals = data.vocalsPlayed;
-          remember(key, data, true);
-          settle(resolvePlay, { data, serverInstead }, "direct");
-        } else {
-          // No file: the server decides, as it always has -- it renews a dead
-          // key, and its message is the one the page knows how to show.
-          if (data.reason === "credential-expired") {
-            if (serverOver) loadSession();
-            else refreshAfterServer = true;
-          }
-          if (serverError) settle(rejectPlay, serverError, "none");
-          else if (serverAnswered) settle(resolvePlay, serverAnswered, "server");
-          else startServer();
+    if (!data.url && data.reason === "credential-expired") {
+      const fresh = await renewAndReload(s);
+      if (fresh) {
+        try {
+          data = await askQq(mid, o, fresh, count);
+        } catch (err) {
+          finish("none");
+          throw unreachable(err?.code);
         }
-        done();
-      })
-      .catch((err) => {
-        directOver = true;
-        sample.directMs = Math.round(now() - t0);
-        sample.directReason = err?.code || "bad-response";
-        // QQ could not be reached from here: stop trying on this page.
-        sticky = true;
-        if (serverError) settle(rejectPlay, serverError, "none");
-        else if (serverAnswered) settle(resolvePlay, serverAnswered, "server");
-        else startServer();
-        done();
-      });
-  });
+      }
+      // Still refused: the page's own wording for a connection that needs a rescan.
+      if (!data.url && data.reason === "credential-expired") data = { ...data, reason: "needs-login" };
+    }
+
+    if (!data.url) {
+      finish("none");
+      return { data };
+    }
+    note(DIRECT_MS_KEY, now() - t0);
+    sample.directTier = data.playedTier;
+    sample.directVocals = data.vocalsPlayed;
+    remember(key, data, true);
+    finish("direct");
+    return { data, onPlayFail: playFailed(false) };
+  })();
 }

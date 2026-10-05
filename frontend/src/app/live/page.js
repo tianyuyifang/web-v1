@@ -808,13 +808,14 @@ export default function LivePage() {
     // devices that actually find this slow, because the cure differs per leg.
     const tOpen = Date.now();
     try {
-      // At most PRIME_WAIT_MS, and only when priming was started above.
-      if (priming) await priming;
+      // Only when priming was started above; its outcome is reported with the
+      // card, so a failed unlock can be told from a slow one afterwards.
+      const prime = priming ? await priming : null;
       // The server's answer as before, or -- per 档位设置 -- QQ's own, asked
       // from this browser. Same shape either way.
       let res = await qqDirect.resolve(card.mapping, { tier: quality, vocalsOnly }, () => (
         mappingAPI.preview(card.mapping.mappingId, undefined, { tier: quality, vocalsOnly })
-      ), { elementHasPlayed: player.elementHasPlayed() });
+      ), { elementHasPlayed: player.elementHasPlayed(), prime });
       const resolveMs = Date.now() - tOpen;
       // Every timing the player takes for this card comes back through here,
       // labelled by kind: `play` is the wait before sound, `ready` the wait
@@ -857,24 +858,32 @@ export default function LivePage() {
         return;
       }
       loadedFor.current = key;
+      // QQ's own URL: a stalled CDN ends in an error after a while, never in
+      // a request to the site instead.
+      const DIRECT_START_LIMIT_MS = 15000;
       try {
-        await (res.serverInstead ? qqDirect.withStartLimit(player.load(url)) : player.load(url));
+        if (res.onPlayFail) await qqDirect.withStartLimit(player.load(url), DIRECT_START_LIMIT_MS);
+        else await player.load(url);
       } catch (loadErr) {
-        // A URL QQ handed this browser directly that will not play here (or
-        // has not started in a few seconds): the server's answer instead, which
-        // is what the card had before. Not for an interrupted load (another
-        // card took over). A refusal to autoplay is not the URL's fault either:
-        // it is only recorded (no server request, no mark) and the card fails
-        // as before.
+        if (loadErr?.name === "StartTimeout") player.stop();
+        // Nothing is playing for this card now: a tap on it again asks
+        // afresh rather than toggling an empty player.
+        if (loadErr?.name !== "AbortError" && loadedFor.current === key) loadedFor.current = null;
+        // A URL QQ handed this browser directly that will not play here:
+        // recorded, and asked of QQ once more when it was an older cached one
+        // -- never of the server (see qqDirectEngine browserMode). Not for an
+        // interrupted load (another card took over). A refusal to autoplay is
+        // only recorded, and the card fails as it always did.
         const refused = loadErr?.name === "NotAllowedError";
-        if (!res.serverInstead || loadErr?.name === "AbortError") throw loadErr;
-        res = await res.serverInstead(
+        if (!res.onPlayFail || loadErr?.name === "AbortError") throw loadErr;
+        res = await res.onPlayFail(
           refused ? "notallowed" : loadErr?.name === "StartTimeout" ? "timeout" : "error",
           player.mediaErrorCode(),
         );
         // Another card was opened meanwhile: this answer is no longer wanted.
-        if (loadedFor.current !== key) return;
+        if (loadedFor.current !== null && loadedFor.current !== key) return;
         if (!res.data?.url) throw loadErr;
+        loadedFor.current = key;
         await player.load(res.data.url);
       }
       // What actually played, not what was asked for: the server may have had
@@ -1059,6 +1068,11 @@ export default function LivePage() {
   const applyPlaybackSetting = useCallback(async (next) => {
     const card = openId ? cards.find((c) => c.eventId === openId) : null;
     if (!card?.mapping || !playing) return;
+    // A switch plays through a new audio element (swapSource). On Apple's
+    // WebKit that element must be unlocked inside this tap, before any await,
+    // or a URL that arrives by postMessage cannot start it. Same gate as the
+    // card's own priming.
+    const priming = user?.role === "ADMIN" && qqDirect.primeWanted() ? player.primeSpare() : null;
     // Temporary: a quality or vocals switch fetches a different file for a song
     // already sounding, so the singer waits through a second resolve and a
     // second load with the music still playing. How long that takes is its own
@@ -1066,10 +1080,12 @@ export default function LivePage() {
     const tSwap = Date.now();
     let tResolved = tSwap;
     try {
-      // A switch plays through a new audio element (swapSource).
+      const prime = priming ? await priming : null;
+      // A switch plays through a new audio element (swapSource): unlocked
+      // only when the priming above got it to make sound.
       let res = await qqDirect.resolve(card.mapping, next, () => (
         mappingAPI.preview(card.mapping.mappingId, undefined, next)
-      ), { elementHasPlayed: false });
+      ), { elementHasPlayed: prime === "ok" || prime === "already", prime });
       tResolved = Date.now();
       const { url, kind, songId } = res.data;
       // A local song has no tiers and no separated vocals; it plays as it is.
@@ -1088,11 +1104,12 @@ export default function LivePage() {
       // coming back no longer means the request was met.
       if (next.vocalsOnly) setVocalsAvailable(res.data.vocalsPlayed === true);
       const swapped = await player.swapSource(url);
-      // A URL from QQ directly that would not load: the server's instead.
-      if (swapped === false && res.serverInstead) {
+      // A URL from QQ directly that would not load: recorded, and asked of QQ
+      // once more when it was an older cached one -- never of the server.
+      if (swapped === false && res.onPlayFail) {
         // swapSource cannot say whether it failed or ran out of time: treated
         // as slow, which is the milder of the two.
-        res = await res.serverInstead("timeout");
+        res = await res.onPlayFail("timeout");
         // Another card was opened meanwhile: not this one's to swap in.
         if (loadedFor.current !== card.eventId) return;
         if (!res.data?.url) {
@@ -1127,7 +1144,7 @@ export default function LivePage() {
     } catch (err) {
       setPlayError(err.response?.data?.error?.message || "切换失败");
     }
-  }, [openId, cards, playing, player]);
+  }, [openId, cards, playing, player, user]);
 
   const changeQuality = useCallback((tier) => {
     setQualityState(tier);

@@ -424,6 +424,35 @@ async function setApkLikes(patch) {
   return clean;
 }
 
+/**
+ * 网易云打标: offered or not. NetEase can only be reached from this server
+ * (no JSONP, CORS-blocked), so it is off unless an admin turns it on
+ * (2026-10-04). QQ打标 has no such switch: it never uses the site's address.
+ */
+const NETEASE_TAGGING_KEY = 'neteaseTagging';
+const NETEASE_TAGGING_CACHE_MS = 10 * 1000;
+let neteaseTaggingCache = null; // { value, at }
+
+async function getNeteaseTagging() {
+  if (neteaseTaggingCache && Date.now() - neteaseTaggingCache.at < NETEASE_TAGGING_CACHE_MS) {
+    return neteaseTaggingCache.value;
+  }
+  const raw = await get(NETEASE_TAGGING_KEY, null);
+  const value = { enabled: Boolean(raw && raw.enabled === true) };
+  neteaseTaggingCache = { value, at: Date.now() };
+  return value;
+}
+
+async function setNeteaseTagging(patch) {
+  if (!patch || typeof patch.enabled !== 'boolean') {
+    throw new ValidationError({ enabled: ['必须是 true 或 false'] });
+  }
+  const value = { enabled: patch.enabled };
+  await set(NETEASE_TAGGING_KEY, value);
+  neteaseTaggingCache = null;
+  return value;
+}
+
 /** The settings when they apply to this user at all, else null. */
 async function apkLikesFor(role) {
   const s = await getApkLikes();
@@ -444,6 +473,9 @@ module.exports = {
   getApkLikes,
   setApkLikes,
   apkLikesFor,
+  NETEASE_TAGGING_KEY,
+  getNeteaseTagging,
+  setNeteaseTagging,
   getClientVersion,
   setClientVersion,
   getSignupPromo,

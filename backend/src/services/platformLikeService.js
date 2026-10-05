@@ -83,6 +83,12 @@ function rethrow(err) {
  * too, only a new scan can help.
  */
 async function run(userId, platform, fn) {
+  // QQ打标 talks to QQ only from the user's own browser or phone (2026-10-04,
+  // never the site's address, not even as a fallback). Refused here, under
+  // every caller, so no path can reach QQ from this server by accident.
+  if (platform === 'qq') {
+    throw appError('QQ打标只从你的浏览器或手机访问 QQ，网站不代为请求', 409, 'QQ_USER_IP_ONLY');
+  }
   const cred = await credentialFor(userId, platform);
   try {
     return await fn(cred);

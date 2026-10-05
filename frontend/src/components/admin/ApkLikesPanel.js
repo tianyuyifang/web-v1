@@ -4,26 +4,34 @@ import { useCallback, useEffect, useState } from "react";
 import { adminAPI } from "@/lib/api";
 
 /**
- * QQ打标: who performs the like on QQ -- this server (网站 IP) or the user's
- * own phone, through the capture APK (用户自己的网络). Off by default; off means
- * QQ打标 behaves exactly as before.
+ * QQ打标: who performs the likes. Since 2026-10-04 never this server: the
+ * page writes the heart and the 待确认 button itself, and a run's automatic
+ * likes go to the open QQ打标 page first, then -- when this switch allows --
+ * to the phone (capture APK v28+); with neither, the capture waits in 待确认.
+ * Also the 网易云打标 switch (off: NetEase can only go through the site).
  *
  * Saving takes effect on the next like; nothing is deployed.
  */
 
 const KINDS = [
-  ["auto", "自动点赞", "完美匹配时自动点的赞"],
-  ["approve", "待确认的「点赞」", "用户在待确认里点「点赞」"],
-  ["manual", "手动 ♥ / 取消", "用户在 QQ打标 歌单列表里手动点 ♥ 或取消"],
+  ["auto", "自动点赞", "完美匹配时自动点的赞（网页不在线时交给手机）"],
 ];
 
-const PURPOSE_LABEL = { auto: "自动点赞", approve: "待确认", manual: "手动 ♥" };
+const PURPOSE_LABEL = { auto: "自动点赞" };
 const OUTCOME_LABEL = {
+  page: "网页完成",
   phone: "手机完成",
-  unclaimed: "手机没接单→网站",
-  timeout: "手机超时→网站",
-  phoneFailed: "手机失败→网站",
-  noCredential: "无 QQ 凭证→网站",
+  "page:unclaimed": "网页没接单",
+  "page:timeout": "网页超时",
+  "page:failed": "网页失败",
+  "page:noCredential": "网页·无 QQ 凭证",
+  "phone:unclaimed": "手机没接单",
+  "phone:timeout": "手机超时",
+  "phone:failed": "手机失败",
+  "phone:noCredential": "手机·无 QQ 凭证",
+  "page:unavailable": "网页来不及/账号已变",
+  "phone:unavailable": "手机来不及/账号已变",
+  noExecutor: "都不在线→待确认",
 };
 
 const ms = (v) => (v === null || v === undefined ? "—" : `${v}ms`);
@@ -93,8 +101,9 @@ export default function ApkLikesPanel() {
         <h2 className="text-base font-semibold">QQ打标 点赞方式</h2>
       </div>
       <p className="mb-4 text-xs text-muted">
-        QQ打标 时由谁去 QQ 点赞：网站服务器，或用户手机上的打标 APK（v28 起，从用户自己的网络发出）。
-        手机 2.5 秒内没接单、6 秒内没做完或失败，自动改由网站完成，不会漏点。关掉总开关 = 和以前完全一样。
+        QQ打标 从不由网站去 QQ 点赞或读歌单。手动 ♥ 和待确认的「点赞」由用户的浏览器完成；
+        自动点赞先交给开着的 QQ打标 网页，网页不在线时交给手机上的打标 APK（v28 起，这里的开关控制），
+        都不在线就留在待确认。
       </p>
 
       {error ? <p className="mb-3 text-sm text-red-400">{error}</p> : null}
@@ -162,20 +171,65 @@ export default function ApkLikesPanel() {
                     <Counts map={s.byPurpose?.[p]} labels={OUTCOME_LABEL} />
                   </Row>
                 ))}
-                <Row label="手机完成用时 中位 / 90%">
+                <Row label="完成用时 中位 / 90%">
                   {ms(s.phoneMs?.p50)} / {ms(s.phoneMs?.p90)}
                   <span className="text-xs text-muted">（{s.phoneMs?.n ?? 0} 次）</span>
                 </Row>
-                <Row label="改由网站完成">
-                  成功 {s.fallback?.ok ?? 0} · <span className={s.fallback?.failed ? "text-red-400" : ""}>失败 {s.fallback?.failed ?? 0}</span>
-                </Row>
-                <Row label="手机失败原因"><Counts map={s.failCodes} labels={{ 1000: "QQ 登录过期" }} /></Row>
+                <Row label="开着的执行网页">{s.pagesOpen ?? 0}</Row>
+                <Row label="失败原因"><Counts map={s.failCodes} labels={{ 1000: "QQ 登录过期", 2001: "QQ 限频" }} /></Row>
               </dl>
               <p className="mt-1 text-xs text-muted">统计从 {s.since ? new Date(s.since).toLocaleString() : "—"} 起，重启后端会清零。</p>
             </div>
           ) : null}
         </>
       )}
+
+      <NeteaseTagging />
     </section>
+  );
+}
+
+/** 网易云打标: offered or not. Off by default -- NetEase can only go through the site. */
+function NeteaseTagging() {
+  const [on, setOn] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    adminAPI.getNeteaseTagging()
+      .then((res) => setOn(res.data.settings.enabled === true))
+      .catch((err) => setError(err.response?.data?.error?.message || "读取失败"));
+  }, []);
+
+  const toggle = async (next) => {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await adminAPI.setNeteaseTagging({ enabled: next });
+      setOn(res.data.settings.enabled === true);
+    } catch (err) {
+      setError(err.response?.data?.error?.message || "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 border-t border-border/60 pt-4">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={!!on}
+          disabled={on === null || saving}
+          onChange={(e) => toggle(e.target.checked)}
+          className="h-4 w-4 rounded border-border accent-primary"
+        />
+        <span className="font-medium" style={{ color: "var(--text)" }}>提供网易云打标</span>
+      </label>
+      <p className="ml-6 mt-1 text-xs text-muted">
+        网易云只能由网站服务器访问（会用网站 IP），默认不提供。关掉后 QQ打标 页面不显示网易云，也不接受网易云打标。
+      </p>
+      {error ? <p className="ml-6 mt-1 text-xs text-red-400">{error}</p> : null}
+    </div>
   );
 }

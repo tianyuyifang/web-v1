@@ -2,7 +2,9 @@
  * The v28 capture-client work, server side:
  *   A. which round a title belongs to (captureRouting), pure
  *   B. /ingest and /heartbeat over HTTP against a running backend
- *   C. QQ likes performed by the phone (apkLikeService), platform stubbed
+ *   C. QQ likes performed by the phone (apkLikeService), platform stubbed --
+ *      never by the server since 2026-10-04: with no page or phone to take
+ *      a like, it is refused (NO_USER_IP_EXECUTOR), not done from here
  *   D. the 歌P singer library and its 待确认 suggestions
  *
  * Run: node tests/apk-capture-test.js   (B needs a backend on TEST_BASE,
@@ -197,7 +199,10 @@ function framesOf(r, event) {
     // ======================================================================
     // C. likes by the phone
     // ======================================================================
+    // The server never reads QQ: the list comes from the page.
+    tags.supplySongs(user.id, 'qq:4242', { title: '测试歌单', songs: stub.songs.map((x) => ({ ...x })), likedIds: [], dirId: 512 });
     const started = await tags.start({ userId: user.id, playlistRef: 'qq:4242', dirId: 512 });
+    const noExecutor = (e) => e.code === 'NO_USER_IP_EXECUTOR';
     const platSession = started.session;
 
     // targetFor: no stream while the switch is off
@@ -205,14 +210,14 @@ function framesOf(r, event) {
     eq([tf.target, tf.playlistId, tf.realTarget, tf.platform, tf.stream],
       ['playlist', 'qq:4242', 'platform', 'qq', false], 'QQ打标, switch off: no stream');
 
-    // switch off → no stream at all, server does it
+    // switch off → no stream at all, and nobody to like it: refused, never the server
     const refused = fakeStream();
     eq(await apkChannel.attach(platSession, refused, { version: 28, caps: [apkLikes.CAP] }), false, 'switch off: stream refused');
     eq(refused.frames.length, 0, 'and nothing written to it');
     calls.length = 0;
-    let res = await apkLikes.like(user.id, 'qq', { id: '12', songType: 0 }, { purpose: 'auto', session: platSession });
-    eq(calls, [['server-like', 'qq', '12']], 'switch off: server path, exactly as before');
-    stub.liked.clear();
+    await assert.rejects(apkLikes.like(user.id, 'qq', { id: '12', songType: 0 }, { purpose: 'auto', session: platSession }), noExecutor);
+    eq(calls, [], 'switch off, no page: refused, the server does not do it');
+    let res;
 
     await settingsService.setApkLikes({ enabled: true, adminsOnly: true, auto: false, approve: false, manual: false });
     tf = await apkChannel.targetFor(platSession);
@@ -221,9 +226,8 @@ function framesOf(r, event) {
     eq(await apkChannel.attach(platSession, phone, { version: 28, caps: [apkLikes.CAP] }), true, 'stream accepted');
     eq(framesOf(phone, 'target').length, 1, 'attach sends the current target first');
     calls.length = 0;
-    res = await apkLikes.like(user.id, 'qq', { id: '12', songType: 0 }, { purpose: 'auto', session: platSession });
-    eq([calls, framesOf(phone, 'cmd').length], [[['server-like', 'qq', '12']], 0], 'switch on but 自动点赞 off: server, nothing sent');
-    stub.liked.clear();
+    await assert.rejects(apkLikes.like(user.id, 'qq', { id: '12', songType: 0 }, { purpose: 'auto', session: platSession }), noExecutor);
+    eq([calls, framesOf(phone, 'cmd').length], [[], 0], 'switch on but 自动点赞 off: nothing sent, not the server');
     await settingsService.setApkLikes({ auto: true });
 
     // The phone: claim, then report. Behaviour set per case.
@@ -253,53 +257,56 @@ function framesOf(r, event) {
       'claim hands over credential + song; auto skips the pre-check');
     ok(Date.now() - t0 < 1000, 'and quickly');
 
-    // unclaimed → server after CLAIM_MS; a late claim is refused
+    // unclaimed → refused after CLAIM_MS (never the server); a late claim is refused
     phoneMode.claim = false;
     calls.length = 0;
     t0 = Date.now();
-    res = await apkLikes.like(user.id, 'qq', { id: '11', songType: 1, knownUnliked: true }, { purpose: 'auto', session: platSession });
+    await assert.rejects(apkLikes.like(user.id, 'qq', { id: '11', songType: 1, knownUnliked: true }, { purpose: 'auto', session: platSession }), noExecutor);
     const waited = Date.now() - t0;
-    eq(calls, [['server-like', 'qq', '11']], 'unclaimed: server did it');
+    eq(calls, [], 'unclaimed: not the server');
     ok(waited >= apkLikes.CLAIM_MS - 50 && waited < apkLikes.CLAIM_MS + 1500, `unclaimed waited ~${waited}ms`);
     eq(apkLikes._pending.size, 0, 'no command left in flight');
     stub.liked.clear();
 
-    // claimed, then failure reported → server
+    // claimed, then failure reported → refused, with the phone's failure noted
     phoneMode.claim = true;
     phoneMode.report = 'fail';
     calls.length = 0;
-    res = await apkLikes.like(user.id, 'qq', { id: '14', songType: 0 }, { purpose: 'auto', session: platSession });
-    eq(calls, [['server-like', 'qq', '14']], 'phone failure: server did it');
+    await assert.rejects(
+      apkLikes.like(user.id, 'qq', { id: '14', songType: 0 }, { purpose: 'auto', session: platSession }),
+      (e) => noExecutor(e) && e.tried.includes('phone:failed'),
+    );
+    eq(calls, [], 'phone failure: not the server');
     eq(phoneMode.lastJob.precheck, true, 'a like the caller has not checked is pre-checked by the phone');
     stub.liked.clear();
 
-    // claimed, never reports → server after RESULT_MS
+    // claimed, never reports → refused after RESULT_MS
     phoneMode.report = 'none';
     calls.length = 0;
     t0 = Date.now();
-    res = await apkLikes.like(user.id, 'qq', { id: '13', songType: 0 }, { purpose: 'auto', session: platSession });
-    eq(calls, [['server-like', 'qq', '13']], 'no result: server did it');
+    await assert.rejects(apkLikes.like(user.id, 'qq', { id: '13', songType: 0 }, { purpose: 'auto', session: platSession }), noExecutor);
+    eq(calls, [], 'no result: not the server');
     ok(Date.now() - t0 >= apkLikes.RESULT_MS - 50, 'after the result window');
     stub.liked.clear();
 
-    // no credential at claim → server, claim refused
+    // no credential at claim → claim refused, and so is the like
     phoneMode.report = 'ok';
     credStub.have = false;
     calls.length = 0;
-    res = await apkLikes.like(user.id, 'qq', { id: '12', songType: 0 }, { purpose: 'auto', session: platSession });
-    eq(calls, [['server-like', 'qq', '12']], 'no credential: server path (which reports it)');
+    await assert.rejects(apkLikes.like(user.id, 'qq', { id: '12', songType: 0 }, { purpose: 'auto', session: platSession }), noExecutor);
+    eq(calls, [], 'no credential: not the server');
     eq(phoneMode.lastJob, null, 'claim refused');
     credStub.have = true;
     stub.liked.clear();
 
-    // approve / manual off, NetEase, other session → server, nothing sent
+    // approve / manual switched off: QQ refused (never the server); NetEase: the server
     phoneMode.seen.length = 0;
     calls.length = 0;
-    await apkLikes.like(user.id, 'qq', { id: '12' }, { purpose: 'approve' });
-    await apkLikes.unlike(user.id, 'qq', { id: '12' }, { purpose: 'manual' });
+    await assert.rejects(apkLikes.like(user.id, 'qq', { id: '12' }, { purpose: 'approve' }), noExecutor);
+    await assert.rejects(apkLikes.unlike(user.id, 'qq', { id: '12' }, { purpose: 'manual' }), noExecutor);
     await apkLikes.like(user.id, 'netease', { id: '99' }, { purpose: 'auto', session: platSession });
     eq(phoneMode.seen, [], 'approve/manual switched off and NetEase: never sent to the phone');
-    eq(calls.map((c) => c[0]), ['server-like', 'server-unlike', 'server-like'], 'all by the server');
+    eq(calls.map((c) => c[0]), ['server-like'], 'only NetEase by the server');
     stub.liked.clear();
 
     // manual on: unlike goes to the phone, finding the session by itself
@@ -322,12 +329,12 @@ function framesOf(r, event) {
     eq([ing.outcome, ing.likedExternalId, phoneMode.seen, calls], ['liked', '12', ['like'], []],
       'ingest: exact match liked by the phone');
 
-    // stream closed → server again
+    // stream closed → nobody to take it: refused, never the server
     phone.end();
     await sleep(50);
     calls.length = 0;
-    await apkLikes.like(user.id, 'qq', { id: '14' }, { purpose: 'auto', session: platSession });
-    eq(calls, [['server-like', 'qq', '14']], 'stream gone: server path');
+    await assert.rejects(apkLikes.like(user.id, 'qq', { id: '14' }, { purpose: 'auto', session: platSession }), noExecutor);
+    eq(calls, [], 'stream gone: not the server');
     stub.liked.clear();
 
     // pushTarget: a stream open on this session hears a switch at once

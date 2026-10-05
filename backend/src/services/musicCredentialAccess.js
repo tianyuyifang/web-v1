@@ -99,15 +99,27 @@ function renewOnce(userId, minAgeMs = 0) {
   if (inFlight) return inFlight;
   const p = (async () => {
     const saved = await credentials.getRefreshable(userId, 'qq');
-    if (!saved || ageMs(saved) < minAgeMs) return false;
+    if (!saved || saved.renewBlocked || ageMs(saved) < minAgeMs) return false;
     try {
       await save(userId, await qqLogin.refreshCredential(saved));
       renewFailedAt.delete(userId);
+      console.log(`[renew] ok user=${userId}`);
       return true;
     } catch (err) {
       const refused = err.code === 'QR_REFRESH_FAILED' || err.code === 'QR_NOT_REFRESHABLE';
       renewFailedAt.set(userId, { at: Date.now(), ms: refused ? RENEW_COOLDOWN_MS : RENEW_TRANSIENT_COOLDOWN_MS });
       if (renewFailedAt.size > 5000) renewFailedAt.clear();
+      // The platform's own code, so which refusals are final can be told
+      // apart later; a refusal stops automatic renewal until the user
+      // connects again or renews by hand (markRenewRefused).
+      console.log(`[renew] ${refused ? 'refused' : 'failed'} user=${userId} code=${err.code}${err.platformCode != null ? `/${err.platformCode}` : ''}`);
+      if (refused) {
+        await credentials.markRenewRefused(userId, 'qq', {
+          platformCode: err.platformCode,
+          savedAt: saved.savedAt,
+          final: err.code === 'QR_NOT_REFRESHABLE',
+        }).catch(() => { /* bookkeeping only */ });
+      }
       // Recorded so the account page can say why, but not thrown: see above.
       await credentials.recordCheck(userId, 'qq', { ok: false, error: err.message })
         .catch(() => { /* bookkeeping only */ });
@@ -153,7 +165,8 @@ async function renewAfterRejection(userId, usedKey = null) {
   // until the user rescans, and asking again is only noise from our address.
   if (inCooldown(userId)) return null;
   const saved = await credentials.getRefreshable(userId, 'qq');
-  if (!saved || ageMs(saved) < RENEW_MIN_AGE_MS) return null;
+  // Refused before: only a fresh connection (or a renewal by hand) helps.
+  if (!saved || saved.renewBlocked || ageMs(saved) < RENEW_MIN_AGE_MS) return null;
   const ok = await renewOnce(userId, RENEW_MIN_AGE_MS);
   return ok ? credentials.getCredential(userId, 'qq') : null;
 }

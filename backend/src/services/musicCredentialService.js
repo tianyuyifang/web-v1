@@ -308,6 +308,55 @@ async function setEncryptUin(userId, platform, encryptUin) {
 }
 
 /**
+ * The platform refused to renew this credential. Automatic renewal stops --
+ * each attempt is a login call from this server's address that cannot
+ * succeed -- until the user connects again (a scan or paste writes a fresh
+ * entry without these fields) or renews by hand. But not on one refusal: QQ
+ * answers a busy or rate-limited moment with a code too, so only a second
+ * refusal at least an hour after the first stops it, and an answer without a
+ * code (no req_1 at all) never counts. `final` (no refresh key to send) stops
+ * it at once. Set only while the entry is still the one that was refused
+ * (`savedAt`): a rescan meanwhile is not marked.
+ */
+const REFUSALS_APART_MS = 60 * 60 * 1000;
+// Stopped, but tried again once a day: a refusal that was really QQ limiting
+// this server's address for a while (many users at once) heals by itself.
+const REFUSED_RETRY_MS = 24 * 60 * 60 * 1000;
+
+/** Renewal stopped for now (refused, and less than a day ago). */
+function renewBlocked(entry) {
+  if (!entry || !entry.renewRefusedAt) return false;
+  const at = new Date(entry.renewRefusedAt).getTime();
+  return Number.isNaN(at) || Date.now() - at < REFUSED_RETRY_MS;
+}
+
+async function markRenewRefused(userId, platform, { platformCode = null, savedAt = null, final = false } = {}) {
+  assertPlatform(platform);
+  if (!final && !Number.isInteger(platformCode)) return;
+  const preferences = await readPreferences(userId);
+  const entry = (preferences[NAMESPACE] || {})[platform];
+  if (!entry || (savedAt && entry.savedAt !== savedAt)) return;
+  const now = new Date().toISOString();
+  const first = entry.renewRefusalFirstAt ? new Date(entry.renewRefusalFirstAt).getTime() : NaN;
+  const block = final || (!Number.isNaN(first) && Date.now() - first >= REFUSALS_APART_MS);
+  const field = block ? 'renewRefusedAt' : 'renewRefusalFirstAt';
+  if (!block && entry.renewRefusalFirstAt) return; // a second refusal within the hour
+  const path = `{${NAMESPACE},${platform},${field}}`;
+  const codePath = `{${NAMESPACE},${platform},renewRefusedCode}`;
+  const code = platformCode == null ? null : String(platformCode).slice(0, 20);
+  await prisma.$executeRaw`
+    UPDATE users
+    SET preferences = jsonb_set(
+      jsonb_set(preferences, ${path}::text[], to_jsonb(${now}::text), true),
+      -- A JSON null, never SQL NULL: jsonb_set with a NULL value returns NULL
+      -- and would wipe the whole preferences column.
+      ${codePath}::text[], COALESCE(to_jsonb(${code}::text), 'null'::jsonb), true)
+    WHERE id = ${userId}::uuid
+      AND preferences #>> ${`{${NAMESPACE},${platform},savedAt}`}::text[] IS NOT DISTINCT FROM ${entry.savedAt ?? null}
+  `;
+}
+
+/**
  * Everything the renewal call needs, decrypted. Server-side only.
  *
  * Separate from getCredential() because renewal wants the whole chain — the
@@ -341,6 +390,10 @@ async function getRefreshable(userId, platform) {
     needRefreshInSec: entry.needRefreshInSec ?? null,
     // When this key was stored: a key minted minutes ago is not dead.
     savedAt: entry.savedAt ?? null,
+    // Set once the platform refused a renewal: none is tried again until
+    // the user connects afresh (see markRenewRefused).
+    renewRefusedAt: entry.renewRefusedAt ?? null,
+    renewBlocked: renewBlocked(entry),
   };
 }
 
@@ -364,6 +417,8 @@ async function needsRefresh(userId, platform) {
   const preferences = await readPreferences(userId);
   const entry = (preferences[NAMESPACE] || {})[platform];
   if (!entry?.refreshKey) return false;
+  // Refused: not again for a day, or until the user connects afresh.
+  if (renewBlocked(entry)) return false;
 
   // The platform states when it wants to see a renewal -- when it states one.
   // QQ answers needRefreshKeyIn 0 on every login and renewal (all 89 stored
@@ -439,6 +494,7 @@ module.exports = {
   getCredential,
   recordCheck,
   setEncryptUin,
+  markRenewRefused,
   parseQqCookie,
   parseNeteaseCookie,
 };

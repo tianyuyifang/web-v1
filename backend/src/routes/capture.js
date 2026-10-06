@@ -248,7 +248,17 @@ router.get('/apk/stream', captureAuth, async (req, res, next) => {
       version: Number.isInteger(version) ? version : null,
       caps,
     });
-    if (!attached) res.status(409).json({ error: { message: 'No stream for this session', status: 409 } });
+    if (!attached) {
+      res.status(409).json({ error: { message: 'No stream for this session', status: 409 } });
+    } else {
+      // The phone is back: QQ打标 likes missed meanwhile are offered again
+      // (to the page first when it is in front, else to this phone).
+      const userId = req.captureSession.userId;
+      const t = setTimeout(() => {
+        platformTagService.retryPendingFor(userId).catch((e) => console.warn('[platform-tag] retry on phone stream failed:', e.message));
+      }, 1000);
+      if (t.unref) t.unref();
+    }
   } catch (err) {
     next(err);
   }

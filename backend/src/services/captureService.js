@@ -521,10 +521,24 @@ async function touchSession(session, clientVersion, health) {
   const blind = asInt4(health && health.blindScans, 0);
   const readAgo = asInt4(health && health.lastReadAgoSec, -1);
 
+  /**
+   * A connection in use does not expire: each contact moves the end to four
+   * hours from now. It used to stay where pairing put it, so a client playing
+   * at hour four got a 401 mid-game, dropped its token and had to be paired
+   * again -- 149 times in a week, for 29 of 41 users (2026-10-05). Idle for
+   * four hours, it still ends as before; a new pairing still ends it at once
+   * (one connection per user); an ended one stays ended (endedAt untouched).
+   * Never moved earlier, for a run created with a longer window.
+   */
+  const now = Date.now();
+  const slid = now + DEFAULT_TTL_MINUTES * 60 * 1000;
+  const until = session.expiresAt ? new Date(session.expiresAt).getTime() : 0;
+
   await prisma.captureSession.update({
     where: { id: session.id },
     data: {
-      lastSeenAt: new Date(),
+      lastSeenAt: new Date(now),
+      ...(slid > until ? { expiresAt: new Date(slid) } : {}),
       ...(version ? { clientVersion: version } : {}),
       ...(blind === null ? {} : { blindScans: blind }),
       ...(readAgo === null ? {} : { lastReadAgo: readAgo }),

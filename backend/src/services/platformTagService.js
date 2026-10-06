@@ -234,7 +234,10 @@ function supplySongs(userId, ref, { title, songs, likedIds, dirId = null, isLike
   // margin for the trip back.
   const since = Date.now() - Math.max(0, Math.min(Number(readMs) || 0, 10 * 60 * 1000)) - 5000;
   for (const c of recentLikes.get(userId) || []) {
-    if (c.at >= since) setLikedState(userId, c.id, c.liked, { record: false });
+    if (c.at < since) continue;
+    // A whole list unliked at once (取消全部点赞) is one entry.
+    if (c.ids) applyManyUnliked(userId, c.ids);
+    else setLikedState(userId, c.id, c.liked, { record: false });
   }
   // Captures that arrived while this list was missing (a restart mid-run)
   // are matched now. Not awaited: the page is waiting for the list.
@@ -257,6 +260,41 @@ function noteLiked(userId, id) {
 
 function noteUnliked(userId, id) {
   setLikedState(userId, id, false);
+}
+
+/**
+ * Many songs unliked at once (取消全部点赞, done by the user's page): the same
+ * patching as noteUnliked, in one pass over the cache rather than one per
+ * song -- a 5000-song list per song would be seconds of blocking work.
+ */
+function noteManyUnliked(userId, ids) {
+  const gone = new Set(ids.map(String));
+  if (!gone.size) return;
+  const now = Date.now();
+  const list = (recentLikes.get(userId) || []).filter((c) => now - c.at < RECENT_LIKES_MS);
+  // One entry for the whole batch: 300 entries would push the user's other
+  // recent likes out of the last 200 the replay keeps.
+  list.push({ ids: gone, liked: false, at: now });
+  recentLikes.set(userId, list.slice(-200));
+  if (recentLikes.size > 5000) recentLikes.clear();
+  applyManyUnliked(userId, gone);
+}
+
+/** noteManyUnliked's patching, without recording it (also the replay's). */
+function applyManyUnliked(userId, gone) {
+  const apply = (v) => {
+    if (v.liked) for (const id of gone) v.liked.set(id, false);
+    // In place, as setLikedState does: whoever holds this array sees it too.
+    if (v.isLikes && v.songs) {
+      for (let i = v.songs.length - 1; i >= 0; i -= 1) if (gone.has(String(v.songs[i].id))) v.songs.splice(i, 1);
+    }
+  };
+  const prefix = `${userId}|`;
+  for (const [k, v] of songCache) {
+    if (!k.startsWith(prefix)) continue;
+    if (v.pending) v.pending.then(apply, () => {});
+    else if (!v.error) apply(v);
+  }
 }
 
 /**
@@ -509,8 +547,10 @@ async function ingest({ session, rawText, singer = null }) {
   const held = await claimRow({ fresh, userId, platform, ref, text, outcome: 'matching' });
   if (!held.row) return held.payload;
   let event;
+  let slowRetry = false;
   try {
     const decided = await decide({ userId, platform, text, songs, liked, singer, session: fresh });
+    slowRetry = decided.slowRetry;
     event = await prisma.platformTagEvent.update({
       where: { id: held.row.id },
       data: {
@@ -529,6 +569,7 @@ async function ingest({ session, rawText, singer = null }) {
 
   const payload = toPayload(event);
   broadcast(channel(userId), 'platform-tag-event', payload);
+  if (payload.autoRetry) scheduleAutoRetry(userId, event.id, 0, slowRetry ? TOO_OFTEN_MS : 0);
   return payload;
 }
 
@@ -671,7 +712,9 @@ async function rematchPass(userId, ref) {
       await prisma.platformTagEvent.update({ where: { id: row.id }, data: { outcome: 'unread' } }).catch(() => {});
       throw err;
     }
-    broadcast(channel(userId), 'platform-tag-event', toPayload(updated));
+    const payload = toPayload(updated);
+    broadcast(channel(userId), 'platform-tag-event', payload);
+    if (payload.autoRetry) scheduleAutoRetry(userId, updated.id, 0, decided.slowRetry ? TOO_OFTEN_MS : 0);
   }
 }
 
@@ -680,9 +723,19 @@ async function rematchPass(userId, ref) {
  * can never be matched: settled, so the page stops waiting for them.
  */
 async function settleUnread(sessionId, keepRef = null) {
+  const other = keepRef ? { playlistRef: { not: keepRef } } : {};
+  // Not a row a retry is liking right now (its error carries the retry
+  // prefix): that try finishes it, liked or not.
+  const notRetrying = { OR: [{ error: null }, { NOT: { error: { startsWith: apkLikes.NO_EXECUTOR_PREFIX } } }] };
   await prisma.platformTagEvent.updateMany({
-    where: { sessionId, outcome: { in: ['unread', 'matching'] }, ...(keepRef ? { playlistRef: { not: keepRef } } : {}) },
+    where: { sessionId, outcome: { in: ['unread', 'matching'] }, ...other, ...notRetrying },
     data: { outcome: 'no_match', error: keepRef ? '歌单已切换，没来得及匹配' : '打标已停止，没来得及匹配' },
+  });
+  // Missed auto-likes of a run that has stopped or moved on are no longer
+  // tried on their own: left for the user, and they say so.
+  await prisma.platformTagEvent.updateMany({
+    where: { sessionId, outcome: 'pending', ...other, error: { startsWith: apkLikes.NO_EXECUTOR_PREFIX } },
+    data: { error: STOPPED_RETRY_MSG },
   });
 }
 
@@ -701,6 +754,7 @@ async function decide({ userId, platform, text, songs, liked, singer, session })
   const byId = new Map(songs.map((s) => [String(s.id), s]));
 
   let outcome = matchOutcome;
+  let slowRetry = false;
   let likedExternalId = null;
   let error = null;
   let shaped = candidates.map((c) => toCandidate(c, byId.get(String(c.songId))));
@@ -734,12 +788,13 @@ async function decide({ userId, platform, text, songs, liked, singer, session })
         shaped = [toCandidate(candidates[0], song, true)];
         noteLiked(userId, song.id);
       } catch (err) {
-        // Nobody on the user's side could do it (page closed, phone away):
-        // left for the user to confirm, with why. One that tried and was
-        // refused by QQ is a failure, as before.
-        const refused = Array.isArray(err.tried) && err.tried.some((t) => t.endsWith(':failed'));
-        outcome = err.code === 'NO_USER_IP_EXECUTOR' && !refused ? 'pending' : 'failed';
+        // Not done this time (page closed or frozen, phone away, a timeout,
+        // QQ's 2001): waits in 待确认 and is tried again on its own (autoRetry
+        // below). Only a dead login or no QQ account is a failure: trying
+        // again cannot help, and the user has to act.
+        outcome = err.code === 'NO_USER_IP_EXECUTOR' && !apkLikes.isPermanentFailure(err) ? 'pending' : 'failed';
         error = err.message || String(err);
+        slowRetry = apkLikes.saidTooOften(err);
       }
     }
   }
@@ -762,7 +817,44 @@ async function decide({ userId, platform, text, songs, liked, singer, session })
       }
     }
   }
-  return { outcome, shaped, likedExternalId, error };
+  return { outcome, shaped, likedExternalId, error, slowRetry };
+}
+
+/**
+ * A QQ capture that matched exactly and would have been liked on the spot,
+ * but was not this time (the page in the background, the phone away, a
+ * timeout). Tried again on its own -- see autoRetry. Never a capture that
+ * needs a human (not exact, several candidates, 歌手库), and never one that
+ * failed for good (a dead login is 'failed').
+ */
+function autoRetryable(e) {
+  return e.outcome === 'pending' && missedAutoLike(e);
+}
+
+/**
+ * Left 'matching' by a restart mid-like (or mid-retry): nobody is working on
+ * it any more. Older than STALE_MATCHING_MS, a retry, 点赞 and 忽略 may take it.
+ */
+function staleMatching(e) {
+  return e.outcome === 'matching' && new Date(e.updatedAt).getTime() < Date.now() - STALE_MATCHING_MS;
+}
+
+/** The take condition for a row that may be 'pending' or stale 'matching'. */
+function takeableWhere() {
+  return [
+    { outcome: 'pending' },
+    { outcome: 'matching', updatedAt: { lt: new Date(Date.now() - STALE_MATCHING_MS) } },
+  ];
+}
+
+/** autoRetryable's test, whatever the row's outcome is now. */
+function missedAutoLike(e) {
+  const cands = Array.isArray(e.candidates) ? e.candidates : [];
+  return e.platform === 'qq'
+    && cands.length === 1
+    && cands[0].kind === 'exact'
+    && typeof e.error === 'string'
+    && e.error.startsWith(apkLikes.NO_EXECUTOR_PREFIX);
 }
 
 function toPayload(e) {
@@ -776,9 +868,235 @@ function toPayload(e) {
     candidates: e.candidates || [],
     likedExternalId: e.likedExternalId,
     error: e.error,
+    autoRetry: autoRetryable(e),
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
   };
+}
+
+// --- autoRetry: a missed auto-like, tried again from the user's side -------------
+//
+// The server only dispatches: the like is offered to the user's page or phone
+// exactly as the first time (apkLikes.like), never written from here.
+//
+//   - Only the run the row belongs to, while it is still that run: the
+//     connection aimed at this list (a stopped run, or one moved to another
+//     list, leaves its rows to the user).
+//   - Only when a page in front or the phone is there to take it; a page in
+//     the background (frozen on a phone) waits for its return
+//     (retryPendingFor, on presence / stream open).
+//   - One try at a time per user, and never ahead of a new capture's like:
+//     a try waits while the user's like queue is busy.
+//   - Each row is taken ('pending' -> 'matching') before anything is done with
+//     it, and put back only if it is still 'matching': a timer, the page
+//     coming back, 点赞 and 忽略 can never act on it twice.
+//   - A try nobody took (unclaimed, nobody there) does not count; after
+//     AUTO_RETRY_MAX tries that reached QQ it shows as failed, with why.
+
+let AUTO_RETRY_DELAYS_MS = [3000, 10000, 30000];
+// Tries that reached QQ, all triggers together, before it is shown as failed.
+let AUTO_RETRY_MAX = 5;
+// Timers stop re-arming after this; the page's return still tries.
+const AUTO_RETRY_WINDOW_MS = 15 * 60 * 1000;
+const retryCounts = new Map(); // eventId -> tries that reached QQ
+const retryTimers = new Map(); // eventId -> timer
+const retryLane = new Map(); // userId -> Promise: one try at a time per user
+const retryingUsers = new Map(); // userId -> { again }
+
+// QQ said "too often" (2001): the next try waits at least this long.
+let TOO_OFTEN_MS = 30000;
+// A missed auto-like of a run that stopped or moved on (not '没点上：打标网页…',
+// so no longer tried on its own).
+const STOPPED_RETRY_MSG = '没点上：打标已停止，不再自动重试；需要的话请点「点赞」';
+
+function scheduleAutoRetry(userId, eventId, step = 0, minDelay = 0) {
+  if (!AUTO_RETRY_DELAYS_MS.length || retryTimers.has(eventId)) return;
+  // The last delay repeats until the cap or the window ends.
+  const delay = Math.max(minDelay, AUTO_RETRY_DELAYS_MS[Math.min(step, AUTO_RETRY_DELAYS_MS.length - 1)]);
+  const t = setTimeout(() => {
+    retryTimers.delete(eventId);
+    retryOne(userId, eventId, step).catch((err) => console.warn('[platform-tag] auto-retry failed:', err.message));
+  }, delay);
+  if (t.unref) t.unref();
+  retryTimers.set(eventId, t);
+}
+
+/** Is this row's run still the run it was captured in? */
+function sameRun(session, row) {
+  return Boolean(session && !session.endedAt && new Date(session.expiresAt) > new Date()
+    && session.target === 'platform' && session.platformRef === row.playlistRef);
+}
+
+/** Wait (briefly) while the user's like queue is busy with a capture. */
+async function waitForIdle(userId, maxMs = 20000) {
+  const until = Date.now() + maxMs;
+  while (apkLikes.queued(userId) && Date.now() < until) await new Promise((r) => setTimeout(r, 300));
+  return !apkLikes.queued(userId);
+}
+
+/** One try at a time per user. */
+function inLane(userId, fn) {
+  const prev = retryLane.get(userId) || Promise.resolve();
+  const next = prev.catch(() => {}).then(fn);
+  retryLane.set(userId, next);
+  next.catch(() => {}).finally(() => { if (retryLane.get(userId) === next) retryLane.delete(userId); });
+  return next;
+}
+
+/**
+ * One more try for one row. Resolves with what came of it: an outcome, or
+ * 'skip' (no longer this path's to try), 'nobody' (no page in front, no
+ * phone) or 'busy' (a capture's like was queued; tried again later).
+ * `step`: the timer it came from (null: the page came back / opened).
+ */
+function retryOne(userId, eventId, step = null) {
+  return inLane(userId, () => retryOneNow(userId, eventId, step));
+}
+
+async function retryOneNow(userId, eventId, step) {
+  const row = await prisma.platformTagEvent.findUnique({ where: { id: eventId } });
+  if (!row || row.userId !== userId || !(autoRetryable(row) || (staleMatching(row) && missedAutoLike(row)))) return 'skip';
+  const session = await prisma.captureSession.findUnique({ where: { id: row.sessionId } });
+  if (!sameRun(session, row)) return 'skip';
+  const old = Date.now() - new Date(row.createdAt).getTime() > AUTO_RETRY_WINDOW_MS;
+  const again = (minDelay = 0) => { if (!old) scheduleAutoRetry(userId, eventId, step === null ? 1 : step + 1, minDelay); };
+  // A page in the background counts: a desktop one (minimised, or behind the
+  // emulator) still likes; a frozen phone one just does not take it, and a
+  // try nobody took is not counted.
+  if (!(await apkLikes.executorAvailable(userId, 'auto', session))) return 'nobody';
+  if (!(await waitForIdle(userId))) { again(); return 'busy'; }
+  const taken = await prisma.platformTagEvent.updateMany({
+    where: { id: eventId, OR: takeableWhere() },
+    data: { outcome: 'matching' },
+  });
+  if (!taken.count) return 'skip';
+  // A capture arrived meanwhile: its like goes first; this row waits.
+  if (apkLikes.queued(userId)) {
+    await prisma.platformTagEvent.updateMany({ where: { id: eventId, outcome: 'matching' }, data: { outcome: 'pending' } });
+    again();
+    return 'busy';
+  }
+  const c = row.candidates[0];
+  let data;
+  let counted = true;
+  let slow = false;
+  try {
+    // Not knownUnliked: the executor checks first, so a song liked meanwhile
+    // (by hand, in QQ's app) is reported as already liked, not written again.
+    const res = await apkLikes.like(userId, 'qq', { id: c.externalId, songType: c.songType }, { purpose: 'auto', session });
+    data = {
+      outcome: res.alreadyLiked ? 'already_liked' : 'liked',
+      likedExternalId: String(c.externalId),
+      error: null,
+      candidates: [{ ...c, alreadyLiked: true }],
+    };
+  } catch (err) {
+    const message = err.message || String(err);
+    const permanent = err.code !== 'NO_USER_IP_EXECUTOR' || apkLikes.isPermanentFailure(err);
+    // Nobody took it (unclaimed, gone): not a try at all.
+    counted = permanent || apkLikes.reachedQq(err);
+    const n = (retryCounts.get(eventId) || 0) + (counted ? 1 : 0);
+    if (counted) retryCounts.set(eventId, n);
+    if (retryCounts.size > 10000) retryCounts.clear();
+    slow = apkLikes.saidTooOften(err);
+    data = permanent || n >= AUTO_RETRY_MAX
+      ? { outcome: 'failed', error: permanent ? message : `自动重试 ${n} 次都没点上，请点「重试」` }
+      : { outcome: 'pending', error: message };
+    // The run was stopped or moved on while this try ran: left to the user.
+    if (data.outcome === 'pending') {
+      const now = await prisma.captureSession.findUnique({ where: { id: row.sessionId } }).catch(() => null);
+      if (!sameRun(now, row)) data.error = STOPPED_RETRY_MSG;
+    }
+  }
+  // Only if still ours: 忽略 or 点赞 in the meantime is the user's word.
+  const written = await prisma.platformTagEvent.updateMany({ where: { id: eventId, outcome: 'matching' }, data })
+    .catch(async (err) => {
+      await prisma.platformTagEvent.updateMany({ where: { id: eventId, outcome: 'matching' }, data: { outcome: 'pending' } }).catch(() => {});
+      throw err;
+    });
+  if (data.outcome !== 'pending') retryCounts.delete(eventId);
+  // On QQ either way: the cached lists learn it even if the row was taken
+  // over meanwhile.
+  if (data.outcome === 'liked' || data.outcome === 'already_liked') noteLiked(userId, c.externalId);
+  if (!written.count) return 'skip';
+  const updated = await prisma.platformTagEvent.findUnique({ where: { id: eventId } });
+  if (updated) broadcast(channel(userId), 'platform-tag-event', toPayload(updated));
+  if (data.outcome === 'pending' && data.error !== STOPPED_RETRY_MSG) again(slow ? TOO_OFTEN_MS : 0);
+  return data.outcome;
+}
+
+/**
+ * Try every waiting auto-like of the user's current run now: the page came
+ * to the front, a page or the phone (re)connected. One pass at a time per
+ * user, and once more if asked meanwhile; stops when nobody is there.
+ */
+async function retryPendingFor(userId) {
+  const running = retryingUsers.get(userId);
+  if (running) { running.again = true; return; }
+  const state = { again: false };
+  retryingUsers.set(userId, state);
+  try {
+    do {
+      state.again = false;
+      const live = await prisma.captureSession.findMany({
+        where: { userId, endedAt: null, expiresAt: { gt: new Date() }, target: 'platform', platformRef: { startsWith: 'qq:' } },
+        select: { id: true, platformRef: true },
+      });
+      if (!live.length) return;
+      const rows = await prisma.platformTagEvent.findMany({
+        where: {
+          AND: [
+            { OR: live.map((s) => ({ sessionId: s.id, playlistRef: s.platformRef })) },
+            { OR: takeableWhere() },
+          ],
+          platform: 'qq',
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 200,
+      });
+      for (const row of rows) {
+        if (!missedAutoLike(row)) continue;
+        // Now rather than at its timer.
+        const timer = retryTimers.get(row.id);
+        if (timer) { clearTimeout(timer); retryTimers.delete(row.id); }
+        const r = await retryOne(userId, row.id, null);
+        // Nobody there, or captures coming in: the rest wait for their own
+        // timers (or the next return) rather than queueing up here.
+        if (r === 'nobody' || r === 'busy') return;
+      }
+    } while (state.again);
+  } finally {
+    retryingUsers.delete(userId);
+  }
+}
+
+/**
+ * At startup: rows a restart left 'matching' (a like in flight when the old
+ * process stopped) are nobody's any more -- the backend is one process, so
+ * anything 'matching' from before it started is abandoned. A missed
+ * auto-like goes back to 待确认 (tried again when a page or the phone is
+ * there); a capture not yet matched goes back to 'unread', matched when the
+ * page supplies the list again (it does on reconnecting: the cache is empty).
+ */
+async function recoverAfterRestart(startedAt = new Date()) {
+  const rows = await prisma.platformTagEvent.findMany({
+    where: { outcome: 'matching', updatedAt: { lt: startedAt } },
+    take: 2000,
+  });
+  for (const row of rows) {
+    let data = { outcome: missedAutoLike(row) ? 'pending' : 'unread' };
+    if (data.outcome === 'unread') {
+      // Matched only by its own run, on its own list: a run since stopped or
+      // moved on would leave it waiting for ever -- settled, as settleUnread does.
+      const session = await prisma.captureSession.findUnique({ where: { id: row.sessionId } });
+      if (!sameRun(session, row)) data = { outcome: 'no_match', error: '重启时没来得及匹配' };
+    }
+    await prisma.platformTagEvent.updateMany({
+      where: { id: row.id, outcome: 'matching', updatedAt: { lt: startedAt } },
+      data,
+    });
+  }
+  return rows.length;
 }
 
 /** Ids reach Postgres uuid columns; a malformed one is a 404, not a 500. */
@@ -800,7 +1118,10 @@ async function ownEvent(userId, eventId) {
  */
 async function approve({ userId, eventId, externalId, browserResult = null }) {
   const event = await ownEvent(userId, eventId);
-  if (!['pending', 'ambiguous', 'failed'].includes(event.outcome)) {
+  const busy = () => { const e = new AppError('正在自动点赞这首，请稍等', 409); e.code = 'AUTO_RETRY_IN_FLIGHT'; return e; };
+  // Being tried again on its own right now; it lands in 已点赞 in a moment.
+  if (event.outcome === 'matching' && !staleMatching(event)) throw busy();
+  if (!['pending', 'ambiguous', 'failed'].includes(event.outcome) && !staleMatching(event)) {
     throw new AppError('这条已经处理过了（可能在另一个页面）', 409);
   }
   if (await neteaseOff(event.platform)) {
@@ -849,8 +1170,13 @@ async function approve({ userId, eventId, externalId, browserResult = null }) {
     }
   }
 
-  const updated = await prisma.platformTagEvent.update({
-    where: { id: event.id },
+  // Only as found: a retry that took it meanwhile finishes it instead (the
+  // like is on QQ either way; its own check sees it as already liked).
+  const written = await prisma.platformTagEvent.updateMany({
+    where: {
+      id: event.id,
+      OR: [{ outcome: { in: ['pending', 'ambiguous', 'failed'] } }, takeableWhere()[1]],
+    },
     data: {
       outcome,
       error,
@@ -858,6 +1184,13 @@ async function approve({ userId, eventId, externalId, browserResult = null }) {
       candidates: [{ ...pick, alreadyLiked: outcome !== 'failed' }],
     },
   });
+  if (!written.count) {
+    // Taken meanwhile: by a retry (it finishes it), or by another page.
+    const now = await prisma.platformTagEvent.findUnique({ where: { id: event.id } });
+    if (now && now.outcome === 'matching') throw busy();
+    throw new AppError('这条已经处理过了（可能在另一个页面）', 409);
+  }
+  const updated = await prisma.platformTagEvent.findUnique({ where: { id: event.id } });
   const payload = toPayload(updated);
   broadcast(channel(userId), 'platform-tag-event', payload);
   if (outcome === 'failed') {
@@ -875,10 +1208,19 @@ async function ignore({ userId, eventId }) {
   if (['liked', 'already_liked'].includes(event.outcome)) {
     throw new AppError('This capture has already been liked', 409);
   }
-  const updated = await prisma.platformTagEvent.update({
-    where: { id: event.id },
+  // Not while a try is in flight (it may already be liking it on QQ), and
+  // only as found: a retry taking it at this moment wins, and says so.
+  const busy = () => { const e = new AppError('正在自动点赞这首，请稍等再操作', 409); e.code = 'AUTO_RETRY_IN_FLIGHT'; return e; };
+  if (event.outcome === 'matching' && !staleMatching(event)) throw busy();
+  const changed = await prisma.platformTagEvent.updateMany({
+    where: {
+      id: event.id,
+      OR: [{ outcome: { notIn: ['liked', 'already_liked', 'matching'] } }, takeableWhere()[1]],
+    },
     data: { outcome: 'ignored' },
   });
+  if (!changed.count) throw busy();
+  const updated = await prisma.platformTagEvent.findUnique({ where: { id: event.id } });
   const payload = toPayload(updated);
   broadcast(channel(userId), 'platform-tag-event', payload);
   return payload;
@@ -920,7 +1262,14 @@ async function stop({ userId }) {
 
 module.exports = {
   channel, start, stop, ingest, approve, ignore, getFeed,
-  playlistWithLiked, refresh, noteLiked, noteUnliked, supplySongs, cachedPlaylistWithLiked,
+  playlistWithLiked, refresh, noteLiked, noteUnliked, noteManyUnliked, supplySongs, cachedPlaylistWithLiked,
+  retryPendingFor, recoverAfterRestart,
+  // For tests: shorter (or no) retry timers, and a smaller cap.
+  _setAutoRetry({ delays, max, tooOften } = {}) {
+    if (Array.isArray(delays)) AUTO_RETRY_DELAYS_MS = delays;
+    if (Number.isInteger(max)) AUTO_RETRY_MAX = max;
+    if (Number.isInteger(tooOften)) TOO_OFTEN_MS = tooOften;
+  },
   // For tests: the cache is the one piece of state here.
   dropSongs,
 };

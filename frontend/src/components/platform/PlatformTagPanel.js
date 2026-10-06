@@ -126,6 +126,12 @@ export default function PlatformTagPanel({ sessionId, onLiked }) {
       const res = await fn();
       upsert(res.data);
     } catch (err) {
+      // Being liked by an automatic retry right now: nothing went wrong, the
+      // row moves to 已点赞 on its own in a moment.
+      if (err.response?.data?.error?.code === "AUTO_RETRY_IN_FLIGHT") {
+        platformTaggingAPI.feed(sessionId).then((r) => setEvents(r.data.events || [])).catch(() => {});
+        return;
+      }
       setError(err.response?.data?.error?.message || err.message || "操作失败");
       // A failed approve is written server-side as `failed`; pull it so the
       // row moves to the right column even when the response was the error.
@@ -157,6 +163,10 @@ export default function PlatformTagPanel({ sessionId, onLiked }) {
   // Captured while the server had no copy of the list (a restart): matched as
   // soon as this page has read the list again.
   const unread = events.filter((e) => e.outcome === "unread" || e.outcome === "matching").length;
+  // Exact matches not liked this time (page in the background, phone away, a
+  // timeout): the server offers them again on its own -- to this page when it
+  // is in front, else to the phone -- so nothing is needed here but to say so.
+  const toCatchUp = pending.filter((e) => e.autoRetry).length;
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
@@ -168,6 +178,7 @@ export default function PlatformTagPanel({ sessionId, onLiked }) {
         {failed.length > 0 && <span>失败 <b className="text-red-400">{failed.length}</b></span>}
         {ignored > 0 && <span>已忽略 {ignored}</span>}
         {unread > 0 && <span className="text-yellow-400">处理中 / 等歌单读取 {unread}</span>}
+        {toCatchUp > 0 && <span className="text-yellow-400" title="网页在后台或手机没接时没点上的完全匹配，会自动重试（网页回到前台时立刻补点）">待补点 {toCatchUp}</span>}
       </div>
 
       {error && <div className="mb-3 text-xs text-red-400">{error}</div>}

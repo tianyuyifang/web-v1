@@ -97,8 +97,13 @@ app.use('/api/admin', authMiddleware, requireRole('ADMIN'), requireActiveSession
 // Error handling
 app.use(errorHandler);
 
+const startedAt = new Date();
 const server = app.listen(config.port, () => {
   console.log(`Server running on port ${config.port}`);
+  // QQ打标 rows a restart left mid-like: back where they can be finished.
+  require('./services/platformTagService').recoverAfterRestart(startedAt)
+    .then((n) => { if (n) console.log(`[platform-tag] recovered ${n} row(s) left mid-like by the restart`); })
+    .catch((err) => console.warn('[platform-tag] recovery after restart failed:', err.message));
 });
 
 /**

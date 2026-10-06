@@ -300,6 +300,62 @@ router.post('/user-ip/recorded', ...web, writeLimiter, async (req, res, next) =>
   }
 });
 
+const recordedManyBody = z.object({
+  op: z.literal('unlike'),
+  ids: z.array(z.string().regex(/^\d{1,20}$/)).min(1).max(5000),
+  // Clamped below, not refused: a 5000-song list can take more calls than the
+  // meter needs to know about, and refusing would leave the cache stale.
+  calls: z.number().int().min(0).optional(),
+});
+
+// POST /api/platform-tagging/user-ip/recorded-many { op: 'unlike', ids, calls }
+// — the page unliked a whole list's likes itself (取消全部点赞), in a few calls
+// from the user's own address: one report for all of them, so a 300-song list
+// is not 300 requests against the write limit.
+router.post('/user-ip/recorded-many', ...web, writeLimiter, async (req, res, next) => {
+  try {
+    const parsed = recordedManyBody.safeParse(req.body || {});
+    if (!parsed.success) throw new ValidationError(parsed.error.flatten().fieldErrors);
+    const { ids, calls } = parsed.data;
+    if (calls) meter.recordUserIp('qq', Math.min(calls, 400));
+    tags.noteManyUnliked(req.user.id, ids);
+    return res.json({ ok: true, count: ids.length });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/platform-tagging/user-ip/presence { clientId, hidden } — the page
+// went to the background (or came back). A phone browser freezes a page in
+// the background, so its likes go to the phone first meanwhile. Nothing here
+// reaches QQ.
+// A page flips to the background and back a few times a minute at most.
+const presenceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user.id,
+  message: { error: { message: '操作过于频繁，请稍后再试', status: 429 } },
+});
+
+router.post('/user-ip/presence', ...web, presenceLimiter, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const clientId = typeof b.clientId === 'string' && /^[A-Za-z0-9]{1,32}$/.test(b.clientId) ? b.clientId : null;
+    if (!clientId || typeof b.hidden !== 'boolean') throw new ValidationError({ hidden: ['clientId and hidden are required'] });
+    // The page's own count, so a report overtaken by a later one is ignored.
+    const seq = Number.isSafeInteger(b.seq) && b.seq >= 0 ? b.seq : null;
+    const found = apkLikes.setPageHidden(req.user.id, clientId, b.hidden, seq);
+    // Back in front: what was missed meanwhile is offered again now (to this
+    // page first) -- still done by the page or the phone, never from here.
+    if (!b.hidden) tags.retryPendingFor(req.user.id).catch((err) => console.warn('[platform-tag] retry on return failed:', err.message));
+    return res.json({ ok: found });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // POST /api/platform-tagging/user-ip/claim { cmdId } — a page takes an
 // auto-like the server offered it on its stream (apkLikeService).
 router.post('/user-ip/claim', ...web, async (req, res, next) => {
@@ -534,7 +590,16 @@ router.get('/stream', authMiddleware, requireApproved, requirePlatformTaggingAdd
       clientId ? `platform:${sessionId}:${clientId}${executor ? ':exec' : ''}` : undefined,
     );
     // A page that performs the auto-likes itself (lib/qqTagWrites).
-    if (executor) apkLikes.attachPageExecutor(req.user.id, res);
+    if (executor) {
+      apkLikes.attachPageExecutor(req.user.id, res, clientId);
+      // A page just opened (or reconnected after a restart): it can take
+      // what is waiting. A moment's delay, for the page to finish opening.
+      const userId = req.user.id;
+      const t = setTimeout(() => {
+        tags.retryPendingFor(userId).catch((err) => console.warn('[platform-tag] retry on open failed:', err.message));
+      }, 1000);
+      if (t.unref) t.unref();
+    }
     return undefined;
   } catch (err) {
     return next(err);

@@ -242,6 +242,7 @@ export default function PlatformTaggingPage() {
     let alive = true;
     setSongsLoading(true);
     setSongsError("");
+    setUnlikeNote("");
     setFilter("");
     readSongs(selected, { alive: () => alive })
       .then((data) => { if (alive) setSongs(data.songs || []); })
@@ -288,6 +289,57 @@ export default function PlatformTaggingPage() {
       setSongsError(errMsg(err, song.alreadyLiked ? "取消点赞失败" : "点赞失败"));
     } finally {
       setLikeBusy(null);
+    }
+  };
+
+  // 取消全部点赞: every song of this list out of 我喜欢, from this browser
+  // (never the site's address), 50 a call. QQ only, and never on 我喜欢
+  // itself -- there it would empty the user's whole favourites.
+  const [unliking, setUnliking] = useState(null); // { done, total } while running
+  const [unlikeNote, setUnlikeNote] = useState("");
+  const unlikeAll = async () => {
+    if (!selected || !songs || unliking) return;
+    const ref = selected.ref;
+    const likedNow = songs.filter((s) => s.alreadyLiked).length;
+    const ok = window.confirm(
+      `取消「${selected.name}」里所有歌的点赞？\n\n`
+      + `会把这个歌单里的歌从你 QQ 音乐的「我喜欢」里移除（目前约 ${likedNow} 首），`
+      + "包括你自己原来就点过的，不只是打标点的。\n\n这一步没有撤销。",
+    );
+    if (!ok) return;
+    setUnliking({ done: 0, total: likedNow });
+    setUnlikeNote("");
+    setSongsError("");
+    try {
+      const res = await qqTagWrites.unlikeAll({
+        songs,
+        onProgress: (p) => { if (selectedRefNow.current === ref) setUnliking(p); },
+      });
+      if (res.removed.length) {
+        // Every cached list on the server learns it, in one report.
+        platformTaggingAPI.recordedMany({ op: "unlike", ids: res.removed, calls: res.calls }).catch(() => {});
+      }
+      if (selectedRefNow.current === ref) {
+        const gone = new Set(res.removed);
+        setSongs((prev) => prev && prev.map((s) => (gone.has(String(s.id)) ? { ...s, alreadyLiked: false } : s)));
+        setUnlikeNote(res.remaining.length
+          ? `已取消 ${res.removed.length} 首；${res.remaining.length} 首 QQ 没有取消，可以再点一次`
+          : `已取消 ${res.removed.length} 首的点赞`);
+      }
+    } catch (err) {
+      // What QQ took before it stopped is reported all the same.
+      if (err.removedIds?.length) {
+        platformTaggingAPI.recordedMany({ op: "unlike", ids: err.removedIds, calls: err.calls || 0 }).catch(() => {});
+      }
+      if (selectedRefNow.current === ref) {
+        // Some batches may have gone through: show where the list stands
+        // now, then the error (the refresh clears the message line).
+        setUnliking(null);
+        await refreshList();
+        if (selectedRefNow.current === ref) setSongsError(`${errMsg(err, "取消失败")}（列表已刷新，可以再点一次）`);
+      }
+    } finally {
+      setUnliking(null);
     }
   };
 
@@ -505,7 +557,17 @@ export default function PlatformTaggingPage() {
                           title="在平台 App 里改了收藏后，按这里重新读取这个歌单"
                           className="rounded border border-border px-1.5 py-0.5 text-[0.65rem] text-muted hover:text-theme disabled:opacity-40"
                         >{refreshing ? "刷新中…" : "刷新"}</button>
+                        {selected.ref.startsWith("qq:") && !selected.isLikes && (unliking || songs?.some((s) => s.alreadyLiked)) && (
+                          <button
+                            type="button"
+                            onClick={unlikeAll}
+                            disabled={Boolean(unliking) || refreshing || songsLoading}
+                            title="把这个歌单里的歌从 QQ「我喜欢」里全部移除（包括你原来自己点的）"
+                            className="rounded border border-border px-1.5 py-0.5 text-[0.65rem] text-muted hover:text-red-400 disabled:opacity-40"
+                          >{unliking ? `取消中 ${unliking.done}/${unliking.total}` : "取消全部点赞"}</button>
+                        )}
                       </p>
+                      {unlikeNote && <p className="mt-1 text-xs text-green-400">{unlikeNote}</p>}
                     </div>
                     <div className="flex items-center gap-2">
                       {runningHere ? (

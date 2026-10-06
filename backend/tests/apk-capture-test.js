@@ -244,7 +244,7 @@ function framesOf(r, event) {
         if (!job) return;
         if (phoneMode.report === 'none') return;
         if (phoneMode.report === 'ok') apkLikes.result(platSession, cmdId, { ok: true, alreadyLiked: false, calls: 2 });
-        else apkLikes.result(platSession, cmdId, { ok: false, code: 1000, calls: 1 });
+        else apkLikes.result(platSession, cmdId, { ok: false, code: phoneMode.failCode || 1000, calls: 1 });
       })();
     });
 
@@ -268,14 +268,22 @@ function framesOf(r, event) {
     eq(apkLikes._pending.size, 0, 'no command left in flight');
     stub.liked.clear();
 
-    // claimed, then failure reported → refused, with the phone's failure noted
+    // claimed, then a dead login reported (1000) → refused for good, the user has to rescan
     phoneMode.claim = true;
     phoneMode.report = 'fail';
     calls.length = 0;
     await assert.rejects(
       apkLikes.like(user.id, 'qq', { id: '14', songType: 0 }, { purpose: 'auto', session: platSession }),
-      (e) => noExecutor(e) && e.tried.includes('phone:failed'),
+      (e) => noExecutor(e) && e.tried.includes('phone:refused') && apkLikes.isPermanentFailure(e) && /重新扫码/.test(e.message),
     );
+    // ...and a failure for now (the phone lost its connection) → worth another try
+    phoneMode.failCode = 'network';
+    await assert.rejects(
+      apkLikes.like(user.id, 'qq', { id: '14', songType: 0 }, { purpose: 'auto', session: platSession }),
+      (e) => noExecutor(e) && e.tried.includes('phone:failed') && !apkLikes.isPermanentFailure(e)
+        && e.message.startsWith(apkLikes.NO_EXECUTOR_PREFIX),
+    );
+    phoneMode.failCode = null;
     eq(calls, [], 'phone failure: not the server');
     eq(phoneMode.lastJob.precheck, true, 'a like the caller has not checked is pre-checked by the phone');
     stub.liked.clear();

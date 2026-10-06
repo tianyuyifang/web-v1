@@ -176,6 +176,30 @@ async function perform({ op, id, songType = 0, precheck = false, deadline = Infi
   }
 }
 
+/**
+ * What is worth one more try at once when the user pressed something: QQ did
+ * not answer, or the read-back did not show the change yet. Not a dead key or
+ * a QQ refusal (those have their own handling and message). Automatic likes
+ * are not retried here -- the server offers those again itself.
+ */
+const TRANSIENT = new Set(["timeout", "script-error", "bad-response", "partial", "not-applied"]);
+async function onceMore(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!TRANSIENT.has(err.code)) throw err;
+    const spent = err.calls || 0;
+    await sleep(1500);
+    try {
+      const res = await fn();
+      return { ...res, calls: (res.calls || 0) + spent };
+    } catch (err2) {
+      err2.calls = (err2.calls || 0) + spent;
+      throw err2;
+    }
+  }
+}
+
 // One write at a time on this page.
 let chain = Promise.resolve();
 function serial(fn) {
@@ -201,7 +225,7 @@ export function manual({ op, id, songType = 0 }) {
   const entry = { op };
   entry.promise = serial(async () => {
     waitingManual.delete(key);
-    const res = await perform({ op: entry.op, id: key, songType, precheck: entry.op === "like" });
+    const res = await onceMore(() => perform({ op: entry.op, id: key, songType, precheck: entry.op === "like" }));
     // Every cached list on the server learns it (and the user-IP count).
     platformTaggingAPI.recorded({ op: entry.op, id: key, calls: res.calls }).catch(() => {});
     return { ...res, op: entry.op };
@@ -210,15 +234,157 @@ export function manual({ op, id, songType = 0 }) {
   return entry.promise;
 }
 
+// --- 取消全部点赞: a whole list's likes, a batch per call ---------------------------
+
+// While it runs (it can take a minute) this page takes no automatic likes:
+// one would wait behind it past its window. They go to the phone, or are
+// tried again later.
+let bulkRunning = false;
+
+// One DelSonglist carries many songs: 5, 20 and 50 (plus 3 never liked, which
+// QQ ignores) each went through in one call, every one confirmed by reading
+// back (小芳, 2026-10-05). 50 a call keeps the URL near 3.4 KB.
+const BATCH = 50;
+const BATCH_GAP_MS = 1500;
+
+/** Liked state of many songs, 50 per read; retries once on a dead key. Map id -> bool. */
+async function likedMany(ctx, ids, count) {
+  const m = await loadEngine();
+  const out = new Map();
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const slice = ids.slice(i, i + BATCH);
+    const ask = () => {
+      count.calls += 1;
+      return m.readQq(ctx.s, {
+        module: "music.musicasset.SongFavRead",
+        method: "IsSongFanById",
+        param: { v_songId: slice.map(Number) },
+      });
+    };
+    let r;
+    try { r = await ask(); } catch (err) { throw worded(err); }
+    if (r.code === 1000 && !ctx.renewed) {
+      ctx.renewed = true;
+      const fresh = await freshAfter1000(ctx.s);
+      if (fresh) {
+        ctx.s = fresh;
+        try { r = await ask(); } catch (err) { throw worded(err); }
+      }
+    }
+    if (r.code !== 0) {
+      if (r.code === 1000) reads.dropSession();
+      throw coded(r.code);
+    }
+    const fan = (r.data && r.data.m_fan) || {};
+    for (const id of slice) {
+      if (!(String(id) in fan)) throw coded("partial");
+      out.set(String(id), Boolean(fan[String(id)]));
+    }
+  }
+  return out;
+}
+
+/** One write naming many songs, with the same two retries as writeOnce. */
+async function writeMany(ctx, method, songs, count) {
+  const m = await loadEngine();
+  const send = () => {
+    count.calls += 1;
+    return m.writeQq(ctx.s, {
+      module: "music.musicasset.PlaylistDetailWrite",
+      method,
+      param: { dirId: LIKES_DIR_ID, tid: 0, bFmtUtf8: true, v_songInfo: songs.map((s) => ({ songId: Number(s.id), songType: s.songType })) },
+    }, WRITE_TIMEOUT_MS);
+  };
+  let r;
+  try { r = await send(); } catch (err) { throw worded(err); }
+  if (r.code === 1000 && !ctx.renewed) {
+    ctx.renewed = true;
+    const fresh = await freshAfter1000(ctx.s);
+    if (fresh) {
+      ctx.s = fresh;
+      try { r = await send(); } catch (err) { throw worded(err); }
+    }
+  }
+  if (r.code === 2001) {
+    await sleep(RETRY_2001_MS);
+    try { r = await send(); } catch (err) { throw worded(err); }
+  }
+  return r;
+}
+
+/**
+ * Take every song of a list out of 我喜欢 -- including ones the user had liked
+ * before QQ打标 (the page says so before asking). Reads the liked state first,
+ * so only songs liked now are named; removes them 50 a call; reads them all
+ * back. A song still liked then gets one more try with its own type (what the
+ * single unlike does). Resolves { removed: [ids], remaining: [ids], calls };
+ * rejects with an error in the user's words carrying `calls` -- some batches
+ * may have gone through, so the page reads the list again to show where it
+ * stands. `onProgress({ done, total })` after each batch.
+ */
+export function unlikeAll({ songs, onProgress }) {
+  return serial(async () => {
+    const count = { calls: 0 };
+    const removed = [];
+    // Batches QQ said yes to, for the report when a later one fails.
+    const accepted = [];
+    bulkRunning = true;
+    try {
+      const ctx = { s: await reads.readSession(), renewed: false };
+      const typeOf = new Map(songs.map((s) => [String(s.id), Number(s.songType) || 0]));
+      const ids = [...typeOf.keys()];
+      const before = await likedMany(ctx, ids, count);
+      const targets = ids.filter((id) => before.get(id));
+      if (onProgress) onProgress({ done: 0, total: targets.length });
+      if (!targets.length) return { removed: [], remaining: [], calls: count.calls };
+      // Type 0 is what QQ takes for a delete (the single unlike tries it first).
+      for (let i = 0; i < targets.length; i += BATCH) {
+        if (i) await sleep(BATCH_GAP_MS);
+        const chunk = targets.slice(i, i + BATCH);
+        const r = await writeMany(ctx, "DelSonglist", chunk.map((id) => ({ id, songType: 0 })), count);
+        if (r.code !== 0) throw coded(r.code);
+        accepted.push(...chunk);
+        if (onProgress) onProgress({ done: Math.min(i + BATCH, targets.length), total: targets.length });
+      }
+      await sleep(BATCH_GAP_MS);
+      let after = await likedMany(ctx, targets, count);
+      let left = targets.filter((id) => after.get(id));
+      // Still liked: once more, each with its own type, as the single unlike does.
+      const retry = left.filter((id) => typeOf.get(id) !== 0);
+      if (retry.length) {
+        for (let i = 0; i < retry.length; i += BATCH) {
+          await sleep(BATCH_GAP_MS);
+          await writeMany(ctx, "DelSonglist", retry.slice(i, i + BATCH).map((id) => ({ id, songType: typeOf.get(id) })), count);
+        }
+        await sleep(BATCH_GAP_MS);
+        after = await likedMany(ctx, left, count);
+        left = left.filter((id) => after.get(id));
+      }
+      const gone = new Set(left);
+      targets.forEach((id) => { if (!gone.has(id)) removed.push(id); });
+      return { removed, remaining: left, calls: count.calls };
+    } catch (err) {
+      err.calls = count.calls;
+      // What QQ accepted before it stopped: reported, so the site's copies of
+      // the lists do not go on showing those songs as liked.
+      err.removedIds = accepted;
+      throw err;
+    } finally {
+      bulkRunning = false;
+    }
+  });
+}
+
 /** The 待确认 button: like one candidate. Resolves { ok, alreadyLiked }, never rejects. */
 export function approveLike({ id, songType = 0 }) {
-  return serial(() => perform({ op: "like", id: String(id), songType, precheck: true }))
+  return serial(() => onceMore(() => perform({ op: "like", id: String(id), songType, precheck: true })))
     .then((res) => ({ ok: true, alreadyLiked: res.alreadyLiked }))
-    .catch((err) => ({ ok: false, alreadyLiked: false, message: err.message || "点赞失败" }));
+    .catch((err) => ({ ok: false, alreadyLiked: false, message: err.message || "点赞失败", code: err.code ?? null }));
 }
 
 /** An automatic like the server offered this page. */
 async function take(cmdId) {
+  if (bulkRunning) return; // not taken: offered to the phone / tried again later
   let job;
   try {
     job = (await platformTaggingAPI.claimLike(cmdId)).data;
@@ -251,15 +417,30 @@ async function take(cmdId) {
  * needs the list read again (a restart lost it). Returns the stop function.
  * `onNeedList({ playlistRef })`; `onOpen()` on every (re)connect.
  */
+let presenceSeq = 0;
 export function startExecutor(sessionId, { onNeedList, onOpen } = {}) {
   let es = null;
   let stopped = false;
   let retryMs = 2000;
   let timer = null;
+  // In the background (another app in front, the screen off), a phone browser
+  // freezes this page within seconds: the server is told, and offers this
+  // run's likes to the phone first meanwhile. Nothing here talks to QQ.
+  const hiddenNow = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+  // Numbered, so the server can tell a late report from the latest one.
+  const tell = () => { presenceSeq += 1; platformTaggingAPI.presence(hiddenNow(), presenceSeq).catch(() => {}); };
+  const onVisibility = () => { if (!stopped) tell(); };
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility);
   const open = () => {
     if (stopped) return;
     es = new EventSource(getPlatformTagSSEUrl(sessionId, { exec: true }));
-    es.addEventListener("open", () => { retryMs = 2000; if (onOpen) onOpen(); });
+    es.addEventListener("open", () => {
+      retryMs = 2000;
+      // A (re)opened stream counts as in front on the server; said otherwise
+      // when it is not.
+      if (hiddenNow()) tell();
+      if (onOpen) onOpen();
+    });
     es.addEventListener("qq-cmd", (e) => {
       let d = null;
       try { d = JSON.parse(e.data); } catch { /* malformed */ }
@@ -285,6 +466,7 @@ export function startExecutor(sessionId, { onNeedList, onOpen } = {}) {
   return () => {
     stopped = true;
     clearTimeout(timer);
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
     if (es) es.close();
   };
 }

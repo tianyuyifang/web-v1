@@ -369,6 +369,20 @@ export const platformTaggingAPI = {
   config: () => api.get("/platform-tagging/config"),
   // The page liked/unliked a QQ song itself; the server's cached lists learn it.
   recorded: (body) => api.post("/platform-tagging/user-ip/recorded", body),
+  // The page unliked a whole list's likes itself (取消全部点赞): one report.
+  recordedMany: (body) => api.post("/platform-tagging/user-ip/recorded-many", body, { timeout: 15000 }),
+  // This page went to the background / came back (its executor stream is
+  // keyed by the page's stream id). keepalive: still sent as the page is
+  // being hidden or frozen, which is exactly when it matters.
+  presence: (hidden, seq) => {
+    const token = getToken();
+    return fetch("/api/platform-tagging/user-ip/presence", {
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ clientId: pageStreamId, hidden: Boolean(hidden), seq }),
+    });
+  },
   // An automatic like offered to this page: take it, then say how it went.
   claimLike: (cmdId) => api.post("/platform-tagging/user-ip/claim", { cmdId }, { timeout: 8000 }),
   likeResult: (body) => api.post("/platform-tagging/user-ip/result", body, { timeout: 8000 }),

@@ -85,7 +85,7 @@ const qqCalls = () => calls.filter((c) => (c[1] && String(c[1]).startsWith('qq')
 const song = (id, title = `t${id}`) => ({ id, songType: 0, mid: null, title, artist: 'a', durationSec: null, vipOnly: false });
 
 /** A QQ打标 page with its executor stream open, answering offers the way lib/qqTagWrites does. */
-function fakePage(userId, { ok = true, alreadyLiked = false } = {}) {
+function fakePage(userId, { ok = true, alreadyLiked = false, code = 2001 } = {}) {
   const res = new EventEmitter();
   apkLikes.attachPageExecutor(userId, res);
   const done = [];
@@ -95,7 +95,7 @@ function fakePage(userId, { ok = true, alreadyLiked = false } = {}) {
       const job = await apkLikes.claimPage(userId, cmd.id);
       if (!job) continue;
       done.push([job.op, job.id]);
-      apkLikes.resultPage(userId, cmd.id, ok ? { ok: true, alreadyLiked, calls: 3 } : { ok: false, code: 2001, calls: 2 });
+      apkLikes.resultPage(userId, cmd.id, ok ? { ok: true, alreadyLiked, calls: 3 } : { ok: false, code, calls: 2 });
     }
   }, 20);
   return { done, close: () => { clearInterval(timer); res.emit('close'); } };
@@ -107,6 +107,9 @@ function fakePage(userId, { ok = true, alreadyLiked = false } = {}) {
   const savedNetease = await prisma.setting.findUnique({ where: { key: settings.NETEASE_TAGGING_KEY } });
   await settings.setNeteaseTagging({ enabled: true });
 
+  // The automatic retries run on real timers; this test checks single passes
+  // (qq-tag-background-test covers the retries).
+  tags._setAutoRetry({ delays: [] });
   const { session } = await captureService.connect({ userId: user.id, label: 'platform-tag-test' });
   const fresh = () => prisma.captureSession.findUnique({ where: { id: session.id } });
   try {
@@ -295,14 +298,21 @@ function fakePage(userId, { ok = true, alreadyLiked = false } = {}) {
     assert.strictEqual(r.outcome, 'already_liked', 'known from the supplied liked state');
     assert.strictEqual(page.done.length, 1, 'no offer for a song already liked');
 
-    // --- a page whose write QQ refuses: failed, not passed to the server --------
+    // --- a page whose write fails for now (QQ's 2001): waits, to be tried again;
+    // one whose login is dead (1000): failed, the user has to act. Never the server.
     page.close();
-    const refusing = fakePage(user.id, { ok: false });
-    tags.supplySongs(user.id, 'qq:124', { title: 'QQ 歌单 2', songs: [song('31', '晴天')], likedIds: [] });
+    const refusing = fakePage(user.id, { ok: false, code: 2001 });
+    tags.supplySongs(user.id, 'qq:124', { title: 'QQ 歌单 2', songs: [song('31', '晴天'), song('32', '稻香')], likedIds: [] });
     await prisma.captureSession.update({ where: { id: session.id }, data: { platformRef: 'qq:124' } });
     r = await tags.ingest({ session: await fresh(), rawText: '晴天' });
-    assert.strictEqual(r.outcome, 'failed', 'QQ refused the page: failed, retry by hand');
+    assert.strictEqual(r.outcome, 'pending', 'QQ 2001 on the page: waits for another try');
+    assert.strictEqual(r.autoRetry, true, 'and is marked to be tried again');
     refusing.close();
+    const deadLogin = fakePage(user.id, { ok: false, code: 1000 });
+    r = await tags.ingest({ session: await fresh(), rawText: '稻香' });
+    assert.strictEqual(r.outcome, 'failed', 'dead login (1000): failed, not retried');
+    assert.match(r.error || '', /重新扫码/);
+    deadLogin.close();
     await prisma.captureSession.update({ where: { id: session.id }, data: { platformRef: 'qq:123' } });
 
     // --- approve a QQ row: written by the page, only reported here ------------

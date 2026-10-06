@@ -53,6 +53,8 @@ app.use((req, res, next) => (
 // Public routes (no auth required)
 // Rate limiting is applied per-endpoint inside auth.js (only on login + register)
 app.use('/api/auth', require('./routes/auth'));
+// What the Content-Security-Policy would block, reported by browsers (no auth).
+app.use('/api/csp-report', require('./routes/cspReport'));
 
 // Protected routes (auth + approved members + active session)
 app.use('/api/songs',     authMiddleware, requireApproved, requireActiveSession, require('./routes/songs'));

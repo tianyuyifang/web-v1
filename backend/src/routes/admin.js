@@ -159,6 +159,13 @@ router.put('/tiers', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/csp-reports — what the Content-Security-Policy (sent as
+// Report-Only) would have blocked, counted since the last restart.
+router.get('/csp-reports', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(require('../services/cspReports').snapshot());
+});
+
 // GET /api/admin/outbound — how much this server is calling the music
 // platforms: this minute, last hour, today, yesterday, by kind.
 router.get('/outbound', (req, res) => {

@@ -154,6 +154,10 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
         session: req.captureSession,
         rawText: req.body && req.body.text,
         singer,
+        // For the panel's red/blue columns, as on the playlist page; optional
+        // (clients before v3 / v9 send neither).
+        side: req.body && req.body.side,
+        row: req.body && req.body.row,
       }));
     }
 

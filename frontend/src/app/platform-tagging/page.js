@@ -22,6 +22,10 @@ import useCaptureStore from "@/store/captureStore";
 import { musicSourcesAPI, platformTaggingAPI } from "@/lib/api";
 import PlatformTagPanel from "@/components/platform/PlatformTagPanel";
 import PlatformLikeButton from "@/components/platform/PlatformLikeButton";
+// The site's own confirm dialog, as the playlist page's 取消全部喜欢 uses it.
+// A plain import: a second lazy importer would make the bundler split it into
+// a chunk of its own and change the other pages' builds.
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import * as qqTagReads from "@/lib/qqTagReads";
 import * as qqTagWrites from "@/lib/qqTagWrites";
 
@@ -75,6 +79,29 @@ function fuzzyRank(rows, textOf, query, limit = 20) {
 }
 
 const PLATFORM_LABEL = { qq: "QQ 音乐", netease: "网易云" };
+
+
+/**
+ * Where the current run began (开始打标, by the server's clock), so the panel
+ * shows this run only -- a new playlist, or this one again after 停止, starts
+ * empty, as on the playlist page. Kept across a reload; another browser has no
+ * record and shows the whole connection's captures of the list instead.
+ */
+const RUN_KEY = "qqtag-run";
+function rememberRun(run) {
+  try { localStorage.setItem(RUN_KEY, JSON.stringify(run)); } catch { /* private mode */ }
+}
+function recallRun() {
+  try {
+    const r = JSON.parse(localStorage.getItem(RUN_KEY) || "null");
+    return r && r.sessionId && r.ref && r.startedAt ? r : null;
+  } catch {
+    return null;
+  }
+}
+function forgetRun() {
+  try { localStorage.removeItem(RUN_KEY); } catch { /* nothing to do */ }
+}
 
 /**
  * QQ lists are read from this browser only (lib/qqTagReads): QQ打标 never
@@ -133,7 +160,6 @@ export default function PlatformTaggingPage() {
 
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState("");
-  const [copied, setCopied] = useState(false);
   const restoredRef = useRef(false);
 
   // Which platforms this account has connected (and which this page offers).
@@ -168,6 +194,26 @@ export default function PlatformTaggingPage() {
 
   const aimedRef = connection?.target === "platform" ? connection.platformRef : null;
   const runningHere = Boolean(aimedRef && selected && aimedRef === selected.ref);
+
+  // This run's start, for the panel (see RUN_KEY). Only while it is still the
+  // run the connection is on: same connection, same list.
+  const [run, setRun] = useState(() => (typeof window === "undefined" ? null : recallRun()));
+  const runStartedAt = run && connection?.sessionId === run.sessionId && aimedRef === run.ref
+    ? run.startedAt : null;
+  // Taken by the playlist page or 唱卡, or a new connection: that run is over
+  // (the playlist page forgets its run the same way).
+  // Judged only on a connection heard after the run began: the one in hand
+  // when 开始 records the run is from before it was aimed.
+  const connLoaded = useCaptureStore((st) => st.loaded);
+  const seenWhenRunSet = useRef(null);
+  useEffect(() => { seenWhenRunSet.current = connection; }, [run]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!run || !connLoaded || connection === seenWhenRunSet.current) return;
+    if (!connection || connection.sessionId !== run.sessionId || connection.target !== "platform") {
+      forgetRun();
+      setRun(null);
+    }
+  }, [run, connLoaded, connection]);
 
   // While a QQ run is live, this page performs its automatic likes (the server
   // offers them here first, then to the phone -- never the site's address),
@@ -297,16 +343,12 @@ export default function PlatformTaggingPage() {
   // itself -- there it would empty the user's whole favourites.
   const [unliking, setUnliking] = useState(null); // { done, total } while running
   const [unlikeNote, setUnlikeNote] = useState("");
+  // The same confirm dialog as the playlist page's 取消全部喜欢.
+  const [showUnlikeAllConfirm, setShowUnlikeAllConfirm] = useState(false);
   const unlikeAll = async () => {
     if (!selected || !songs || unliking) return;
     const ref = selected.ref;
     const likedNow = songs.filter((s) => s.alreadyLiked).length;
-    const ok = window.confirm(
-      `取消「${selected.name}」里所有歌的点赞？\n\n`
-      + `会把这个歌单里的歌从你 QQ 音乐的「我喜欢」里移除（目前约 ${likedNow} 首），`
-      + "包括你自己原来就点过的，不只是打标点的。\n\n这一步没有撤销。",
-    );
-    if (!ok) return;
     setUnliking({ done: 0, total: likedNow });
     setUnlikeNote("");
     setSongsError("");
@@ -358,16 +400,17 @@ export default function PlatformTaggingPage() {
       }
       // Through this page's own route, so the gate is this feature's add-on.
       if (!current) await platformTaggingAPI.connect({});
+      let started;
       try {
         try {
-          await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
+          started = await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
         } catch (err) {
           // The server holds no copy of this QQ list (it never reads QQ
           // itself): read it here again, hand it over, and start once more.
           if (err.response?.data?.error?.code !== "QQ_LIST_NOT_LOADED") throw err;
           const data = await readSongs(selected, { refresh: true });
           if (selectedRefNow.current === selected.ref) setSongs(data.songs || []);
-          await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
+          started = await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
         }
       } catch (err) {
         // The connection the server knew about has since expired or been
@@ -375,7 +418,14 @@ export default function PlatformTaggingPage() {
         // playlist page's store heals the same case.
         if (err.response?.status !== 404) throw err;
         await platformTaggingAPI.connect({});
-        await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
+        started = await platformTaggingAPI.start(selected.ref, selected.dirId, selected.isLikes);
+      }
+      // A new run: the panel starts empty from here.
+      const s = started?.data?.session;
+      if (s?.id && started.data.startedAt) {
+        const r = { sessionId: s.id, ref: selected.ref, startedAt: started.data.startedAt };
+        rememberRun(r);
+        setRun(r);
       }
       await refreshConnection();
     } catch (err) {
@@ -389,19 +439,13 @@ export default function PlatformTaggingPage() {
   const stop = async () => {
     try {
       await platformTaggingAPI.stop();
+      forgetRun();
+      setRun(null);
     } catch (err) {
+      // Still running on the server: the panel stays, with the run it shows.
       setStartError(errMsg(err, "停止失败"));
     }
     await refreshConnection();
-  };
-
-  const copyCode = async () => {
-    if (!connection?.pairCode) return;
-    try {
-      await navigator.clipboard.writeText(connection.pairCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* on screen anyway */ }
   };
 
   const visibleSongs = useMemo(() => {
@@ -560,7 +604,7 @@ export default function PlatformTaggingPage() {
                         {selected.ref.startsWith("qq:") && !selected.isLikes && (unliking || songs?.some((s) => s.alreadyLiked)) && (
                           <button
                             type="button"
-                            onClick={unlikeAll}
+                            onClick={() => setShowUnlikeAllConfirm(true)}
                             disabled={Boolean(unliking) || refreshing || songsLoading}
                             title="把这个歌单里的歌从 QQ「我喜欢」里全部移除（包括你原来自己点的）"
                             className="rounded border border-border px-1.5 py-0.5 text-[0.65rem] text-muted hover:text-red-400 disabled:opacity-40"
@@ -569,54 +613,14 @@ export default function PlatformTaggingPage() {
                       </p>
                       {unlikeNote && <p className="mt-1 text-xs text-green-400">{unlikeNote}</p>}
                     </div>
-                    <div className="flex items-center gap-2">
-                      {runningHere ? (
-                        <>
-                          <span className="flex items-center gap-1.5 text-xs text-green-400">
-                            <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-                            打标中
-                          </span>
-                          <button
-                            type="button"
-                            onClick={stop}
-                            className="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-red-400"
-                          >停止</button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={start}
-                          disabled={starting || songsLoading || !songs?.length}
-                          className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-                        >{starting ? "开始中…" : "开始打标"}</button>
-                      )}
-                    </div>
                   </div>
-                  {startError && <p className="mt-2 text-xs text-red-400">{startError}</p>}
                   {aimedRef && !runningHere && (
                     <p className="mt-2 text-xs text-muted">
-                      连接目前投递到另一个歌单；点「开始打标」会切到这个。
+                      连接目前投递到另一个歌单；点右下角「自动打标」会切到这个。
                     </p>
                   )}
 
-                  {/* Pairing: only while the client has not connected yet. */}
-                  {runningHere && connection?.pairCode && connection.client !== "connected" && (
-                    <div className="mt-3 rounded-lg bg-black/20 px-3 py-2">
-                      <div className="text-xs text-muted">在自动打标客户端输入配对码</div>
-                      <button type="button" onClick={copyCode} title="点击复制" className="font-mono text-2xl tracking-widest hover:text-accent">
-                        {connection.pairCode}
-                      </button>
-                      {copied && <span className="ml-2 text-xs text-accent">已复制</span>}
-                    </div>
-                  )}
-                  {runningHere && connection?.client === "stale" && (
-                    <p className="mt-2 text-xs text-yellow-400">客户端没有响应，看看模拟器里的服务还在不在。</p>
-                  )}
                 </div>
-
-                {runningHere && connection?.sessionId && (
-                  <PlatformTagPanel sessionId={connection.sessionId} onLiked={markLiked} />
-                )}
 
                 <div className="rounded-xl border border-border bg-surface">
                   <div className="flex items-center gap-2 border-b border-border px-3 py-2">
@@ -649,6 +653,35 @@ export default function PlatformTaggingPage() {
             )}
           </section>
         </div>
+      )}
+      {/* The run's floating panel (or the 自动打标 pill), as on the playlist
+          page. Only on a QQ / NetEase tab with an account connected. */}
+      {platform && sources?.[platform]?.connected && (
+        <PlatformTagPanel
+          running={runningHere}
+          sessionId={connection?.sessionId || null}
+          playlistRef={aimedRef}
+          runStartedAt={runStartedAt}
+          connection={connection}
+          onLiked={markLiked}
+          canStart={Boolean(selected && songs?.length && !songsLoading)}
+          starting={starting}
+          startError={startError}
+          onStart={start}
+          onStop={stop}
+        />
+      )}
+
+      {showUnlikeAllConfirm && (
+        <ConfirmDialog
+          title="取消全部点赞"
+          message="确定要取消该歌单中所有歌曲的点赞吗？"
+          confirmLabel="确认"
+          cancelLabel="取消"
+          danger
+          onConfirm={() => { setShowUnlikeAllConfirm(false); unlikeAll(); }}
+          onCancel={() => setShowUnlikeAllConfirm(false)}
+        />
       )}
     </main>
   );

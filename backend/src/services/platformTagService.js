@@ -484,9 +484,14 @@ function toCandidate(c, song, alreadyLiked) {
  *   failed         the like was attempted and the platform refused
  *   duplicate      (not stored) this run already saw this title for this list
  */
-async function ingest({ session, rawText, singer = null }) {
+async function ingest({ session, rawText, singer = null, side = null, row = null }) {
   const text = String(rawText == null ? '' : rawText).slice(0, MAX_TEXT_LENGTH).trim();
   if (!text) throw new ValidationError({ text: ['Text is required'] });
+  // Where the title sat on the game's screen (2v2: which team's list, which
+  // row), for the panel's red/blue columns. Passed through on this capture's
+  // own broadcast only and never stored, as the playlist page does it
+  // (captureService.ingestText): it means nothing once the round is over.
+  const place = placeOf(side, row);
 
   // Re-read: the target can move between token resolution and here, and the
   // copy the route holds may name a destination the user has already left.
@@ -514,7 +519,7 @@ async function ingest({ session, rawText, singer = null }) {
   if (await neteaseOff(platform)) {
     const held = await claimRow({ fresh, userId, platform, ref, text, outcome: 'pending', error: '网易云打标暂不提供' });
     if (!held.row) return held.payload;
-    const payload = toPayload(held.row);
+    const payload = { ...toPayload(held.row), ...place };
     broadcast(channel(userId), 'platform-tag-event', payload);
     return payload;
   }
@@ -524,7 +529,7 @@ async function ingest({ session, rawText, singer = null }) {
   try {
     ({ songs, liked } = await songsFor(userId, ref));
   } catch (err) {
-    if (err.code === 'QQ_LIST_NOT_LOADED') return keepUnread({ fresh, userId, platform, ref, text, singer });
+    if (err.code === 'QQ_LIST_NOT_LOADED') return keepUnread({ fresh, userId, platform, ref, text, singer, place });
     // Told to the page (which can say "reconnect your account") and refused
     // to the client as a temporary failure, so it keeps the title and tries
     // again on its next sweep -- against the cached failure, not the platform.
@@ -567,10 +572,19 @@ async function ingest({ session, rawText, singer = null }) {
     throw err;
   }
 
-  const payload = toPayload(event);
+  const payload = { ...toPayload(event), ...place };
   broadcast(channel(userId), 'platform-tag-event', payload);
   if (payload.autoRetry) scheduleAutoRetry(userId, event.id, 0, slowRetry ? TOO_OFTEN_MS : 0);
   return payload;
+}
+
+/** side / row as the panel reads them, or nothing for a client that sent neither. */
+const MAX_ROW_INDEX = 200;
+function placeOf(side, row) {
+  const place = {};
+  if (side === 'red' || side === 'blue') place.side = side;
+  if (Number.isInteger(row) && row >= 0 && row < MAX_ROW_INDEX) place.row = row;
+  return place;
 }
 
 /**
@@ -604,7 +618,7 @@ async function claimRow({ fresh, userId, platform, ref, text, outcome, error = n
 const NEED_LIST_EVERY_MS = 10 * 1000;
 const needListAt = new Map(); // `${userId}|${ref}` -> last time the page was asked
 
-async function keepUnread({ fresh, userId, platform, ref, text, singer = null }) {
+async function keepUnread({ fresh, userId, platform, ref, text, singer = null, place = {} }) {
   // The 歌P singer read with the title rides along, for the rematch's alias step.
   const held = await claimRow({
     fresh, userId, platform, ref, text, outcome: 'unread', candidates: singer ? [{ singer }] : undefined,
@@ -619,7 +633,7 @@ async function keepUnread({ fresh, userId, platform, ref, text, singer = null })
     if (needListAt.size > 5000) needListAt.clear();
     broadcast(channel(userId), 'platform-tag-need-list', { sessionId: fresh.id, playlistRef: ref });
   }
-  const payload = toPayload(held.row);
+  const payload = { ...toPayload(held.row), ...place };
   broadcast(channel(userId), 'platform-tag-event', payload);
   // The page may have supplied the list while this row was being written:
   // then nothing else would ever match it.
@@ -1191,7 +1205,9 @@ async function approve({ userId, eventId, externalId, browserResult = null }) {
     throw new AppError('这条已经处理过了（可能在另一个页面）', 409);
   }
   const updated = await prisma.platformTagEvent.findUnique({ where: { id: event.id } });
-  const payload = toPayload(updated);
+  // byHand: confirmed by the user -- shown amber in every open tab, as the
+  // playlist page shows an approval made elsewhere. Only rides the broadcast.
+  const payload = { ...toPayload(updated), byHand: true };
   broadcast(channel(userId), 'platform-tag-event', payload);
   if (outcome === 'failed') {
     // The platform's own status and code travel on, so the page can tell

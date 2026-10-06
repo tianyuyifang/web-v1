@@ -97,6 +97,20 @@ function StartPill({ drag, canStart, busy, error, onStart }) {
 
 function RunPanel({ drag, sessionId, playlistRef, runStartedAt, connection, onLiked, onStop }) {
   const [rows, setRows] = useState([]);
+  // The run's start as the server knows it: for a page without its own
+  // record, and for one whose record is older (a new run started from another
+  // browser). The later of the two is this run.
+  const [serverRunStart, setServerRunStart] = useState(null);
+  const runFrom = later(runStartedAt, serverRunStart);
+  // Read inside callbacks (upsert) without re-creating them.
+  const runRef = useRef({ playlistRef, runFrom });
+  runRef.current = { playlistRef, runFrom };
+  /** Is this row this run's -- the only ones whose likes light the list's hearts? */
+  const inRun = useCallback((r) => {
+    const { playlistRef: ref, runFrom: from } = runRef.current;
+    if (r.playlistRef !== ref) return false;
+    return !from || new Date(r.createdAt).getTime() >= new Date(from).getTime();
+  }, []);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -124,8 +138,9 @@ function RunPanel({ drag, sessionId, playlistRef, runStartedAt, connection, onLi
       const rest = prev.filter((x) => x.eventId !== r.eventId);
       return [merged, ...rest].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     });
-    if (LIKED.has(r.outcome) && r.likedExternalId && onLiked) onLiked(r.likedExternalId);
-  }, [onLiked]);
+    // Only this run's: an earlier run's like may have been undone since.
+    if (LIKED.has(r.outcome) && r.likedExternalId && onLiked && inRun(r)) onLiked(r.likedExternalId);
+  }, [onLiked, inRun]);
 
   // The stream first, then the snapshot -- taken once the stream is open, so
   // nothing can fall between them. Rows first seen in a snapshot are
@@ -139,6 +154,7 @@ function RunPanel({ drag, sessionId, playlistRef, runStartedAt, connection, onLi
         .then((res) => {
           if (!alive) return;
           const got = res.data.events || [];
+          if (res.data.runStartedAt) setServerRunStart((cur) => later(cur, res.data.runStartedAt));
           setRows((prev) => {
             const byId = new Map(prev.map((r) => [r.eventId, r]));
             for (const r of got) {
@@ -149,7 +165,14 @@ function RunPanel({ drag, sessionId, playlistRef, runStartedAt, connection, onLi
             }
             return [...byId.values()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
           });
+          // Hearts in the list: only this run's likes. An earlier run's may
+          // have been undone since (取消全部点赞), and lighting them would show
+          // as liked what QQ no longer has.
+          const from = later(runStartedAt, res.data.runStartedAt);
+          const since = from ? new Date(from).getTime() : null;
           got.forEach((r) => {
+            if (r.playlistRef !== playlistRef) return;
+            if (since != null && new Date(r.createdAt).getTime() < since) return;
             if (LIKED.has(r.outcome) && r.likedExternalId && onLiked) onLiked(r.likedExternalId);
           });
         })
@@ -179,6 +202,14 @@ function RunPanel({ drag, sessionId, playlistRef, runStartedAt, connection, onLi
           setError(data.message || "读取歌单失败");
         } catch { /* malformed */ }
       });
+      // A new run began (perhaps from another browser): from then on.
+      target.addEventListener("platform-tag-run", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.sessionId !== sessionId || data.playlistRef !== playlistRef || !data.runStartedAt) return;
+          setServerRunStart((cur) => later(cur, data.runStartedAt));
+        } catch { /* malformed */ }
+      });
       target.addEventListener("platform-tag-event", (e) => {
         try {
           const data = JSON.parse(e.data);
@@ -195,10 +226,10 @@ function RunPanel({ drag, sessionId, playlistRef, runStartedAt, connection, onLi
       clearTimeout(timer);
       if (es) es.close();
     };
-  }, [sessionId, upsert, onLiked]);
+  }, [sessionId, playlistRef, runStartedAt, upsert, onLiked]);
 
   // This run's rows only: this playlist, since 开始.
-  const startedMs = runStartedAt ? new Date(runStartedAt).getTime() : null;
+  const startedMs = runFrom ? new Date(runFrom).getTime() : null;
   const events = useMemo(() => rows.filter((r) => r.playlistRef === playlistRef
     && (startedMs == null || new Date(r.createdAt).getTime() >= startedMs)), [rows, playlistRef, startedMs]);
 
@@ -465,6 +496,13 @@ function RunPanel({ drag, sessionId, playlistRef, runStartedAt, connection, onLi
       </div>
     </div>
   );
+}
+
+/** The later of two times (ISO strings or Dates), either of which may be missing. */
+function later(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b;
 }
 
 // --- below: the playlist panel's rows, copied (see the top of this file) ---------

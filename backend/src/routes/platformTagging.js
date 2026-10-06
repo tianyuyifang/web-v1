@@ -426,9 +426,6 @@ router.post('/start', ...web, writeLimiter, async (req, res, next) => {
   try {
     const { playlistRef, dirId, isLikes } = req.body || {};
     await assertPlatformOffered(likes.parseRef(playlistRef).platform);
-    // Taken before the connection is aimed, so no capture of this run can
-    // be older than it.
-    const startedAt = new Date().toISOString();
     const result = await tags.start({
       userId: req.user.id,
       playlistRef,
@@ -444,8 +441,9 @@ router.post('/start', ...web, writeLimiter, async (req, res, next) => {
       },
       playlist: result.playlist,
       // Where this run begins, by the server's clock (the rows' own): the
-      // page shows only this run's captures, as the playlist page does.
-      startedAt,
+      // page shows only this run's captures, as the playlist page does. The
+      // same moment the server re-matches earlier runs' titles from.
+      startedAt: result.session.platformRunStartedAt,
     });
   } catch (err) {
     next(err);

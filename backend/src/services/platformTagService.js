@@ -439,6 +439,8 @@ async function start({ userId, playlistRef, dirId = null, isLikes = false }) {
     data: {
       target: 'platform',
       platformRef: ref,
+      // A new run: a title captured in an earlier one is matched afresh.
+      platformRunStartedAt: new Date(),
       // Cleared so nothing downstream can read a stale playlist as the
       // destination. mode stays 'playlist': the client scans the 歌 P screens.
       playlistId: null,
@@ -448,6 +450,11 @@ async function start({ userId, playlistRef, dirId = null, isLikes = false }) {
   // Told to the capture client now rather than on its next heartbeat, when it
   // holds the push channel open (only ever during QQ打标; see apkChannel).
   apkChannel.pushTarget(updated);
+  // Every open QQ打标 page learns that a new run began (one started from
+  // another browser included), so each shows this run only.
+  broadcast(channel(userId), 'platform-tag-run', {
+    sessionId: updated.id, playlistRef: ref, runStartedAt: updated.platformRunStartedAt,
+  });
   await settleUnread(updated.id, ref).catch(() => {});
 
   return {
@@ -512,7 +519,26 @@ async function ingest({ session, rawText, singer = null, side = null, row = null
   const existing = await prisma.platformTagEvent.findUnique({
     where: { sessionId_playlistRef_rawText: { sessionId: fresh.id, playlistRef: ref, rawText: text } },
   });
-  if (existing) return { outcome: 'duplicate', eventId: existing.id, rawText: text };
+  if (existing) {
+    // Seen in an earlier run of this connection and list (停止, then 开始 again):
+    // a new run matches it afresh, so the old row gives way (2026-10-06, as
+    // the user asked: after 取消全部点赞 and a new run, everything is tagged
+    // again). Within one run a title is still matched once. Not while a like
+    // is in flight on it (a fresh 'matching' -- checked again in the delete
+    // itself, as a retry may take it in between), and only once: two
+    // captures of it at once delete it once and race for the new row.
+    const runStart = fresh.platformRunStartedAt ? new Date(fresh.platformRunStartedAt) : null;
+    const earlierRun = runStart && new Date(existing.createdAt) < runStart
+      && (existing.outcome !== 'matching' || staleMatching(existing));
+    if (!earlierRun) return { outcome: 'duplicate', eventId: existing.id, rawText: text };
+    await prisma.platformTagEvent.deleteMany({
+      where: {
+        id: existing.id,
+        createdAt: { lt: runStart },
+        OR: [{ outcome: { not: 'matching' } }, takeableWhere()[1]],
+      },
+    });
+  }
 
   // 网易云打标 switched off (a run started before): nothing read from or
   // written to NetEase here -- the capture is only recorded.
@@ -1249,7 +1275,7 @@ async function ignore({ userId, eventId }) {
 async function getFeed({ userId, sessionId, limit = 300 }) {
   if (!UUID_RE.test(String(sessionId))) throw new NotFoundError('Capture session');
   const session = await prisma.captureSession.findUnique({
-    where: { id: sessionId }, select: { userId: true },
+    where: { id: sessionId }, select: { userId: true, platformRunStartedAt: true },
   });
   if (!session || session.userId !== userId) throw new NotFoundError('Capture session');
   const rows = await prisma.platformTagEvent.findMany({
@@ -1257,7 +1283,9 @@ async function getFeed({ userId, sessionId, limit = 300 }) {
     orderBy: { createdAt: 'asc' },
     take: Math.min(Math.max(Number(limit) || 300, 1), 1000),
   });
-  return { events: rows.map(toPayload) };
+  // Where the current run began, for a page that did not start it (another
+  // browser): it shows this run only, as the one that did.
+  return { events: rows.map(toPayload), runStartedAt: session.platformRunStartedAt || null };
 }
 
 /**

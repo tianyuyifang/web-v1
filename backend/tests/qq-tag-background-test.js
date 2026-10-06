@@ -437,6 +437,42 @@ function fakePhoneStream() {
     await prisma.platformTagEvent.deleteMany({ where: { id: { in: [m1.id, m2.id, m3.id, s4.id] } } });
     await tags.stop({ userId: user.id });
 
+    // 12. A new run (停止 then 开始 on the same list) matches its titles afresh,
+    //     as the playlist page does; within one run a title is still matched once.
+    tags._setAutoRetry({ delays: [] });
+    const rerunSongs = ['再来一', '再来二'].map((t, i) => song(String(9800 + i), t));
+    tags.supplySongs(user.id, 'qq:9100', { title: 'bg', songs: [...listSongs, ...extra, ...extra2, ...extra3, ...rerunSongs].map((x) => ({ ...x })), likedIds: [], dirId: 512 });
+    await tags.start({ userId: user.id, playlistRef: 'qq:9100', dirId: 512 });
+    const fp7 = flexPage('pageR2');
+    r = await tags.ingest({ session: await fresh(), rawText: '再来一' });
+    ok(r.outcome === 'liked' && fp7.writes['9800'] === 1, 'run 1: liked');
+    r = await tags.ingest({ session: await fresh(), rawText: '再来一' });
+    ok(r.outcome === 'duplicate', 'run 1, the same title again: duplicate');
+    // 取消全部点赞, then a new run on the same list.
+    tags.noteManyUnliked(user.id, ['9800']);
+    await tags.stop({ userId: user.id });
+    const startedRun2 = await tags.start({ userId: user.id, playlistRef: 'qq:9100', dirId: 512 });
+    ok(startedRun2.session.platformRunStartedAt instanceof Date, 'start records when the run began');
+    r = await tags.ingest({ session: await fresh(), rawText: '再来一' });
+    ok(r.outcome === 'liked' && fp7.writes['9800'] === 2, `run 2: the earlier run's title is matched and liked again (${r.outcome}, writes ${fp7.writes['9800']})`);
+    const left = await prisma.platformTagEvent.count({ where: { sessionId: session.id, playlistRef: 'qq:9100', rawText: '再来一' } });
+    ok(left === 1, 'one row for it, this run\'s');
+    r = await tags.ingest({ session: await fresh(), rawText: '再来一' });
+    ok(r.outcome === 'duplicate', 'run 2, the same title again: duplicate');
+    // A row of the earlier run still being liked (a fresh 'matching') is not taken away.
+    const inFlightOld = await prisma.platformTagEvent.create({
+      data: { sessionId: session.id, userId: user.id, platform: 'qq', playlistRef: 'qq:9100', rawText: '再来二', outcome: 'matching',
+        createdAt: new Date(Date.now() - 60 * 60 * 1000) },
+    });
+    r = await tags.ingest({ session: await fresh(), rawText: '再来二' });
+    ok(r.outcome === 'duplicate' && (await prisma.platformTagEvent.findUnique({ where: { id: inFlightOld.id } })) !== null,
+      'an earlier run\'s row with a like in flight stays (duplicate for now)');
+    const feedNow = await tags.getFeed({ userId: user.id, sessionId: session.id });
+    ok(feedNow.runStartedAt && new Date(feedNow.runStartedAt).getTime() === new Date(startedRun2.session.platformRunStartedAt).getTime(),
+      'the feed says when the current run began (for another browser)');
+    fp7.close();
+    await tags.stop({ userId: user.id });
+
     // 11. The server never called QQ.
     ok(calls.filter((c) => c[1] === 'qq' || String(c[1] || '').startsWith('qq')).length === 0, `no QQ call from the server (${JSON.stringify(calls)})`);
 

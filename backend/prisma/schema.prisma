@@ -430,6 +430,10 @@ model CaptureSession {
   /// rather than playlist_id because that one is a uuid FK onto our own
   /// playlists, and a platform playlist is neither.
   platformRef   String? @map("platform_ref")
+  // When the current QQ打标 run began (开始, 2026-10-06): a title captured in an
+  // earlier run of the same connection and list is matched again in this one
+  // (platformTagService.ingest), as the playlist page does. Null: never started.
+  platformRunStartedAt DateTime? @map("platform_run_started_at") @db.Timestamptz
 
   user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   playlist Playlist?      @relation(fields: [playlistId], references: [id], onDelete: Cascade)

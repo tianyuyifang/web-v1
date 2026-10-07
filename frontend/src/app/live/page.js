@@ -211,9 +211,8 @@ export default function LivePage() {
       return new Set(raw ? JSON.parse(raw) : []);
     } catch { return new Set(); }
   });
-  // Two-tap confirm: the first tap arms this card for ~3s, the second files
-  // the report. A solid red button invites curious fingers; arming makes a
-  // stray tap cost nothing.
+  // Which card's 「报告问题」 choices are open (they fold after ~6s). The first
+  // tap only opens them, so a stray tap costs nothing; a choice files it.
   const [reportArmed, setReportArmed] = useState(null);
   const reportArmTimer = useRef(null);
   useEffect(() => () => clearTimeout(reportArmTimer.current), []);
@@ -1862,70 +1861,110 @@ export default function LivePage() {
                                   +1s
                                 </button>
 
-                                {/* 「段落点不准确」— the singer is the only one
-                                    who can see the marks against the song; a
-                                    tap files the passage into the review queue.
+                                {/* 「报告问题」— the singer is the only one who
+                                    can hear the card against the song. One tap
+                                    opens the three problems; choosing one files
+                                    it into the review queue with its kind
+                                    (音源不匹配 / 歌词段落错误 / 词曲不同步).
+                                    Each kind once per passage on this device;
+                                    the ones already sent are named beside it.
                                     Lives in this wrapping row, not the seek
                                     row: that one cannot wrap, and a button
-                                    there narrowed the scrub bar on phones.
-                                    Flips to a quiet acknowledgement so it
-                                    cannot be spammed from this card. */}
+                                    there narrowed the scrub bar on phones. */}
                                 {card.lyric && card.mapping?.source && card.mapping?.externalId
                                   && !passageVerified && (() => {
                                   // Keyed on the passage, not the card: the same
                                   // passage reappears as new cards across rounds,
                                   // and 已反馈 should hold for all of them.
                                   const pKey = `${card.mapping.source}:${card.mapping.externalId}:${card.lyric}`;
-                                  if (reportedPassages.has(pKey)) {
+                                  const KINDS = [["source", "音源不匹配"], ["passage", "歌词段落错误"], ["sync", "词曲不同步"]];
+                                  // A bare pKey was stored by the older one-kind
+                                  // button, which meant the passage.
+                                  const sent = (k) => reportedPassages.has(`${pKey}#${k}`)
+                                    || (k === "passage" && reportedPassages.has(pKey));
+                                  const left = KINDS.filter(([k]) => !sent(k));
+                                  const done = KINDS.filter(([k]) => sent(k)).map(([, label]) => label);
+                                  if (!left.length) {
                                     return <span className="shrink-0 text-[0.65rem] text-muted">已反馈，待人工确认</span>;
                                   }
                                   const armed = reportArmed === card.eventId;
+                                  const file = (k) => {
+                                    clearTimeout(reportArmTimer.current);
+                                    setReportArmed(null);
+                                    setReportedPassages((prev) => {
+                                      const next = new Set(prev).add(`${pKey}#${k}`);
+                                      // Bounded: oldest entries fall off, and
+                                      // a full or absent storage only means
+                                      // the button comes back after refresh.
+                                      // Up to three per passage now (one per
+                                      // kind), so 900 keeps the reach 300 had.
+                                      try {
+                                        localStorage.setItem('reportedPassages',
+                                          JSON.stringify([...next].slice(-900)));
+                                      } catch { /* 存不了就算了 */ }
+                                      return next;
+                                    });
+                                    // Fire-and-forget: a lost report costs one
+                                    // tally, and blocking the singer mid-song
+                                    // on a feedback write would be backwards.
+                                    mappingAPI.reportPassage({
+                                      source: card.mapping.source,
+                                      externalId: card.mapping.externalId,
+                                      gameLyric: card.lyric,
+                                      kind: k,
+                                    }).catch(() => {});
+                                  };
+                                  // 变调变速选中键的同款配方(共享常量, 换主题跟着走)。
+                                  const optionClass = `shrink-0 rounded border border-accent px-2.5 py-1 text-[0.68rem] font-medium text-accent ${LADDER_TINT} hover:border-accent/70`;
                                   return (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (!armed) {
-                                          // First tap only arms. A stray tap
-                                          // un-arms itself after 3s.
-                                          setReportArmed(card.eventId);
-                                          clearTimeout(reportArmTimer.current);
-                                          reportArmTimer.current = setTimeout(
-                                            () => setReportArmed(null), 3000,
-                                          );
-                                          return;
-                                        }
-                                        clearTimeout(reportArmTimer.current);
-                                        setReportArmed(null);
-                                        setReportedPassages((prev) => {
-                                          const next = new Set(prev).add(pKey);
-                                          // Bounded: oldest entries fall off, and
-                                          // a full or absent storage only means
-                                          // the button comes back after refresh.
-                                          try {
-                                            localStorage.setItem('reportedPassages',
-                                              JSON.stringify([...next].slice(-300)));
-                                          } catch { /* 存不了就算了 */ }
-                                          return next;
-                                        });
-                                        // Fire-and-forget: a lost report costs one
-                                        // tally, and blocking the singer mid-song
-                                        // on a feedback write would be backwards.
-                                        mappingAPI.reportPassage({
-                                          source: card.mapping.source,
-                                          externalId: card.mapping.externalId,
-                                          gameLyric: card.lyric,
-                                        }).catch(() => {});
-                                      }}
-                                      // 变调变速选中键的同款配方(共享常量,
-                                      // 换主题跟着走); 上膣态加 ring 以示区别。
-                                      className={`shrink-0 rounded border px-2.5 py-1 text-[0.68rem] font-medium text-accent ${LADDER_TINT} ${
-                                        armed
-                                          ? "border-accent ring-2 ring-accent/40"
-                                          : "border-accent hover:border-accent/70"
-                                      }`}
-                                    >
-                                      {armed ? "再点一次确认报告" : "段落点不准确"}
-                                    </button>
+                                    <>
+                                      {done.length ? (
+                                        <span className="shrink-0 text-[0.65rem] text-muted">已反馈：{done.join("、")}</span>
+                                      ) : null}
+                                      {/* The choices float under the button
+                                          rather than joining this row: in the
+                                          row they wrapped onto a line of their
+                                          own on a phone, and opening or folding
+                                          them moved the key and tempo ladders
+                                          under a singer's thumb mid-song. */}
+                                      <span className="relative shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            clearTimeout(reportArmTimer.current);
+                                            if (armed) { setReportArmed(null); return; }
+                                            // Opens the choices; left alone they
+                                            // fold away after 6s.
+                                            setReportArmed(card.eventId);
+                                            reportArmTimer.current = setTimeout(
+                                              () => setReportArmed(null), 6000,
+                                            );
+                                          }}
+                                          className={`${optionClass} ${armed ? "ring-2 ring-accent/40" : ""}`}
+                                        >
+                                          报告问题
+                                        </button>
+                                        {armed ? (
+                                          <span className="absolute left-0 top-full z-20 mt-1 flex flex-col gap-1 rounded border border-border bg-surface p-1.5 shadow-lg">
+                                            {left.map(([k, label]) => (
+                                              <button key={k} type="button" onClick={() => file(k)} className={`${optionClass} whitespace-nowrap`}>
+                                                {label}
+                                              </button>
+                                            ))}
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                clearTimeout(reportArmTimer.current);
+                                                setReportArmed(null);
+                                              }}
+                                              className="shrink-0 rounded border border-border px-2 py-1 text-[0.68rem] text-muted hover:border-accent hover:text-theme"
+                                            >
+                                              取消
+                                            </button>
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    </>
                                   );
                                 })()}
 
@@ -2008,10 +2047,9 @@ export default function LivePage() {
                                           if (!r?.data?.ok) rollback();
                                         }).catch(rollback);
                                       }}
-                                      // 绿色 —— 跟旁边的「段落点不准确」区分开。
-                                      // 两个按钮挨着放、文案只差一个「不」字,
-                                      // 同一个颜色时很容易点错 —— 而这两个按钮
-                                      // 写入的是相反的东西。
+                                      // 绿色 —— 跟旁边的「报告问题」区分开。
+                                      // 两个按钮挨着放, 同一个颜色时很容易点错
+                                      // —— 而这两个按钮写入的是相反的东西。
                                       className={`shrink-0 rounded border px-2.5 py-1 text-[0.68rem] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 ${
                                         armed
                                           ? "border-emerald-500 ring-2 ring-emerald-500/40"

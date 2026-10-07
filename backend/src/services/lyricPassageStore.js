@@ -332,7 +332,19 @@ async function confirmFromLive(source, externalId, gameLyric, answer, lineCount,
 }
 
 /**
- * A singer pressed 「段落点不准确」 on this passage.
+ * What a report says is wrong (唱卡's 「报告问题」, 2026-10-07):
+ *   source  -- 音源不匹配, the recording is not the song the game played
+ *   passage -- 歌词段落错误, the marked passage is the wrong one
+ *   sync    -- 词曲不同步, the words run ahead of or behind the music
+ * Each reporter carries the kinds they reported ({id, name, kinds}). An entry
+ * without `kinds` predates the choice and came from the old 「段落点不准确」
+ * button, so it reads as `passage`.
+ */
+const REPORT_KINDS = ['source', 'passage', 'sync'];
+const kindsOf = (r) => (Array.isArray(r?.kinds) && r.kinds.length ? r.kinds : ['passage']);
+
+/**
+ * A singer pressed 「报告问题」 on this passage and chose what is wrong.
  *
  * Counting, not judging: the row's status is left alone. A report on an
  * approved answer must not demote it — a stray tap would undo a human's work
@@ -345,10 +357,11 @@ async function confirmFromLive(source, externalId, gameLyric, answer, lineCount,
  * human's — provenance for the review page, overwritten the moment a
  * reviewer decides.
  */
-async function report(source, externalId, gameLyric, reporter) {
+async function report(source, externalId, gameLyric, reporter, kind = 'passage') {
   if (!source || !externalId || !gameLyric || !String(gameLyric).trim()) {
     return { ok: false };
   }
+  if (!REPORT_KINDS.includes(kind)) return { ok: false };
   const key = {
     source,
     externalId: String(externalId),
@@ -362,79 +375,90 @@ async function report(source, externalId, gameLyric, reporter) {
   const who = reporter && reporter.id
     ? { id: String(reporter.id), name: String(reporter.name || '').slice(0, 40) }
     : null;
+  // The same person may report each kind once. A second kind from someone
+  // already counted adds the kind to their entry but not to the count, which
+  // stays a count of people.
   const listWith = (existing) => {
     const list = Array.isArray(existing) ? existing : [];
-    if (!who) return { dup: false, list };
-    if (list.some((r) => r && r.id === who.id)) return { dup: true, list };
-    return { dup: false, list: list.length >= 50 ? list : [...list, who] };
+    if (!who) return { dup: false, newPerson: true, list };
+    const at = list.findIndex((r) => r && r.id === who.id);
+    if (at >= 0) {
+      const had = kindsOf(list[at]);
+      if (had.includes(kind)) return { dup: true, list };
+      const next = list.slice();
+      next[at] = { ...list[at], kinds: [...had, kind] };
+      return { dup: false, newPerson: false, list: next };
+    }
+    return {
+      dup: false,
+      newPerson: true,
+      list: list.length >= 50 ? list : [...list, { ...who, kinds: [kind] }],
+    };
   };
   const bumpFor = (row) => {
-    const { dup, list } = listWith(row.reporters);
+    const { dup, newPerson, list } = listWith(row.reporters);
     if (dup) return null;
     return {
-      reportCount: { increment: 1 },
+      ...(newPerson ? { reportCount: { increment: 1 } } : {}),
       lastReportedAt: new Date(),
       reporters: list,
     };
   };
-  // An approved row is silently not counted. The page already hides the
-  // button when a human-checked answer is in use, but hiding is only the UI:
-  // anyone talking to the endpoint directly could still inflate a counter on
-  // an answer a person verified. Refusing here makes 「已确认不能被报告」
-  // true rather than merely invisible. ok:true on purpose — the client needs
-  // nothing done differently, and an error would just be noise to retry.
-  const existing = await prisma.lyricPassageMatch.findUnique({
+  const read = () => prisma.lyricPassageMatch.findUnique({
     where: { source_externalId_lyricHash: key },
-    select: { status: true, reporters: true },
+    select: { id: true, status: true, reporters: true, updatedAt: true },
   });
-  if (existing && existing.status === 'approved') return { ok: true };
-  if (existing) {
-    const data = bumpFor(existing);
-    if (!data) return { ok: true };
-    try {
-      await prisma.lyricPassageMatch.update({
-        where: { source_externalId_lyricHash: key }, data,
-      });
-    } catch (err) {
-      if (err.code !== 'P2025') throw err;
+
+  // The list is read, extended and written back whole, so two reports landing
+  // together (the same person's two kinds on a stalled connection, or two
+  // singers) could each miss the other: a person counted twice, a kind or a
+  // name lost. Each write therefore only lands if the row is still as it was
+  // read (updatedAt moves on every write), and is re-read and retried when it
+  // is not. After three tries it writes regardless, which is how it has
+  // always behaved.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const last = attempt === 3;
+    const existing = await read();
+    // An approved row is silently not counted. The page already hides the
+    // button when a human-checked answer is in use, but hiding is only the UI:
+    // anyone talking to the endpoint directly could still inflate a counter on
+    // an answer a person verified. Refusing here makes 「已确认不能被报告」
+    // true rather than merely invisible. ok:true on purpose — the client needs
+    // nothing done differently, and an error would just be noise to retry.
+    if (existing && existing.status === 'approved') return { ok: true };
+    if (existing) {
+      const data = bumpFor(existing);
+      if (!data) return { ok: true };
+      const where = last ? { id: existing.id } : { id: existing.id, updatedAt: existing.updatedAt };
+      const { count } = await prisma.lyricPassageMatch.updateMany({ where, data });
+      if (count || last) return { ok: true };
+      continue;
     }
-    return { ok: true };
-  }
-  try {
-    await prisma.lyricPassageMatch.create({
-      data: {
-        ...key,
-        gameLyric: String(gameLyric),
-        answer: [],
-        status: 'pending',
-        verifiedBy: 'report',
-        reportCount: 1,
-        lastReportedAt: new Date(),
-        reporters: who ? [who] : [],
-      },
-    });
-  } catch (err) {
-    // Two singers reporting the same new passage at once: the loser of the
-    // race counts on the winner's row.
-    if (err.code !== 'P2002') throw err;
-    const row = await prisma.lyricPassageMatch.findUnique({
-      where: { source_externalId_lyricHash: key },
-      select: { status: true, reporters: true },
-    });
-    if (row && row.status !== 'approved') {
-      const data = bumpFor(row);
-      if (data) {
-        await prisma.lyricPassageMatch.update({
-          where: { source_externalId_lyricHash: key }, data,
-        }).catch(() => {});
-      }
+    try {
+      await prisma.lyricPassageMatch.create({
+        data: {
+          ...key,
+          gameLyric: String(gameLyric),
+          answer: [],
+          status: 'pending',
+          verifiedBy: 'report',
+          reportCount: 1,
+          lastReportedAt: new Date(),
+          reporters: who ? [{ ...who, kinds: [kind] }] : [],
+        },
+      });
+      return { ok: true };
+    } catch (err) {
+      // Two singers reporting the same new passage at once: the loser of the
+      // race counts on the winner's row, on the next pass.
+      if (err.code !== 'P2002') throw err;
     }
   }
   return { ok: true };
 }
 
 module.exports = {
-  hashPassage, isUsable, getApproved, coveredLines, placementsOf, report,
+  hashPassage, isUsable, getApproved, coveredLines, placementsOf, report, REPORT_KINDS,
   isRangeAnswer, normaliseAnswer,
   isVariant, variantKind, passageLines, confirmFromLive,
 };

@@ -488,7 +488,8 @@ router.post('/passages/confirm', requireMappingEditor, async (req, res, next) =>
 });
 
 /**
- * POST /api/mappings/passages/report — a singer pressed 「段落点不准确」.
+ * POST /api/mappings/passages/report — a singer pressed 「报告问题」 and chose
+ * what is wrong (body.kind: source / passage / sync).
  *
  * Deliberately NOT behind requireMappingEditor: this is feedback from the
  * people singing, and its audience is exactly the lyrics route's — the
@@ -498,10 +499,14 @@ router.post('/passages/confirm', requireMappingEditor, async (req, res, next) =>
  */
 router.post('/passages/report', async (req, res, next) => {
   try {
-    const { source, externalId, gameLyric } = req.body || {};
+    const { source, externalId, gameLyric, kind } = req.body || {};
     if (source !== 'QQ' && source !== 'NETEASE' && source !== 'LOCAL') {
       return res.json({ ok: false });
     }
+    // Which problem (音源不匹配 / 歌词段落错误 / 词曲不同步). A page loaded
+    // before the choice existed sends none; its button meant the passage.
+    const k = kind === undefined ? 'passage' : kind;
+    if (!passages.REPORT_KINDS.includes(k)) return res.json({ ok: false });
     res.json(await passages.report(
       source,
       String(externalId || ''),
@@ -509,6 +514,7 @@ router.post('/passages/report', async (req, res, next) => {
       // Who is reporting, for the reviewer's tooltip and per-person dedup.
       // Mount-level auth guarantees req.user here.
       { id: req.user.id, name: req.user.username },
+      k,
     ));
   } catch (err) {
     next(err);

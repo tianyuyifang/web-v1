@@ -24,6 +24,25 @@ import CataloguePanel from "./CataloguePanel";
  * showed it, the answer being proposed, and the real lyrics with the proposed
  * lines marked — so the decision can be made without leaving the page.
  */
+
+/**
+ * What each report says is wrong (唱卡's 「报告问题」). A reporter without
+ * `kinds` came from the older 「段落点不准确」 button, which meant the passage.
+ */
+const REPORT_KIND_LABEL = { source: "音源不匹配", passage: "段落错误", sync: "词曲不同步" };
+const reportKindsOf = (r) => (Array.isArray(r?.kinds) && r.kinds.length ? r.kinds : ["passage"]);
+/** "音源不匹配 1 · 段落错误 2", in a fixed order, kinds nobody chose left out. */
+function reportKindSummary(reporters) {
+  const list = Array.isArray(reporters) ? reporters : [];
+  return Object.keys(REPORT_KIND_LABEL)
+    .map((k) => [k, list.filter((r) => reportKindsOf(r).includes(k)).length])
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${REPORT_KIND_LABEL[k]} ${n}`)
+    .join(" · ");
+}
+/** 小芳（音源不匹配、段落错误） */
+const reporterWithKinds = (r) => `${r.name || "?"}（${reportKindsOf(r).map((k) => REPORT_KIND_LABEL[k] || k).join("、")}）`;
+
 export default function PassagePanel() {
   const [status, setStatus] = useState("pending");
   const [items, setItems] = useState([]);
@@ -435,12 +454,13 @@ export default function PassagePanel() {
                         <span
                           className="ml-2 cursor-help rounded bg-red-100 px-1.5 py-0.5 text-red-700 dark:bg-red-900/60 dark:text-red-300"
                           title={(row.reporters || []).length
-                            ? `报告者: ${(row.reporters || []).map((r) => r.name || "?").join("、")}`
+                            ? `报告者: ${(row.reporters || []).map(reporterWithKinds).join("、")}`
                             : "早期报告未记名"}
                         >
                           {row.status === "approved"
                             ? `⚠ 已确认但仍被 ${row.reportCount} 人报告`
                             : `${row.reportCount} 人报告`}
+                          {(row.reporters || []).length ? ` · ${reportKindSummary(row.reporters)}` : ""}
                         </span>
                       )}
                     </div>
@@ -495,7 +515,7 @@ export default function PassagePanel() {
                       <p className="mb-2 text-xs text-red-600 dark:text-red-400">
                         报告者：
                         {(row.reporters || []).length
-                          ? (row.reporters || []).map((r) => r.name || "?").join("、")
+                          ? (row.reporters || []).map(reporterWithKinds).join("、")
                           : "早期报告未记名"}
                       </p>
                     )}

@@ -120,6 +120,17 @@ router.get('/tagging-usage', async (req, res, next) => {
   }
 });
 
+// GET /api/admin/platform-tagging-usage — who is using QQ打标, and how much
+//
+// Songs it put in a platform's likes, per user. No parameters: thirty days.
+router.get('/platform-tagging-usage', async (req, res, next) => {
+  try {
+    res.json(await adminService.getPlatformTaggingUsage());
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/admin/users/:id/billing — update billing fields
 router.patch('/users/:id/billing', validate(updateBillingSchema), async (req, res, next) => {
   try {

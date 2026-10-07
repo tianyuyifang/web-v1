@@ -429,6 +429,34 @@ async function getTaggingUsage() {
 }
 
 /**
+ * Who has been using QQ打标, and how much: songs it put in someone's platform
+ * likes. Counted as the QQ打标 panel counts 已打标 -- liked, or already liked
+ * when it got there -- so the two numbers agree.
+ *
+ * A song captured again in a later run of the same playlist replaces its row
+ * (platformTagService.ingest), so this counts songs per playlist, not
+ * captures; 取消全部点赞 changes nothing here. The time is updated_at, the
+ * moment the like landed, which for a confirmed song is the confirm, not the
+ * capture. Thirty days: rows go with their connection after 45.
+ */
+async function getPlatformTaggingUsage() {
+  const rows = await prisma.$queryRaw`
+    SELECT u.id                 AS "userId",
+           u.username,
+           MAX(e.updated_at)    AS "lastTagAt",
+           COUNT(*)::int        AS "total"
+      FROM platform_tag_events e
+      JOIN users u ON u.id = e.user_id
+     WHERE e.outcome IN ('liked', 'already_liked')
+       AND e.updated_at > NOW() - INTERVAL '30 days'
+     GROUP BY u.id, u.username
+     ORDER BY MAX(e.updated_at) DESC
+  `;
+
+  return { days: 30, users: rows };
+}
+
+/**
  * Returns all playlists owned by the given user, for admin view-and-copy.
  * Shaped like playlistService.getUserPlaylists but from the admin's perspective:
  * the admin is never the owner, and may always copy.
@@ -578,4 +606,4 @@ async function resetPassword(id) {
 async function getTierConfig() { return getTiers(); }
 async function setTierConfig(patch) { return setTiers(patch); }
 
-module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, getLiveMarks, getTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword, setUserTier, getTierConfig, setTierConfig };
+module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, getLiveMarks, getTaggingUsage, getPlatformTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword, setUserTier, getTierConfig, setTierConfig };

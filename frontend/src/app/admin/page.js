@@ -10,6 +10,7 @@ import UserTable from "@/components/admin/UserTable";
 import BandwidthPanel from "@/components/admin/BandwidthPanel";
 import LiveUsagePanel from "@/components/admin/LiveUsagePanel";
 import TaggingUsagePanel from "@/components/admin/TaggingUsagePanel";
+import PlatformTaggingUsagePanel from "@/components/admin/PlatformTaggingUsagePanel";
 import CaptureClientPanel from "@/components/admin/CaptureClientPanel";
 import TierConfigPanel from "@/components/admin/TierConfigPanel";
 import OutboundMeterPanel from "@/components/admin/OutboundMeterPanel";
@@ -181,6 +182,7 @@ export default function AdminPage() {
     { key: "bandwidth", label: t("bandwidthTitle"), dot: "bg-cyan-400", count: null },
     { key: "liveUsage", label: "唱卡使用", dot: "bg-rose-400", count: null },
     { key: "taggingUsage", label: "歌P使用", dot: "bg-amber-400", count: null },
+    { key: "platformTaggingUsage", label: "QQ打标使用", dot: "bg-green-400", count: null },
     { key: "captureClient", label: "App版本", dot: "bg-lime-400", count: null },
     { key: "tiers", label: "档位设置", dot: "bg-indigo-400", count: null },
     { key: "codes", label: "激活码", dot: "bg-orange-400", count: null },
@@ -372,6 +374,8 @@ export default function AdminPage() {
       {activeTab === "liveUsage" && <LiveUsagePanel />}
 
       {activeTab === "taggingUsage" && <TaggingUsagePanel />}
+
+      {activeTab === "platformTaggingUsage" && <PlatformTaggingUsagePanel />}
 
       {activeTab === "captureClient" && <CaptureClientPanel />}
       {activeTab === "tiers" && (

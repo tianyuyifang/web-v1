@@ -37,6 +37,7 @@ import { PRESET_COLORS } from "@/components/player/ColorTag";
 // 存之前拿它验一遍: 存进去的答案读回来还是不是这么多处。
 import { placementsOf, entryLines } from "@/lib/passageAnswer";
 import SongLibrary from "@/components/live/SongLibrary";
+import PracticeSongs from "@/components/live/PracticeSongs";
 import MarkedSongs from "@/components/live/MarkedSongs";
 import LiveGuide from "@/components/live/LiveGuide";
 import DefaultTuning from "@/components/live/DefaultTuning";
@@ -728,6 +729,13 @@ export default function LivePage() {
     player.stop();
     loadedFor.current = null;
   }, [player]);
+
+  // While 练唱 is showing this page's player stays silent: a card tapped just
+  // before switching can still be loading, and would otherwise start unseen
+  // under 练唱's own player. Acts only on that tab.
+  useEffect(() => {
+    if (tab === "practice" && playing) stopAudio();
+  }, [tab, playing, stopAudio]);
 
   /**
    * Resolve and play a card.
@@ -1425,11 +1433,20 @@ export default function LivePage() {
       {/* A running game keeps running while the library is open: switching tabs
           hides the cards, it does not stop delivery. */}
       <div className="mb-4 flex items-center gap-1 border-b border-border">
-        {[["cards", "唱卡"], ["library", "标记"], ["marked", "已标记"], ["friends", "好友标记"]].map(([id, label]) => (
+        {[["cards", "唱卡"], ["practice", "练唱"], ["library", "标记"], ["marked", "已标记"], ["friends", "好友标记"]].map(([id, label]) => (
           <button
             key={id}
             type="button"
-            onClick={() => setTab(id)}
+            onClick={() => {
+              // 练唱 has a player of its own: the card open here is closed (and
+              // its key saved, as any close) so two songs never sound at once.
+              if (id === "practice" && openId) {
+                saveOpenCardSettings();
+                stopAudio();
+                setOpenId(null);
+              }
+              setTab(id);
+            }}
             className={`-mb-px border-b-2 px-3 py-1.5 text-sm transition-colors ${
               tab === id
                 ? "border-accent text-fg"
@@ -1443,7 +1460,7 @@ export default function LivePage() {
 
       {/* 标记 / 已标记 read from gated routes, so a member without the add-on
           sees the same notice here rather than an empty list from a 403. */}
-      {(tab === "library" || tab === "marked" || tab === "friends") && !canCapture ? (
+      {(tab === "library" || tab === "marked" || tab === "friends" || tab === "practice") && !canCapture ? (
         <div className="rounded-xl border border-border bg-surface p-6 text-center text-sm text-muted">
           这是加订版功能，开通后即可搜索曲库、给歌曲标记。
         </div>
@@ -1451,6 +1468,16 @@ export default function LivePage() {
       {tab === "library" && canCapture ? <SongLibrary /> : null}
       {tab === "marked" && canCapture ? <MarkedSongs /> : null}
       {tab === "friends" && canCapture ? <FriendMarks /> : null}
+      {/* Marks, the default key and the file settings made there are this
+          page's too: told back so a card opened afterwards agrees. */}
+      {tab === "practice" && canCapture ? (
+        <PracticeSongs
+          onPrefChange={(key, p) => setPrefs((prev) => ({ ...prev, [key]: p }))}
+          onDefaultsChange={setDefaults}
+          onQualityChange={setQualityState}
+          onVocalsChange={setVocalsOnlyState}
+        />
+      ) : null}
 
       {error && (
         <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">
@@ -2100,6 +2127,8 @@ export default function LivePage() {
       {/* Outside the card list on purpose: it belongs to the singer, not to any
           one song, and it has to stay reachable while a card is open — a
           default chosen without hearing it is a guess. */}
+      {/* 练唱 shows its own, bound to its own player. */}
+      {tab === "practice" ? null : (
       <DefaultTuning
         defaults={defaults}
         onChange={changeDefaults}
@@ -2111,6 +2140,7 @@ export default function LivePage() {
         onVocalsChange={changeVocalsOnly}
         vocalsAvailable={vocalsAvailable}
       />
+      )}
 
       {showAddOnNotice ? (
         // This page is hardcoded Chinese throughout, so the notice is too

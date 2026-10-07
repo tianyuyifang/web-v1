@@ -686,6 +686,26 @@ router.get('/friends/:userId/marked', ...web, requireCaptureAddOn, async (req, r
   }
 });
 
+// GET /api/capture/practice — what 练唱 needs before its first song
+//
+// Who resolves QQ play URLs (档位设置) and this singer's default key and tempo.
+// 唱卡 learns the first from a running game's status poll and the second from
+// the live feed; 练唱 has no game, so it asks here. Reads our own database;
+// nothing reaches a platform.
+router.get('/practice', ...web, requireCaptureAddOn, async (req, res, next) => {
+  try {
+    const [qqDirectMode, defaults] = await Promise.all([
+      settingsService.qqDirectFor(req.user.role).then((s) => s.mode).catch(() => 'server'),
+      // Unreadable reads as "no default" (the original key and tempo) rather
+      // than holding up every song.
+      songPrefService.getDefaults(req.user.id).catch(() => ({ pitch: null, speed: null })),
+    ]);
+    res.json({ qqDirectMode, defaults });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/prefs', ...web, requireCaptureAddOn, async (req, res, next) => {
   try {
     const raw = String(req.query.keys || '').trim();

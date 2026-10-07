@@ -64,17 +64,40 @@ async function removeCopyPermission(playlistId, userId) {
 // Batch share / copy permissions (across all playlists of an owner)
 // ---------------------------------------------------------------------------
 
+/**
+ * In place, in the order the owner sees on their own playlists page
+ * (searchService.searchPlaylists): emoji-led names first, then by pinyin with
+ * leading symbols stripped. A copy rather than a shared helper, so changing
+ * one page's order never moves the other's.
+ */
+function sortLikePlaylistsPage(rows) {
+  const emojiRegex = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u;
+  const stripPrefix = (s) => s.replace(/^[^\p{L}\p{N}]+/u, '').toLowerCase();
+  rows.sort((a, b) => {
+    const aEmoji = emojiRegex.test(a.name);
+    const bEmoji = emojiRegex.test(b.name);
+    if (aEmoji !== bEmoji) return aEmoji ? -1 : 1;
+    const aKey = stripPrefix(a.namePinyin || a.name);
+    const bKey = stripPrefix(b.namePinyin || b.name);
+    return aKey.localeCompare(bKey);
+  });
+  return rows;
+}
+
 async function getBatchShareStatus(ownerId, targetUserId) {
   const playlists = await prisma.playlist.findMany({
     where: { userId: ownerId },
     select: {
       id: true,
       name: true,
+      namePinyin: true,
       shares: { where: { userId: targetUserId }, select: { id: true }, take: 1 },
       copyPermissions: { where: { userId: targetUserId }, select: { id: true }, take: 1 },
     },
+    // Only breaks ties now (the sort below is stable).
     orderBy: { name: 'asc' },
   });
+  sortLikePlaylistsPage(playlists);
 
   return playlists.map((p) => ({
     id: p.id,

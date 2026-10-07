@@ -508,11 +508,36 @@ async function listUserPlaylists(userId) {
     orderBy: { playlist: { name: 'asc' } },
   });
 
+  // Each group in the order this user sees on their own playlists page; the
+  // name order above only breaks ties (the sort is stable).
+  sortLikePlaylistsPage(owned);
+  const sharedPlaylists = sortLikePlaylistsPage(sharedRows.map((r) => r.playlist));
+
   return {
     owner,
     playlists: owned.map((p) => shape(p, false)),
-    sharedPlaylists: sharedRows.map((r) => shape(r.playlist, true)),
+    sharedPlaylists: sharedPlaylists.map((p) => shape(p, true)),
   };
+}
+
+/**
+ * In place, in the order a user sees on their own playlists page
+ * (searchService.searchPlaylists): emoji-led names first, then by pinyin with
+ * leading symbols stripped. A copy rather than a shared helper, so changing
+ * one page's order never moves the other's.
+ */
+function sortLikePlaylistsPage(rows) {
+  const emojiRegex = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u;
+  const stripPrefix = (s) => s.replace(/^[^\p{L}\p{N}]+/u, '').toLowerCase();
+  rows.sort((a, b) => {
+    const aEmoji = emojiRegex.test(a.name);
+    const bEmoji = emojiRegex.test(b.name);
+    if (aEmoji !== bEmoji) return aEmoji ? -1 : 1;
+    const aKey = stripPrefix(a.namePinyin || a.name);
+    const bKey = stripPrefix(b.namePinyin || b.name);
+    return aKey.localeCompare(bKey);
+  });
+  return rows;
 }
 
 const BILLING_SELECT = {

@@ -304,10 +304,13 @@ router.delete('/dashed-artists/:id', requireMappingEditor, async (req, res, next
 /* --- 歌P singer library (「歌手」tab) --------------------------------------
  * Every route gated: the library feeds suggestions into everyone's 待确认. */
 
-/** GET /api/mappings/gep-singers?q= — singers with their song counts. */
+/** GET /api/mappings/gep-singers?q=&review=1 — singers with their song (and 待处理) counts. */
 router.get('/gep-singers', requireMappingEditor, async (req, res, next) => {
   try {
-    res.json(await gepSingers.listSingers({ query: String(req.query.q || '').slice(0, 100) }));
+    res.json(await gepSingers.listSingers({
+      query: String(req.query.q || '').slice(0, 100),
+      reviewOnly: req.query.review === '1',
+    }));
   } catch (err) {
     next(err);
   }
@@ -351,6 +354,15 @@ const gepAliasBody = z.object({ siteTitle: z.string().min(1).max(120) });
 router.post('/gep-singers/songs/:id/aliases', requireMappingEditor, validate(gepAliasBody), async (req, res, next) => {
   try {
     res.json(await gepSingers.addAlias(req.params.id, req.validated.siteTitle));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/mappings/gep-singers/songs/:id/reviewed — 已处理: clears 待处理. */
+router.post('/gep-singers/songs/:id/reviewed', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await gepSingers.clearReview(req.params.id));
   } catch (err) {
     next(err);
   }

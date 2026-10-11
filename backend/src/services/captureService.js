@@ -622,26 +622,43 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
 
   // A song that matched but has no clip in this playlist is not actionable.
   let actionable = enriched.filter((c) => c.inPlaylist);
+  // Whether the title matched a song in this playlist exactly, on its own.
+  const titleExact = actionable.some((c) => c.kind === 'exact');
+  let hasAlias = false;
 
-  // 歌手库: nothing actionable from the title itself, so try the site titles
-  // an editor attached to it under this game's singer. Whatever turns up is a
-  // proposal (kind 'alias'): the page only ever auto-approves kind 'exact'.
-  if (!actionable.length && singer) {
+  // 歌手库: the title matched nothing in this playlist exactly, so try the
+  // site titles an editor attached to it under this game's singer (方案 B --
+  // a near match, "晴天" against "晴天 (Live)", is tried too). What turns up
+  // is kind 'alias'. One song in the playlist with the game's singer credited
+  // on it is marked auto and the page likes it as an exact match (方案 C);
+  // anything else is offered only where the title found nothing, and a near
+  // match the title found itself stays exactly as it was.
+  if (!titleExact && singer) {
     const siteTitles = await gepSingers.siteTitlesFor(singer, text);
+    hasAlias = siteTitles.length > 0;
     if (siteTitles.length) {
       const pool = [];
       for (const st of siteTitles) pool.push(...await fetchCandidateSongs(st));
       const viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs: pool });
       const aliasClips = await clipsInPlaylist(playlistId, viaAlias.map((c) => c.songId));
-      const aliasEnriched = viaAlias.map((c) => {
+      const withClips = viaAlias.map((c) => {
         const own = aliasClips.filter((cl) => cl.song.id === c.songId)
           .map((cl) => ({ clipId: cl.id, start: cl.start, length: cl.length, position: cl.position }))
           .sort((a, b) => a.start - b.start);
         return { ...c, clips: own, inPlaylist: own.length > 0 };
       }).filter((c) => c.inPlaylist);
-      if (aliasEnriched.length) {
+      // Auto only where the page can act on it: one song, one clip of it --
+      // a song held twice is a choice, as it is for an exact match.
+      const auto = gepSingers.aliasAutoOk(withClips) && withClips[0].clips.length === 1;
+      // `credited` was only for that decision; stored rows keep their shape.
+      const aliasEnriched = withClips.map(({ credited, ...c }) => c);
+      if (auto) aliasEnriched[0].auto = true;
+      if (auto || (aliasEnriched.length && !actionable.length)) {
         const ids = new Set(aliasEnriched.map((c) => c.songId));
-        enriched.splice(0, enriched.length, ...aliasEnriched, ...enriched.filter((c) => !ids.has(c.songId)));
+        // Taken over by an auto match, the title's own near matches in this
+        // playlist go: the page acts only when exactly one song here is left.
+        const rest = enriched.filter((c) => !ids.has(c.songId) && (!auto || !c.inPlaylist));
+        enriched.splice(0, enriched.length, ...aliasEnriched, ...rest);
         actionable = aliasEnriched;
       }
     }
@@ -669,6 +686,29 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
         outcome === 'pending' && actionable[0] ? actionable[0].clips[0].clipId : null,
     },
   });
+
+  // 歌手库 待处理: what a 网站歌名 would fix and none is there yet -- the title
+  // matched nothing in this playlist exactly, and it is not simply a right
+  // title whose song this playlist lacks (an exact match elsewhere, nothing
+  // here). Several exact matches are not marked: a 网站歌名 is never consulted
+  // for them. A side note only: nothing above depends on it.
+  if (singer && !titleExact && !hasAlias) {
+    const fromTitle = enriched.filter((c) => c.inPlaylist && c.kind !== 'alias');
+    if (fromTitle.length || !candidates.some((c) => c.kind === 'exact')) {
+      gepSingers.noteReview(singer, text);
+    } else {
+      // An exact match elsewhere hides any near match from the matcher; a
+      // near match in this playlist is what a 网站歌名 would fix, so look.
+      // Off the capture's path: only the mark depends on it.
+      const exactIds = new Set(candidates.filter((c) => c.kind === 'exact').map((c) => String(c.songId)));
+      (async () => {
+        const near = matchTitle(text, songs.filter((s) => !exactIds.has(String(s.id)))).candidates;
+        if (!near.length) return;
+        const held = await clipsInPlaylist(playlistId, near.map((c) => c.songId));
+        if (held.length) gepSingers.noteReview(singer, text);
+      })().catch((err) => console.warn('[gep-singer] review check failed:', err.message));
+    }
+  }
 
   const payload = {
     eventId: event.id,
@@ -1564,6 +1604,8 @@ module.exports = {
   startSession, endSession, resolveSession, redeemPairCode,
   connect, setTarget, getConnection,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
+  // QQ打标's 待处理 check asks the site catalogue whether a title is right.
+  fetchCandidateSongs,
   // The route drops "aimed at nothing" before the service sees it, and that
   // drop needs saying out loud just as much as the ones in here.
   logNoTarget,

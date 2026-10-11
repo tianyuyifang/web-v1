@@ -410,11 +410,250 @@ function framesOf(r, event) {
     await gep.deleteSong(added.id);
     eq(await prisma.gepSongAlias.count({ where: { singerSongId: added.id } }), 0, 'song delete cascades to aliases');
     await assert.rejects(gep.deleteSong(added.id), /not found/i, 'deleting twice is a 404');
+
+    // ======================================================================
+    // E. 方案 C (2026-10-11): a 网站歌名 match is liked on its own only when it
+    //    is one song credited to the game's singer; and 待处理 marks
+    // ======================================================================
+    const flagOf = async (singer, title) => (await prisma.gepSingerSong.findUnique({
+      where: { singer_title: { singer, title } }, select: { needsReviewAt: true },
+    }))?.needsReviewAt || null;
+    // No underscore: on the site "_" separates artists, so a prefixed name would never read as credited.
+    const SA = 'apkTest歌手甲';
+    stub.songs.push({ id: '15', songType: 0, title: '__apk网站上的名字', artist: SA });
+    stub.songs.push({ id: '16', songType: 0, title: '__apk别人唱的', artist: '__apk路人' });
+    stub.songs.push({ id: '17', songType: 0, title: '__apk近似歌 (Live)', artist: SA });
+    stub.songs.push({ id: '18', songType: 0, title: '__apk同名', artist: '__apk甲' });
+    stub.songs.push({ id: '19', songType: 0, title: '__apk同名', artist: '__apk乙' });
+    tags.supplySongs(user.id, 'qq:4343', { title: '测试歌单2', songs: stub.songs.map((x) => ({ ...x })), likedIds: [], dirId: 513 });
+    await tags.start({ userId: user.id, playlistRef: 'qq:4343', dirId: 513 });
+    phoneMode.claim = true; phoneMode.report = 'ok'; phoneMode.claimDelay = 0;
+
+    const ga = await gep.addSong(SA, '__apk游戏名甲');
+    await gep.addAlias(ga.id, '__apk网站上的名字');
+    phoneMode.lastJob = null;
+    const credited = await tags.ingest({ session: platSession, rawText: '《__apk游戏名甲》', singer: SA });
+    // Taken as an auto-like: done by the phone when one is there, else waiting
+    // to be retried on its own -- exactly what a perfect match gets.
+    ok(credited.outcome === 'liked' || (credited.outcome === 'pending' && credited.autoRetry === true),
+      `QQ: one song via 网站歌名, singer credited → auto-liked (${credited.outcome}, autoRetry ${credited.autoRetry})`);
+    if (credited.outcome === 'liked') eq(phoneMode.lastJob && phoneMode.lastJob.id, '15', 'the aliased song was the one liked');
+    eq([credited.candidates[0].kind, credited.candidates[0].auto], ['alias', true], 'kind alias, marked auto');
+    await sleep(200);
+    eq(await flagOf(SA, '__apk游戏名甲'), null, 'found via 网站歌名: not 待处理');
+
+    const gb = await gep.addSong(SA, '__apk游戏名乙');
+    await gep.addAlias(gb.id, '__apk别人唱的');
+    phoneMode.lastJob = null;
+    const uncredited = await tags.ingest({ session: platSession, rawText: '《__apk游戏名乙》', singer: SA });
+    eq(uncredited.outcome, 'pending', 'QQ: 网站歌名 finds a song not credited to the singer → 待确认');
+    eq(phoneMode.lastJob, null, 'and nothing was liked');
+    eq(uncredited.candidates[0].auto, undefined, 'not marked auto');
+    eq(uncredited.autoRetry, false, 'not an auto-like waiting to be retried');
+    await sleep(200);
+    eq(await flagOf(SA, '__apk游戏名乙'), null, 'found via 网站歌名 (even uncredited): not 待处理');
+
+    phoneMode.lastJob = null;
+    const perfect = await tags.ingest({ session: platSession, rawText: '《七里香》', singer: SA });
+    ok(['liked', 'already_liked'].includes(perfect.outcome), `QQ: a perfect title match is liked exactly as before (${perfect.outcome})`);
+    eq(perfect.candidates[0].kind, 'exact', 'kind exact');
+    eq(perfect.candidates[0].auto, undefined, 'no auto marker on a plain exact match');
+    await sleep(200);
+    eq(await flagOf(SA, '七里香'), null, 'perfect: not 待处理');
+
+    const near = await tags.ingest({ session: platSession, rawText: '《大城小爱 (Live)》', singer: SA });
+    eq(near.outcome, 'pending', 'QQ: a near title (bracket) waits as before');
+    await sleep(300);
+    ok(await flagOf(SA, '大城小爱 (Live)'), 'near match: 待处理');
+
+    const none = await tags.ingest({ session: platSession, rawText: '《__apk哪里都没有的歌》', singer: SA });
+    eq(none.outcome, 'no_match', 'QQ: nothing anywhere → no_match');
+    eq((await prisma.platformTagEvent.findUnique({ where: { id: none.eventId } })).candidates, null,
+      'QQ: the singer placeholder carried while matching does not stay on the row');
+    await sleep(500);
+    ok(await flagOf(SA, '__apk哪里都没有的歌'), 'no match, not on the site either: 待处理');
+
+    // the title is right on the site, just not in this QQ list: nothing a 网站歌名 would fix
+    const absent = await tags.ingest({ session: platSession, rawText: `《${clip.song.title}》`, singer: SA });
+    eq(absent.outcome, 'no_match', 'QQ: a site title missing from the QQ list → no_match');
+    await sleep(500);
+    eq(await flagOf(SA, clip.song.title), null, 'exact on the site, absent from the list: not 待处理');
+
+    // 已处理 / adding a 网站歌名 clear it; the counts follow
+    let listed = (await gep.listSingers({ query: SA, reviewOnly: true })).singers.find((x) => x.singer === SA);
+    eq(listed && listed.review, 2, 'singer list counts 待处理');
+    const nearRow = (await gep.listSongs(SA)).songs.find((x) => x.title === '大城小爱 (Live)');
+    ok(nearRow.needsReviewAt, 'songs list carries needsReviewAt');
+    await gep.addAlias(nearRow.id, '大城小爱');
+    eq(await flagOf(SA, '大城小爱 (Live)'), null, 'adding a 网站歌名 clears 待处理');
+    const noneRow = (await gep.listSongs(SA)).songs.find((x) => x.title === '__apk哪里都没有的歌');
+    await gep.clearReview(noneRow.id);
+    eq(await flagOf(SA, '__apk哪里都没有的歌'), null, '已处理 clears 待处理');
+    eq((await gep.listSingers({ query: SA, reviewOnly: true })).singers.length, 0, 'review-only list now empty for this singer');
+
+    // 方案 B: a near match is tried against the 网站歌名 too
+    const twins = await tags.ingest({ session: platSession, rawText: '《__apk同名》', singer: SA });
+    eq(twins.outcome, 'ambiguous', 'QQ: two songs with this exact name → 选一个 as before');
+    await sleep(300);
+    eq(await flagOf(SA, '__apk同名'), null, 'several exact matches: not 待处理 (a 网站歌名 would not help)');
+    const nearBefore = await tags.ingest({ session: platSession, rawText: '《__apk近似歌》', singer: SA });
+    eq([nearBefore.outcome, nearBefore.candidates[0].kind], ['pending', 'bracket'], 'QQ: near match, no 网站歌名 yet → 待确认 as before');
+    await sleep(300);
+    ok(await flagOf(SA, '__apk近似歌'), 'near match: 待处理');
+    const nearRow2 = (await gep.listSongs(SA)).songs.find((x) => x.title === '__apk近似歌');
+    await gep.addAlias(nearRow2.id, '__apk近似歌 (Live)');
+    // a fresh list so the same title is not a duplicate of the capture above
+    tags.supplySongs(user.id, 'qq:4444', { title: '测试歌单3', songs: stub.songs.map((x) => ({ ...x })), likedIds: [], dirId: 514 });
+    await tags.start({ userId: user.id, playlistRef: 'qq:4444', dirId: 514 });
+    const nearAfter = await tags.ingest({ session: platSession, rawText: '《__apk近似歌》', singer: SA });
+    ok(nearAfter.outcome === 'liked' || (nearAfter.outcome === 'pending' && nearAfter.autoRetry === true),
+      `QQ: near match + 网站歌名 credited to the singer → auto-liked (${nearAfter.outcome})`);
+    eq([nearAfter.candidates.length, nearAfter.candidates[0].externalId, nearAfter.candidates[0].auto], [1, '17', true], 'one candidate, the aliased song, auto');
+    await sleep(300);
+    eq(await flagOf(SA, '__apk近似歌'), null, 'has a 网站歌名: not marked again');
+    // A capture interrupted mid-match comes back 'unread' with its singer, and
+    // the rematch still goes through the 网站歌名 (here: auto).
+    const sid = platSession.id;
+    await prisma.platformTagEvent.create({ data: { sessionId: sid, userId: user.id, platform: 'qq', playlistRef: 'qq:4545', rawText: '《__apk游戏名甲》', outcome: 'unread', candidates: [{ singer: SA }] } });
+    // The rematch is for the run aimed at that list: aim there, then the list arrives.
+    tags.supplySongs(user.id, 'qq:4545', { title: '测试歌单4', songs: stub.songs.map((x) => ({ ...x })), likedIds: [], dirId: 515 });
+    await tags.start({ userId: user.id, playlistRef: 'qq:4545', dirId: 515 });
+    tags.supplySongs(user.id, 'qq:4545', { title: '测试歌单4', songs: stub.songs.map((x) => ({ ...x })), likedIds: [], dirId: 515 });
+    await sleep(1500);
+    const rem = await prisma.platformTagEvent.findUnique({ where: { sessionId_playlistRef_rawText: { sessionId: sid, playlistRef: 'qq:4545', rawText: '《__apk游戏名甲》' } } });
+    ok(rem && Array.isArray(rem.candidates) && rem.candidates[0] && rem.candidates[0].auto === true && rem.candidates[0].externalId === '15',
+      `QQ: rematch after an interruption still uses the singer's 网站歌名 (${rem && rem.outcome})`);
+
+    // uncredited near match with a 网站歌名: exactly as before
+    // 《大城小爱 (Live)》 is a near match of 大城小爱 (王力宏), and got a 网站歌名
+    // 「大城小爱」 above -- which finds that same uncredited song.
+    const nearOther = await tags.ingest({ session: platSession, rawText: '《大城小爱 (Live)》', singer: SA });
+    eq([nearOther.outcome, nearOther.candidates.map((c) => c.kind)], ['pending', ['bracket']],
+      'QQ: near match + uncredited 网站歌名 → exactly the near match as before');
+    ok(!nearOther.candidates.some((c) => c.auto), 'QQ: 网站歌名 found a song not credited to the singer → nothing auto');
+    eq(nearOther.autoRetry, false, 'and not an auto-like');
+
+    // pinyin order: singers and their songs
+    for (const n of ['周', '阿', 'b']) await gep.addSong(`${SINGER_PREFIX}序${n}`, 'x');
+    eq((await gep.listSingers({ query: `${SINGER_PREFIX}序` })).singers.map((x) => x.singer),
+      [`${SINGER_PREFIX}序阿`, `${SINGER_PREFIX}序b`, `${SINGER_PREFIX}序周`], 'singers in pinyin order');
+    for (const t of ['周杰', '阿桑', 'Bxyz']) await gep.addSong(`${SINGER_PREFIX}序周`, t);
+    eq((await gep.listSongs(`${SINGER_PREFIX}序周`)).songs.map((x) => x.title), ['阿桑', 'Bxyz', 'x', '周杰'], 'songs in pinyin order');
+
+    // 歌单: the same rule; the page's isPerfect() reads `auto`
+    await captureService.setTarget({ userId: user.id, target: 'playlist', playlistId: playlist.id });
+    const realSinger = String(clip.song.artist || '').split(/[/_、,，&]+/)[0].trim();
+    const gc = await gep.addSong(realSinger, '__apk歌单游戏名');
+    await gep.addAlias(gc.id, clip.song.title);
+    const fresh2 = await prisma.captureSession.findUnique({ where: { id: session.id } });
+    try {
+      const pl = await captureService.ingestText({ session: fresh2, rawText: '《__apk歌单游戏名》', singer: realSinger });
+      const inPl = (pl.candidates || []).filter((c) => c.inPlaylist);
+      eq([pl.outcome, inPl.length, inPl[0] && inPl[0].kind, inPl[0] && inPl[0].auto], ['pending', 1, 'alias', true],
+        '歌单: one credited song via 网站歌名 → pending, marked auto');
+      const isPerfect = (e) => {
+        if (e.outcome !== 'pending') return false;
+        const cands = (e.candidates || []).filter((c) => c.inPlaylist);
+        return cands.length === 1 && (cands[0].kind === 'exact' || cands[0].auto === true) && cands[0].clips.length === 1;
+      };
+      eq(isPerfect(pl), true, "the page's isPerfect() takes it");
+      eq(isPerfect(viaAlias2), false, 'the uncredited one (earlier, singer not on the song) it does not');
+      await sleep(300);
+      eq(await flagOf(realSinger, '__apk歌单游戏名'), null, '歌单: found via 网站歌名: not 待处理');
+      // 方案 B on the playlist page: a near title, then a 网站歌名
+      const nearTitle = `${clip.song.title} (Live)`;
+      const plNearBefore = await captureService.ingestText({ session: fresh2, rawText: `《${nearTitle}》`, singer: realSinger });
+      const nearIn = (plNearBefore.candidates || []).filter((c) => c.inPlaylist);
+      ok(nearIn.length >= 1 && !nearIn.some((c) => c.kind === 'exact') && !isPerfect(plNearBefore),
+        `歌单: near title → not acted on (${plNearBefore.outcome}, ${nearIn.map((c) => c.kind).join(',')})`);
+      await sleep(300);
+      ok(await flagOf(realSinger, nearTitle), '歌单: near title: 待处理');
+      const gn = (await gep.listSongs(realSinger)).songs.find((x) => x.title === nearTitle);
+      await gep.addAlias(gn.id, clip.song.title);
+      eq(await flagOf(realSinger, nearTitle), null, '网站歌名 added: cleared');
+      const playlist2 = await prisma.playlist.create({ data: { name: `__apk_test_${Date.now()}_2`, userId: user.id } });
+      created.playlists.push(playlist2.id);
+      await prisma.playlistClip.create({ data: { playlistId: playlist2.id, clipId: clip.id, position: 0 } });
+      await captureService.setTarget({ userId: user.id, target: 'playlist', playlistId: playlist2.id });
+      const fresh3 = await prisma.captureSession.findUnique({ where: { id: session.id } });
+      const plNearAfter = await captureService.ingestText({ session: fresh3, rawText: `《${nearTitle}》`, singer: realSinger });
+      const afterIn = (plNearAfter.candidates || []).filter((c) => c.inPlaylist);
+      eq([afterIn.length, afterIn[0] && afterIn[0].kind, afterIn[0] && afterIn[0].auto], [1, 'alias', true],
+        '歌单: near title + credited 网站歌名 → one candidate, auto');
+      eq(isPerfect(plNearAfter), true, "歌单: the page's isPerfect() takes it");
+      const plExact = await captureService.ingestText({ session: fresh3, rawText: `《${clip.song.title}》`, singer: realSinger });
+      const exIn = (plExact.candidates || []).filter((c) => c.inPlaylist);
+      eq([plExact.outcome, exIn.length, exIn[0] && exIn[0].kind, exIn[0] && exIn[0].auto, isPerfect(plExact)],
+        ['pending', 1, 'exact', undefined, true], '歌单: a perfect title match exactly as before (acted on, no auto marker)');
+      ok(!(plExact.candidates || []).some((c) => 'credited' in c), 'stored candidates carry no `credited`');
+
+      // The near match is a different song also in the playlist: the auto
+      // match takes over and that one is not left beside it.
+      const clip2 = await prisma.clip.findFirst({ where: { song: { id: { not: clip.song.id } } }, include: { song: { select: { id: true, title: true } } } });
+      const playlist3 = await prisma.playlist.create({ data: { name: `__apk_test_${Date.now()}_3`, userId: user.id } });
+      created.playlists.push(playlist3.id);
+      await prisma.playlistClip.create({ data: { playlistId: playlist3.id, clipId: clip.id, position: 0 } });
+      await prisma.playlistClip.create({ data: { playlistId: playlist3.id, clipId: clip2.id, position: 1 } });
+      await prisma.playlistClip.create({ data: { playlistId: playlist2.id, clipId: clip2.id, position: 1 } });
+      const otherNear = `${clip2.song.title} (Live)`;
+      const beforeAlias = await captureService.ingestText({ session: fresh3, rawText: `《${otherNear}》`, singer: realSinger });
+      ok((beforeAlias.candidates || []).some((c) => c.inPlaylist && String(c.songId) === String(clip2.song.id) && c.kind !== 'exact'),
+        '歌单: before the 网站歌名, the other song is a near match in the playlist');
+      const go = await gep.addSong(realSinger, otherNear);
+      await gep.addAlias(go.id, clip.song.title);
+      await captureService.setTarget({ userId: user.id, target: 'playlist', playlistId: playlist3.id });
+      const fresh4 = await prisma.captureSession.findUnique({ where: { id: session.id } });
+      const twoIn = await captureService.ingestText({ session: fresh4, rawText: `《${otherNear}》`, singer: realSinger });
+      const twoInPl = (twoIn.candidates || []).filter((c) => c.inPlaylist);
+      eq([twoInPl.length, twoInPl[0] && twoInPl[0].songId, twoInPl[0] && twoInPl[0].auto], [1, clip.song.id, true],
+        '歌单: auto 网站歌名 match replaces a different near match in the playlist');
+      eq(isPerfect(twoIn), true, "and the page's isPerfect() takes it");
+      await prisma.gepSingerSong.deleteMany({ where: { singer: realSinger, title: otherNear } });
+      await captureService.setTarget({ userId: user.id, target: 'playlist', playlistId: playlist.id });
+
+      // An exact match elsewhere hides a near one in this playlist from the
+      // matcher; it is still what a 网站歌名 would fix, so it is marked.
+      const tmpSongs = [];
+      try {
+        const mk = async (title) => { const sg = await prisma.song.create({ data: { title, artist: 'apkTest临时', filePath: '__apk/none.mp3' } }); tmpSongs.push(sg.id); return sg; };
+        await mk('__apkT标题');
+        const nearSong = await mk('__apkT标题 (Live)');
+        const nearClip = await prisma.clip.create({ data: { songId: nearSong.id, start: 0, length: 20 } });
+        await prisma.playlistClip.create({ data: { playlistId: playlist.id, clipId: nearClip.id, position: 9 } });
+        await mk('__apkU标题');
+        const hidden = await captureService.ingestText({ session: fresh2, rawText: '《__apkT标题》', singer: 'apkTest歌手乙' });
+        eq(hidden.outcome, 'not_in_playlist', '歌单: exact elsewhere, near here → outcome as before');
+        const absentOnly = await captureService.ingestText({ session: fresh2, rawText: '《__apkU标题》', singer: 'apkTest歌手乙' });
+        eq(absentOnly.outcome, 'not_in_playlist', '歌单: exact elsewhere, nothing here → as before');
+        await sleep(500);
+        ok(await flagOf('apkTest歌手乙', '__apkT标题'), '歌单: near match hidden by an exact one elsewhere: 待处理');
+        eq(await flagOf('apkTest歌手乙', '__apkU标题'), null, '歌单: right title, song just not in this playlist: not 待处理');
+      } finally {
+        await prisma.playlistClip.deleteMany({ where: { clip: { songId: { in: tmpSongs } } } });
+        await prisma.clip.deleteMany({ where: { songId: { in: tmpSongs } } });
+        await prisma.song.deleteMany({ where: { id: { in: tmpSongs } } });
+      }
+
+      // A 网站歌名 added while a capture is in flight is not marked over
+      const raceRow = await gep.addSong('apkTest歌手乙', '__apk竞争');
+      await gep.addAlias(raceRow.id, '__apk随便');
+      gep.noteReview('apkTest歌手乙', '__apk竞争');
+      await sleep(300);
+      eq(await flagOf('apkTest歌手乙', '__apk竞争'), null, 'a title with a 网站歌名 is never marked');
+
+      const plNone = await captureService.ingestText({ session: fresh2, rawText: '《__apk歌单里没有的歌》', singer: realSinger });
+      eq(plNone.outcome, 'no_match', '歌单: nothing → no_match');
+      await sleep(300);
+      ok(await flagOf(realSinger, '__apk歌单里没有的歌'), '歌单: no match: 待处理');
+    } finally {
+      await prisma.gepSingerSong.deleteMany({ where: { singer: realSinger, OR: [{ title: { startsWith: '__apk' } }, { title: `${clip.song.title} (Live)` }] } });
+    }
     passed += 1;
 
     console.log(`apk-capture-test: all ${passed} checks passed`);
   } finally {
     await prisma.gepSingerSong.deleteMany({ where: { singer: { startsWith: SINGER_PREFIX } } });
+    await prisma.gepSingerSong.deleteMany({ where: { singer: { startsWith: 'apkTest' } } });
     if (savedSetting) {
       await prisma.setting.upsert({ where: { key: savedSetting.key }, create: { key: savedSetting.key, value: savedSetting.value }, update: { value: savedSetting.value } });
     } else {

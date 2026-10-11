@@ -5,14 +5,33 @@
  * Fed by the capture client (v28+), which reads the game's assigned singer in
  * the same scan as each 歌P title; edited on the review page (「歌手」tab).
  *
- * The one thing it does for capture: a 歌P title that matched nothing in the
+ * What it does for capture: a 歌P title that matched nothing in the
  * destination list gets a second try through the titles an editor attached to
- * it here (`siteTitlesFor`). Whatever that finds is offered as 待确认 only --
- * the callers never let it like on its own.
+ * it here (`siteTitlesFor`). What that finds is liked on its own only when it
+ * is one song credited to the game's singer (`credited`, 2026-10-11 方案 C);
+ * anything else is offered as 待确认.
+ *
+ * And it marks a title 待处理 (`noteReview`) when a 歌P capture of it found no
+ * perfect match and no 网站歌名 helped -- the case an editor can fix here.
  */
 const prisma = require('../db/client');
 const { matchTitle } = require('./captureMatchService');
 const { NotFoundError, ValidationError } = require('../utils/errors');
+const { toPinyin } = require('../utils/pinyin');
+
+/**
+ * Alphabetical as a reader means it: Chinese by pinyin, mixed in with Latin.
+ * Spaces out: the pinyin comes back split per character ("zhou jie lun"),
+ * and a space sorts before every letter.
+ */
+const sortKey = (s) => String(toPinyin(String(s || '')) || '').replace(/\s+/g, '').toLowerCase();
+/** Sorted copy of `rows` by the pinyin of get(row); each key worked out once. */
+function sortByPinyin(rows, get) {
+  return rows
+    .map((r) => ({ r, k: sortKey(get(r)), raw: String(get(r)) }))
+    .sort((a, b) => (a.k === b.k ? a.raw.localeCompare(b.raw) : a.k.localeCompare(b.k)))
+    .map((x) => x.r);
+}
 
 const MAX_SINGER = 64;
 const MAX_TITLE = 120;
@@ -102,7 +121,10 @@ function creditsSinger(artist, singer) {
  * Exact only -- the attached title is already the editor's statement of what
  * the song is called, so nothing looser is needed or wanted. When the singer
  * is credited on some of them, only those are offered. Each comes back as kind
- * 'alias', which nothing treats as safe to like unasked (only 'exact' is).
+ * 'alias' with `credited` saying whether the game's singer is on it: a caller
+ * may like it on its own only when the list it acts on is that one credited
+ * song (the auto: true it then sets on the candidate); otherwise it waits in
+ * 待确认.
  */
 function matchSiteTitles({ singer, gameTitle, siteTitles, songs }) {
   const found = new Map();
@@ -114,13 +136,56 @@ function matchSiteTitles({ singer, gameTitle, siteTitles, songs }) {
         title: c.title,
         artist: c.artist,
         kind: 'alias',
+        credited: creditsSinger(c.artist, singer),
         note: `歌手库：${cleanSinger(singer)} 的《${cleanTitle(gameTitle)}》对应「${st}」`,
       });
     }
   }
   const list = [...found.values()];
-  const credited = list.filter((c) => creditsSinger(c.artist, singer));
+  const credited = list.filter((c) => c.credited);
   return credited.length ? credited : list;
+}
+
+/**
+ * 方案 C: what a 网站歌名 found may be liked without asking only when it is
+ * exactly one song and the game's singer is credited on it.
+ */
+function aliasAutoOk(actionable) {
+  return Array.isArray(actionable) && actionable.length === 1
+    && actionable[0].kind === 'alias' && actionable[0].credited === true;
+}
+
+/**
+ * Mark this singer's title 待处理: a 歌P capture of it found no perfect match
+ * and no 网站歌名 found it. Fire-and-forget, like note(): never throws, never
+ * waits on the capture. The row is made if play has not recorded it yet.
+ */
+function noteReview(singerRaw, titleRaw) {
+  const singer = cleanSinger(singerRaw);
+  const title = cleanTitle(titleRaw);
+  if (!singer || !title || singer.length > MAX_SINGER || title.length > MAX_TITLE) return;
+  const now = new Date();
+  // Only a title without a 网站歌名: one added while this capture was being
+  // matched has already answered it, and must not be marked over.
+  const mark = () => prisma.gepSingerSong.updateMany({
+    where: { singer, title, aliases: { none: {} } }, data: { needsReviewAt: now },
+  });
+  try {
+    (async () => {
+      const { count } = await mark();
+      if (count) return;
+      // No row to mark (or it has a 网站歌名): make one only if none exists.
+      try {
+        await prisma.gepSingerSong.create({ data: { singer, title, source: 'game', needsReviewAt: now } });
+      } catch (err) {
+        // There is a row -- with a 网站歌名, or made by note() just now.
+        if (err.code !== 'P2002') throw err;
+        await mark();
+      }
+    })().catch((err) => console.warn('[gep-singer] review mark failed:', err.message));
+  } catch (err) {
+    console.warn('[gep-singer] review mark failed:', err.message);
+  }
 }
 
 // --- review page ------------------------------------------------------------
@@ -130,7 +195,7 @@ function matchSiteTitles({ singer, gameTitle, siteTitles, songs }) {
  * name or any of their titles); the count is always the singer's total, so
  * it means the same thing with or without one.
  */
-async function listSingers({ query } = {}) {
+async function listSingers({ query, reviewOnly = false } = {}) {
   const q = String(query || '').trim();
   let where = {};
   if (q) {
@@ -142,24 +207,27 @@ async function listSingers({ query } = {}) {
     });
     where = { singer: { in: hits.map((h) => h.singer) } };
   }
-  const rows = await prisma.gepSingerSong.groupBy({
-    by: ['singer'],
-    where,
-    _count: { _all: true },
-    orderBy: { singer: 'asc' },
-  });
-  return { singers: rows.map((r) => ({ singer: r.singer, songs: r._count._all })) };
+  const [rows, flagged] = await Promise.all([
+    prisma.gepSingerSong.groupBy({ by: ['singer'], where, _count: { _all: true } }),
+    prisma.gepSingerSong.groupBy({
+      by: ['singer'], where: { ...where, needsReviewAt: { not: null } }, _count: { _all: true },
+    }),
+  ]);
+  const review = new Map(flagged.map((r) => [r.singer, r._count._all]));
+  const singers = sortByPinyin(rows
+    .map((r) => ({ singer: r.singer, songs: r._count._all, review: review.get(r.singer) || 0 }))
+    .filter((r) => !reviewOnly || r.review > 0), (r) => r.singer);
+  return { singers };
 }
 
 /** One singer's songs, each with its site titles. */
 async function listSongs(singerRaw) {
   const singer = cleanSinger(singerRaw);
   if (!singer) throw new ValidationError({ singer: ['缺少歌手'] });
-  const rows = await prisma.gepSingerSong.findMany({
+  const rows = sortByPinyin(await prisma.gepSingerSong.findMany({
     where: { singer },
-    orderBy: { title: 'asc' },
     include: { aliases: { orderBy: { createdAt: 'asc' } } },
-  });
+  }), (r) => r.title);
   return {
     singer,
     songs: rows.map((r) => ({
@@ -167,6 +235,7 @@ async function listSongs(singerRaw) {
       title: r.title,
       source: r.source,
       createdAt: r.createdAt,
+      needsReviewAt: r.needsReviewAt,
       aliases: r.aliases.map((a) => ({ id: a.id, siteTitle: a.siteTitle })),
     })),
   };
@@ -184,7 +253,7 @@ async function addSong(singerRaw, titleRaw) {
     if (err.code !== 'P2002') throw err;
     return prisma.gepSingerSong.findUnique({ where, include: { aliases: true } });
   });
-  return { id: row.id, singer: row.singer, title: row.title, source: row.source, aliases: row.aliases.map((a) => ({ id: a.id, siteTitle: a.siteTitle })) };
+  return { id: row.id, singer: row.singer, title: row.title, source: row.source, needsReviewAt: row.needsReviewAt, aliases: row.aliases.map((a) => ({ id: a.id, siteTitle: a.siteTitle })) };
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -211,7 +280,20 @@ async function addAlias(singerSongId, siteTitleRaw) {
       if (err.code !== 'P2002') throw err;
       return prisma.gepSongAlias.findUnique({ where });
     });
+  // A 网站歌名 is what 待处理 asked for (and a title with one is not marked
+  // again). Never fails the add: the 网站歌名 is
+  // what matters, and the mark only steers the review list.
+  await prisma.gepSingerSong.update({ where: { id: singerSongId }, data: { needsReviewAt: null } })
+    .catch((err) => console.warn('[gep-singer] review clear failed:', err.message));
   return { id: row.id, siteTitle: row.siteTitle };
+}
+
+/** 已处理: an editor looked and there is nothing to add. */
+async function clearReview(id) {
+  if (!UUID_RE.test(String(id))) throw new NotFoundError('Song');
+  const { count } = await prisma.gepSingerSong.updateMany({ where: { id }, data: { needsReviewAt: null } });
+  if (!count) throw new NotFoundError('Song');
+  return { ok: true };
 }
 
 async function deleteAlias(id) {
@@ -223,5 +305,6 @@ async function deleteAlias(id) {
 
 module.exports = {
   note, siteTitlesFor, matchSiteTitles, creditsSinger, cleanTitle, cleanSinger,
-  listSingers, listSongs, addSong, deleteSong, addAlias, deleteAlias,
+  aliasAutoOk, noteReview,
+  listSingers, listSongs, addSong, deleteSong, addAlias, deleteAlias, clearReview,
 };

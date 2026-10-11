@@ -11,17 +11,24 @@
  * it (「网站歌名」).
  *
  * The attached titles are used when a captured 歌P title matches nothing in
- * the destination list: the song they find is offered as 待确认. Never liked
- * automatically — the user still decides, so a wrong entry here costs a click.
+ * the destination list. What they find is liked on its own only when it is
+ * one song credited to the game's singer; otherwise it goes to 待确认.
+ *
+ * 待处理 marks a title a 歌P capture matched nothing exactly in the list and
+ * that has no 网站歌名 yet -- the ones a 网站歌名 would fix. Adding one clears
+ * it for good; 已处理 clears it until the next such capture.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mappingAPI } from "@/lib/api";
+import api, { mappingAPI } from "@/lib/api";
 
 const errorOf = (err, fallback) => err?.response?.data?.error?.message || fallback;
 
 function SongRow({ song, onChanged, onDeleted }) {
   const [alias, setAlias] = useState("");
+  // Most titles match the site exactly and never need a 网站歌名, so the box
+  // is only there once asked for.
+  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
@@ -45,8 +52,11 @@ function SongRow({ song, onChanged, onDeleted }) {
     run(async () => {
       const res = await mappingAPI.addGepAlias(song.id, t);
       setAlias("");
+      setAdding(false);
       onChanged({
         ...song,
+        // Adding one clears 待处理 on the server too.
+        needsReviewAt: null,
         aliases: song.aliases.some((a) => a.id === res.data.id) ? song.aliases : [...song.aliases, res.data],
       });
     });
@@ -57,47 +67,32 @@ function SongRow({ song, onChanged, onDeleted }) {
     onChanged({ ...song, aliases: song.aliases.filter((a) => a.id !== id) });
   });
 
+  const markReviewed = () => run(async () => {
+    await api.post(`/mappings/gep-singers/songs/${song.id}/reviewed`);
+    onChanged({ ...song, needsReviewAt: null });
+  });
+
   const remove = () => run(async () => {
     await mappingAPI.removeGepSong(song.id);
     onDeleted(song.id);
   });
 
-  return (
-    <li className="rounded-lg border border-border bg-surface p-3">
-      <div className="flex flex-wrap items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="break-words font-medium text-fg">《{song.title}》</p>
-          {song.source === "manual" && <p className="text-[0.7rem] text-muted">手动添加</p>}
-        </div>
-        {confirming ? (
-          <span className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={remove}
-              className="rounded border border-red-500/50 px-2 py-0.5 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-40"
-            >确定删除</button>
-            <button
-              type="button"
-              onClick={() => setConfirming(false)}
-              className="rounded border border-border px-2 py-0.5 text-xs text-muted hover:text-fg"
-            >取消</button>
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setConfirming(true)}
-            className="shrink-0 rounded border border-border px-2 py-0.5 text-xs text-muted hover:border-red-500/50 hover:text-red-300"
-          >删除</button>
-        )}
-      </div>
+  const small = "shrink-0 rounded border border-border px-2 py-0.5 text-xs text-muted hover:text-fg disabled:opacity-40";
 
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <span className="text-xs text-muted">网站歌名：</span>
-        {song.aliases.length === 0 && <span className="text-xs text-muted">（无）</span>}
+  return (
+    <li className="rounded-lg border border-border bg-surface px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="break-words font-medium text-fg">《{song.title}》</span>
+        {song.needsReviewAt && (
+          <span
+            className="rounded bg-yellow-500/15 px-1.5 py-0.5 text-[0.65rem] text-yellow-500"
+            title={`最近一次：${new Date(song.needsReviewAt).toLocaleString()}`}
+          >待处理</span>
+        )}
+        {song.source === "manual" && <span className="text-[0.7rem] text-muted">手动添加</span>}
         {song.aliases.map((a) => (
           <span key={a.id} className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-xs text-fg">
-            {a.siteTitle}
+            <span className="text-muted">→</span>{a.siteTitle}
             <button
               type="button"
               disabled={busy}
@@ -107,21 +102,56 @@ function SongRow({ song, onChanged, onDeleted }) {
             >×</button>
           </span>
         ))}
+
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {!adding && (
+            <button type="button" onClick={() => setAdding(true)} className={small}>添加映射</button>
+          )}
+          {song.needsReviewAt && (
+            <button type="button" disabled={busy} onClick={markReviewed} className={small} title="看过了，不需要加网站歌名">已处理</button>
+          )}
+          {confirming ? (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={remove}
+                className="rounded border border-red-500/50 px-2 py-0.5 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-40"
+              >确定删除</button>
+              <button type="button" onClick={() => setConfirming(false)} className={small}>取消</button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="shrink-0 rounded border border-border px-2 py-0.5 text-xs text-muted hover:border-red-500/50 hover:text-red-300"
+            >删除</button>
+          )}
+        </span>
       </div>
-      <form onSubmit={addAlias} className="mt-2 flex gap-2">
-        <input
-          value={alias}
-          onChange={(e) => setAlias(e.target.value)}
-          maxLength={120}
-          placeholder="添加网站上的写法，如：Can You Feel My World (Live)"
-          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
-        />
-        <button
-          type="submit"
-          disabled={busy || !alias.trim()}
-          className="shrink-0 rounded-lg border border-accent px-3 py-1.5 text-sm text-accent disabled:opacity-40"
-        >添加</button>
-      </form>
+
+      {adding && (
+        <form onSubmit={addAlias} className="mt-2 flex gap-2">
+          <input
+            autoFocus
+            value={alias}
+            onChange={(e) => setAlias(e.target.value)}
+            maxLength={120}
+            placeholder="网站或 QQ 音乐上的歌名，如：Can You Feel My World (Live)"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={busy || !alias.trim()}
+            className="shrink-0 rounded-lg border border-accent px-3 py-1.5 text-sm text-accent disabled:opacity-40"
+          >添加</button>
+          <button
+            type="button"
+            onClick={() => { setAdding(false); setAlias(""); }}
+            className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-fg"
+          >取消</button>
+        </form>
+      )}
       {error && <p className="mt-1 text-xs text-red-300">{error}</p>}
     </li>
   );
@@ -130,6 +160,8 @@ function SongRow({ song, onChanged, onDeleted }) {
 export default function GepSingerPanel() {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
+  // 只看待处理: singers with something to do, and only those songs.
+  const [reviewOnly, setReviewOnly] = useState(false);
   const [singers, setSingers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -144,12 +176,15 @@ export default function GepSingerPanel() {
   // Likewise the last search, for the singer list.
   const lastSearch = useRef(0);
 
-  const loadSingers = useCallback(async (q) => {
+  const loadSingers = useCallback(async (q, review) => {
     const mine = ++lastSearch.current;
     setLoading(true);
     setError("");
     try {
-      const res = await mappingAPI.gepSingers(q);
+      const params = {};
+      if (q) params.q = q;
+      if (review) params.review = "1";
+      const res = await api.get("/mappings/gep-singers", { params });
       if (mine === lastSearch.current) setSingers(res.data.singers || []);
     } catch (err) {
       if (mine === lastSearch.current) setError(errorOf(err, "读取失败"));
@@ -158,13 +193,16 @@ export default function GepSingerPanel() {
     }
   }, []);
 
-  useEffect(() => { loadSingers(submitted); }, [loadSingers, submitted]);
+  useEffect(() => { loadSingers(submitted, reviewOnly); }, [loadSingers, submitted, reviewOnly]);
 
-  const open = useCallback(async (singer) => {
+  // `quiet`: refresh in place (after an add) rather than blanking the list.
+  const open = useCallback(async (singer, { quiet = false } = {}) => {
     wanted.current = singer;
     setSelected(singer);
-    setSongs([]);
-    setSongsLoading(true);
+    if (!quiet) {
+      setSongs([]);
+      setSongsLoading(true);
+    }
     setError("");
     try {
       const res = await mappingAPI.gepSongs(singer);
@@ -177,9 +215,17 @@ export default function GepSingerPanel() {
   }, []);
 
   // One song deleted: its singer counts one fewer, and leaves the list at zero.
-  const dropOne = (singer) => setSingers((prev) => prev
-    .map((s) => (s.singer === singer ? { ...s, songs: s.songs - 1 } : s))
-    .filter((s) => s.songs > 0));
+  const dropOne = (singer, wasFlagged) => setSingers((prev) => prev
+    .map((s) => (s.singer === singer
+      ? { ...s, songs: s.songs - 1, review: Math.max(0, (s.review || 0) - (wasFlagged ? 1 : 0)) }
+      : s))
+    .filter((s) => s.songs > 0 && (!reviewOnly || s.review > 0)));
+
+  // A song's 待处理 cleared here: one fewer on its singer, who leaves the
+  // 只看待处理 list at zero.
+  const reviewedOne = (singer) => setSingers((prev) => prev
+    .map((s) => (s.singer === singer ? { ...s, review: Math.max(0, (s.review || 0) - 1) } : s))
+    .filter((s) => !reviewOnly || s.review > 0));
 
   const addSong = async (e) => {
     e.preventDefault();
@@ -189,19 +235,12 @@ export default function GepSingerPanel() {
     setAdding(true);
     setError("");
     try {
-      const res = await mappingAPI.addGepSong(singer, title);
+      await mappingAPI.addGepSong(singer, title);
       setNewTitle("");
-      // Show the singer it went under, with the new row in place. A re-add of
-      // an existing pair is answered with that same row, so nothing doubles.
-      if (selected === singer) {
-        setSongs((prev) => (prev.some((s) => s.id === res.data.id)
-          ? prev
-          : [...prev, res.data].sort((a, b) => a.title.localeCompare(b.title))));
-      } else {
-        await open(singer);
-      }
+      // The server's order (pinyin), with the new row in place.
+      await open(singer, { quiet: selected === singer });
       // Counts from the server rather than guessed here.
-      loadSingers(submitted);
+      loadSingers(submitted, reviewOnly);
     } catch (err) {
       setError(errorOf(err, "添加失败"));
     } finally {
@@ -209,18 +248,27 @@ export default function GepSingerPanel() {
     }
   };
 
+  const shown = reviewOnly ? songs.filter((s) => s.needsReviewAt) : songs;
+
   return (
     <div>
       <p className="mb-3 text-xs text-muted">
         歌P 一局只有一位指定歌手，双方轮流唱这位歌手的歌。打标 APK（v28 起）会把歌名和歌手一起发上来，记在这里。
         识别错了、或游戏里已经没有的，可以删除；没记到的可以手动添加。给歌名加上「网站歌名」后，
-        以后这首歌在歌单 / QQ 歌单里对不上时，会按网站歌名找到并放进「待确认」，由用户自己点，不会自动点赞。
+        以后这首歌在歌单 / QQ 歌单里对不上时会按网站歌名去找：找到唯一一首、且是这位歌手的，自动打标；否则放进「待确认」由用户自己点。
+        「待处理」= 歌P 里抓到这首歌时没有完全一致的歌名，加上网站歌名就能解决。
       </p>
 
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <form
           className="flex min-w-[16rem] flex-1 gap-2"
-          onSubmit={(e) => { e.preventDefault(); setSubmitted(query.trim()); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const q = query.trim();
+            // The same search again still reloads: it is how to see what changed.
+            if (q === submitted) loadSingers(q, reviewOnly);
+            else setSubmitted(q);
+          }}
         >
           <input
             value={query}
@@ -230,6 +278,10 @@ export default function GepSingerPanel() {
           />
           <button type="submit" className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-fg">搜索</button>
         </form>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-sm text-muted">
+          <input type="checkbox" checked={reviewOnly} onChange={(e) => setReviewOnly(e.target.checked)} />
+          只看待处理
+        </label>
       </div>
 
       <form onSubmit={addSong} className="mb-4 flex flex-wrap gap-2 rounded-lg border border-border bg-surface p-3">
@@ -261,7 +313,9 @@ export default function GepSingerPanel() {
         <div>
           {loading && <p className="py-6 text-center text-sm text-muted">读取中…</p>}
           {!loading && singers.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted">{submitted ? "没有匹配的歌手。" : "还没有记录。"}</p>
+            <p className="py-6 text-center text-sm text-muted">
+              {reviewOnly ? "没有待处理的歌。" : submitted ? "没有匹配的歌手。" : "还没有记录。"}
+            </p>
           )}
           <ul className="max-h-[32rem] space-y-1 overflow-y-auto pr-1">
             {singers.map((s) => (
@@ -276,7 +330,12 @@ export default function GepSingerPanel() {
                   }`}
                 >
                   <span className="truncate">{s.singer}</span>
-                  <span className="shrink-0 rounded bg-black/20 px-1.5 py-0.5 text-xs tabular-nums">{s.songs}</span>
+                  <span className="flex shrink-0 items-center gap-1">
+                    {s.review > 0 && (
+                      <span className="rounded bg-yellow-500/15 px-1.5 py-0.5 text-xs tabular-nums text-yellow-500" title="待处理">{s.review}</span>
+                    )}
+                    <span className="rounded bg-black/20 px-1.5 py-0.5 text-xs tabular-nums">{s.songs}</span>
+                  </span>
                 </button>
               </li>
             ))}
@@ -289,18 +348,26 @@ export default function GepSingerPanel() {
             <>
               <h3 className="mb-2 text-sm font-semibold">
                 {selected}
-                <span className="ml-2 text-xs font-normal text-muted">{songs.length} 首</span>
+                <span className="ml-2 text-xs font-normal text-muted">
+                  {reviewOnly ? `${shown.length} 首待处理 / 共 ${songs.length} 首` : `${songs.length} 首`}
+                </span>
               </h3>
               {songsLoading && <p className="py-6 text-center text-sm text-muted">读取中…</p>}
-              <ul className="space-y-2">
-                {songs.map((song) => (
+              {!songsLoading && reviewOnly && songs.length > 0 && shown.length === 0 && (
+                <p className="py-6 text-center text-sm text-muted">这位歌手没有待处理的歌了。</p>
+              )}
+              <ul className="space-y-1.5">
+                {shown.map((song) => (
                   <SongRow
                     key={song.id}
                     song={song}
-                    onChanged={(next) => setSongs((prev) => prev.map((x) => (x.id === next.id ? next : x)))}
+                    onChanged={(next) => {
+                      if (song.needsReviewAt && !next.needsReviewAt) reviewedOne(selected);
+                      setSongs((prev) => prev.map((x) => (x.id === next.id ? next : x)));
+                    }}
                     onDeleted={(id) => {
                       setSongs((prev) => prev.filter((x) => x.id !== id));
-                      dropOne(selected);
+                      dropOne(selected, Boolean(song.needsReviewAt));
                     }}
                   />
                 ))}

@@ -1038,6 +1038,11 @@ model GepSingerSong {
   /// "game" (recorded from play) or "manual" (added on the review page).
   source    String   @default("game")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  /// 待处理 (2026-10-11): when this title was last captured in a 歌P game
+  /// without a perfect match and without a 网站歌名 finding it -- the case an
+  /// editor can fix by adding one. Null: nothing to do. Cleared by adding a
+  /// 网站歌名 or by 已处理; set again by the next such capture.
+  needsReviewAt DateTime? @map("needs_review_at") @db.Timestamptz
 
   aliases GepSongAlias[]
 
@@ -1049,8 +1054,9 @@ model GepSingerSong {
 /// How one game title is written on the site / the platform playlist.
 ///
 /// When a captured 歌P title matches nothing in the destination list, these
-/// are tried instead -- and what they find is only ever offered as 待确认,
-/// never liked automatically, so a wrong entry here costs a click, not a like.
+/// are tried instead. What they find is liked on its own only when it is one
+/// song credited to the game's singer (2026-10-11); otherwise it is offered
+/// as 待确认.
 model GepSongAlias {
   id           String   @id @default(uuid()) @db.Uuid
   singerSongId String   @map("singer_song_id") @db.Uuid

@@ -476,6 +476,8 @@ function toCandidate(c, song, alreadyLiked) {
     kind: c.kind,
     note: c.note || null,
     alreadyLiked: alreadyLiked ?? null,
+    // 歌手库 方案 C: a 网站歌名 match liked as an exact one would be.
+    ...(c.auto === true ? { auto: true } : {}),
   };
 }
 
@@ -575,7 +577,12 @@ async function ingest({ session, rawText, singer = null, side = null, row = null
   // The row first, the like after: a like can take seconds (the user's page
   // or phone does it), and a client that gives up waiting re-sends the title
   // -- it then finds the row and gets 'duplicate', never a second like.
-  const held = await claimRow({ fresh, userId, platform, ref, text, outcome: 'matching' });
+  // The 歌P singer rides on the row while it is matched (as on an 'unread'
+  // one): a restart or an error before it is settled sends it back to be
+  // matched again, and the 歌手库 step needs the singer then.
+  const held = await claimRow({
+    fresh, userId, platform, ref, text, outcome: 'matching', candidates: singer ? [{ singer }] : undefined,
+  });
   if (!held.row) return held.payload;
   let event;
   let slowRetry = false;
@@ -586,7 +593,8 @@ async function ingest({ session, rawText, singer = null, side = null, row = null
       where: { id: held.row.id },
       data: {
         outcome: decided.outcome,
-        candidates: decided.shaped.length ? decided.shaped : undefined,
+        // null, not undefined: the singer placeholder above must not stay.
+        candidates: decided.shaped.length ? decided.shaped : null,
         likedExternalId: decided.likedExternalId,
         error: decided.error,
       },
@@ -803,13 +811,42 @@ async function decide({ userId, platform, text, songs, liked, singer, session })
   // isPerfect(): a single candidate that matched exactly. bracket / punct /
   // ellipsis / loose all wait for a human.
   const perfect = matchOutcome === 'pending' && candidates.length === 1 && candidates[0].kind === 'exact';
-  if (perfect) {
-    const song = byId.get(String(candidates[0].songId));
+
+  // 歌手库: a title that matched nothing in the list exactly gets a second try
+  // through the site titles an editor attached to it under this game's singer
+  // (方案 B: a near match is tried too). One song credited to the game's
+  // singer is liked below as a perfect match is (方案 C); anything else is
+  // offered for approval only where the title found nothing, and a near match
+  // the title found itself stays exactly as it was. Never consulted when the
+  // title matched exactly, so a perfect match is decided exactly as before.
+  const titleExact = candidates.some((c) => c.kind === 'exact');
+  let viaAlias = [];
+  let hasAlias = false;
+  if (!titleExact && singer) {
+    const siteTitles = await gepSingers.siteTitlesFor(singer, text);
+    hasAlias = siteTitles.length > 0;
+    if (siteTitles.length) {
+      viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs });
+      const auto = gepSingers.aliasAutoOk(viaAlias);
+      if (auto) viaAlias[0].auto = true;
+      if (auto || (viaAlias.length && matchOutcome === 'no_match')) {
+        outcome = viaAlias.length === 1 ? 'pending' : 'ambiguous';
+        shaped = viaAlias.map((c) => {
+          const song = byId.get(String(c.songId));
+          return toCandidate(c, song, liked.get(String(c.songId)) === true);
+        });
+      }
+    }
+  }
+  const autoCand = perfect ? candidates[0] : (viaAlias.length === 1 && viaAlias[0].auto ? viaAlias[0] : null);
+
+  if (autoCand) {
+    const song = byId.get(String(autoCand.songId));
     if (liked.get(String(song.id))) {
       // Known from the sweep taken when the run started: nothing to send.
       outcome = 'already_liked';
       likedExternalId = song.id;
-      shaped = [toCandidate(candidates[0], song, true)];
+      shaped = [toCandidate(autoCand, song, true)];
     } else if (await neteaseOff(platform)) {
       outcome = 'pending';
       error = '网易云打标暂不提供';
@@ -825,7 +862,7 @@ async function decide({ userId, platform, text, songs, liked, singer, session })
         );
         outcome = res.alreadyLiked ? 'already_liked' : 'liked';
         likedExternalId = song.id;
-        shaped = [toCandidate(candidates[0], song, true)];
+        shaped = [toCandidate(autoCand, song, true)];
         noteLiked(userId, song.id);
       } catch (err) {
         // Not done this time (page closed or frozen, phone away, a timeout,
@@ -839,25 +876,27 @@ async function decide({ userId, platform, text, songs, liked, singer, session })
     }
   }
 
-  // 歌手库: a title that matched nothing gets a second try through the site
-  // titles an editor attached to it under this game's singer. Only ever
-  // offered for approval -- it comes after the auto-like above, which was
-  // decided from the title's own match, and its candidates are kind 'alias',
-  // which no path treats as safe to like unasked.
-  if (matchOutcome === 'no_match' && singer) {
-    const siteTitles = await gepSingers.siteTitlesFor(singer, text);
-    if (siteTitles.length) {
-      const viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs });
-      if (viaAlias.length) {
-        outcome = viaAlias.length === 1 ? 'pending' : 'ambiguous';
-        shaped = viaAlias.map((c) => {
-          const song = byId.get(String(c.songId));
-          return toCandidate(c, song, liked.get(String(c.songId)) === true);
-        });
-      }
-    }
-  }
+  // 歌手库 待处理: what a 网站歌名 would fix and none is there yet. A side note,
+  // nothing above depends on it.
+  if (singer && !titleExact && !hasAlias) reviewGep(singer, text, !candidates.length);
   return { outcome, shaped, likedExternalId, error, slowRetry };
+}
+
+/**
+ * Mark a 歌P title 待处理 for the editors: nothing in the list matched it
+ * exactly and it has no 网站歌名. Not when nothing in the list matched at all
+ * but the site catalogue has the title exactly: the song is simply not in this
+ * list, which a 网站歌名 would not fix. Fire-and-forget; never on the
+ * capture's path.
+ */
+function reviewGep(singer, text, nothingInList) {
+  (async () => {
+    if (nothingInList) {
+      const site = await captureService.fetchCandidateSongs(text);
+      if (matchTitle(text, site).candidates.some((c) => c.kind === 'exact')) return;
+    }
+    gepSingers.noteReview(singer, text);
+  })().catch((err) => console.warn('[gep-singer] review check failed:', err.message));
 }
 
 /**
@@ -892,7 +931,7 @@ function missedAutoLike(e) {
   const cands = Array.isArray(e.candidates) ? e.candidates : [];
   return e.platform === 'qq'
     && cands.length === 1
-    && cands[0].kind === 'exact'
+    && (cands[0].kind === 'exact' || cands[0].auto === true)
     && typeof e.error === 'string'
     && e.error.startsWith(apkLikes.NO_EXECUTOR_PREFIX);
 }

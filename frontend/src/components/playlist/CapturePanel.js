@@ -62,11 +62,15 @@ function forget(playlistId) {
  * exactly one clip of it, and the title matched exactly. `ellipsis` and `loose`
  * are deliberately excluded — those are guesses, and a wrong like is shared
  * with everyone who can see the playlist.
+ *
+ * Or (歌手库 方案 C, 2026-10-11) the server marked it `auto`: an editor's 网站歌名
+ * found exactly this one song and the game's singer is credited on it.
  */
 function isPerfect(e) {
   if (e.outcome !== "pending") return false;
   const cands = (e.candidates || []).filter((c) => c.inPlaylist);
-  return cands.length === 1 && cands[0].kind === "exact" && cands[0].clips.length === 1;
+  return cands.length === 1 && (cands[0].kind === "exact" || cands[0].auto === true)
+    && cands[0].clips.length === 1;
 }
 
 export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {

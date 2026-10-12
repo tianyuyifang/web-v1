@@ -821,10 +821,8 @@ async function decide({ userId, platform, text, songs, liked, singer, session })
   // title matched exactly, so a perfect match is decided exactly as before.
   const titleExact = candidates.some((c) => c.kind === 'exact');
   let viaAlias = [];
-  let hasAlias = false;
   if (!titleExact && singer) {
     const siteTitles = await gepSingers.siteTitlesFor(singer, text);
-    hasAlias = siteTitles.length > 0;
     if (siteTitles.length) {
       viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs });
       const auto = gepSingers.aliasAutoOk(viaAlias);
@@ -876,28 +874,13 @@ async function decide({ userId, platform, text, songs, liked, singer, session })
     }
   }
 
-  // 歌手库 待处理: what a 网站歌名 would fix and none is there yet. A side note,
-  // nothing above depends on it.
-  if (singer && !titleExact && !hasAlias) reviewGep(singer, text, !candidates.length);
+  // 歌手库 待处理, judged against the site catalogue alone: what is in this
+  // user's QQ list is nothing an editor can act on. A side note, nothing
+  // above depends on it.
+  if (singer) gepSingers.reviewAgainstSite(singer, text);
   return { outcome, shaped, likedExternalId, error, slowRetry };
 }
 
-/**
- * Mark a 歌P title 待处理 for the editors: nothing in the list matched it
- * exactly and it has no 网站歌名. Not when nothing in the list matched at all
- * but the site catalogue has the title exactly: the song is simply not in this
- * list, which a 网站歌名 would not fix. Fire-and-forget; never on the
- * capture's path.
- */
-function reviewGep(singer, text, nothingInList) {
-  (async () => {
-    if (nothingInList) {
-      const site = await captureService.fetchCandidateSongs(text);
-      if (matchTitle(text, site).candidates.some((c) => c.kind === 'exact')) return;
-    }
-    gepSingers.noteReview(singer, text);
-  })().catch((err) => console.warn('[gep-singer] review check failed:', err.message));
-}
 
 /**
  * A QQ capture that matched exactly and would have been liked on the spot,

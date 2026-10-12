@@ -625,6 +625,9 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
   // Whether the title matched a song in this playlist exactly, on its own.
   const titleExact = actionable.some((c) => c.kind === 'exact');
   let hasAlias = false;
+  // A 网站歌名 there is, and it finds a song on the site (待处理 below).
+  let aliasOnSite = false;
+  let siteTitlesSeen = [];
 
   // 歌手库: the title matched nothing in this playlist exactly, so try the
   // site titles an editor attached to it under this game's singer (方案 B --
@@ -636,10 +639,12 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
   if (!titleExact && singer) {
     const siteTitles = await gepSingers.siteTitlesFor(singer, text);
     hasAlias = siteTitles.length > 0;
+    siteTitlesSeen = siteTitles;
     if (siteTitles.length) {
       const pool = [];
       for (const st of siteTitles) pool.push(...await fetchCandidateSongs(st));
       const viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs: pool });
+      aliasOnSite = viaAlias.length > 0;
       const aliasClips = await clipsInPlaylist(playlistId, viaAlias.map((c) => c.songId));
       const withClips = viaAlias.map((c) => {
         const own = aliasClips.filter((cl) => cl.song.id === c.songId)
@@ -687,25 +692,29 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
     },
   });
 
-  // 歌手库 待处理: what a 网站歌名 would fix and none is there yet -- the title
-  // matched nothing in this playlist exactly, and it is not simply a right
-  // title whose song this playlist lacks (an exact match elsewhere, nothing
-  // here). Several exact matches are not marked: a 网站歌名 is never consulted
-  // for them. A side note only: nothing above depends on it.
-  if (singer && !titleExact && !hasAlias) {
+  // 歌手库 待处理: what a 网站歌名 would fix and none that works is there yet
+  // -- the title matched nothing in this playlist exactly, and it is not
+  // simply a right title whose song this playlist lacks (an exact match
+  // elsewhere, nothing here). Several exact matches are not marked: a 网站歌名
+  // is never consulted for them. A 网站歌名 that finds nothing on the site
+  // does not count. A side note only: nothing above depends on it.
+  if (singer && !titleExact && !aliasOnSite) {
+    const opts = { evenWithAlias: hasAlias, seenAliases: siteTitlesSeen };
     const fromTitle = enriched.filter((c) => c.inPlaylist && c.kind !== 'alias');
     if (fromTitle.length || !candidates.some((c) => c.kind === 'exact')) {
-      gepSingers.noteReview(singer, text);
+      gepSingers.noteReview(singer, text, opts);
     } else {
       // An exact match elsewhere hides any near match from the matcher; a
-      // near match in this playlist is what a 网站歌名 would fix, so look.
-      // Off the capture's path: only the mark depends on it.
+      // near match in this playlist is what a 网站歌名 would fix, so look --
+      // brackets and punctuation only: a loose match ("LOVE" for "Love Is
+      // Everything") is too often another song. Off the capture's path.
       const exactIds = new Set(candidates.filter((c) => c.kind === 'exact').map((c) => String(c.songId)));
       (async () => {
-        const near = matchTitle(text, songs.filter((s) => !exactIds.has(String(s.id)))).candidates;
+        const near = matchTitle(text, songs.filter((s) => !exactIds.has(String(s.id)))).candidates
+          .filter((c) => c.kind === 'bracket' || c.kind === 'punct');
         if (!near.length) return;
         const held = await clipsInPlaylist(playlistId, near.map((c) => c.songId));
-        if (held.length) gepSingers.noteReview(singer, text);
+        if (held.length) gepSingers.noteReview(singer, text, opts);
       })().catch((err) => console.warn('[gep-singer] review check failed:', err.message));
     }
   }
@@ -1604,8 +1613,6 @@ module.exports = {
   startSession, endSession, resolveSession, redeemPairCode,
   connect, setTarget, getConnection,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
-  // QQ打标's 待处理 check asks the site catalogue whether a title is right.
-  fetchCandidateSongs,
   // The route drops "aimed at nothing" before the service sees it, and that
   // drop needs saying out loud just as much as the ones in here.
   logNoTarget,

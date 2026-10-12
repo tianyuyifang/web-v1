@@ -14,9 +14,11 @@
  * the destination list. What they find is liked on its own only when it is
  * one song credited to the game's singer; otherwise it goes to 待确认.
  *
- * 待处理 marks a title a 歌P capture matched nothing exactly in the list and
- * that has no 网站歌名 yet -- the ones a 网站歌名 would fix. Adding one clears
- * it for good; 已处理 clears it until the next such capture.
+ * 待处理 marks a title a 歌P capture could not match: on the playlist page,
+ * nothing in the playlist called exactly this; in QQ打标, nothing on the site
+ * called exactly this (what is in a user's QQ list is unknown to us). A
+ * 网站歌名 that finds a song on the site settles it; one that finds nothing
+ * does not. Adding one clears the mark; 已处理 clears it until the next capture.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -256,7 +258,8 @@ export default function GepSingerPanel() {
         歌P 一局只有一位指定歌手，双方轮流唱这位歌手的歌。打标 APK（v28 起）会把歌名和歌手一起发上来，记在这里。
         识别错了、或游戏里已经没有的，可以删除；没记到的可以手动添加。给歌名加上「网站歌名」后，
         以后这首歌在歌单 / QQ 歌单里对不上时会按网站歌名去找：找到唯一一首、且是这位歌手的，自动打标；否则放进「待确认」由用户自己点。
-        「待处理」= 歌P 里抓到这首歌时没有完全一致的歌名，加上网站歌名就能解决。
+        「待处理」= 歌P 里抓到这首歌时对不上：歌单页是歌单里没有完全一致的歌名，QQ打标是网站上没有同名的歌。
+        加上网站上找得到的网站歌名就不再标；加了但网站上找不到的，仍会再标。
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">

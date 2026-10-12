@@ -160,15 +160,22 @@ function aliasAutoOk(actionable) {
  * and no 网站歌名 found it. Fire-and-forget, like note(): never throws, never
  * waits on the capture. The row is made if play has not recorded it yet.
  */
-function noteReview(singerRaw, titleRaw) {
+function noteReview(singerRaw, titleRaw, { evenWithAlias = false, seenAliases = [] } = {}) {
   const singer = cleanSinger(singerRaw);
   const title = cleanTitle(titleRaw);
   if (!singer || !title || singer.length > MAX_SINGER || title.length > MAX_TITLE) return;
   const now = new Date();
   // Only a title without a 网站歌名: one added while this capture was being
-  // matched has already answered it, and must not be marked over.
+  // matched has already answered it, and must not be marked over -- unless
+  // the caller found that its 网站歌名 lead to nothing on the site
+  // (evenWithAlias): those are wrong, and are what 待处理 is for. Even then
+  // only over the ones it read (seenAliases): a 网站歌名 added since may well
+  // be the right one.
   const mark = () => prisma.gepSingerSong.updateMany({
-    where: { singer, title, aliases: { none: {} } }, data: { needsReviewAt: now },
+    where: evenWithAlias
+      ? { singer, title, aliases: { every: { siteTitle: { in: seenAliases.map(String) } } } }
+      : { singer, title, aliases: { none: {} } },
+    data: { needsReviewAt: now },
   });
   try {
     (async () => {
@@ -186,6 +193,81 @@ function noteReview(singerRaw, titleRaw) {
   } catch (err) {
     console.warn('[gep-singer] review mark failed:', err.message);
   }
+}
+
+/**
+ * This title's 网站歌名 under this singer, and whether any of them finds a song
+ * in the site catalogue. `found` false with `hasAlias` true: the 网站歌名 is
+ * there but wrong (nothing on the site is called that).
+ */
+async function aliasOnSite(singerRaw, titleRaw) {
+  const siteTitles = await siteTitlesFor(singerRaw, titleRaw);
+  if (!siteTitles.length) return { hasAlias: false, found: false, siteTitles };
+  // Late: captureService requires this module.
+  const { fetchCandidateSongs } = require('./captureService');
+  const pool = [];
+  for (const st of siteTitles) pool.push(...await fetchCandidateSongs(st));
+  const found = matchSiteTitles({ singer: singerRaw, gameTitle: titleRaw, siteTitles, songs: pool }).length > 0;
+  return { hasAlias: true, found, siteTitles };
+}
+
+/**
+ * Whether the site catalogue holds a song called exactly this. One scan of
+ * the songs table (~240ms measured 2026-10-11), and 歌P titles repeat all day,
+ * so the answer is kept a while: a song imported meanwhile only delays a
+ * mark's judgement, it never causes a wrong like.
+ */
+const SITE_EXACT_TTL_MS = 6 * 60 * 60 * 1000;
+const siteExactCache = new Map(); // title -> { exact, at }
+async function siteHasExact(title) {
+  const hit = siteExactCache.get(title);
+  if (hit && Date.now() - hit.at < SITE_EXACT_TTL_MS) return hit.exact;
+  const { fetchCandidateSongs } = require('./captureService');
+  const text = `《${title}》`;
+  const exact = matchTitle(text, await fetchCandidateSongs(text)).candidates.some((c) => c.kind === 'exact');
+  if (siteExactCache.size >= 5000) siteExactCache.clear();
+  siteExactCache.set(title, { exact, at: Date.now() });
+  return exact;
+}
+
+/**
+ * 待处理 judged against the site catalogue alone (QQ打标's captures: what is
+ * in someone's QQ list is unknown to us and nothing an editor can act on).
+ * Marked when the site has no song called exactly this and no 网站歌名 of it
+ * finds one.
+ *
+ * Fire-and-forget, never on the capture's path, and one at a time: each check
+ * scans the songs table, and a screen of titles (or a rematch of hundreds)
+ * arriving at once must not take the database's few connections from the
+ * pages. Past REVIEW_QUEUE_MAX waiting, new ones are dropped -- a mark is
+ * advice, and the next capture of the title asks again. A title already
+ * marked needs no check.
+ */
+const REVIEW_QUEUE_MAX = 300;
+let reviewChain = Promise.resolve();
+let reviewWaiting = 0;
+function reviewAgainstSite(singerRaw, titleRaw) {
+  const singer = cleanSinger(singerRaw);
+  const title = cleanTitle(titleRaw);
+  if (!singer || !title) return;
+  if (reviewWaiting >= REVIEW_QUEUE_MAX) return;
+  reviewWaiting += 1;
+  reviewChain = reviewChain.then(async () => {
+    try {
+      const row = await prisma.gepSingerSong.findUnique({
+        where: { singer_title: { singer, title } }, select: { needsReviewAt: true },
+      });
+      if (row && row.needsReviewAt) return;
+      if (await siteHasExact(title)) return;
+      const a = await aliasOnSite(singer, title);
+      if (a.found) return;
+      noteReview(singer, title, { evenWithAlias: a.hasAlias, seenAliases: a.siteTitles });
+    } catch (err) {
+      console.warn('[gep-singer] review check failed:', err.message);
+    } finally {
+      reviewWaiting -= 1;
+    }
+  });
 }
 
 // --- review page ------------------------------------------------------------
@@ -280,8 +362,8 @@ async function addAlias(singerSongId, siteTitleRaw) {
       if (err.code !== 'P2002') throw err;
       return prisma.gepSongAlias.findUnique({ where });
     });
-  // A 网站歌名 is what 待处理 asked for (and a title with one is not marked
-  // again). Never fails the add: the 网站歌名 is
+  // A 网站歌名 is what 待处理 asked for (marked again only if it turns out to
+  // find nothing on the site). Never fails the add: the 网站歌名 is
   // what matters, and the mark only steers the review list.
   await prisma.gepSingerSong.update({ where: { id: singerSongId }, data: { needsReviewAt: null } })
     .catch((err) => console.warn('[gep-singer] review clear failed:', err.message));
@@ -305,6 +387,6 @@ async function deleteAlias(id) {
 
 module.exports = {
   note, siteTitlesFor, matchSiteTitles, creditsSinger, cleanTitle, cleanSinger,
-  aliasAutoOk, noteReview,
+  aliasAutoOk, noteReview, aliasOnSite, reviewAgainstSite,
   listSingers, listSongs, addSong, deleteSong, addAlias, deleteAlias, clearReview,
 };

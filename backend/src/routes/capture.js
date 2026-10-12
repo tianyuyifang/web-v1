@@ -517,6 +517,16 @@ router.post('/perf', ...web, async (req, res, next) => {
       source: typeof b.source === 'string' ? b.source.slice(0, 16) : null,
       tier: typeof b.tier === 'string' ? b.tier.slice(0, 16) : null,
       vocalsOnly: ms(b.vocalsOnly),
+      // A URL the server handed out that would not load in the browser, and
+      // what the page did about it. Only on these two kinds, so every other
+      // line keeps exactly the fields it always had.
+      ...(b.kind === 'loadfail' || b.kind === 'loadretry' ? {
+        stage: typeof b.stage === 'string' ? b.stage.slice(0, 8) : null,
+        fail: typeof b.fail === 'string' ? b.fail.slice(0, 12) : null,
+        mediaErr: ms(b.mediaErr),
+        cached: typeof b.cached === 'boolean' ? (b.cached ? 1 : 0) : null,
+        retry: typeof b.retry === 'string' ? b.retry.slice(0, 12) : null,
+      } : {}),
       // Which device found it slow. The whole question is why some phones are
       // fine and others are not, and that cannot be answered without knowing
       // which is which. Truncated; nothing else about the singer is recorded.

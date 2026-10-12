@@ -537,6 +537,8 @@ export const mappingAPI = {
     }
     if (opts?.tier) q.set("tier", opts.tier);
     if (opts?.vocalsOnly) q.set("vocals", "1");
+    // Only after the URL the server gave would not load (lib/serverUrlRetry).
+    if (opts?.fresh) q.set("fresh", "1");
     const qs = q.toString();
     return api.get(`/mappings/${id}/preview${qs ? `?${qs}` : ""}`);
   },

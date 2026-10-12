@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { captureAPI, mappingAPI, getLiveSSEUrl, getStreamUrl } from "@/lib/api";
+import { refetchAfterFail, reportRetry } from "@/lib/serverUrlRetry";
 import useAuth from "@/hooks/useAuth";
 import useCaptureStore from "@/store/captureStore";
 import useLivePlayer from "@/hooks/useLivePlayer";
@@ -373,6 +374,11 @@ export default function LivePage() {
   }, [prefKey]);
 
   const loadedFor = useRef(null);
+  // Bumped by every play and every stop, and by every quality/vocals switch:
+  // a server-URL retry (lib/serverUrlRetry) that comes back after the card was
+  // closed, or after a newer switch, sees the number moved and starts nothing.
+  const playGen = useRef(0);
+  const swapGen = useRef(0);
   /**
    * Start times of the open card's lyric lines, for w/s.
    *
@@ -727,6 +733,7 @@ export default function LivePage() {
   const stopAudio = useCallback(() => {
     player.stop();
     loadedFor.current = null;
+    playGen.current += 1;
   }, [player]);
 
   // While 练唱 is showing this page's player stays silent: a card tapped just
@@ -808,6 +815,7 @@ export default function LivePage() {
     // just before resolving. Confirmed on a real iPhone 2026-10-05 (first card
     // and vocals switches all direct); for everyone since.
     const priming = qqDirect.primeWanted() ? player.primeElement() : null;
+    const gen = ++playGen.current;
 
     setBusy(true);
     // Temporary: the three legs of the wait before the key can be shifted —
@@ -882,16 +890,42 @@ export default function LivePage() {
         // interrupted load (another card took over). A refusal to autoplay is
         // only recorded, and the card fails as it always did.
         const refused = loadErr?.name === "NotAllowedError";
-        if (!res.onPlayFail || loadErr?.name === "AbortError") throw loadErr;
-        res = await res.onPlayFail(
-          refused ? "notallowed" : loadErr?.name === "StartTimeout" ? "timeout" : "error",
-          player.mediaErrorCode(),
-        );
-        // Another card was opened meanwhile: this answer is no longer wanted.
-        if (loadedFor.current !== null && loadedFor.current !== key) return;
-        if (!res.data?.url) throw loadErr;
-        loadedFor.current = key;
-        await player.load(res.data.url);
+        if (loadErr?.name === "AbortError") throw loadErr;
+        if (!res.onPlayFail) {
+          // A URL from this server that would not load: one fresh one, from
+          // the server again (网站 IP stays 网站 IP). Before, the server kept
+          // handing back the same cached URL for ~10 minutes.
+          const opts = { tier: quality, vocalsOnly };
+          const again = await refetchAfterFail({
+            mapping: card.mapping, opts, res, stage: "open",
+            fail: refused ? "notallowed" : "error", mediaErr: player.mediaErrorCode(),
+          });
+          // The card was closed or another opened meanwhile (loadedFor is
+          // already null here, so it cannot tell): this answer is not wanted.
+          if (playGen.current !== gen) return;
+          if (loadedFor.current !== null && loadedFor.current !== key) return;
+          if (again?.error) throw again.error;
+          if (!again) throw loadErr;
+          res = again;
+          loadedFor.current = key;
+          try {
+            await player.load(res.data.url);
+            reportRetry({ mapping: card.mapping, opts, stage: "open", ok: true });
+          } catch (e) {
+            if (e?.name !== "AbortError") reportRetry({ mapping: card.mapping, opts, stage: "open", ok: false });
+            throw e;
+          }
+        } else {
+          res = await res.onPlayFail(
+            refused ? "notallowed" : loadErr?.name === "StartTimeout" ? "timeout" : "error",
+            player.mediaErrorCode(),
+          );
+          // Another card was opened meanwhile: this answer is no longer wanted.
+          if (loadedFor.current !== null && loadedFor.current !== key) return;
+          if (!res.data?.url) throw loadErr;
+          loadedFor.current = key;
+          await player.load(res.data.url);
+        }
       }
       // What actually played, not what was asked for: the server may have had
       // to substitute, and telling the player otherwise would have it separate
@@ -1080,6 +1114,7 @@ export default function LivePage() {
     // or a URL that arrives by postMessage cannot start it. Same gate as the
     // card's own priming.
     const priming = qqDirect.primeWanted() ? player.primeSpare() : null;
+    const gen = ++swapGen.current;
     // Temporary: a quality or vocals switch fetches a different file for a song
     // already sounding, so the singer waits through a second resolve and a
     // second load with the music still playing. How long that takes is its own
@@ -1125,6 +1160,25 @@ export default function LivePage() {
         }
         if (next.vocalsOnly) setVocalsAvailable(res.data.vocalsPlayed === true);
         await player.swapSource(res.data.url);
+      } else if (swapped === false) {
+        // A URL from this server that would not load: one fresh one from the
+        // server (see lib/serverUrlRetry). If that fails too, carry on exactly
+        // as before -- the current audio keeps playing.
+        const again = await refetchAfterFail({
+          mapping: card.mapping, opts: next, res, stage: "swap", fail: "timeout", mediaErr: null,
+        });
+        // Another card, or a newer quality/vocals choice that is already
+        // being applied: this late answer must not undo it.
+        if (loadedFor.current !== card.eventId || swapGen.current !== gen) return;
+        if (again?.error) throw again.error;
+        if (again) {
+          const ok = (await player.swapSource(again.data.url)) !== false;
+          reportRetry({ mapping: card.mapping, opts: next, stage: "swap", ok });
+          if (ok) {
+            res = again;
+            if (next.vocalsOnly) setVocalsAvailable(res.data.vocalsPlayed === true);
+          }
+        }
       }
       // Guarded: this sits inside the try that governs the swap, so a
       // synchronous throw from the reporting call — which its own .catch()

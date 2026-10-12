@@ -122,4 +122,48 @@ function stats() {
   return { size: entries.size, max: MAX_ENTRIES, ttlMs: DEFAULT_TTL_MS };
 }
 
-module.exports = { get, set, clearUser, stats, DEFAULT_TTL_MS, MAX_ENTRIES };
+/**
+ * Forget one cached URL.
+ *
+ * For a URL the listener's browser could not play. Only successes are cached,
+ * so a URL can be cached and still be dead to the one browser that asked —
+ * and every retry inside the TTL was handed the same dead URL back, until the
+ * user rescanned (which clears the whole user, see clearUser) or waited it
+ * out. 2026-10-11: a NetEase track unplayable for minutes, "fixed" by a rescan
+ * that only worked because of that side effect.
+ */
+function drop(userId, source, externalId) {
+  entries.delete(keyOf(userId, source, externalId));
+}
+
+/**
+ * How often one listener may force a fresh resolve of the same track.
+ *
+ * The page asks for one only after a load has failed, so this is never on the
+ * normal path; the cap is there so a stuck page or a frantic re-tapping cannot
+ * turn "this URL failed" into a burst against the platform. Rate limits on
+ * both platforms are per IP, and this server's IP is shared by everyone.
+ */
+const FRESH_WINDOW_MS = 60 * 1000;
+const FRESH_MAX = 5000;
+/** keyOf(...) -> last time a fresh resolve was allowed for it */
+const freshAt = new Map();
+
+/** True (and recorded) if a fresh resolve of this track is allowed now. */
+function allowFresh(userId, source, externalId, now = Date.now()) {
+  const k = keyOf(userId, source, externalId);
+  const last = freshAt.get(k);
+  if (last !== undefined && now - last < FRESH_WINDOW_MS) return false;
+  if (freshAt.size >= FRESH_MAX) {
+    for (const [key, at] of freshAt) if (now - at >= FRESH_WINDOW_MS) freshAt.delete(key);
+    if (freshAt.size >= FRESH_MAX) freshAt.delete(freshAt.keys().next().value);
+  }
+  freshAt.delete(k);   // re-insert so Map order stays oldest-first
+  freshAt.set(k, now);
+  return true;
+}
+
+module.exports = {
+  get, set, clearUser, stats, drop, allowFresh,
+  DEFAULT_TTL_MS, MAX_ENTRIES, FRESH_WINDOW_MS,
+};

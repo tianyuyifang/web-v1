@@ -662,7 +662,7 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
     return res.json({ kind: 'local', songId: externalId, url: null });
   }
   if (source === 'NETEASE') {
-    return resolveNeteasePreview(userId, externalId, res);
+    return resolveNeteasePreview(userId, externalId, res, opts);
   }
   if (source !== 'QQ') {
     return res.json({ kind: 'unsupported', url: null, reason: `${source} preview not implemented` });
@@ -674,6 +674,13 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
   // moment earlier. Folded into the id rather than added as a parameter, so
   // every other caller of the cache keeps the shape it has.
   const variantKey = `${externalId}#${tier}${vocalsOnly ? ':v' : ''}`;
+
+  // The page asks for `fresh` only after the URL it was given would not load
+  // in the browser: the cached one is dropped and the platform asked again.
+  // At most once a minute per track, so it never becomes a burst; inside that
+  // window the request is answered exactly as before.
+  const refresh = opts.fresh === true && urlCache.allowFresh(userId, 'QQ', variantKey);
+  if (refresh) urlCache.drop(userId, 'QQ', variantKey);
 
   // A URL resolved moments ago is still good, and re-asking costs a round trip
   // the listener waits through plus one more request against their account.
@@ -814,6 +821,10 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
       playedTier: result?.usedTier || null,
       vocalsPlayed: !!result?.gotVocals,
       fellBack: !!result?.fellBack,
+      // Only on a forced re-resolve: tells the page this really is a new
+      // answer, not the cached one again. Undefined otherwise, so every other
+      // response is byte-for-byte what it was.
+      refreshed: refresh ? true : undefined,
     });
   } catch (err) {
     // A dead credential is the likeliest cause of a refusal here, and the user
@@ -838,7 +849,13 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
  * no renew-and-retry, because NetEase refuses the whole call when a cookie is
  * dead rather than refusing track by track.
  */
-async function resolveNeteasePreview(userId, externalId, res) {
+async function resolveNeteasePreview(userId, externalId, res, opts = {}) {
+  // Same as the QQ branch: a URL the browser could not load is dropped and
+  // NetEase asked again, at most once a minute per track. This is the path
+  // that stuck on 2026-10-11 -- NetEase has no 用户 IP mode, so every play
+  // comes through here and nothing else ever retried a dead cached URL.
+  const refresh = opts.fresh === true && urlCache.allowFresh(userId, 'NETEASE', externalId);
+  if (refresh) urlCache.drop(userId, 'NETEASE', externalId);
   const cached = urlCache.get(userId, 'NETEASE', externalId);
   if (cached) return res.json({ kind: 'external', url: cached.url, reason: null, cached: true });
 
@@ -883,7 +900,11 @@ async function resolveNeteasePreview(userId, externalId, res) {
   if (result?.url) {
     urlCache.set(userId, 'NETEASE', externalId, result, ttl);
   }
-  return res.json({ kind: 'external', url: result.url, reason: result.reason });
+  return res.json({
+    kind: 'external', url: result.url, reason: result.reason,
+    // As in the QQ branch: present only on a forced re-resolve.
+    refreshed: refresh ? true : undefined,
+  });
 }
 
 /**
@@ -928,6 +949,9 @@ router.get('/:id/preview', listenLimiter, async (req, res, next) => {
     return await resolvePreview(req.user.id, source, externalId, res, {
       tier: req.query.tier,
       vocalsOnly: req.query.vocals === '1',
+      // Sent only by the 唱卡 page after a URL failed to load (see
+      // playbackUrlCache.allowFresh). Absent everywhere else.
+      fresh: req.query.fresh === '1',
     });
   } catch (err) {
     next(err);

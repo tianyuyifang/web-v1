@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import api, { captureAPI, mappingAPI, getStreamUrl } from "@/lib/api";
+import { refetchAfterFail, reportRetry } from "@/lib/serverUrlRetry";
 import useLivePlayer from "@/hooks/useLivePlayer";
 import LiveLyrics from "@/components/live/LiveLyrics";
 import LivePitchControl from "@/components/live/LivePitchControl";
@@ -118,6 +119,9 @@ export default function PracticeSongs({ onPrefChange, onDefaultsChange, onQualit
   const settingsRef = useRef({ pitch: 0, speed: 1 });
   settingsRef.current = { pitch: player.pitch, speed: player.speed };
   const loadedFor = useRef(null);
+  // Bumped by every quality/vocals switch, so a server-URL retry that comes
+  // back after a newer switch starts nothing (lib/serverUrlRetry).
+  const swapGen = useRef(0);
   const lineTimes = useRef([]);
   const setLineTimes = useCallback((times) => { lineTimes.current = times || []; }, []);
   const [chorusTime, setChorusTime] = useState(null);
@@ -309,18 +313,41 @@ export default function PracticeSongs({ onPrefChange, onDefaultsChange, onQualit
         if (loadErr?.name === "StartTimeout") player.stop();
         if (loadErr?.name !== "AbortError" && loadedFor.current === key) loadedFor.current = null;
         const refused = loadErr?.name === "NotAllowedError";
-        if (!res.onPlayFail || loadErr?.name === "AbortError") throw loadErr;
-        // A URL QQ gave this browser that will not play: asked of QQ once
-        // more when it was an older cached one -- never of the server.
-        res = await res.onPlayFail(
-          refused ? "notallowed" : loadErr?.name === "StartTimeout" ? "timeout" : "error",
-          player.mediaErrorCode(),
-        );
-        if (abandoned()) return;
-        if (loadedFor.current !== null && loadedFor.current !== key) return;
-        if (!res.data?.url) throw loadErr;
-        loadedFor.current = key;
-        await player.load(res.data.url);
+        if (loadErr?.name === "AbortError") throw loadErr;
+        if (!res.onPlayFail) {
+          // A URL from this server that would not load: one fresh one, from
+          // the server again (see lib/serverUrlRetry). Same as the 唱卡 card.
+          const opts = { tier: quality, vocalsOnly };
+          const again = await refetchAfterFail({
+            mapping: card.mapping, opts, res, stage: "open",
+            fail: refused ? "notallowed" : "error", mediaErr: player.mediaErrorCode(),
+          });
+          if (abandoned()) return;
+          if (loadedFor.current !== null && loadedFor.current !== key) return;
+          if (again?.error) throw again.error;
+          if (!again) throw loadErr;
+          res = again;
+          loadedFor.current = key;
+          try {
+            await player.load(res.data.url);
+            reportRetry({ mapping: card.mapping, opts, stage: "open", ok: true });
+          } catch (e) {
+            if (e?.name !== "AbortError") reportRetry({ mapping: card.mapping, opts, stage: "open", ok: false });
+            throw e;
+          }
+        } else {
+          // A URL QQ gave this browser that will not play: asked of QQ once
+          // more when it was an older cached one -- never of the server.
+          res = await res.onPlayFail(
+            refused ? "notallowed" : loadErr?.name === "StartTimeout" ? "timeout" : "error",
+            player.mediaErrorCode(),
+          );
+          if (abandoned()) return;
+          if (loadedFor.current !== null && loadedFor.current !== key) return;
+          if (!res.data?.url) throw loadErr;
+          loadedFor.current = key;
+          await player.load(res.data.url);
+        }
       }
       if (abandoned()) return;
       await player.setVocalsOnly(res.data.vocalsPlayed === true);
@@ -397,6 +424,7 @@ export default function PracticeSongs({ onPrefChange, onDefaultsChange, onQualit
     const card = openCard;
     if (!card?.mapping || !playing) return;
     const priming = qqDirect.primeWanted() ? player.primeSpare() : null;
+    const gen = ++swapGen.current;
     const gone = () => {
       if (!aliveRef.current) { player.stop(); return true; }
       return loadedFor.current !== card.id;
@@ -426,6 +454,25 @@ export default function PracticeSongs({ onPrefChange, onDefaultsChange, onQualit
         if (next.vocalsOnly) setVocalsAvailable(res.data.vocalsPlayed === true);
         await player.swapSource(res.data.url);
         if (gone()) return;
+      } else if (swapped === false) {
+        // A URL from this server that would not load: one fresh one from the
+        // server. If that fails too, carry on exactly as before.
+        const again = await refetchAfterFail({
+          mapping: card.mapping, opts: next, res, stage: "swap", fail: "timeout", mediaErr: null,
+        });
+        // A newer quality/vocals choice is already being applied: this late
+        // answer must not undo it.
+        if (gone() || swapGen.current !== gen) return;
+        if (again?.error) throw again.error;
+        if (again) {
+          const ok = (await player.swapSource(again.data.url)) !== false;
+          reportRetry({ mapping: card.mapping, opts: next, stage: "swap", ok });
+          if (gone()) return;
+          if (ok) {
+            res = again;
+            if (next.vocalsOnly) setVocalsAvailable(res.data.vocalsPlayed === true);
+          }
+        }
       }
       await player.setVocalsOnly(res.data.vocalsPlayed === true);
       const note = fallbackNotice(res.data, next);

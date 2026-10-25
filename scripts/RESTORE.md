@@ -18,7 +18,11 @@ F:\music-app-backup\
 │   ├── config\crontab.txt             4 个定时任务(含每日备份)
 │   ├── config\pm2-dump.json           PM2 服务定义
 │   ├── config\journald.conf / logrotate-nginx
-│   ├── code\web-v1.tar.gz             含 .git 完整提交历史
+│   ├── config\postgresql-etc.tar.gz   ★ pg_hba.conf+postgresql.conf(2026-10-25 补)
+│   ├── config\pm2-chaol.service       ★ 开机自启 PM2 的 systemd unit(2026-10-25 补)
+│   ├── config\apt-manual-packages.txt 97 个手动装的包(2026-10-25 补)
+│   ├── config\environment.txt         时区/locale/PG 扩展/GCS 桶(2026-10-25 补)
+│   ├── code\web-v1.tar.gz             含 .git 完整提交历史 + 47 个只在 VM 上的调试脚本
 │   └── MANIFEST.txt                   版本清单,照此装环境
 ├── LAST-BACKUP.txt            上次备份时间与体量
 └── backup.log                 历次运行日志
@@ -31,9 +35,18 @@ F:\music-app-backup\
 
 ### 2. 装环境(版本对齐 MANIFEST.txt)
 ```bash
-sudo apt update && sudo apt install -y nginx postgresql-14 git
+sudo apt update && sudo apt install -y nginx postgresql postgresql-contrib git certbot python3-certbot-nginx
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs
 sudo npm install -g pm2
+# postgresql-contrib 是必须的 —— pg_trgm 在里面,没有它拼音/模糊搜索整个废掉
+# 完整包清单见 config/apt-manual-packages.txt(97 个);时区 Etc/UTC、locale C.UTF-8 见 config/environment.txt
+```
+
+**还原 PG 配置(否则应用连不上库)**:
+```bash
+sudo tar xzf config/postgresql-etc.tar.gz -C /etc/postgresql
+sudo systemctl restart postgresql
+# pg_hba.conf 里 127.0.0.1 用 scram-sha-256;本地 postgres 用 md5
 ```
 
 ### 3. 还原数据库(注意顺序:先角色后数据)
@@ -66,9 +79,19 @@ tar xzf clips/allClips.tar.gz -C /var/www/music/
 ```bash
 cd /home/chaol/web-v1/backend  && npm install && npx prisma generate
 cd /home/chaol/web-v1/frontend && npm install && npm run build
-pm2 resurrect          # 用 pm2-dump.json
-pm2 startup && pm2 save
+# 开机自启:直接用备份里的 unit,比 pm2 startup 生成的更可靠
+sudo cp config/pm2-chaol.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable pm2-chaol
+cp <payload>/config/pm2-dump.json ~/.pm2/dump.pm2
+pm2 resurrect
+pm2 save
 sudo systemctl restart nginx
+```
+
+**重启后必查**(踩过:pm2 restart 静默失败不拉起,停机 48 秒):
+```bash
+pm2 ls          # music-backend / music-frontend 都要 online
+sudo reboot && sleep 60 && pm2 ls   # 验证开机自启真的生效
 ```
 
 ### 7. 验证
@@ -164,3 +187,34 @@ ls /var/www/music/allClips | grep 'CoCo' | head -1 | xxd | head -1
 同理，**从 F 盘往新机器传曲库/切片时**，如果走 tar，两端都要确保 UTF-8：
 - Windows 打包：`tar cf x.tar --options hdrcharset=UTF-8 ...`
 - Linux 解压：默认即 UTF-8，无需特殊处理
+
+---
+
+## 2026-10-25 核验基线(扩容前全面检查,这套流程已验证)
+
+恢复后对照这张表,**任何一项不符就是恢复不完整**:
+
+| 项 | 数值 |
+|---|---|
+| 歌曲文件 | 49,342(与线上逐文件比对,缺 0 多 0) |
+| 切片文件 | 110,900 |
+| 表数量 | 29 |
+| 索引 | 87 |
+| 外键 | 26 |
+| PG 扩展 | plpgsql 1.0 + **pg_trgm 1.6** |
+| users | 307,**307 行全部有 bcrypt `$2a$10$` 哈希**(全员能登录) |
+| songs / clips | 24,671 / 55,012 |
+| playlists / playlist_clips | 3,451 / 557,087 |
+| likes / song_prefs | 19,835 / 16,678 |
+| capture_events | 358,123 |
+| imported_tracks / passage_catalogue | 8,323 / 34,045 |
+
+**实测可还原**:F 盘那份 dump 传回 VM 真建库还原 —— `psql exit 0`、**ERROR 0 行**、
+10 张表行数与线上**完全一致**、索引 87=87、外键 26=26,
+且在还原库里跑 `similarity(title,'爱你')` 真能搜出结果(证明 pg_trgm 可用)。
+
+### 第三份异地副本(不在 F 盘)
+
+cron 每周日 04:00 自动上传到 **`gs://music-app-cl-backups/db-backups/`**,
+已有 31 份(最新 2026-10-25,171 MB)。F 盘和 VM 同时出事时,这是最后一道。
+**只有数据库,没有音频** —— 音频只有 F 盘和 VM 两份。

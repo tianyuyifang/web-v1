@@ -88,13 +88,14 @@ Say "    clips: $clipCount files, $([math]::Round($cm,2)) GB (+$($need.Count) ne
 # --- 4. 汇总 ---
 $total = (Get-ChildItem $ROOT -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1GB
 @"
-backup_completed : $stamp
+backup_started   : $stamp
+backup_finished  : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 total_size_gb    : $([math]::Round($total,2))
 songs_files      : $((Get-ChildItem "$ROOT\music" -File).Count)
 payload_mb       : $([math]::Round($pm,1))
 clips_files      : $clipCount
 clips_gb         : $([math]::Round($cm,2))
-new_clips_added  : $($needClips.Count)
-"@ | Set-Content "$ROOT\LAST-BACKUP.txt" -Encoding utf8
+new_clips_added  : $($need.Count)
+"@ | ForEach-Object { [System.IO.File]::WriteAllText("$ROOT\LAST-BACKUP.txt", $_, (New-Object System.Text.UTF8Encoding $false)) }
 
 Say "=== DONE — total $([math]::Round($total,2)) GB at $ROOT ==="

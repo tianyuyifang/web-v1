@@ -46,6 +46,24 @@ cp ~/.pm2/module_conf.json "$STAGE/config/" 2>/dev/null || true
 sudo cp /etc/systemd/journald.conf "$STAGE/config/" 2>/dev/null || true
 sudo cp /etc/logrotate.d/nginx "$STAGE/config/logrotate-nginx" 2>/dev/null || true
 
+# 4b. 2026-10-25 补：之前漏掉的四样（扩容前全面检查时发现）
+#   - postgresql.conf / pg_hba.conf：没有它应用连不上库（scram-sha-256 认证规则）
+#   - pm2-chaol.service：开机自动拉起 PM2 的 systemd unit，没有它重启后网站不起来
+#   - apt 手动装的包清单：重建时照着装
+#   - 时区/locale：C.UTF-8 + Etc/UTC，影响中文排序和日期
+sudo tar czf "$STAGE/config/postgresql-etc.tar.gz" -C /etc/postgresql . 2>/dev/null
+[ -s "$STAGE/config/postgresql-etc.tar.gz" ] || echo "WARN: postgresql-etc.tar.gz empty"
+sudo cp /etc/systemd/system/pm2-chaol.service "$STAGE/config/" 2>/dev/null
+[ -s "$STAGE/config/pm2-chaol.service" ] || echo "WARN: pm2-chaol.service missing"
+apt-mark showmanual > "$STAGE/config/apt-manual-packages.txt" 2>/dev/null
+{
+  echo "timezone: $(timedatectl show -p Timezone --value 2>/dev/null)"
+  echo "lang: ${LANG:-unset}"
+  echo "pg_extensions:"
+  PGPASSWORD="$PGPW" psql -U postgres -h localhost -tAd music_app     -c "select '  '||extname||' '||extversion from pg_extension;" 2>/dev/null
+  echo "gcs_backup_bucket: gs://music-app-cl-backups/db-backups/"
+} > "$STAGE/config/environment.txt"
+
 # 5. 代码(排除可重装/可重建的)
 echo "[5/6] code..."
 tar czf "$STAGE/code/web-v1.tar.gz" -C /home/chaol \
@@ -74,7 +92,7 @@ echo "[6/6] manifest..."
 } > "$STAGE/MANIFEST.txt"
 
 # 关键产物非空校验 —— 空文件等于没备份
-for f in db/music_app.sql db/roles.sql config/backend.env config/nginx.tar.gz config/letsencrypt.tar.gz code/web-v1.tar.gz; do
+for f in db/music_app.sql db/roles.sql config/backend.env config/nginx.tar.gz config/letsencrypt.tar.gz code/web-v1.tar.gz config/postgresql-etc.tar.gz config/pm2-chaol.service config/apt-manual-packages.txt; do
   [ -s "$STAGE/$f" ] || { echo "FATAL: $f missing or empty"; exit 1; }
 done
 

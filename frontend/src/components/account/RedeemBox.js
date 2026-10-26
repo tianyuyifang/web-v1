@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { authAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
@@ -12,8 +12,10 @@ import { useLanguage } from "@/components/layout/LanguageProvider";
  * username is passed in (the login screen already has it) that field is locked;
  * on the account page a logged-in member's username is passed the same way.
  *
- * The "buy a code" link uses t("redeemBuyUrl") — set that one i18n value to the
- * purchase page when it exists; while it's "#" the link is hidden.
+ * The "buy a code" link (闲鱼) is set by an admin on the 激活码 tab and read from
+ * /auth/redeem-buy-url; "" there hides it. t("redeemBuyUrl") is only the
+ * fallback for when that request fails, so the link never disappears because
+ * of a network blip.
  *
  * @param {object} props
  * @param {string} [props.username] - prefill/lock the username
@@ -27,7 +29,16 @@ export default function RedeemBox({ username = "", onSuccess }) {
   const [error, setError] = useState("");
   const [done, setDone] = useState(null); // { expiresAt } on success
 
-  const buyUrl = t("redeemBuyUrl");
+  // null until the admin's link has been asked for: nothing is shown meanwhile,
+  // rather than the built-in address flashing up and being swapped out.
+  const [buyUrl, setBuyUrl] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    authAPI.redeemBuyUrl()
+      .then((res) => { if (alive) setBuyUrl(typeof res.data?.url === "string" ? res.data.url : t("redeemBuyUrl")); })
+      .catch(() => { if (alive) setBuyUrl(t("redeemBuyUrl")); });
+    return () => { alive = false; };
+  }, [t]);
   const hasBuyUrl = buyUrl && buyUrl !== "#" && buyUrl !== "redeemBuyUrl";
 
   const submit = async (e) => {

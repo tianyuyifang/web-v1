@@ -326,6 +326,26 @@ router.put('/signup-promo', async (req, res, next) => {
 
 // --- Activation codes ---
 
+// GET /api/admin/redeem-buy-url — the 闲鱼 link shown under the activation-code
+// box, and whether it is still the address the site shipped with.
+router.get('/redeem-buy-url', async (req, res, next) => {
+  try {
+    res.json(await settingsService.getRedeemBuyUrl());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/redeem-buy-url — body { url }: any http(s) address, or '' to
+// hide the link. Other schemes are refused (see settingsService).
+router.put('/redeem-buy-url', async (req, res, next) => {
+  try {
+    res.json(await settingsService.setRedeemBuyUrl(req.body || {}));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/admin/activation-codes — list all codes (plaintext, newest first)
 router.get('/activation-codes', async (req, res, next) => {
   try {

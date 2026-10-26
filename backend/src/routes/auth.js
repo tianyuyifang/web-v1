@@ -5,6 +5,7 @@ const { authMiddleware, requireActiveSession } = require('../middleware/auth');
 const { registerSchema, loginSchema, changePasswordSchema, changeUsernameSchema, updatePreferencesSchema } = require('../validators/auth');
 const authService = require('../services/authService');
 const redeemService = require('../services/redeemService');
+const settingsService = require('../services/settingsService');
 
 // Rate limit only login + register (brute-force targets).
 // Other auth routes require a valid JWT so brute-force isn't a risk.
@@ -57,6 +58,19 @@ router.post('/redeem', redeemLimiter, async (req, res, next) => {
     const { username, code } = req.body || {};
     const result = await redeemService.redeem(username, code);
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/auth/redeem-buy-url — public. The 闲鱼 link under the activation-code
+// box; the login page shows that box to people whose login was just refused, so
+// this cannot need a token. Returns only the one address an admin set ('' when
+// hidden), from a one-minute in-memory copy.
+router.get('/redeem-buy-url', async (req, res, next) => {
+  try {
+    const { url } = await settingsService.getRedeemBuyUrl();
+    res.json({ url });
   } catch (err) {
     next(err);
   }

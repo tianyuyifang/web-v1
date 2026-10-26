@@ -28,6 +28,97 @@ function fmt(iso) {
 }
 
 /**
+ * The 闲鱼 link under the activation-code box ("点此前往闲鱼查看订阅套餐 →").
+ * Saved on the server, so a new listing takes effect for everyone at once with
+ * no deploy. Any http(s) address is accepted; empty hides the link.
+ */
+function BuyLinkSection() {
+  const [current, setCurrent] = useState(null); // { url, isDefault }
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminAPI.getRedeemBuyUrl()
+      .then((res) => { setCurrent(res.data); setDraft(res.data.url || ""); })
+      .catch((err) => setError(err.response?.data?.error?.message || "读取失败"));
+  }, []);
+
+  const save = async (value) => {
+    setSaving(true);
+    setError("");
+    setSaved(false);
+    try {
+      const res = await adminAPI.setRedeemBuyUrl(value);
+      setCurrent(res.data);
+      setDraft(res.data.url || "");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      const e = err.response?.data?.error;
+      setError(e?.details?.url?.[0] || e?.message || "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const dirty = current && draft.trim() !== (current.url || "");
+
+  return (
+    <section className="rounded-xl border border-border bg-surface p-5">
+      <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
+        <span className="inline-block h-2 w-2 rounded-full bg-orange-400" />
+        闲鱼购买链接
+      </h2>
+      <p className="mb-4 text-sm text-muted">
+        显示在激活码兑换框下方的「点此前往闲鱼查看订阅套餐 →」（登录被拒时的登录页、会员到期时的账户页）。
+        留空保存则不显示这一行。保存后约 1 分钟内对所有人生效。
+      </p>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input
+          type="url"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="https://..."
+          disabled={!current}
+          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm text-theme"
+        />
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => save(draft)}
+            disabled={!current || saving || !dirty}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50"
+          >
+            {saving ? "保存中…" : "保存"}
+          </button>
+          {draft.trim() && (
+            <a
+              href={draft.trim()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-lg border border-border px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-hover"
+            >
+              打开试试
+            </a>
+          )}
+        </div>
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        {current === null
+          ? "读取中…"
+          : current.url
+            ? `当前生效：${current.isDefault ? "网站自带的默认链接（还没保存过）" : "已保存的链接"}`
+            : "当前不显示链接"}
+        {saved && <span className="ml-2 text-green-400">已保存</span>}
+      </p>
+      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+    </section>
+  );
+}
+
+/**
  * Generate one-time activation codes and see who has used them.
  *
  * An admin picks a duration (a preset or any number of days) and a count, hits
@@ -118,6 +209,8 @@ export default function ActivationCodesPanel() {
 
   return (
     <div className="space-y-6">
+      <BuyLinkSection />
+
       {/* Generate */}
       <section className="rounded-xl border border-border bg-surface p-5">
         <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">

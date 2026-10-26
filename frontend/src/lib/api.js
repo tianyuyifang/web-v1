@@ -120,6 +120,8 @@ export const authAPI = {
   updatePreferences: (preferences) => api.put("/auth/preferences", { preferences }),
   // Public: renew a lapsed/PENDING account with an activation code.
   redeem: (username, code) => api.post("/auth/redeem", { username, code }),
+  // Public: the 闲鱼 link under the activation-code box ("" = hidden).
+  redeemBuyUrl: () => api.get("/auth/redeem-buy-url"),
 };
 
 // --- Songs ---
@@ -397,6 +399,8 @@ export const adminAPI = {
   listCodes: () => api.get("/admin/activation-codes"),
   generateCodes: (data) => api.post("/admin/activation-codes", data),
   voidCode: (id) => api.post(`/admin/activation-codes/${id}/void`),
+  getRedeemBuyUrl: () => api.get("/admin/redeem-buy-url"),
+  setRedeemBuyUrl: (url) => api.put("/admin/redeem-buy-url", { url }),
   listUsers: () => api.get("/admin/users"),
   listPending: () => api.get("/admin/users/pending"),
   approveUser: (id) => api.patch(`/admin/users/${id}/approve`),

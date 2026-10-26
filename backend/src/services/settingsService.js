@@ -453,6 +453,62 @@ async function setNeteaseTagging(patch) {
   return value;
 }
 
+/**
+ * The 闲鱼 link under the activation-code box ("点此前往闲鱼查看订阅套餐 →",
+ * login page when login is refused, account page when membership has lapsed).
+ * The listing changes from time to time, so an admin sets it on the 激活码 tab
+ * instead of a code change and a deploy (2026-10-26).
+ *
+ * Any web address is accepted (the admin decided against a 闲鱼-only rule,
+ * 2026-10-26); only the scheme is checked, http or https, because the value
+ * becomes an <a href> on the login page and a javascript: link there would run
+ * in our origin. An empty value hides the link. Never set: the address the
+ * site shipped with, so nothing changes until an admin saves one.
+ */
+const REDEEM_BUY_KEY = 'redeemBuyUrl';
+const REDEEM_BUY_DEFAULT = 'https://m.tb.cn/h.8uy1tOR?tk=w5Q5TleXqTT';
+const REDEEM_BUY_MAX = 500;
+// Read by a public route on the login page, so held briefly in memory.
+const REDEEM_BUY_CACHE_MS = 60 * 1000;
+let redeemBuyCache = null; // { value, at }
+
+/** A clean http(s) address, '' for "hide the link", or a ValidationError. */
+function cleanRedeemBuyUrl(input) {
+  if (input === null || input === undefined) return '';
+  if (typeof input !== 'string') throw new ValidationError({ url: ['必须是文字'] });
+  const raw = input.trim();
+  if (!raw) return '';
+  if (raw.length > REDEEM_BUY_MAX) throw new ValidationError({ url: [`链接太长（最多 ${REDEEM_BUY_MAX} 字）`] });
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new ValidationError({ url: ['不是有效的链接'] });
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+    throw new ValidationError({ url: ['必须以 http:// 或 https:// 开头'] });
+  }
+  return u.toString();
+}
+
+/** { url, isDefault }: url '' means the link is hidden. */
+async function getRedeemBuyUrl() {
+  if (redeemBuyCache && Date.now() - redeemBuyCache.at < REDEEM_BUY_CACHE_MS) return redeemBuyCache.value;
+  const raw = await get(REDEEM_BUY_KEY, null);
+  const value = raw && typeof raw.url === 'string'
+    ? { url: raw.url, isDefault: false }
+    : { url: REDEEM_BUY_DEFAULT, isDefault: true };
+  redeemBuyCache = { value, at: Date.now() };
+  return value;
+}
+
+async function setRedeemBuyUrl(input) {
+  const url = cleanRedeemBuyUrl(input && typeof input === 'object' ? input.url : input);
+  await set(REDEEM_BUY_KEY, { url });
+  redeemBuyCache = null;
+  return getRedeemBuyUrl();
+}
+
 /** The settings when they apply to this user at all, else null. */
 async function apkLikesFor(role) {
   const s = await getApkLikes();
@@ -481,6 +537,11 @@ module.exports = {
   getSignupPromo,
   resolveSignupPromo,
   setSignupPromo,
+  REDEEM_BUY_KEY,
+  REDEEM_BUY_DEFAULT,
+  cleanRedeemBuyUrl,
+  getRedeemBuyUrl,
+  setRedeemBuyUrl,
   TIERS_KEY,
   TIER_KEYS,
   TIER_LABELS,

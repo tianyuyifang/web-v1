@@ -64,7 +64,13 @@ cp config/backend.env  /home/chaol/web-v1/backend/.env
 cp config/frontend.env.local /home/chaol/web-v1/frontend/.env.local
 sudo tar xzf config/nginx.tar.gz -C /etc/
 sudo tar xzf config/letsencrypt.tar.gz -C /etc/     # SSL 证书
-crontab config/crontab.txt
+# 每日备份的数据库密码在 ~/.pgpass（2026-10-27 起 crontab 不再带明文 PGPASSWORD），
+# 不在备份里：从刚还原的 backend.env 生成。少了这步，每日备份会静默失败。
+PW=$(sed -nE 's|^DATABASE_URL="?[^:]+://[^:]+:([^@]+)@.*|\1|p' /home/chaol/web-v1/backend/.env \
+  | python3 -c 'import sys,urllib.parse;print(urllib.parse.unquote(sys.stdin.read().strip()))')
+(umask 077; printf 'localhost:5432:music_app:postgres:%s\n' "$PW" > ~/.pgpass); unset PW
+psql -w -U postgres -h localhost -d music_app -tAc 'select 1'   # 应输出 1
+crontab config/crontab.txt   # 4 个任务在 UTC 19:00–20:00 = 北京凌晨 3–4 点
 ```
 
 ### 5. 还原音频(两部分都要)

@@ -10,6 +10,8 @@
  * @param {number} endSec - Clip end time in seconds
  * @returns {string|null} Sliced and time-adjusted LRC lines, or null if none found
  */
+const TIME_TAG = /^\[(\d{2}):(\d{2})\.(\d{1,3})\]/;
+
 function sliceLRC(lrcString, startSec, endSec) {
   if (!lrcString) return null;
 
@@ -17,16 +19,21 @@ function sliceLRC(lrcString, startSec, endSec) {
   const parsed = [];
 
   for (const line of lines) {
-    const match = line.match(/^\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)$/);
-    if (!match) continue;
-
-    const minutes = parseInt(match[1], 10);
-    const seconds = parseInt(match[2], 10);
-    const ms = parseInt(match[3].padEnd(3, '0'), 10);
-    const timeSec = minutes * 60 + seconds + ms / 1000;
-    const text = match[4];
-
-    parsed.push({ timeSec, text, raw: line });
+    // Same reading as frontend/src/lib/lrc.js parseLRC: every tag stacked at
+    // the start ("[00:41.20][01:52.80]我爱你" = one line sung twice), and one
+    // to three fraction digits. Reading only the first tag left a repeat that
+    // falls inside the clip out of the clip's lyrics altogether (2026-10-27).
+    const times = [];
+    let rest = line;
+    let match;
+    while ((match = rest.match(TIME_TAG))) {
+      const minutes = parseInt(match[1], 10);
+      const seconds = parseInt(match[2], 10);
+      const ms = parseInt(match[3].padEnd(3, '0'), 10);
+      times.push(minutes * 60 + seconds + ms / 1000);
+      rest = rest.slice(match[0].length);
+    }
+    for (const timeSec of times) parsed.push({ timeSec, text: rest, raw: line });
   }
 
   if (parsed.length === 0) {
@@ -72,4 +79,41 @@ function sliceLRC(lrcString, startSec, endSec) {
   return result.join('\n');
 }
 
-module.exports = { sliceLRC };
+/** A line that starts with two or more time tags: "[00:41.20][01:52.80]我爱你". */
+const STACKED_LINE = /^\[\d{2}:\d{2}\.\d{1,3}\]\[\d{2}:\d{2}\.\d{1,3}\]/m;
+
+/**
+ * The lines the 唱卡 page shows, as frontend/src/lib/lrc.js parseLRC reads
+ * them: one { time, text } per time tag, empty text dropped, sorted by time.
+ * The two must agree line for line -- passage answers are line indexes into
+ * this list -- so any change here goes there too.
+ */
+function parseLRCLines(lrcString) {
+  if (!lrcString) return [];
+  const result = [];
+  let hasTimestamps = false;
+  for (const line of String(lrcString).split(/\r?\n/)) {
+    const times = [];
+    let rest = line;
+    let match;
+    while ((match = rest.match(TIME_TAG))) {
+      const minutes = parseInt(match[1], 10);
+      const seconds = parseInt(match[2], 10);
+      const ms = parseInt(match[3].padEnd(3, '0'), 10);
+      times.push(minutes * 60 + seconds + ms / 1000);
+      rest = rest.slice(match[0].length);
+    }
+    if (!times.length) continue;
+    hasTimestamps = true;
+    const text = rest.trim();
+    if (text) for (const time of times) result.push({ time, text });
+  }
+  if (hasTimestamps) return result.sort((a, b) => a.time - b.time);
+  for (const line of String(lrcString).split(/\r?\n/)) {
+    const text = line.trim();
+    if (text) result.push({ time: -1, text });
+  }
+  return result;
+}
+
+module.exports = { sliceLRC, parseLRCLines, STACKED_LINE };

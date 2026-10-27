@@ -19,6 +19,7 @@ const {
 const { mappingTitleKey, artistKey } = require('./songKeyService');
 const { splitTitleArtist, loadDashedArtists } = require('./captureService');
 const { markPassage } = require('../../../frontend/src/lib/passageMatch');
+const { parseLRCLines, STACKED_LINE } = require('../utils/lrc');
 
 const STATUSES = new Set(['approved', 'pending', 'unmatchable', 'ai_reviewed']);
 
@@ -30,6 +31,13 @@ function splitGameLines(gameLyric) {
 
 /** Real lyric lines, timing tags stripped, as the page sees them. */
 function splitReal(lyric) {
+  // A line sung more than once may carry every time it is sung, stacked
+  // ("[00:41.20][01:52.80]我爱你"). The 唱卡 page shows it once per time, and
+  // answers are line indexes into what the page shows, so those lyrics are read
+  // exactly as the page reads them. All other lyrics keep the old split as is.
+  if (STACKED_LINE.test(String(lyric == null ? '' : lyric))) {
+    return parseLRCLines(lyric).map((l) => l.text);
+  }
   return String(lyric == null ? '' : lyric)
     .split('\n').map((l) => l.replace(/^\[[^\]]*\]/, '').trim()).filter(Boolean);
 }

@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 const { toPinyin, toPinyinInitials, toPinyinConcat, toPinyinAll, toPinyinInitialsAll } = require('../src/utils/pinyin');
-const { sliceLRC } = require('../src/utils/lrc');
+const { sliceLRC, getFirstLyricStart } = require('../src/utils/lrc');
 const { clipAudio } = require('./clip-audio');
 
 const prisma = new PrismaClient();
@@ -165,15 +165,6 @@ function loadLyrics(baseDir, relativePath) {
 /**
  * Build a song record with pinyin columns and split artists.
  */
-function getFirstLyricStart(lyrics) {
-  if (!lyrics) return null;
-  const match = lyrics.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\]/);
-  if (!match) return null;
-  const minutes = parseInt(match[1], 10);
-  const seconds = parseInt(match[2], 10);
-  return minutes * 60 + seconds; // floor to nearest whole second before
-}
-
 function processSong(metadata, lyrics) {
   const { title, artist, duration, filePath } = metadata;
 
@@ -203,9 +194,10 @@ function processSong(metadata, lyrics) {
     position,
   }));
 
-  // Use first lyric timestamp as the initial start time
-  const firstStart = getFirstLyricStart(lyrics);
-  const starts = firstStart !== null ? String(firstStart) : null;
+  // First sung line is the initial start time. getFirstLyricStart falls back to
+  // 0 for an instrumental or an unparseable tag, and duration lets it reject a
+  // broken timestamp that sits past the end of the song.
+  const starts = String(getFirstLyricStart(lyrics, duration));
 
   return {
     song: {

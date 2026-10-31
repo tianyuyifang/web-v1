@@ -46,11 +46,11 @@ async function createClip({ songId, start, length, userId, userRole, force }) {
     const sourcePath = path.join(config.mp3BasePath, song.filePath);
     const outputPath = path.join(config.clipsBasePath, clipFilename);
 
-    // Delete old clip file so clipAudio regenerates it
-    try { fs.unlinkSync(outputPath); } catch {}
-    try { fs.unlinkSync(outputPath.replace(/\.mp3$/i, '.lrc')); } catch {}
-
-    clipAudio({ sourcePath, outputPath, start, length, lyrics: clipLyrics });
+    // Re-cut over the existing file. clipAudio writes a temp file and renames
+    // it into place, so a failing ffmpeg leaves the old clip audio intact:
+    // never leave a clip row (and its playlist references) pointing at a
+    // file that no longer exists.
+    clipAudio({ sourcePath, outputPath, start, length, lyrics: clipLyrics, replaceExisting: true });
 
     // Validate output file was created
     if (!fs.existsSync(outputPath)) {

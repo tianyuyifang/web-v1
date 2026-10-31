@@ -116,4 +116,74 @@ function parseLRCLines(lrcString) {
   return result;
 }
 
-module.exports = { sliceLRC, parseLRCLines, STACKED_LINE };
+
+/**
+ * First sung line's time in whole seconds, for a song's initial clip.
+ *
+ * Timestamps in the wild vary, so this accepts [m:ss], [mm:ss], [mm:ss.s],
+ * [mm:ss.xx], [mm:ss.xxx], [mm:ss:xx] and [h:mm:ss(.xx)], and skips metadata
+ * tags such as [ti:], [ar:] and [offset:]. Lines may be out of order, so the
+ * earliest timestamp wins rather than the first one seen.
+ *
+ * Returns 0 when nothing is parseable, so an instrumental or a "No Lyrics"
+ * placeholder still gets a clip from the top of the song instead of no clip
+ * at all — matching the songs already in the library that are cut at 0.
+ *
+ * Pass the song duration to reject a timestamp past the end of the song:
+ * some files carry a broken tag such as [10:00.00] on every line, which would
+ * otherwise ask for a clip starting after the audio ends.
+ *
+ * @param {string|null} lrcString - Full LRC lyrics
+ * @param {number|null} [durationSec] - Song length, to reject impossible tags
+ * @returns {number} Whole seconds, floored; 0 if nothing parseable
+ */
+function getFirstLyricStart(lrcString, durationSec) {
+  if (typeof lrcString !== 'string' || !lrcString) return 0;
+
+  // Only a positive duration can rule a timestamp out. A 0 or missing duration
+  // means the length is unknown (a truncated mp3 reads as 0), and must not
+  // reject every tag and silently collapse the start to 0.
+  const limit = typeof durationSec === 'number' && durationSec > 0 ? durationSec : null;
+
+  // Two or three colon-separated numbers, with an optional fraction after a
+  // '.' or ':'. Captures: 1=first, 2=second, 3=third (absent for mm:ss).
+  const TAG = /^\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/;
+  const TAG_HMS = /^\[(\d{1,2}):(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?\]/;
+
+  let best = null;
+  for (const rawLine of lrcString.split(/\r?\n/)) {
+    // A stray doubled bracket ('[[00:23.25]') appears in real files; drop the
+    // extra so the line is still read rather than silently skipped.
+    const line = rawLine.trim().replace(/^\[+/, '[');
+    if (!line.startsWith('[')) continue;
+
+    let total = null;
+    const hms = line.match(TAG_HMS);
+    if (hms) {
+      // [h:mm:ss] only when the first field is a plausible hour (>0) and the
+      // middle field is a valid minute. '[00:18:50]' is mm:ss with a ':'
+      // fraction separator, not 0h18m50s, so it falls through to TAG.
+      const h = parseInt(hms[1], 10);
+      const mi = parseInt(hms[2], 10);
+      const se = parseInt(hms[3], 10);
+      if (h > 0 && mi <= 59 && se <= 59) total = h * 3600 + mi * 60 + se;
+    }
+    if (total === null) {
+      const m = line.match(TAG);
+      if (!m) continue;
+      const minutes = parseInt(m[1], 10);
+      const seconds = parseInt(m[2], 10);
+      if (seconds > 59) continue;
+      total = minutes * 60 + seconds;
+    }
+
+    // A tag at or past the end of the song cannot start a clip.
+    if (limit !== null && total >= limit) continue;
+
+    if (best === null || total < best) best = total;
+  }
+
+  return best === null ? 0 : best;
+}
+
+module.exports = { sliceLRC, parseLRCLines, STACKED_LINE, getFirstLyricStart };

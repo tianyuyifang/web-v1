@@ -16,19 +16,10 @@ require('dotenv').config();
 const path = require('path');
 const prisma = require('../src/db/client');
 const { toPinyinConcat } = require('../src/utils/pinyin');
-const { sliceLRC } = require('../src/utils/lrc');
+const { sliceLRC, getFirstLyricStart } = require('../src/utils/lrc');
 const { clipAudio } = require('./clip-audio');
 
 const CLIP_LENGTH = 20;
-
-function getFirstLyricStart(lyrics) {
-  if (!lyrics) return null;
-  const match = lyrics.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\]/);
-  if (!match) return null;
-  const minutes = parseInt(match[1], 10);
-  const seconds = parseInt(match[2], 10);
-  return minutes * 60 + seconds;
-}
 
 function buildClipFilename(title, artist, start) {
   const artists = artist.split('_').map((a) => a.trim()).join(' & ');
@@ -79,7 +70,9 @@ async function main() {
 
   const songsForStarts = await prisma.song.findMany({
     where: startsWhere,
-    select: { id: true, title: true, artist: true, filePath: true, lyrics: true, starts: true },
+    // duration is selected so getFirstLyricStart can reject a timestamp that
+    // sits past the end of the song.
+    select: { id: true, title: true, artist: true, filePath: true, lyrics: true, starts: true, duration: true },
   });
 
   console.log(`Processing starts + clips for ${songsForStarts.length} songs...`);
@@ -88,8 +81,12 @@ async function main() {
   let clipsCreated = 0;
 
   for (const song of songsForStarts) {
-    const firstStart = getFirstLyricStart(song.lyrics);
-    if (firstStart === null) continue;
+    // getFirstLyricStart falls back to 0 when a song has no usable timestamp.
+    // This backfill only fills in what the lyrics actually say, so a song
+    // without one is still skipped rather than given a clip at 0.
+    const hasTimestamp = /\[\d{1,3}:\d{1,2}/.test(song.lyrics || '');
+    if (!hasTimestamp) continue;
+    const firstStart = getFirstLyricStart(song.lyrics, song.duration);
 
     // Update starts field
     const newStarts = updateAll && song.starts

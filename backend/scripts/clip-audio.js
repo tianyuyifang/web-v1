@@ -28,32 +28,50 @@ const execFileP = promisify(execFile);
  * @param {number} opts.length - Duration in seconds
  * @param {string|null} opts.lyrics - Adjusted LRC content for this clip
  */
-function clipAudio({ sourcePath, outputPath, start, length, lyrics }) {
+function clipAudio({ sourcePath, outputPath, start, length, lyrics, replaceExisting }) {
   // Ensure output directory exists
   const outputDir = path.dirname(outputPath);
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  // Skip if clip file already exists
-  if (fs.existsSync(outputPath)) {
+  // Skip if clip file already exists, unless we are deliberately replacing it
+  // (a re-cut after the source mp3 was swapped).
+  if (fs.existsSync(outputPath) && !replaceExisting) {
     return;
   }
 
-  // Use ffmpeg to clip the audio without re-encoding for speed
-  execFileSync(ffmpegPath, [
-    '-y',
-    '-ss', String(start),
-    '-t', String(length),
-    '-i', sourcePath,
-    '-c', 'copy',
-    outputPath,
-  ], { stdio: 'pipe' });
+  // Cut to a temp file, then rename it into place. ffmpeg failing (corrupt
+  // source, full disk) must not leave a clip row pointing at a file that no
+  // longer exists — its playlists would serve a dead clip.
+  const tmpPath = outputPath + '.tmp-' + process.pid;
+  try {
+    execFileSync(ffmpegPath, [
+      '-y',
+      '-ss', String(start),
+      '-t', String(length),
+      '-i', sourcePath,
+      '-c', 'copy',
+      '-f', 'mp3',
+      tmpPath,
+    ], { stdio: 'pipe' });
+    if (!fs.existsSync(tmpPath) || fs.statSync(tmpPath).size === 0) {
+      throw new Error('ffmpeg produced no output for ' + outputPath);
+    }
+    fs.renameSync(tmpPath, outputPath);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch {}
+    throw err;
+  }
 
   // Save LRC lyrics file alongside the MP3
   if (lyrics) {
     const lrcPath = outputPath.replace(/\.mp3$/i, '.lrc');
     fs.writeFileSync(lrcPath, lyrics, 'utf-8');
+  } else if (replaceExisting) {
+    // Replacing with no lyrics: drop the stale .lrc instead of leaving the
+    // previous version's lyrics beside the new audio.
+    try { fs.unlinkSync(outputPath.replace(/\.mp3$/i, '.lrc')); } catch {}
   }
 }
 
@@ -65,29 +83,50 @@ function clipAudio({ sourcePath, outputPath, start, length, lyrics }) {
  * @param {object} opts - same shape as clipAudio
  * @returns {Promise<void>}
  */
-async function clipAudioAsync({ sourcePath, outputPath, start, length, lyrics }) {
+async function clipAudioAsync({ sourcePath, outputPath, start, length, lyrics, replaceExisting }) {
+  // Ensure output directory exists
   const outputDir = path.dirname(outputPath);
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  // Skip if clip file already exists
-  if (fs.existsSync(outputPath)) {
+  // Skip if clip file already exists, unless we are deliberately replacing it
+  // (a re-cut after the source mp3 was swapped).
+  if (fs.existsSync(outputPath) && !replaceExisting) {
     return;
   }
 
-  await execFileP(ffmpegPath, [
-    '-y',
-    '-ss', String(start),
-    '-t', String(length),
-    '-i', sourcePath,
-    '-c', 'copy',
-    outputPath,
-  ]);
+  // Cut to a temp file, then rename it into place. ffmpeg failing (corrupt
+  // source, full disk) must not leave a clip row pointing at a file that no
+  // longer exists — its playlists would serve a dead clip.
+  const tmpPath = outputPath + '.tmp-' + process.pid;
+  try {
+    await execFileP(ffmpegPath, [
+      '-y',
+      '-ss', String(start),
+      '-t', String(length),
+      '-i', sourcePath,
+      '-c', 'copy',
+      '-f', 'mp3',
+      tmpPath,
+    ]);
+    if (!fs.existsSync(tmpPath) || fs.statSync(tmpPath).size === 0) {
+      throw new Error('ffmpeg produced no output for ' + outputPath);
+    }
+    fs.renameSync(tmpPath, outputPath);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch {}
+    throw err;
+  }
 
+  // Save LRC lyrics file alongside the MP3
   if (lyrics) {
     const lrcPath = outputPath.replace(/\.mp3$/i, '.lrc');
     fs.writeFileSync(lrcPath, lyrics, 'utf-8');
+  } else if (replaceExisting) {
+    // Replacing with no lyrics: drop the stale .lrc instead of leaving the
+    // previous version's lyrics beside the new audio.
+    try { fs.unlinkSync(outputPath.replace(/\.mp3$/i, '.lrc')); } catch {}
   }
 }
 

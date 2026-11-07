@@ -553,6 +553,10 @@ model CaptureEvent {
   @@index([sessionId, playlistId, stage, rawText])
   @@index([sessionId, createdAt])
   @@index([playlistId])
+  /// Deleting a clip sets this column to null on every row that points at it,
+  /// and without an index that is a scan of the whole table: 8 seconds when it
+  /// is not in memory, past the 5-second limit on the delete's transaction.
+  @@index([matchedClipId])
   @@map("capture_events")
 }
 

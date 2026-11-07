@@ -17,6 +17,7 @@ import { gepReportsAPI } from "@/lib/api";
 
 const SOURCE_LABEL = { site: "网站歌单", qq: "QQ 歌单", netease: "网易云歌单" };
 const POLL_MS = 10000;
+const ADD_BATCH = 10;
 
 function errMsg(err, fallback) {
   return err?.response?.data?.error?.message || fallback;
@@ -149,6 +150,7 @@ function ReportDetail({ id, onBack }) {
   const [results, setResults] = useState(() => new Map());
   const [dest, setDest] = useState("");
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
   const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState(null); // item id being renamed
   const [editText, setEditText] = useState("");
@@ -258,15 +260,26 @@ function ReportDetail({ id, onBack }) {
     if (!picks.length || !dest) return;
     setBusy(true);
     setNotice("");
+    // Ten at a time: a song with no clip yet is cut on the spot, and one long
+    // request could outlast the proxy's timeout while the server carried on.
+    const rs = [];
+    let failure = "";
     try {
-      const res = await gepReportsAPI.add(id, dest, picks);
-      const rs = res.data.results || [];
-      setResults((m) => { const n = new Map(m); rs.forEach((r) => n.set(r.itemId, r.result)); return n; });
-      setSelected((s) => {
-        const n = new Set(s);
-        rs.forEach((r) => { if (r.result === "added" || r.result === "exists") n.delete(r.itemId); });
-        return n;
-      });
+      for (let k = 0; k < picks.length; k += ADD_BATCH) {
+        setProgress(`${k}/${picks.length}`);
+        const res = await gepReportsAPI.add(id, dest, picks.slice(k, k + ADD_BATCH));
+        const batch = res.data.results || [];
+        rs.push(...batch);
+        setResults((m) => { const n = new Map(m); batch.forEach((r) => n.set(r.itemId, r.result)); return n; });
+        setSelected((s) => {
+          const n = new Set(s);
+          batch.forEach((r) => { if (r.result === "added" || r.result === "exists") n.delete(r.itemId); });
+          return n;
+        });
+      }
+    } catch (err) {
+      failure = errMsg(err, "加入中断，请重试");
+    } finally {
       const added = rs.filter((r) => r.result === "added").length;
       const exists = rs.filter((r) => r.result === "exists").length;
       const failed = rs.length - added - exists;
@@ -275,10 +288,9 @@ function ReportDetail({ id, onBack }) {
         added ? `已加入「${name}」${added} 首` : "",
         exists ? `${exists} 首已在歌单里` : "",
         failed ? `${failed} 首没加上` : "",
+        failure,
       ].filter(Boolean).join("，"));
-    } catch (err) {
-      setNotice(errMsg(err, "加入失败，请重试"));
-    } finally {
+      setProgress("");
       setBusy(false);
     }
   };
@@ -432,7 +444,9 @@ function ReportDetail({ id, onBack }) {
                         </span>
                       )
                     ) : (
-                      <span className="text-red-400">曲库没找到，可能歌名不对</span>
+                      <span className="text-red-400">
+                        {item.lookup?.skipped ? "还没查曲库，点改名可查" : "曲库没找到，可能歌名不对"}
+                      </span>
                     )}
                     <button type="button" onClick={() => startRename(item)} className="text-primary hover:underline">
                       改名
@@ -479,7 +493,7 @@ function ReportDetail({ id, onBack }) {
                 disabled={busy || !selectedCount || !dest}
                 className="ml-auto rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50"
               >
-                {busy ? "加入中…" : "加入歌单"}
+                {busy ? `加入中… ${progress}` : "加入歌单"}
               </button>
             </div>
           ) : (

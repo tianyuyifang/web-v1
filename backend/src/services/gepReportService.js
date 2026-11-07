@@ -104,8 +104,16 @@ function guarded(label, fn) {
 // restart forgets it all, which only means one database check per song.
 const generations = new Map();
 const recorded = new Set();
+// A song whose status was still undecided when last seen (a QQ title being
+// matched, or 网易云打标 switched off, where it stays undecided): looked at
+// again at most every UNSETTLED_RECHECK_MS rather than on every re-send.
+const unsettledAt = new Map();
+const UNSETTLED_RECHECK_MS = 30000;
 const MAX_RECORDED = 50000;
 function bump(sessionId) {
+  // Bounded. Clearing the generations restarts every key at 0, so what was
+  // recorded under the old numbers has to go with them.
+  if (generations.size >= MAX_RECORDED) { generations.clear(); recorded.clear(); unsettledAt.clear(); }
   generations.set(sessionId, (generations.get(sessionId) || 0) + 1);
 }
 function recordKey(sessionId, eventId) {
@@ -125,8 +133,31 @@ async function closeOpenFor(where, at = new Date()) {
   await prisma.gepReport.updateMany({ where: { ...where, endedAt: null }, data: { endedAt: at } });
 }
 
+// Connections known to have no open report, so ending a run that is not
+// there -- aiming at 唱卡, 停止 with nothing running -- costs no query at all.
+// Learned once per connection per process; opening a report clears it.
+const noOpen = new Set();
+async function endRunOf(sessionId) {
+  if (noOpen.has(sessionId)) return;
+  await closeOpenFor({ sessionId });
+  if (noOpen.size >= MAX_RECORDED) noOpen.clear();
+  noOpen.add(sessionId);
+}
+
+// Users known to have no open report anywhere, so a new connection (which
+// ends the old ones) costs no query for someone who never runs 歌P.
+const noOpenUsers = new Set();
+async function endRunsOfUser(userId) {
+  if (noOpenUsers.has(userId)) return;
+  await closeOpenFor({ userId });
+  if (noOpenUsers.size >= MAX_RECORDED) noOpenUsers.clear();
+  noOpenUsers.add(userId);
+}
+
 async function createReport({ session, source, playlistId = null, platformRef = null, name }) {
   await closeOpenFor({ sessionId: session.id });
+  noOpen.delete(session.id);
+  noOpenUsers.delete(session.userId);
   await quietly('prune', maybePrune());
   return prisma.gepReport.create({
     data: {
@@ -167,7 +198,7 @@ function onTarget(session) {
     }
     // 平台打标 opens its own run in onPlatformStart, with the list's title.
     if (session.target === 'platform') return;
-    await closeOpenFor({ sessionId: session.id });
+    await endRunOf(session.id);
   });
 }
 
@@ -184,9 +215,9 @@ function onPlatformStart(session, title) {
 function onSessionEnd({ sessionId, userId } = {}) {
   if (sessionId) {
     bump(sessionId);
-    return serial(sessionId, () => closeOpenFor({ sessionId }));
+    return serial(sessionId, () => endRunOf(sessionId));
   }
-  if (userId) return closeOpenFor({ userId });
+  if (userId) return endRunsOfUser(userId);
   return Promise.resolve();
 }
 
@@ -202,6 +233,8 @@ function noteCapture({ session, target, text, singer, result }) {
   if (target !== 'playlist' && target !== 'platform') return Promise.resolve();
   const key = recordKey(session.id, result.eventId);
   if (recorded.has(key)) return Promise.resolve();
+  const lastUnsettled = unsettledAt.get(key);
+  if (lastUnsettled && Date.now() - lastUnsettled < UNSETTLED_RECHECK_MS) return Promise.resolve();
   return serial(session.id, async () => {
     let source; let listKey; let outcome; let candidates; let rawText;
     if (target === 'playlist') {
@@ -244,9 +277,9 @@ function noteCapture({ session, target, text, singer, result }) {
         // was missed: start the report here rather than lose the run -- but
         // only while the connection is still aimed at this list.
         const s = await prisma.captureSession.findUnique({
-          where: { id: session.id }, select: { target: true, playlistId: true, platformRef: true },
+          where: { id: session.id }, select: { target: true, playlistId: true, platformRef: true, endedAt: true },
         });
-        const aimed = s && (source === 'site'
+        const aimed = s && !s.endedAt && (source === 'site'
           ? s.target === 'playlist' && s.playlistId === listKey
           : s.target === 'platform' && s.platformRef === listKey);
         if (!aimed) return;
@@ -279,6 +312,10 @@ function noteCapture({ session, target, text, singer, result }) {
     if (status !== 'unknown') {
       if (recorded.size >= MAX_RECORDED) recorded.clear();
       recorded.add(key);
+      unsettledAt.delete(key);
+    } else {
+      if (unsettledAt.size >= MAX_RECORDED) unsettledAt.clear();
+      unsettledAt.set(key, Date.now());
     }
   });
 }
@@ -288,7 +325,8 @@ function noteCapture({ session, target, text, singer, result }) {
 async function ownReport(userId, reportId) {
   const report = await prisma.gepReport.findUnique({ where: { id: String(reportId || '') } }).catch(() => null);
   if (!report) throw new NotFoundError('Report');
-  if (report.userId !== userId) throw new ForbiddenError('Not your report');
+  // Someone else's report is "not found", not "forbidden": no hint it exists.
+  if (report.userId !== userId) throw new NotFoundError('Report');
   if (report.startedAt.getTime() < Date.now() - RETENTION_MS) throw new NotFoundError('Report');
   return report;
 }
@@ -334,15 +372,27 @@ function artistMatches(singer, artist) {
  * Where a title would be found in the catalogue: the same title matching the
  * capture path uses, with the run's singer preferred among same-name songs.
  */
+// The catalogue search scans the songs table, and a run in progress is
+// re-read every 10s: the same title is looked up once per 10 minutes.
+const lookupCache = new Map();
+const LOOKUP_TTL_MS = 10 * 60 * 1000;
+const MAX_LOOKUPS_PER_READ = 200;
+
 async function lookup(title, singer) {
-  const { fetchCandidateSongs } = require('./captureService');
   const t = String(title || '').trim();
   if (!t) return { found: false, options: [], pick: null };
+  const cacheKey = `${t}\u0001${String(singer || '').trim()}`;
+  const hit = lookupCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < LOOKUP_TTL_MS) return hit.value;
+  const { fetchCandidateSongs } = require('./captureService');
   const { candidates } = matchTitle(t, await fetchCandidateSongs(t));
   const credited = candidates.filter((c) => artistMatches(singer, c.artist));
   const ordered = [...credited, ...candidates.filter((c) => !credited.includes(c))].slice(0, MAX_OPTIONS);
   const options = ordered.map((c) => ({ songId: c.songId, title: c.title, artist: c.artist }));
-  return { found: options.length > 0, options, pick: options[0] ? options[0].songId : null };
+  const value = { found: options.length > 0, options, pick: options[0] ? options[0].songId : null };
+  if (lookupCache.size >= 5000) lookupCache.clear();
+  lookupCache.set(cacheKey, { at: Date.now(), value });
+  return value;
 }
 
 function itemView(item) {
@@ -402,9 +452,15 @@ async function getReport(userId, reportId) {
   const running = await isRunning(report);
   const last = items.length ? items[items.length - 1].seenAt : null;
   const views = [];
+  let looked = 0;
   for (const item of items) {
     const v = itemView(item);
-    if (item.status === 'missing') v.lookup = await lookup(item.title || item.rawText, report.singer);
+    if (item.status === 'missing') {
+      // Bounded per read; past it a song is looked up when the user renames it.
+      v.lookup = looked++ < MAX_LOOKUPS_PER_READ
+        ? await lookup(item.title || item.rawText, report.singer)
+        : { found: false, options: [], pick: null, skipped: true };
+    }
     views.push(v);
   }
   // The default destination: the run's own playlist, if it is the user's to
@@ -429,10 +485,18 @@ async function getReport(userId, reportId) {
   };
 }
 
-/** The most recent report, for the 查看本局战报 link. */
+/**
+ * The most recent report, for the 查看本局战报 link -- the run just stopped,
+ * even when it saw no songs (the list leaves those out; this must not fall
+ * back to an older run of another list).
+ */
 async function latestReportId(userId) {
-  const { reports } = await listReports(userId);
-  return reports.length ? reports[0].id : null;
+  const r = await prisma.gepReport.findFirst({
+    where: { userId, startedAt: { gte: new Date(Date.now() - RETENTION_MS) } },
+    orderBy: { startedAt: 'desc' },
+    select: { id: true },
+  });
+  return r ? r.id : null;
 }
 
 // --- editing ----------------------------------------------------------------
@@ -469,7 +533,13 @@ async function setSinger(userId, reportId, singer) {
  * the first (pickStart), reusing a clip at that start or cutting one. A song
  * already in the playlist is skipped. The report itself is not changed.
  */
-async function addToPlaylist(userId, reportId, { playlistId, picks }) {
+// One add at a time per user: two tabs, or a retry after a timeout, would
+// otherwise read the same last position and could cut the same clip twice.
+function addToPlaylist(userId, reportId, body) {
+  return serial(`add:${userId}`, () => addOne(userId, reportId, body));
+}
+
+async function addOne(userId, reportId, { playlistId, picks }) {
   const report = await ownReport(userId, reportId);
   if (!playlistId || typeof playlistId !== 'string') throw new ValidationError({ playlistId: ['Choose a playlist'] });
   if (!Array.isArray(picks) || !picks.length) throw new ValidationError({ picks: ['Choose at least one song'] });
@@ -506,14 +576,16 @@ async function addToPlaylist(userId, reportId, { playlistId, picks }) {
       inList.add(song.id);
       results.push({ itemId: item.id, result: 'added', title: song.title, artist: song.artist });
     } catch (err) {
-      console.warn('[gep-report] add failed:', err.message);
+      console.warn('[gep-report] add failed:', String(err.message || err).split(/\r?\n/)[0].slice(0, 300));
       results.push({ itemId: item.id, result: 'failed', title: song.title, artist: song.artist });
     }
   }
   return { results };
 }
 
-// Same choice and the same clip a playlist import makes (scripts/lib/add-songs).
+// Same choice and the same clip a playlist import makes (scripts/lib/add-songs),
+// except that a clip that could not be cut is not recorded: the song is
+// reported as not added, rather than added as a clip with no audio.
 async function clipFor(song) {
   const startSec = pickStart(song.starts);
   const existing = await prisma.clip.findFirst({ where: { songId: song.id, start: startSec, isGlobal: true } })
@@ -521,17 +593,13 @@ async function clipFor(song) {
   if (existing) return existing;
   const clipLyrics = sliceLRC(song.lyrics, startSec, startSec + CLIP_LENGTH);
   const clipFilename = buildClipFilename(song.title, song.artist, startSec);
-  try {
-    await clipAudioAsync({
-      sourcePath: path.join(process.env.MP3_BASE_PATH, song.filePath),
-      outputPath: path.join(process.env.CLIPS_BASE_PATH, clipFilename),
-      start: startSec,
-      length: CLIP_LENGTH,
-      lyrics: clipLyrics,
-    });
-  } catch (err) {
-    console.warn(`[gep-report] could not cut "${song.title}": ${err.message}`);
-  }
+  await clipAudioAsync({
+    sourcePath: path.join(process.env.MP3_BASE_PATH, song.filePath),
+    outputPath: path.join(process.env.CLIPS_BASE_PATH, clipFilename),
+    start: startSec,
+    length: CLIP_LENGTH,
+    lyrics: clipLyrics,
+  });
   return prisma.clip.create({
     data: { songId: song.id, start: startSec, length: CLIP_LENGTH, filePath: clipFilename, lyrics: clipLyrics },
   });

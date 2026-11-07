@@ -282,6 +282,18 @@ export default function PlaylistGrid({
     // a new onMove per render re-rendered every card in edit mode.
   }, [playlist.id, onReorder]);
 
+  // Typing a number moves the clip, not the page. Chrome keeps whatever card is
+  // under the top of the screen in place when the list reorders, so if that card
+  // is the one being moved the page followed it (#20 typed as 2 scrolled up to
+  // #2, instead of staying on #20 for the next clip). Switched off for this one
+  // reorder only; dragging, and everything else, keeps the browser default.
+  const handleMoveByNumber = useCallback((clipId, fromIndex, toIndex) => {
+    const root = document.documentElement;
+    root.style.overflowAnchor = "none";
+    requestAnimationFrame(() => requestAnimationFrame(() => { root.style.overflowAnchor = ""; }));
+    return handleMove(clipId, fromIndex, toIndex);
+  }, [handleMove]);
+
   // Dragging is disabled while a filter narrows the list: handleMove works in
   // full-list indices, so a drop between two visible rows would move the clip
   // to a position the user never saw.
@@ -747,7 +759,7 @@ export default function PlaylistGrid({
               onSwap={editMode ? handleSwapCarryingExpand : undefined}
               position={pc.position + 1}
               totalClips={editMode ? playlist.clips.length : undefined}
-              onMove={editMode ? handleMove : undefined}
+              onMove={editMode ? handleMoveByNumber : undefined}
               getAllClips={getAllClips}
               clipIndex={pc.position}
               collapsed={!expandedClipIds.has(pc.clipId)}

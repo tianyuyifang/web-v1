@@ -7,6 +7,7 @@ import ClipCreator from "@/components/library/ClipCreator";
 import { formatDuration } from "@/lib/utils";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import ImportReport from "@/components/playlist/ImportReport";
+import useAuth from "@/hooks/useAuth";
 
 export default function AddClipModal({ playlistId, onClose, onClipAdded, onBulkImported, onClipSelected, initialSong }) {
   const { t } = useLanguage();
@@ -173,6 +174,7 @@ const POLL_MS = 1500;
 
 function ImportTab({ playlistId, onImported }) {
   const { t } = useLanguage();
+  const { isAdmin } = useAuth();
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
   const [qqId, setQqId] = useState("");
@@ -209,7 +211,9 @@ function ImportTab({ playlistId, onImported }) {
         const res = await playlistsAPI.list({ q: internalQuery });
         const data = res.data;
         const list = Array.isArray(data) ? data : data.playlists || [];
-        setInternalResults(list.filter((p) => p.id !== playlistId));
+        // Only what this user may take: a share alone lets you look, not import.
+        // The server enforces the same rule; this keeps the list honest.
+        setInternalResults(list.filter((p) => p.id !== playlistId && (isAdmin || p.isOwner || p.isPublic || p.canCopy)));
       } catch {
         setInternalResults([]);
       } finally {
@@ -217,7 +221,7 @@ function ImportTab({ playlistId, onImported }) {
       }
     }, 300);
     return () => { if (internalTimerRef.current) clearTimeout(internalTimerRef.current); };
-  }, [internalQuery, playlistId]);
+  }, [internalQuery, playlistId, isAdmin]);
 
   const finishWith = (result) => {
     setImporting(false);

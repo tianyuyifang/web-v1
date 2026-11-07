@@ -653,6 +653,12 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
     if (!canView) {
       return res.status(404).json({ error: { message: 'Source playlist not found' } });
     }
+    // A share lets you look; taking the clips needs copy rights, same rule as /copy.
+    const canCopy = source.userId === req.user.id || source.isPublic
+      || req.user.role === 'ADMIN' || source.copyPermissions.length > 0;
+    if (!canCopy) {
+      return res.status(403).json({ error: { message: '没有复制这个歌单的权限' } });
+    }
 
     // Get clips from source playlist with song info
     const sourceClips = await prisma.playlistClip.findMany({

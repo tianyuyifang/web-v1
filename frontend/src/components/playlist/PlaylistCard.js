@@ -8,15 +8,18 @@ export default function PlaylistCard({ playlist, listView, number }) {
   const { t } = useLanguage();
   const clipCount = playlist.clipCount ?? playlist.clips?.length ?? 0;
 
+  // Someone else's list with copy rights alone is still private, not public.
+  const showShared = playlist.isShared || (playlist.canCopy && !playlist.isPublic);
+
   const badge = playlist.isOwner
     ? (playlist.isPublic ? t("public") : t("private"))
-    : playlist.isShared
+    : showShared
       ? t("shared")
       : t("public");
 
   const badgeClass = playlist.isOwner
     ? (playlist.isPublic ? "bg-green-600 text-white" : "bg-red-600 text-white")
-    : playlist.isShared
+    : showShared
       ? "bg-blue-600 text-white"
       : "bg-green-600 text-white";
 

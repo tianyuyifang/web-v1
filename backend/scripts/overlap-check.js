@@ -18,8 +18,11 @@ const norm = (s) => (s == null ? '' : String(s).normalize('NFC').trim().toLowerC
   for (const r of rows) {
     const song = byFilePath.get(norm(r.file_path));
     if (!song) continue;
-    // floor only — chorus_sec_ceil is ignored by design.
-    const starts = [r.f].filter((v) => Number.isInteger(v) && v >= 0);
+    // Both chorus points: floor AND ceil (user rule 2026-11-07, restoring the
+    // pre-2026-07-29 behaviour). Deduped because ceil occasionally equals floor,
+    // and a Set keeps the two-clip plan from asking for the same clip twice.
+    const starts = [...new Set([r.f, r.c].filter((v) => Number.isInteger(v) && v >= 0))]
+      .sort((a, b) => a - b);
     if (!starts.length) { blank++; continue; }
     const existing = new Set(
       (await prisma.clip.findMany({ where: { songId: song.id }, select: { start: true } })).map((c) => c.start)

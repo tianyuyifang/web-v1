@@ -1,9 +1,12 @@
 /**
  * create-chorus-clips.js — batch-create chorus clips from chorus_points.xlsx.
  *
- * Matches each row to a song by filePath, then creates a single 20s clip at
- * chorus_sec_floor. chorus_sec_ceil is ignored by design (user rule 2026-07-29).
- * Rows with a blank/malformed floor are skipped and reported.
+ * Matches each row to a song by filePath, then creates a 20s clip at BOTH
+ * chorus_sec_floor and chorus_sec_ceil (user rule 2026-11-07). ceil is usually
+ * floor+1, so a row normally yields two clips one second apart; when the two
+ * points land on the same second only one clip is made.
+ * A row is skipped only when NEITHER point is usable; a blank floor with a
+ * valid ceil still yields that one clip.
  *
  * Delegates to the app's own clipService.createClip so the resulting clips
  * (ffmpeg cut, sliced .lrc, song.starts update) are identical to UI-created
@@ -43,9 +46,11 @@ const norm = (s) => (s == null ? '' : String(s).normalize('NFC').trim().toLowerC
   for (const r of rows) {
     const song = byFilePath.get(norm(r.file_path));
     if (!song) { unmatched.push(r); continue; }
-    // Only chorus_sec_floor is used; chorus_sec_ceil is ignored by design.
-    // A blank/malformed floor means no clip for this row.
-    const starts = [r.f].filter((v) => Number.isInteger(v) && v >= 0);
+    // Both chorus points: floor AND ceil (user rule 2026-11-07, restoring the
+    // pre-2026-07-29 behaviour). Deduped because ceil occasionally equals floor,
+    // and a Set keeps the two-clip plan from asking for the same clip twice.
+    const starts = [...new Set([r.f, r.c].filter((v) => Number.isInteger(v) && v >= 0))]
+      .sort((a, b) => a - b);
     if (!starts.length) { noPoint.push(r); continue; }
     for (const start of starts) tasks.push({ song, start });
   }

@@ -358,7 +358,12 @@ async function getReport(userId, reportId) {
     const p = await prisma.playlist.findUnique({ where: { id: report.playlistId }, select: { userId: true } });
     if (p && p.userId === userId) defaultPlaylistId = report.playlistId;
   }
+  // Where songs can go: the user's own playlists, newest first.
+  const myPlaylists = await prisma.playlist.findMany({
+    where: { userId }, select: { id: true, name: true }, orderBy: { updatedAt: 'desc' }, take: 1000,
+  });
   return {
+    myPlaylists,
     report: {
       id: report.id, source: report.source, playlistName: report.playlistName, singer: report.singer,
       startedAt: report.startedAt, endedAt: report.endedAt || (running ? null : last || report.startedAt),

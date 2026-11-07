@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { captureAPI, getLikesSSEUrl } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import useAuth from "@/hooks/useAuth";
@@ -93,6 +94,9 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   // collapse toggle, so a slip of the mouse used to end a live run outright;
   // arming first means a stray click costs nothing but a second of red.
   const [stopArmed, setStopArmed] = useState(false);
+  // Set by 停止 so the idle pill can offer this run's 歌P战报; cleared by the
+  // next 开始 or by closing it.
+  const [justStopped, setJustStopped] = useState(false);
   const [client, setClient] = useState("waiting");
   // Where the connection is pointing, as the server sees it. Kept next to
   // `client` because the banner below needs both: a live client aimed nowhere
@@ -254,6 +258,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
   }, [session, playlistId]);
 
   const start = useCallback(async () => {
+    setJustStopped(false);
     // Explain the add-on rather than firing a request that will 403. The
     // button stays live so the feature is discoverable — and so the price
     // reaches the people who would pay it.
@@ -417,6 +422,7 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       setBusy(false);
       // Drop the stored id too, or the next visit restores a dead run.
       forget(playlistId);
+      setJustStopped(true);
     }
   }, [session, playlistId, stopDelivery]);
 
@@ -565,6 +571,25 @@ export default function CapturePanel({ playlistId, hiddenOnPhone = false }) {
       {error && !busy && (
         <div className="fixed bottom-32 right-4 z-40 max-w-[16rem] rounded border border-border bg-surface px-3 py-2 text-xs text-red-400 shadow-lg sm:bottom-40">
           {error}
+        </div>
+      )}
+
+      {/* 歌P战报 for the run just stopped. Same corner as the error above,
+          which it gives way to. */}
+      {justStopped && !error && !busy && !hiddenOnPhone && (
+        <div className="fixed bottom-32 right-4 z-40 flex max-w-[16rem] items-center gap-2 rounded border border-border bg-surface px-3 py-2 text-xs text-theme shadow-lg sm:bottom-40">
+          <span>这一局结束了</span>
+          <Link href="/account?tab=gep&report=latest" className="font-medium text-primary hover:underline">
+            查看本局战报
+          </Link>
+          <button
+            type="button"
+            onClick={() => setJustStopped(false)}
+            aria-label="关闭"
+            className="ml-1 text-muted hover:text-theme"
+          >
+            ×
+          </button>
         </div>
       )}
 

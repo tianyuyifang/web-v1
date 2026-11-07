@@ -160,6 +160,8 @@ export default function PlatformTaggingPage() {
 
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState("");
+  // Set by 停止 so the page can offer this run's 歌P战报; cleared by 开始 or ×.
+  const [justStopped, setJustStopped] = useState(false);
   const restoredRef = useRef(false);
 
   // Which platforms this account has connected (and which this page offers).
@@ -389,6 +391,7 @@ export default function PlatformTaggingPage() {
     if (!selected) return;
     setStarting(true);
     setStartError("");
+    setJustStopped(false);
     try {
       // Ask the server, not the store, whether a connection exists. Opening
       // one ends every other live session for this user — so a store that is
@@ -441,6 +444,7 @@ export default function PlatformTaggingPage() {
       await platformTaggingAPI.stop();
       forgetRun();
       setRun(null);
+      setJustStopped(true);
     } catch (err) {
       // Still running on the server: the panel stays, with the run it shows.
       setStartError(errMsg(err, "停止失败"));
@@ -670,6 +674,23 @@ export default function PlatformTaggingPage() {
           onStart={start}
           onStop={stop}
         />
+      )}
+      {/* 歌P战报 for the run just stopped, above the 自动打标 pill. */}
+      {justStopped && !runningHere && !startError && (
+        <div className="fixed bottom-32 right-4 z-40 flex max-w-[16rem] items-center gap-2 rounded border border-border bg-surface px-3 py-2 text-xs text-theme shadow-lg sm:bottom-40">
+          <span>这一局结束了</span>
+          <Link href="/account?tab=gep&report=latest" className="font-medium text-primary hover:underline">
+            查看本局战报
+          </Link>
+          <button
+            type="button"
+            onClick={() => setJustStopped(false)}
+            aria-label="关闭"
+            className="ml-1 text-muted hover:text-theme"
+          >
+            ×
+          </button>
+        </div>
       )}
 
       {showUnlikeAllConfirm && (

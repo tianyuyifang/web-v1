@@ -325,6 +325,17 @@ export const captureAPI = {
 
 // --- 平台打标 (QQ / 网易云 歌单直接点赞) ---
 // Its own router and add-on. Only the connection is shared with capture.
+// 歌P战报: the signed-in user's own reports of their 歌P runs (last 7 days).
+export const gepReportsAPI = {
+  list: () => api.get("/gep-reports"),
+  latest: () => api.get("/gep-reports/latest"),
+  get: (id) => api.get(`/gep-reports/${id}`),
+  setSinger: (id, singer) => api.patch(`/gep-reports/${id}`, { singer }),
+  rename: (id, itemId, title) => api.patch(`/gep-reports/${id}/items/${itemId}`, { title }),
+  // Cutting a clip for a song that has none can take a few seconds each.
+  add: (id, playlistId, picks) => api.post(`/gep-reports/${id}/add`, { playlistId, picks }, { timeout: 120000 }),
+};
+
 export const platformTaggingAPI = {
   playlists: (platform) => api.get("/platform-tagging/playlists", { params: { platform } }),
   // dirId: QQ needs it to read 我喜欢. isLikes: tells the server which cached

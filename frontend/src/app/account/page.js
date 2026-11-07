@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import useAuth from "@/hooks/useAuth";
@@ -10,6 +10,7 @@ import { authAPI } from "@/lib/api";
 import { clearToken } from "@/lib/auth";
 import MusicSourcesPanel from "@/components/account/MusicSourcesPanel";
 import RedeemBox from "@/components/account/RedeemBox";
+import GepReportsPanel from "@/components/account/GepReportsPanel";
 
 const THEME_OPTIONS = [
   { value: "dark", labelKey: "themeDark", descKey: "themeDarkDesc" },
@@ -36,6 +37,19 @@ export default function AccountPage() {
   const { theme, setTheme, palette, setPalette, palettes, paletteColors, style, setStyle, styles } = useTheme();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("info"); // info | change | appearance | language
+  // 查看本局战报 lands here as /account?tab=gep&report=latest. Read once from
+  // the address rather than useSearchParams, which would need a Suspense
+  // boundary around the whole page.
+  const [gepReportId, setGepReportId] = useState(null);
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      if (q.get("tab") === "gep") {
+        setActiveTab("gep");
+        setGepReportId(q.get("report"));
+      }
+    } catch { /* no address to read */ }
+  }, []);
 
   const daysInfo = useMemo(() => {
     if (!user?.expiresAt) return null;
@@ -151,6 +165,8 @@ export default function AccountPage() {
           // so without this the page has nothing it can play. Kept from anyone
           // else, who would be handing over a platform login for nothing.
           ...((canCapture || canPlatformTag) ? [{ key: "music", label: "音乐账号" }] : []),
+          // Same audience as above: whoever can run 歌P.
+          ...((canCapture || canPlatformTag) ? [{ key: "gep", label: "歌P战报" }] : []),
           { key: "appearance", label: t("appearance") },
         ].map((tab) => (
           <button
@@ -326,6 +342,11 @@ export default function AccountPage() {
         {/* Connected music accounts. Guarded as well as hidden, so a stale tab
             selection cannot render it for someone it was hidden from. */}
         {activeTab === "music" && (canCapture || canPlatformTag) && <MusicSourcesPanel />}
+
+        {/* 歌P战报. Guarded the same way; the server checks the add-on too. */}
+        {activeTab === "gep" && (canCapture || canPlatformTag) && (
+          <GepReportsPanel key={gepReportId || "list"} initialReportId={gepReportId} />
+        )}
 
         {/* Appearance */}
         {activeTab === "appearance" && (

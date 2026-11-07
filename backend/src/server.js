@@ -74,6 +74,9 @@ app.use('/api/capture', require('./routes/capture'));
 // its SSE stream must not hold a device slot.
 app.use('/api/platform-tagging', require('./routes/platformTagging'));
 
+// 歌P战报: a member's own reports of their 歌P runs (gated per add-on inside).
+app.use('/api/gep-reports', authMiddleware, requireApproved, requireActiveSession, require('./routes/gepReports'));
+
 // Feedback routes (submit = approved users, list/delete = admin)
 app.use('/api/feedback', authMiddleware, requireApproved, requireActiveSession, require('./routes/feedback'));
 

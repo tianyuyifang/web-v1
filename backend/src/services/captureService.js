@@ -10,6 +10,8 @@ const { mappingTitleKey, artistKey } = require('./songKeyService');
 const { broadcast } = require('./sseManager');
 const apkChannel = require('./apkChannel');
 const gepSingers = require('./gepSingerService');
+// 歌P战报: told where runs begin and end. Never throws, never awaited.
+const gepReports = require('./gepReportService');
 const settingsService = require('./settingsService');
 const { AppError, NotFoundError, ForbiddenError, ValidationError } = require('../utils/errors');
 
@@ -159,6 +161,7 @@ async function startSession({ userId, playlistId, label, ttlMinutes, mode }) {
     where: { userId, endedAt: null, expiresAt: { gt: new Date() } },
     data: { endedAt: new Date() },
   });
+  gepReports.onSessionEnd({ userId });
 
   const ttl = Number(ttlMinutes) > 0
     ? Math.min(Number(ttlMinutes), 24 * 60)
@@ -217,6 +220,7 @@ async function connect({ userId, label, ttlMinutes }) {
     where: { userId, endedAt: null, expiresAt: { gt: new Date() } },
     data: { endedAt: new Date() },
   });
+  gepReports.onSessionEnd({ userId });
 
   const ttl = Number(ttlMinutes) > 0
     ? Math.min(Number(ttlMinutes), 24 * 60)
@@ -299,6 +303,7 @@ async function setTarget({ userId, target, playlistId }) {
   // holds the push channel open (only ever during QQ打标; see apkChannel).
   // Never throws, and does nothing when no channel is open.
   apkChannel.pushTarget(updated);
+  gepReports.onTarget(updated);
 
   return updated;
 }
@@ -348,6 +353,7 @@ async function endSession({ userId, sessionId }) {
       where: { id: sessionId },
       data: { endedAt: new Date() },
     });
+    gepReports.onSessionEnd({ sessionId });
   }
   return { ended: true };
 }
@@ -1613,6 +1619,8 @@ module.exports = {
   startSession, endSession, resolveSession, redeemPairCode,
   connect, setTarget, getConnection,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
+  // 歌P战报 looks a corrected title up the same way a capture is.
+  fetchCandidateSongs,
   // The route drops "aimed at nothing" before the service sees it, and that
   // drop needs saying out loud just as much as the ones in here.
   logNoTarget,

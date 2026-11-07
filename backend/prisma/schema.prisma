@@ -90,6 +90,7 @@ model User {
   bandwidthLogs    BandwidthLog[]
   approvedMappings SongMapping[] @relation("MappingApprover")
   songPrefs        SongPref[]
+  gepReports       GepReport[]
 
   @@map("users")
   /// 好友标记分享: 我分享出去的 / 分享给我的。
@@ -558,6 +559,63 @@ model CaptureEvent {
   /// is not in memory, past the 5-second limit on the delete's transaction.
   @@index([matchedClipId])
   @@map("capture_events")
+}
+
+/// 歌P战报: one 歌P run, from aiming 自动打标 at a list to 停止, a switch to
+/// another list or to 唱卡, or the connection ending. Kept 7 days.
+///
+/// A record of its own rather than a view over capture_events: within one
+/// connection a title already captured for this list comes back "duplicate"
+/// and writes no new event, so a second run on the same list would lose
+/// every song the first one saw. Fixed once the run is over -- adding the
+/// missing songs afterwards does not change it.
+model GepReport {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  /// The connection it ran on. Not a relation: connections are pruned on
+  /// their own schedule (30 days), this on its own (7).
+  sessionId    String    @map("session_id") @db.Uuid
+  /// 'site' (a playlist here) | 'qq' | 'netease' (a list on the platform)
+  source       String
+  playlistId   String?   @map("playlist_id") @db.Uuid
+  platformRef  String?   @map("platform_ref")
+  /// The list's name when the run began, so the report reads the same after
+  /// a rename or a delete.
+  playlistName String    @map("playlist_name")
+  /// The game's singer, as the client sent it (v28+), or as the user edited
+  /// it. Optional: older clients send none.
+  singer       String?
+  startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  endedAt      DateTime? @map("ended_at") @db.Timestamptz
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items GepReportItem[]
+
+  @@index([userId, startedAt])
+  @@index([sessionId, endedAt])
+  @@index([startedAt])
+  @@map("gep_reports")
+}
+
+/// One song seen in a 歌P run, in the order it was first seen.
+model GepReportItem {
+  id       String   @id @default(uuid()) @db.Uuid
+  reportId String   @map("report_id") @db.Uuid
+  /// The title exactly as captured.
+  rawText  String   @map("raw_text")
+  /// The user's correction, used to look it up in the catalogue. Changes
+  /// nothing but this report.
+  title    String?
+  /// 'have' (in the list) | 'missing' (not in it) | 'unknown' (not yet
+  /// decided when seen; settled on read)
+  status   String
+  seenAt   DateTime @default(now()) @map("seen_at") @db.Timestamptz
+
+  report GepReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, rawText])
+  @@index([reportId, seenAt])
+  @@map("gep_report_items")
 }
 
 /// Where a song's audio comes from. The local library is NOT a shortcut that

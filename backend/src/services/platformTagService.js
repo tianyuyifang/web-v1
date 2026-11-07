@@ -22,6 +22,7 @@ const { matchTitle } = require('./captureMatchService');
 const likes = require('./platformLikeService');
 const apkLikes = require('./apkLikeService');
 const apkChannel = require('./apkChannel');
+const gepReports = require('./gepReportService');
 const gepSingers = require('./gepSingerService');
 const { searchTextFor } = require('../utils/searchText');
 const captureService = require('./captureService');
@@ -450,6 +451,8 @@ async function start({ userId, playlistRef, dirId = null, isLikes = false }) {
   // Told to the capture client now rather than on its next heartbeat, when it
   // holds the push channel open (only ever during QQ打标; see apkChannel).
   apkChannel.pushTarget(updated);
+  // 歌P战报: a new run on this list. Never throws, never awaited.
+  gepReports.onPlatformStart(updated, list.title);
   // Every open QQ打标 page learns that a new run began (one started from
   // another browser included), so each shows this run only.
   broadcast(channel(userId), 'platform-tag-run', {

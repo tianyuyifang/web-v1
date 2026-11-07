@@ -15,6 +15,7 @@ const settingsService = require('../services/settingsService');
 const apkChannel = require('../services/apkChannel');
 const apkLikes = require('../services/apkLikeService');
 const gepSingers = require('../services/gepSingerService');
+const gepReports = require('../services/gepReportService');
 const { misrouted, cleanFrom } = require('../services/captureRouting');
 const noEtag = require('../middleware/noEtag');
 
@@ -150,7 +151,7 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
     // 平台打标: aimed at one of the user's own QQ / NetEase playlists. Its own
     // service and table; the branches below are untouched by it.
     if (target === 'platform') {
-      return res.json(await platformTagService.ingest({
+      const tagged = await platformTagService.ingest({
         session: req.captureSession,
         rawText: req.body && req.body.text,
         singer,
@@ -158,7 +159,11 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
         // (clients before v3 / v9 send neither).
         side: req.body && req.body.side,
         row: req.body && req.body.row,
-      }));
+      });
+      res.json(tagged);
+      // 歌P战报, after the answer has gone. Never throws.
+      gepReports.noteCapture({ session: req.captureSession, target, text, singer, result: tagged });
+      return;
     }
 
     const result = target === 'live'
@@ -185,6 +190,10 @@ router.post('/ingest', captureAuth, async (req, res, next) => {
         singer,
       });
     res.json(result);
+    // 歌P战报, after the answer has gone (唱卡 runs are not 歌P). Never throws.
+    if (target === 'playlist') {
+      gepReports.noteCapture({ session: req.captureSession, target, text, singer, result });
+    }
   } catch (err) {
     next(err);
   }

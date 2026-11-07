@@ -66,8 +66,50 @@ function serial(sessionId, fn) {
   return next;
 }
 
+// One line per kind of failure per minute: if the tables are missing (code
+// deployed ahead of its migration) every capture would fail here, and the
+// log must not fill with it.
+const lastWarned = new Map();
+function warn(label, err) {
+  const now = Date.now();
+  if (now - (lastWarned.get(label) || 0) < 60000) return;
+  lastWarned.set(label, now);
+  const msg = String((err && err.message) || err).trim().split(/\r?\n/).filter(Boolean).pop();
+  console.warn(`[gep-report] ${label} failed (further failures quiet for 60s): ${msg}`);
+}
+
 function quietly(label, p) {
-  return Promise.resolve(p).catch((err) => console.warn(`[gep-report] ${label} failed:`, err.message));
+  return Promise.resolve(p).catch((err) => warn(label, err));
+}
+
+// What the capture path and the aim/stop paths call. Whatever goes wrong in
+// here -- a throw before the first await included -- stays in here: the
+// caller gets a settled promise and carries on exactly as it did before.
+function guarded(label, fn) {
+  return (...args) => {
+    try {
+      return quietly(label, fn(...args));
+    } catch (err) {
+      warn(label, err);
+      return Promise.resolve();
+    }
+  };
+}
+
+// The client sends the title on screen every ~2s sweep, ~15 times a song.
+// Once a song is in this run's report there is nothing more to write, so a
+// repeat is dropped here without touching the database. Keyed by the run
+// as this process knows it: every boundary below bumps the connection's
+// generation, so a new run on the same list records its songs afresh. A
+// restart forgets it all, which only means one database check per song.
+const generations = new Map();
+const recorded = new Set();
+const MAX_RECORDED = 50000;
+function bump(sessionId) {
+  generations.set(sessionId, (generations.get(sessionId) || 0) + 1);
+}
+function recordKey(sessionId, eventId) {
+  return `${sessionId}|${generations.get(sessionId) || 0}|${eventId}`;
 }
 
 let lastPrune = 0;
@@ -110,7 +152,8 @@ async function playlistName(playlistId) {
  */
 function onTarget(session) {
   if (!session) return Promise.resolve();
-  return quietly('target', serial(session.id, async () => {
+  bump(session.id);
+  return serial(session.id, async () => {
     if (session.target === 'playlist' && session.playlistId) {
       const open = await prisma.gepReport.findFirst({
         where: { sessionId: session.id, endedAt: null },
@@ -125,21 +168,25 @@ function onTarget(session) {
     // 平台打标 opens its own run in onPlatformStart, with the list's title.
     if (session.target === 'platform') return;
     await closeOpenFor({ sessionId: session.id });
-  }));
+  });
 }
 
 /** 平台打标 开始: always a new run, as the platform service treats it. Never throws. */
 function onPlatformStart(session, title) {
   if (!session || !session.platformRef) return Promise.resolve();
-  return quietly('platform start', serial(session.id, () => createReport({
+  bump(session.id);
+  return serial(session.id, () => createReport({
     session, source: sourceOfRef(session.platformRef), platformRef: session.platformRef, name: title,
-  })));
+  }));
 }
 
 /** The connection is over (or replaced by a new one). Never throws. */
-function onSessionEnd({ sessionId, userId }) {
-  if (sessionId) return quietly('session end', serial(sessionId, () => closeOpenFor({ sessionId })));
-  if (userId) return quietly('user sessions end', closeOpenFor({ userId }));
+function onSessionEnd({ sessionId, userId } = {}) {
+  if (sessionId) {
+    bump(sessionId);
+    return serial(sessionId, () => closeOpenFor({ sessionId }));
+  }
+  if (userId) return closeOpenFor({ userId });
   return Promise.resolve();
 }
 
@@ -153,7 +200,9 @@ function noteCapture({ session, target, text, singer, result }) {
   const seenAt = new Date();
   if (!session || !result || !result.eventId) return Promise.resolve();
   if (target !== 'playlist' && target !== 'platform') return Promise.resolve();
-  return quietly('capture', serial(session.id, async () => {
+  const key = recordKey(session.id, result.eventId);
+  if (recorded.has(key)) return Promise.resolve();
+  return serial(session.id, async () => {
     let source; let listKey; let outcome; let candidates; let rawText;
     if (target === 'playlist') {
       const ev = await prisma.captureEvent.findUnique({
@@ -224,7 +273,14 @@ function noteCapture({ session, target, text, singer, result }) {
     if (name && report.singer == null) {
       await prisma.gepReport.updateMany({ where: { id: report.id, singer: null }, data: { singer: name } });
     }
-  }));
+    // Settled for this run: later repeats can skip the database. Not while the
+    // song's status is still undecided. (The singer comes with every capture
+    // from a client that sends it, so another song of the run supplies it.)
+    if (status !== 'unknown') {
+      if (recorded.size >= MAX_RECORDED) recorded.clear();
+      recorded.add(key);
+    }
+  });
 }
 
 // --- reading ----------------------------------------------------------------
@@ -482,7 +538,11 @@ async function clipFor(song) {
 }
 
 module.exports = {
-  onTarget, onPlatformStart, onSessionEnd, noteCapture,
+  // The four the existing paths call: guarded, so they can only ever log.
+  onTarget: guarded('target', onTarget),
+  onPlatformStart: guarded('platform start', onPlatformStart),
+  onSessionEnd: guarded('session end', onSessionEnd),
+  noteCapture: guarded('capture', noteCapture),
   listReports, getReport, latestReportId, renameItem, setSinger, addToPlaylist,
   // For tests.
   _statusOf: statusOf,

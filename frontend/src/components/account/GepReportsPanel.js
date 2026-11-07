@@ -16,9 +16,6 @@ import { gepReportsAPI } from "@/lib/api";
  */
 
 const SOURCE_LABEL = { site: "网站歌单", qq: "QQ 歌单", netease: "网易云歌单" };
-// Per-browser convenience only: the playlist last added to from a QQ report,
-// which has no playlist of its own on the site to default to.
-const LAST_PLAYLIST_KEY = "gepReports.lastPlaylist";
 const POLL_MS = 10000;
 
 function errMsg(err, fallback) {
@@ -42,14 +39,6 @@ function dayLabel(d) {
   if (dayKey(x) === dayKey(today)) return "今天";
   if (dayKey(x) === dayKey(yesterday)) return "昨天";
   return `${x.getMonth() + 1}月${x.getDate()}日`;
-}
-
-function readLastPlaylist() {
-  try { return localStorage.getItem(LAST_PLAYLIST_KEY); } catch { return null; }
-}
-
-function writeLastPlaylist(id) {
-  try { localStorage.setItem(LAST_PLAYLIST_KEY, id); } catch { /* private mode */ }
 }
 
 export default function GepReportsPanel({ initialReportId = null }) {
@@ -177,11 +166,10 @@ function ReportDetail({ id, onBack }) {
     load()
       .then((d) => {
         if (cancelled) return;
-        const own = new Set(d.myPlaylists.map((p) => p.id));
-        const last = readLastPlaylist();
-        // The run's own playlist when it is the user's; otherwise (a QQ run,
-        // or a list someone shared) the one last added to, if still theirs.
-        setDest(d.report.defaultPlaylistId || (last && own.has(last) ? last : ""));
+        // The run's own playlist when it is the user's. A QQ run, or a list
+        // someone shared, has none: the user picks every time -- the list
+        // used last was for another singer's game.
+        setDest(d.report.defaultPlaylistId || "");
       })
       .catch((err) => { if (!cancelled) setError(errMsg(err, "战报加载失败")); });
     return () => { cancelled = true; };
@@ -279,7 +267,6 @@ function ReportDetail({ id, onBack }) {
         rs.forEach((r) => { if (r.result === "added" || r.result === "exists") n.delete(r.itemId); });
         return n;
       });
-      writeLastPlaylist(dest);
       const added = rs.filter((r) => r.result === "added").length;
       const exists = rs.filter((r) => r.result === "exists").length;
       const failed = rs.length - added - exists;

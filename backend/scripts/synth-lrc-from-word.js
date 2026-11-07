@@ -28,6 +28,11 @@ const mids = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const hasStamp = (lyric) => String(lyric).split('\n')
   .some((l) => /^\[\d{1,2}:\d{2}/.test(l.trim()));
 
+// 让数据库先筛掉「整句已有时间戳」的行, 这张表全部连歌词读进内存, 2GB 的
+// 生产机会被挤进 swap, 网站跟着卡。这只是粗筛: 它能匹配的 hasStamp 一定也
+// 匹配, 所以不会漏行, 最后的判断仍由下面的 JS 过滤决定。
+const SQL_STAMP = '(?n)^[ \\t\\r\\f\\v]*\\[[0-9]{1,2}:[0-9]{2}';
+
 const stamp = (ms) => {
   const m = Math.floor(ms / 60000);
   const s = Math.floor((ms % 60000) / 1000);
@@ -43,8 +48,12 @@ const stamp = (ms) => {
     // 平台的回答会覆盖这里合成的, 而且那 800+ 首缺词只是还没人播过,
     // 不是病。问过的行里, 整句为空(平台说没有)和整句无时间戳(纯文本)
     // 都算中招 —— 咕叽咕叽就是前者, 只按「lyric 非空」筛会漏掉它。
+    const rows = await prisma.$queryRaw`
+      SELECT id FROM imported_tracks
+      WHERE lyric_fetched_at IS NOT NULL AND word_lyric IS NOT NULL
+        AND (lyric IS NULL OR lyric !~ ${SQL_STAMP})`;
     tracks = (await prisma.importedTrack.findMany({
-      where: { lyricFetchedAt: { not: null }, wordLyric: { not: null } },
+      where: { id: { in: rows.map((r) => r.id) } },
     })).filter((t) => !t.lyric || !hasStamp(t.lyric));
   } else {
     if (!mids.length) { console.log('给 mid 或 --all'); process.exit(1); }
@@ -95,8 +104,13 @@ const stamp = (ms) => {
     // 或问过且平台说没有。没问过又没词的不算 —— 那是还没播过, 不是病。
     // wordLyric 用 JS 过滤: Prisma 的 where wordLyric:null 只匹配 DbNull,
     // 历史行存的 JSON null 会漏网(实测漏掉 4 首纯文本老行)。
+    const rows = await prisma.$queryRaw`
+      SELECT id FROM imported_tracks
+      WHERE source IN ('QQ', 'NETEASE')
+        AND (word_lyric IS NULL OR word_lyric = '')
+        AND (lyric IS NULL OR lyric !~ ${SQL_STAMP})`;
     const sick = (await prisma.importedTrack.findMany({
-      where: { source: { in: ['QQ', 'NETEASE'] } },
+      where: { id: { in: rows.map((r) => r.id) } },
       select: { source: true, externalId: true, title: true, artist: true,
         lyric: true, lyricFetchedAt: true, wordLyric: true },
     })).filter((t) => !t.wordLyric

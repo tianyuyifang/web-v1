@@ -325,6 +325,23 @@ router.get('/gep-singers/songs', requireMappingEditor, async (req, res, next) =>
   }
 });
 
+/**
+ * GET /api/mappings/gep-singers/compare?singer=&playlistId= — 对比歌单: this
+ * singer's titles that the playlist (own or shared with you) does not have.
+ * Read-only.
+ */
+router.get('/gep-singers/compare', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await gepSingers.comparePlaylist(
+      String(req.query.singer || '').slice(0, 64),
+      String(req.query.playlistId || ''),
+      req.user.id,
+    ));
+  } catch (err) {
+    next(err);
+  }
+});
+
 const gepSongBody = z.object({
   singer: z.string().min(1).max(64),
   title: z.string().min(1).max(130),

@@ -22,15 +22,20 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import api, { mappingAPI } from "@/lib/api";
+import api, { mappingAPI, playlistsAPI } from "@/lib/api";
 
 const errorOf = (err, fallback) => err?.response?.data?.error?.message || fallback;
 
-/** 最近出现 is kept to the day: "11/8", with the year only when it is not this one. */
+/**
+ * 最近出现 is kept to the Beijing day, so it is shown as one too, wherever the
+ * reader is: "11/8", with the year only when it is not this one.
+ */
+const beijingDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "numeric", day: "numeric" });
 function dayLabel(iso) {
-  const d = new Date(iso);
-  const md = `${d.getMonth() + 1}/${d.getDate()}`;
-  return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}/${md}`;
+  const ymd = (d) => Object.fromEntries(beijingDate.formatToParts(d).map((p) => [p.type, p.value]));
+  const d = ymd(new Date(iso));
+  const md = `${Number(d.month)}/${Number(d.day)}`;
+  return d.year === ymd(new Date()).year ? md : `${d.year}/${md}`;
 }
 
 function SongRow({ song, onChanged, onDeleted }) {
@@ -100,7 +105,7 @@ function SongRow({ song, onChanged, onDeleted }) {
         )}
         {song.source === "manual" && <span className="text-[0.7rem] text-muted">手动添加</span>}
         {song.lastSeenAt && (
-          <span className="text-[0.7rem] tabular-nums text-muted" title="游戏里最近一次出现的日期">
+          <span className="text-[0.7rem] tabular-nums text-muted" title="游戏里最近一次出现的日期（北京时间）">
             最近 {dayLabel(song.lastSeenAt)}
           </span>
         )}
@@ -171,6 +176,107 @@ function SongRow({ song, onChanged, onDeleted }) {
   );
 }
 
+const smallBtn = "shrink-0 rounded border border-border px-2 py-0.5 text-xs text-muted hover:text-fg disabled:opacity-40";
+
+/**
+ * 对比歌单: this singer's titles that the chosen playlist (own, or shared with
+ * you) does not have. Read-only -- it only lists them. The playlist is held by
+ * the parent, so it stays chosen from one singer to the next.
+ */
+function CompareBox({ singer, playlists, playlistsError, playlistId, onPick, onClose }) {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  // The last comparison asked for; an older answer is dropped.
+  const last = useRef(0);
+
+  const run = useCallback(async () => {
+    const mine = ++last.current;
+    setResult(null);
+    setError("");
+    if (!playlistId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      // Called here rather than added to mappingAPI: lib/api is in every
+      // page's bundle, and this is used on this tab only.
+      const res = await api.get("/mappings/gep-singers/compare", { params: { singer, playlistId } });
+      if (mine === last.current) setResult(res.data);
+    } catch (err) {
+      if (mine === last.current) setError(errorOf(err, "对比失败"));
+    } finally {
+      if (mine === last.current) setLoading(false);
+    }
+  }, [singer, playlistId]);
+
+  useEffect(() => { run(); }, [run]);
+
+  const own = (playlists || []).filter((p) => p.isOwner);
+  const shared = (playlists || []).filter((p) => !p.isOwner);
+
+  return (
+    <div className="mb-3 rounded-lg border border-border bg-surface p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="shrink-0 text-xs text-muted">对比歌单</span>
+        <select
+          value={playlistId}
+          onChange={(e) => onPick(e.target.value)}
+          disabled={!playlists}
+          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+        >
+          <option value="">
+            {!playlists ? (playlistsError ? "歌单读取失败" : "读取歌单中…") : playlists.length ? "选一个歌单…" : "没有可选的歌单"}
+          </option>
+          {own.length > 0 && (
+            <optgroup label="我的歌单">
+              {own.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </optgroup>
+          )}
+          {shared.length > 0 && (
+            <optgroup label="分享给我的">
+              {shared.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.ownerName}</option>)}
+            </optgroup>
+          )}
+        </select>
+        {playlistId && (
+          <button type="button" onClick={run} disabled={loading} className={smallBtn} title="加了网站歌名或改了歌单后，再比一次">重新对比</button>
+        )}
+        <button type="button" onClick={onClose} className={smallBtn}>收起</button>
+      </div>
+
+      {playlistsError && <p className="mt-2 text-xs text-red-300">{playlistsError}</p>}
+      {loading && <p className="mt-2 text-sm text-muted">对比中…</p>}
+      {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+      {result && result.missing.length === 0 && (
+        <p className="mt-2 text-sm text-accent">「{result.playlist.name}」里这 {result.total} 首都有。</p>
+      )}
+      {result && result.missing.length > 0 && (
+        <>
+          <p className="mt-2 text-sm text-fg">
+            「{result.playlist.name}」缺 <span className="font-semibold tabular-nums">{result.missing.length}</span> 首
+            <span className="text-muted">（共 {result.total} 首）</span>：
+          </p>
+          <ul className="mt-1 space-y-1">
+            {result.missing.map((m) => (
+              <li key={m.id} className="break-words text-sm text-fg">
+                《{m.title}》
+                {m.siteTitles.length > 0 && (
+                  <span className="ml-1 text-xs text-muted">网站歌名：{m.siteTitles.join(" / ")}</span>
+                )}
+                {m.near.length > 0 && (
+                  <span className="ml-1 text-xs text-yellow-500">歌单里有「{m.near.join("」「")}」，括号里不同</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function GepSingerPanel() {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
@@ -189,6 +295,25 @@ export default function GepSingerPanel() {
   const wanted = useRef(null);
   // Likewise the last search, for the singer list.
   const lastSearch = useRef(0);
+  // 对比歌单: open or not, the playlists to pick from (read once, when first
+  // opened), and the one picked -- kept while moving between singers.
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [comparePlaylists, setComparePlaylists] = useState(null);
+  const [comparePlaylistsError, setComparePlaylistsError] = useState("");
+  const [comparePlaylistId, setComparePlaylistId] = useState("");
+
+  const openCompare = async () => {
+    setCompareOpen(true);
+    if (comparePlaylists) return;
+    setComparePlaylistsError("");
+    try {
+      const res = await playlistsAPI.list();
+      // Own and shared with you; not public ones or copy-only ones.
+      setComparePlaylists((res.data.playlists || []).filter((p) => p.isOwner || p.isShared));
+    } catch (err) {
+      setComparePlaylistsError(errorOf(err, "歌单读取失败"));
+    }
+  };
 
   const loadSingers = useCallback(async (q, review) => {
     const mine = ++lastSearch.current;
@@ -361,12 +486,27 @@ export default function GepSingerPanel() {
           {!selected && <p className="py-6 text-center text-sm text-muted">选一位歌手，查看见过的全部歌名。</p>}
           {selected && (
             <>
-              <h3 className="mb-2 text-sm font-semibold">
-                {selected}
-                <span className="ml-2 text-xs font-normal text-muted">
-                  {reviewOnly ? `${shown.length} 首待处理 / 共 ${songs.length} 首` : `${songs.length} 首`}
-                </span>
-              </h3>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold">
+                  {selected}
+                  <span className="ml-2 text-xs font-normal text-muted">
+                    {reviewOnly ? `${shown.length} 首待处理 / 共 ${songs.length} 首` : `${songs.length} 首`}
+                  </span>
+                </h3>
+                {!compareOpen && (
+                  <button type="button" onClick={openCompare} className={`ml-auto ${smallBtn}`}>对比歌单</button>
+                )}
+              </div>
+              {compareOpen && (
+                <CompareBox
+                  singer={selected}
+                  playlists={comparePlaylists}
+                  playlistsError={comparePlaylistsError}
+                  playlistId={comparePlaylistId}
+                  onPick={setComparePlaylistId}
+                  onClose={() => setCompareOpen(false)}
+                />
+              )}
               {songsLoading && <p className="py-6 text-center text-sm text-muted">读取中…</p>}
               {!songsLoading && reviewOnly && songs.length > 0 && shown.length === 0 && (
                 <p className="py-6 text-center text-sm text-muted">这位歌手没有待处理的歌了。</p>

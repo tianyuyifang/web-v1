@@ -1105,6 +1105,10 @@ model GepSingerSong {
   /// editor can fix by adding one. Null: nothing to do. Cleared by adding a
   /// 网站歌名 or by 已处理; set again by the next such capture.
   needsReviewAt DateTime? @map("needs_review_at") @db.Timestamptz
+  /// 最近出现 (2026-11-08): the last time play showed this pair, kept to the
+  /// day (written at most once per pair per Beijing day). Null: not seen in
+  /// play since it was added -- including every pair from before this column.
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz
 
   aliases GepSongAlias[]
 

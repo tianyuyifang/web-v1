@@ -26,6 +26,13 @@ import api, { mappingAPI } from "@/lib/api";
 
 const errorOf = (err, fallback) => err?.response?.data?.error?.message || fallback;
 
+/** 最近出现 is kept to the day: "11/8", with the year only when it is not this one. */
+function dayLabel(iso) {
+  const d = new Date(iso);
+  const md = `${d.getMonth() + 1}/${d.getDate()}`;
+  return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}/${md}`;
+}
+
 function SongRow({ song, onChanged, onDeleted }) {
   const [alias, setAlias] = useState("");
   // Most titles match the site exactly and never need a 网站歌名, so the box
@@ -92,6 +99,11 @@ function SongRow({ song, onChanged, onDeleted }) {
           >待处理</span>
         )}
         {song.source === "manual" && <span className="text-[0.7rem] text-muted">手动添加</span>}
+        {song.lastSeenAt && (
+          <span className="text-[0.7rem] tabular-nums text-muted" title="游戏里最近一次出现的日期">
+            最近 {dayLabel(song.lastSeenAt)}
+          </span>
+        )}
         {song.aliases.map((a) => (
           <span key={a.id} className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-xs text-fg">
             <span className="text-muted">→</span>{a.siteTitle}

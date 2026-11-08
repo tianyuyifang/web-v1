@@ -49,39 +49,50 @@ function cleanSinger(raw) {
 }
 
 /**
- * Pairs already written by this process, so a title re-read every sweep does
- * not cost a database write each time. Bounded; a restart only costs one
- * skipped insert per pair.
+ * Pairs already written by this process today (Beijing day), so a title
+ * re-read every sweep costs at most one database write a day -- which is all
+ * 最近出现 needs. Bounded; a restart only costs one more write per pair.
  */
-const known = new Set();
+const known = new Map(); // key -> the day it was last written
 const KNOWN_MAX = 5000;
 
+/** The Beijing calendar day: 最近出现 is kept to the day, the day as the users live it. */
+const beijingDay = (d = new Date()) => new Date(d.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+
 /**
- * Record one pair seen in play. Fire-and-forget: never throws, never waits
- * on the caller's path.
+ * Record one pair seen in play, and that it was seen today. Fire-and-forget:
+ * never throws, never waits on the caller's path.
  */
 function note(singerRaw, titleRaw) {
   const singer = cleanSinger(singerRaw);
   const title = cleanTitle(titleRaw);
   if (!singer || !title || singer.length > MAX_SINGER || title.length > MAX_TITLE) return;
   const key = `${singer}\u0000${title}`;
-  if (known.has(key)) return;
+  const now = new Date();
+  const day = beijingDay(now);
+  if (known.get(key) === day) return;
   if (known.size >= KNOWN_MAX) known.clear();
-  known.add(key);
+  known.set(key, day);
+  const failed = (err) => {
+    if (known.get(key) === day) known.delete(key);
+    console.warn('[gep-singer] record failed:', err.message);
+  };
+  const touch = () => prisma.gepSingerSong.updateMany({ where: { singer, title }, data: { lastSeenAt: now } });
   // try as well as .catch: in the window of a deploy between `git pull` and
   // `prisma generate`, the model is missing from the client and the call
   // throws before any promise exists -- which would 500 the capture itself.
   try {
-    prisma.gepSingerSong.createMany({
-      data: [{ singer, title, source: 'game' }],
-      skipDuplicates: true,
-    }).catch((err) => {
-      known.delete(key);
-      console.warn('[gep-singer] record failed:', err.message);
-    });
+    (async () => {
+      if ((await touch()).count) return;
+      const { count } = await prisma.gepSingerSong.createMany({
+        data: [{ singer, title, source: 'game', lastSeenAt: now }],
+        skipDuplicates: true,
+      });
+      // Made meanwhile (noteReview, or an editor): it is there now; mark it seen.
+      if (!count) await touch();
+    })().catch(failed);
   } catch (err) {
-    known.delete(key);
-    console.warn('[gep-singer] record failed:', err.message);
+    failed(err);
   }
 }
 
@@ -318,6 +329,7 @@ async function listSongs(singerRaw) {
       source: r.source,
       createdAt: r.createdAt,
       needsReviewAt: r.needsReviewAt,
+      lastSeenAt: r.lastSeenAt,
       aliases: r.aliases.map((a) => ({ id: a.id, siteTitle: a.siteTitle })),
     })),
   };

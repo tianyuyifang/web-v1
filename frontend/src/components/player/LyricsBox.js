@@ -54,8 +54,15 @@ export default memo(function LyricsBox({ clipId, clipVersion, currentTime, clipS
     const activeLine = innerRef.current.children[activeIndex];
     if (!activeLine) return;
     const lineHeight = activeLine.offsetHeight;
+    // The sung line wraps when it is too long for the card (2026-11-08), so
+    // it can be several lines tall; centre it by where it really is. A line
+    // that fits keeps the old offset exactly.
+    const oneLine = parseFloat(getComputedStyle(activeLine).lineHeight);
+    const top = oneLine && lineHeight > oneLine * 1.5
+      ? activeLine.offsetTop - innerRef.current.firstElementChild.offsetTop
+      : activeIndex * lineHeight;
     const containerHeight = containerRef.current.offsetHeight;
-    const offset = Math.max(0, activeIndex * lineHeight - containerHeight / 2 + lineHeight / 2);
+    const offset = Math.max(0, top - containerHeight / 2 + lineHeight / 2);
     innerRef.current.style.transform = `translateY(-${offset}px)`;
   }, [activeIndex, isStatic]);
 
@@ -93,10 +100,10 @@ export default memo(function LyricsBox({ clipId, clipVersion, currentTime, clipS
         {parsed.map((line, i) => (
           <p
             key={i}
-            className={`cursor-pointer truncate transition-colors ${
+            className={`cursor-pointer transition-colors ${
               i === activeIndex
-                ? "text-[0.82rem] font-semibold leading-[1.65] text-primary"
-                : "text-[0.72rem] leading-[1.8] text-muted opacity-60 hover:opacity-80"
+                ? "break-words text-[0.82rem] font-semibold leading-[1.65] text-primary"
+                : "truncate text-[0.72rem] leading-[1.8] text-muted opacity-60 hover:opacity-80"
             }`}
           >
             {line.text}

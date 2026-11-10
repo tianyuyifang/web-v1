@@ -1,12 +1,14 @@
 const prisma = require('../db/client');
 const pinyinMod = require('pinyin');
 const pinyinFn = pinyinMod.pinyin || pinyinMod.default || pinyinMod;
+const { T2S, S2T } = require('../utils/t2s');
 
 /**
  * Song search for people typing into a box: 添加歌曲 and the 歌曲 tab on the
  * playlists page. The whole library (~27k songs) is held in memory and
  * matched the way search engines do it:
  *   - case, full/half width, curly/straight quotes and punctuation don't matter
+ *   - traditional and simplified Chinese match each other (黄霄云 / 黄霄雲)
  *   - Chinese characters match anywhere; English and pinyin match from the
  *     start of a word / syllable, so "cry" finds One Last Cry but "ai" does
  *     not match the ai inside kai
@@ -15,7 +17,7 @@ const pinyinFn = pinyinMod.pinyin || pinyinMod.default || pinyinMod;
  *   - typos: 1 for words of 4+ letters, 2 for 8+, ranked after exact matches
  * Ranking: no typo, exact title, an artist's full name, then the original text before the usual
  * reading before a rare reading, then title start / title / artist, then
- * songs in more playlists first.
+ * songs put in playlists more often first.
  *
  * Imports and renames run in other processes, so the index is rebuilt in the
  * background when it is older than REFRESH_MS; until then the old one serves.
@@ -27,6 +29,7 @@ const REFRESH_MS = 5 * 60 * 1000;
 const SLICE_MS = 5;
 const yieldNow = () => new Promise((resolve) => setImmediate(resolve));
 const HAN = /\p{Script=Han}/u;
+const HAN_ALL = /\p{Script=Han}/gu;
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 const QUOTES = /['’‘`´ʼ]/g;
 
@@ -39,14 +42,17 @@ function normalize(s) {
   return (s || '')
     .normalize('NFKD').replace(/[̀-ͯ]/g, '').normalize('NFKC')
     .toLowerCase()
-    .replace(QUOTES, '');
+    .replace(QUOTES, '')
+    .replace(HAN_ALL, (c) => T2S.get(c) || c);
 }
 
 /**
  * One unit per Han character or per word of other letters/digits, shared by
  * every song that has it (most of the index is the same few thousand
- * characters). d = the text; usual / all = pinyin readings (usual first, ü
- * also as u); f = every first letter it can start with.
+ * characters). d = the text, already simplified; usual / all = pinyin
+ * readings (usual first, ü also as u; `all` also has the readings of its
+ * traditional forms, so 谁 keeps 誰's shei); f = every first letter it can
+ * start with.
  */
 const unitCache = new Map();
 function unit(d) {
@@ -54,7 +60,8 @@ function unit(d) {
   if (u) return u;
   let usual = null, all = null;
   if (HAN.test(d)) {
-    const raw = (pinyinFn(d, { style: 0, heteronym: true })[0] || []).filter((x) => /^[a-z]+$/.test(x));
+    const readings = (c) => (pinyinFn(c, { style: 0, heteronym: true })[0] || []).filter((x) => /^[a-z]+$/.test(x));
+    const raw = [...readings(d), ...(S2T.get(d) || []).flatMap(readings)];
     const spell = (x) => (x.includes('v') ? [x, x.replace(/v/g, 'u')] : [x]);
     if (raw.length) {
       usual = spell(raw[0]);
@@ -215,16 +222,27 @@ function typoField(field, term, k) {
 let index = null; // { songs: [{ id, title, t, a: [fields], pop }], builtAt }
 let building = null;
 
+// Popularity only breaks ties, so it is counted rarely: scanning every
+// playlist entry takes ~0.6 s on production (count DISTINCT took 3.7 s).
+const POP_REFRESH_MS = 6 * 60 * 60 * 1000;
+let popCache = null; // { pop: Map(songId -> playlist entries), at }
+
+async function popularity() {
+  if (popCache && Date.now() - popCache.at < POP_REFRESH_MS) return popCache.pop;
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT c.song_id AS id, count(*)::int AS n
+       FROM playlist_clips pc JOIN clips c ON c.id = pc.clip_id
+      GROUP BY c.song_id`
+  );
+  popCache = { pop: new Map(rows.map((r) => [r.id, r.n])), at: Date.now() };
+  return popCache.pop;
+}
+
 async function build() {
-  const [rows, pops] = await Promise.all([
+  const [rows, pop] = await Promise.all([
     prisma.$queryRawUnsafe('SELECT id, title, artist FROM songs'),
-    prisma.$queryRawUnsafe(
-      `SELECT c.song_id AS id, count(DISTINCT pc.playlist_id)::int AS n
-         FROM playlist_clips pc JOIN clips c ON c.id = pc.clip_id
-        GROUP BY c.song_id`
-    ),
+    popularity(),
   ]);
-  const pop = new Map(pops.map((r) => [r.id, r.n]));
   const songs = [];
   let sliceStart = Date.now();
   for (const r of rows) {
@@ -310,13 +328,13 @@ function matchTerm(song, term, memo) {
 }
 
 /**
- * Ranked song ids for a query: { ids, total }.
+ * Ranked song ids for a query, `limit` of them from `offset`: { ids, total }.
  * Sort key: typo, exact title (as typed or in pinyin), an artist's full name
  * (as typed, pinyin or initials), how (direct / usual / rare reading), tier
- * (2 title start, 3 title, 4 artist), playlists using it (desc), title
- * length, title.
+ * (2 title start, 3 title, 4 artist), times in playlists (desc), title
+ * length, title, id (so pages don't shift between requests).
  */
-async function search(q, limit = 50) {
+async function search(q, limit = 50, offset = 0) {
   const terms = queryTerms(q);
   if (!terms.length) return { ids: [], total: 0 };
   const { songs } = await getIndex();
@@ -345,8 +363,9 @@ async function search(q, limit = 50) {
   }
   hits.sort((x, y) => x.typo - y.typo || Math.min(x.tier, 2) - Math.min(y.tier, 2) || x.how - y.how || x.tier - y.tier
     || y.song.pop - x.song.pop || x.song.title.length - y.song.title.length
-    || (x.song.title < y.song.title ? -1 : x.song.title > y.song.title ? 1 : 0));
-  return { ids: hits.slice(0, limit).map((h) => h.song.id), total: hits.length };
+    || (x.song.title < y.song.title ? -1 : x.song.title > y.song.title ? 1 : 0)
+    || (x.song.id < y.song.id ? -1 : x.song.id > y.song.id ? 1 : 0));
+  return { ids: hits.slice(offset, offset + limit).map((h) => h.song.id), total: hits.length };
 }
 
 module.exports = { search, rebuild, normalize, queryTerms };

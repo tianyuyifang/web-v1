@@ -104,6 +104,7 @@ export default {
   searchAllSongs: "搜索歌名、歌手、拼音...",
   songSearchCount: "找到 {n} 首",
   songSearchCountCapped: "找到 {n} 首，显示前 {shown} 首",
+  songSearchMore: "显示更多（还有 {n} 首）",
   songInMyPlaylists: "在：",
   songNotInMyPlaylists: "不在你的歌单里",
 

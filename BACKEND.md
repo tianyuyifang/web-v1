@@ -64,7 +64,7 @@ backend/
 │   │   ├── shareService.js        # Playlist sharing & copy permissions
 │   │   ├── likeService.js         # Like toggle & queries
 │   │   ├── streamService.js       # File path resolution, range header parsing
-│   │   └── searchService.js       # Playlist search, clips-in-playlist search (pg_trgm)
+│   │   └── searchService.js       # Playlist search, clips-in-playlist search (Prisma `contains`)
 │   │
 │   ├── validators/
 │   │   ├── auth.js                # Register/login schemas
@@ -240,9 +240,9 @@ req.playlistAccess = {
 | `mine`   | `1`    | Add `myPlaylists` to each song: the caller's own playlists that hold it |
 
 **Search flow** (in `songSearchService.js`):
-1. The whole library is held in memory: title and artists of every song, Chinese characters with their pinyin readings. Every 30 s a fingerprint computed in Postgres is compared; the index is rebuilt only when the library changed.
-2. The query is normalized (case, full/half width, quotes, traditional → simplified via `utils/t2s.js`) and split into at most 10 words; every word must match the title or an artist.
-3. Chinese characters match anywhere; English and pinyin (full, initials, or mixed) match from the start of a word / character. Typos are allowed: 1 for words of 4+ letters, 2 for 8+.
+1. The whole library is held in memory: title and artists of every song, Chinese characters with their pinyin readings. It is built when the backend starts. At most every 30 s a search has a fingerprint computed in Postgres compared in the background, and the index is rebuilt only when the library changed; after 5 min without a search the next one waits for that check.
+2. The query is normalized (case, full/half width, quotes, traditional → simplified via `utils/t2s.js`; characters that are only sometimes simplified — 乾/干, 於/于, 著/着 … — are compared as one character but keep their own pinyin) and split into at most 10 words; every word must match the title or an artist.
+3. Chinese characters (and kana / hangul) match anywhere; English and pinyin (full, initials, or mixed) match from the start of a word / character. Typos are allowed: 1 for words of 4+ letters, 2 for 8+.
 4. Ranking: no typo first; exact title, then an artist's full name; the text itself before pinyin; title start before elsewhere in the title before artist; then songs used in more playlists; then shorter titles.
 5. `songService.searchRanked` loads that page of songs with their clips (and, with `mine=1`, the caller's playlists).
 

@@ -47,7 +47,7 @@ Music clip playlist web app — Next.js frontend, Express.js backend, PostgreSQL
 - `services/authService.js` — register (username+password → PENDING), login (by username), getMe; role in JWT
 - `services/adminService.js` — listUsers, listPending, approveUser, demoteUser, deleteUser
 - `services/streamService.js` — MP3 file path resolution, HTTP Range header parsing
-- `services/searchService.js` — playlist search + clips-within-a-playlist search: query type detection (pinyin initials/full pinyin/Chinese), raw SQL for pg_trgm
+- `services/searchService.js` — playlist search + clips-within-a-playlist search: query type detection (pinyin initials/full pinyin/Chinese), Prisma `contains` filters on the pinyin columns
 - `services/songSearchService.js` — song search: whole library held in memory, ranked (Chinese / pinyin / initials / traditional↔simplified / typos); see Notes
 - `services/songService.js` — `searchRanked` (a page of search results with clips, optionally the caller's own playlists per song), song detail, song clips
 - `services/clipService.js` — create clip, auto-clip, LRC slicing
@@ -120,5 +120,5 @@ Music clip playlist web app — Next.js frontend, Express.js backend, PostgreSQL
 - PENDING users: login is REFUSED at the backend (401 `ACCOUNT_DISABLED`, no token issued); the login screen shows a "会员已到期，请联系管理员续费" panel. This covers both never-approved signups and admin-revoked (未续费) accounts. `requireApproved` reads the current role from the DB (not the JWT), so an already-issued token stops working within the 30s session-cache TTL after a revoke; `demoteUser`/`approveUser` invalidate that cache so it takes effect on the next request. Approving restores the role and login works again — data is never touched.
 - Admin accounts: seeded via `node scripts/seed-admins.js` — reads `ADMIN_1/2_USERNAME/PASSWORD` from `.env`
 - No email field on users; no password reset flow
-- Song search (`songSearchService.js`) keeps the library in backend memory (~20 MB for ~27k songs). Imports/renames run in other processes, so every 30 s it compares a fingerprint computed in Postgres and rebuilds only if the library changed — a new song is searchable within 30 s, no restart. Traditional→simplified table is `utils/t2s.js` (from OpenCC, built in — nothing to install)
+- Song search (`songSearchService.js`) keeps the library in backend memory (~20 MB for ~27k songs). Imports/renames run in other processes, so at most every 30 s a search compares a fingerprint computed in Postgres and the index is rebuilt only if the library changed — no restart needed for a new song. The check runs behind the search that triggers it (that one is still answered from the old index); after 5 min without any search the next one waits for the check. The index is also built when the backend starts. Traditional→simplified table is `utils/t2s.js` (from OpenCC, built in — nothing to install)
 - `GET /api/songs?q=` (the pre-2026-11 search URL) is answered by the new search for one release, only so pages opened before that deploy keep searching; delete it once nginx logs show no more `GET /api/songs?` requests

@@ -1,7 +1,7 @@
 const prisma = require('../db/client');
 const pinyinMod = require('pinyin');
 const pinyinFn = pinyinMod.pinyin || pinyinMod.default || pinyinMod;
-const { T2S, S2T } = require('../utils/t2s');
+const { T2S, S2T, FOLD } = require('../utils/t2s');
 
 /**
  * Song search for people typing into a box: 添加歌曲 and the 歌曲 tab on the
@@ -9,9 +9,10 @@ const { T2S, S2T } = require('../utils/t2s');
  * matched the way search engines do it:
  *   - case, full/half width, curly/straight quotes and punctuation don't matter
  *   - traditional and simplified Chinese match each other (黄霄云 / 黄霄雲)
- *   - Chinese characters match anywhere; English and pinyin match from the
- *     start of a word / syllable, so "cry" finds One Last Cry but "ai" does
- *     not match the ai inside kai
+ *   - Chinese characters match anywhere (so do kana and hangul: がとう finds
+ *     ありがとう); English and pinyin match from the start of a word /
+ *     syllable, so "cry" finds One Last Cry but "ai" does not match the ai
+ *     inside kai
  *   - pinyin full, initials or mixed (xqge), every reading of a polyphone
  *   - several words, each must match the title or an artist (五月天 cry)
  *   - typos: 1 for words of 4+ letters, 2 for 8+, ranked after exact matches
@@ -21,15 +22,20 @@ const { T2S, S2T } = require('../utils/t2s');
  *
  * Imports and renames run in other processes, so once the index is older than
  * REFRESH_MS a search checks in the background whether the library changed
- * (rebuilding if so); until then the old one serves.
+ * (rebuilding if so); until then the old one serves. Nothing checks while
+ * nobody searches, so past STALE_MS the search waits for the check instead of
+ * answering from a library that may be hours old.
  */
 
 const REFRESH_MS = 30 * 1000;
+const STALE_MS = 5 * 60 * 1000;
 // Building and scanning hand the event loop back every SLICE_MS, so other
 // requests aren't held up behind a search.
 const SLICE_MS = 5;
 const yieldNow = () => new Promise((resolve) => setImmediate(resolve));
 const HAN = /\p{Script=Han}/u;
+// Written without spaces between words: every character is a unit of its own.
+const SOLO = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー]/u;
 const HAN_ALL = /\p{Script=Han}/gu;
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 const QUOTES = /['’‘`´ʼ]/g;
@@ -47,11 +53,15 @@ function normalize(s) {
     .replace(HAN_ALL, (c) => T2S.get(c) || c);
 }
 
+// 乾/干, 於/于, 著/着 …: one character when comparing (see utils/t2s.js).
+const fold = (s) => s.replace(HAN_ALL, (c) => FOLD.get(c) || c);
+
 /**
- * One unit per Han character or per word of other letters/digits, shared by
- * every song that has it (most of the index is the same few thousand
- * characters). d = the text, already simplified; usual / all = pinyin
- * readings (usual first, ü also as u; `all` also has the readings of its
+ * One unit per Han / kana / hangul character or per word of other
+ * letters/digits, shared by every song that has it (most of the index is the
+ * same few thousand characters). d = the text as it is compared: simplified,
+ * and folded (乾 is 干 here); usual / all = pinyin readings of the character
+ * itself (usual first, ü also as u; `all` also has the readings of its
  * traditional forms, so 谁 keeps 誰's shei); f = every first letter it can
  * start with.
  */
@@ -69,23 +79,24 @@ const COMMON_READINGS = new Map(
 );
 
 const unitCache = new Map();
-function unit(d) {
-  let u = unitCache.get(d);
+function unit(text) {
+  let u = unitCache.get(text);
   if (u) return u;
   let usual = null, all = null;
-  if (HAN.test(d)) {
+  if (HAN.test(text)) {
     const readings = (c) => (pinyinFn(c, { style: 0, heteronym: true })[0] || []).filter((x) => /^[a-z]+$/.test(x));
-    const common = COMMON_READINGS.get(d);
-    const raw = [...(common || []), ...readings(d), ...(S2T.get(d) || []).flatMap(readings)];
+    const common = COMMON_READINGS.get(text);
+    const raw = [...(common || []), ...readings(text), ...(S2T.get(text) || []).flatMap(readings)];
     const spell = (x) => (x.includes('v') ? [x, x.replace(/v/g, 'u')] : [x]);
     if (raw.length) {
       usual = (common || [raw[0]]).flatMap(spell);
       all = [...new Set(raw.flatMap(spell))];
     }
   }
+  const d = FOLD.get(text) || text;
   const f = [...new Set([d[0], ...(all || []).map((s) => s[0])])].join('');
   u = { d, usual, all, f };
-  unitCache.set(d, u);
+  unitCache.set(text, u);
   return u;
 }
 
@@ -107,7 +118,7 @@ function tokenize(text) {
   let word = '';
   const flushWord = () => { if (word) { units.push(unit(word)); word = ''; } };
   for (const ch of normalize(text)) {
-    if (HAN.test(ch)) { flushWord(); units.push(unit(ch)); }
+    if (SOLO.test(ch)) { flushWord(); units.push(unit(ch)); }
     else if (WORD_CHAR.test(ch)) word += ch;
     else flushWord();
   }
@@ -289,6 +300,7 @@ function rebuild() {
   if (!building) {
     building = build()
       .then((idx) => { index = idx; return idx; })
+      .catch((err) => { console.error('[song-search] refreshing the index failed:', err.message); throw err; })
       .finally(() => { building = null; });
   }
   return building;
@@ -296,7 +308,9 @@ function rebuild() {
 
 async function getIndex() {
   if (!index) return rebuild();
-  if (Date.now() - index.builtAt > REFRESH_MS) rebuild().catch(() => {}); // serve the old one meanwhile
+  const age = Date.now() - index.builtAt;
+  if (age > STALE_MS) return rebuild().catch(() => index); // the old one only if the check itself fails
+  if (age > REFRESH_MS) rebuild().catch(() => {}); // serve the old one meanwhile
   return index;
 }
 
@@ -304,7 +318,7 @@ async function getIndex() {
 
 /** The query's words; the 100-char cap holds after normalizing (㎉ → kcal). */
 function queryWords(q) {
-  return normalize(String(q || '').slice(0, 100)).slice(0, 100).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return fold(normalize(String(q || '').slice(0, 100)).slice(0, 100)).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 }
 
 /** Words to match: each once, at most MAX_TERMS ("Love Love Love" is one). */

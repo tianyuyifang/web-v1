@@ -13,7 +13,11 @@ async function searchRanked(query, limit, userRole, userId, mine = false, offset
 
   const rows = await prisma.song.findMany({
     where: { id: { in: ids } },
-    include: { clips: { orderBy: { start: 'asc' } } },
+    // Only what formatSong sends: not 50 songs' lyrics and their clips' lyrics
+    select: {
+      id: true, title: true, artist: true, duration: true, filePath: true, starts: true,
+      clips: { orderBy: { start: 'asc' }, select: { id: true, start: true, length: true, isGlobal: true } },
+    },
   });
 
   // Looked up by clip id: ~10 ms on production for the user with the most

@@ -11,6 +11,16 @@ const PAIRS = '㑮𫝈㑯㑔㑳㑇㑶㐹㒓𠉂㓄𪠟㓨刾㔋𪟎㖮𪠵㗲�
 // Taiwan-only forms OpenCC keeps in its variants table: 今天妳最漂亮 is 你.
 const VARIANTS = '妳你牠它祂他';
 
+// Characters that are simplified in some words and not in others: OpenCC
+// lists them with themselves as an option (乾 becomes 干 in 乾杯 and stays in
+// 乾坤), and never converts 著 (著名) although 跟著 is 跟着. Telling the words
+// apart takes its phrase tables; a search only needs both spellings to meet,
+// so it compares each pair as one character (FOLD) while both keep their own
+// pinyin: 乾坤 is still qiankun, and 干杯 does not answer to qianbei. Without
+// this 乾杯, 於是, 藉口, 什麽 and 跟著 found nothing. (阪 is left out: 大阪 is
+// 大阪 everywhere.)
+const FOLDED = '乾干剋克夥伙彷仿徵征於于牴抵瞭了祇只薹苔藉借衹只覆复麽么著着';
+
 const T2S = new Map(); // 雲 -> 云
 const chars = Array.from(PAIRS + VARIANTS);
 for (let i = 0; i < chars.length; i += 2) T2S.set(chars[i], chars[i + 1]);
@@ -27,4 +37,8 @@ for (const [t, s] of T2S) {
   S2T.get(s).push(t);
 }
 
-module.exports = { T2S, S2T };
+const FOLD = new Map(); // 乾 -> 干
+const folded = Array.from(FOLDED);
+for (let i = 0; i < folded.length; i += 2) FOLD.set(folded[i], folded[i + 1]);
+
+module.exports = { T2S, S2T, FOLD };

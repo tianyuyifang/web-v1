@@ -109,6 +109,8 @@ const server = app.listen(config.port, () => {
   require('./services/platformTagService').recoverAfterRestart(startedAt)
     .then((n) => { if (n) console.log(`[platform-tag] recovered ${n} row(s) left mid-like by the restart`); })
     .catch((err) => console.warn('[platform-tag] recovery after restart failed:', err.message));
+  // Song search holds the library in memory: read it now, not on the first search.
+  require('./services/songSearchService').rebuild().catch(() => {}); // logged there; a search tries again
 });
 
 /**

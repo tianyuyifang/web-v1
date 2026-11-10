@@ -24,6 +24,53 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 for _sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
     if _sig is not None:
         signal.signal(_sig, lambda signum, frame: sys.exit(128 + signum))
+
+# Windows has no SIGTERM to catch: the importer's timeout there ends Python on
+# the spot, no handler and no `finally`, and chromedriver + Chrome live on (two
+# found on the dev PC, 2026-11-10). A job object set to kill-on-close takes
+# every process this script starts down with it, however it ends.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _BasicLimits(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class _ExtendedLimits(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", _BasicLimits),
+                ("IoInfo", ctypes.c_ulonglong * 6),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        _k32.CreateJobObjectW.restype = wintypes.HANDLE
+        _k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        _k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        _k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        _k32.GetCurrentProcess.restype = wintypes.HANDLE
+        _limits = _ExtendedLimits()
+        _limits.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        _job = _k32.CreateJobObjectW(None, None)  # stays open until this process is gone
+        # 9 = JobObjectExtendedLimitInformation
+        if _job and _k32.SetInformationJobObject(_job, 9, ctypes.byref(_limits), ctypes.sizeof(_limits)):
+            _k32.AssignProcessToJobObject(_job, _k32.GetCurrentProcess())
+    except Exception:
+        pass  # the scrape still works; only the clean-up on a kill is lost
 from opencc import OpenCC
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service

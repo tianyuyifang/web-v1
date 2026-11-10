@@ -1,21 +1,6 @@
 const prisma = require('../db/client');
 const { NotFoundError } = require('../utils/errors');
-const { searchSongs } = require('./searchService');
 const songSearch = require('./songSearchService');
-
-async function getSongs(query, cursor, limit, strict = false, userRole) {
-  const songs = await searchSongs(query, cursor, limit, strict);
-
-  const hasMore = songs.length > limit;
-  const results = hasMore ? songs.slice(0, limit) : songs;
-  const nextCursor = hasMore ? results[results.length - 1].id : null;
-
-  // List responses omit lyrics to save egress — use getSongById for full song detail.
-  return {
-    songs: results.map((s) => formatSong(s, { includeLyrics: false, userRole })),
-    nextCursor,
-  };
-}
 
 /**
  * Ranked search (添加歌曲, the 歌曲 tab). With `mine`, each song also lists
@@ -128,4 +113,4 @@ function extractFirstLines(lyrics, count = 2) {
   return result.length > 0 ? result.join(' / ') : null;
 }
 
-module.exports = { getSongs, searchRanked, getSongById, getSongClips };
+module.exports = { searchRanked, getSongById, getSongClips };

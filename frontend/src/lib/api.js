@@ -126,7 +126,6 @@ export const authAPI = {
 
 // --- Songs ---
 export const songsAPI = {
-  search: (params) => api.get("/songs", { params }),
   getById: (id) => api.get(`/songs/${id}`),
   getClips: (id) => api.get(`/songs/${id}/clips`),
 };

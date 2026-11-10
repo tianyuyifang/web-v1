@@ -1,21 +1,6 @@
 const router = require('express').Router();
 const songService = require('../services/songService');
 
-// GET /api/songs — search/browse songs with cursor pagination
-router.get('/', async (req, res, next) => {
-  try {
-    const q = req.query.q || '';
-    const cursor = req.query.cursor || null;
-    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
-    const strict = req.query.strict === '1';
-
-    const result = await songService.getSongs(q, cursor, limit, strict, req.user?.role);
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
-
 // GET /api/songs/search?q=&mine=1 — ranked search (添加歌曲, the 歌曲 tab).
 // mine=1 adds which of the caller's own playlists hold each song.
 // Must stay above /:id, which would take "search" for a song id.

@@ -219,7 +219,7 @@ function typoField(field, term, k) {
 
 // ── Index ──────────────────────────────────────────────────────────────────
 
-let index = null; // { songs: [{ id, title, t, a: [fields], pop }], builtAt }
+let index = null; // { songs: [{ id, title, t, a: [fields], pop }], fp, pop, builtAt }
 let building = null;
 
 // Popularity only breaks ties, so it is counted rarely: scanning every
@@ -238,11 +238,18 @@ async function popularity() {
   return popCache.pop;
 }
 
+// Changes whenever a song is added, removed or renamed. Postgres works it out
+// (~30 ms), so an unchanged library isn't read and indexed again every refresh.
+const FINGERPRINT_SQL = `SELECT md5(string_agg(id::text || '|' || title || '|' || coalesce(artist, ''), ',' ORDER BY id)) AS fp
+  FROM songs`;
+
 async function build() {
-  const [rows, pop] = await Promise.all([
-    prisma.$queryRawUnsafe('SELECT id, title, artist FROM songs'),
-    popularity(),
-  ]);
+  const [[{ fp }], pop] = await Promise.all([prisma.$queryRawUnsafe(FINGERPRINT_SQL), popularity()]);
+  if (index && index.fp === fp) {
+    if (index.pop !== pop) for (const s of index.songs) s.pop = pop.get(s.id) || 0;
+    return { ...index, pop, builtAt: Date.now() };
+  }
+  const rows = await prisma.$queryRawUnsafe('SELECT id, title, artist FROM songs');
   const songs = [];
   let sliceStart = Date.now();
   for (const r of rows) {
@@ -260,7 +267,7 @@ async function build() {
     });
   }
   fieldCache.clear(); // the songs hold what they use; the next build starts fresh
-  return { songs, builtAt: Date.now() };
+  return { songs, fp, pop, builtAt: Date.now() };
 }
 
 function rebuild() {

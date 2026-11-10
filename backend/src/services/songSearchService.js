@@ -350,6 +350,26 @@ function matchTerm(song, term, memo) {
 }
 
 /**
+ * A query with no letters or digits (★, ？, #): titles that contain it, the
+ * title that is exactly it first. A few songs are named only with symbols.
+ */
+async function symbolSearch(q, limit, offset) {
+  const sym = normalize(String(q || '').slice(0, 100)).replace(/\s+/g, '');
+  if (!sym) return { ids: [], total: 0 };
+  const { songs } = await getIndex();
+  const hits = [];
+  let sliceStart = Date.now();
+  for (let s = 0; s < songs.length; s++) {
+    if ((s & 63) === 0 && Date.now() - sliceStart >= SLICE_MS) { await yieldNow(); sliceStart = Date.now(); }
+    const title = normalize(songs[s].title).replace(/\s+/g, '');
+    if (title.includes(sym)) hits.push({ song: songs[s], exact: title === sym });
+  }
+  hits.sort((x, y) => y.exact - x.exact || y.song.pop - x.song.pop || x.song.title.length - y.song.title.length
+    || (x.song.id < y.song.id ? -1 : x.song.id > y.song.id ? 1 : 0));
+  return { ids: hits.slice(offset, offset + limit).map((h) => h.song.id), total: hits.length };
+}
+
+/**
  * Ranked song ids for a query, `limit` of them from `offset`: { ids, total }.
  * Sort key: typo, exact title (as typed or in pinyin), an artist's full name
  * (as typed, pinyin or initials), how (direct / usual / rare reading), tier
@@ -358,7 +378,7 @@ function matchTerm(song, term, memo) {
  */
 async function search(q, limit = 50, offset = 0) {
   const terms = queryTerms(q);
-  if (!terms.length) return { ids: [], total: 0 };
+  if (!terms.length) return symbolSearch(q, limit, offset);
   const { songs } = await getIndex();
   const whole = queryWords(q).join(''); // as typed, for the exact-title / artist-name checks
   const memos = terms.map(() => new Map());

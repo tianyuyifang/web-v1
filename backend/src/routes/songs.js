@@ -7,7 +7,7 @@ const songService = require('../services/songService');
 router.get('/search', async (req, res, next) => {
   try {
     const q = String(req.query.q || '');
-    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
     const mine = req.query.mine === '1';
     const result = await songService.searchRanked(q, limit, req.user?.role, req.user?.id, mine);
     res.json(result);

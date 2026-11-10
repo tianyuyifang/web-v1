@@ -22,6 +22,10 @@ const pinyinFn = pinyinMod.pinyin || pinyinMod.default || pinyinMod;
  */
 
 const REFRESH_MS = 5 * 60 * 1000;
+// Building and scanning hand the event loop back every SLICE_MS, so other
+// requests aren't held up behind a search.
+const SLICE_MS = 5;
+const yieldNow = () => new Promise((resolve) => setImmediate(resolve));
 const HAN = /\p{Script=Han}/u;
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 const QUOTES = /['’‘`´ʼ]/g;
@@ -115,10 +119,18 @@ function artistNames(fd) {
   return fd.names;
 }
 
+// (unit, position) states consume() has already failed from in this matchField
+// call. Without it a title of repeated polyphones (的的的…) takes exponential time.
+let failed = new Int32Array(4096);
+let failRun = 0;
+let failWidth = 0;
+
 /** Can term[p..] be spelled by units i, i+1, ...? The last unit may be partial. */
 function consume(units, i, term, p, how) {
   if (p === term.length) return true;
   if (i === units.length) return false;
+  const key = i * failWidth + p;
+  if (failed[key] === failRun) return false;
   const u = units[i];
   const rest = term.length - p;
   if (term.startsWith(u.d, p)) {
@@ -138,6 +150,7 @@ function consume(units, i, term, p, how) {
         && consume(units, i + 1, term, p + 2, how)) return true; // zh / ch / sh
     }
   }
+  failed[key] = failRun;
   return false;
 }
 
@@ -146,6 +159,10 @@ function matchField(field, term, how) {
   const ch = term[0];
   if (!field.f.includes(ch)) return -1;
   const { units } = field;
+  failWidth = term.length + 1;
+  const need = units.length * failWidth;
+  if (failed.length < need) { failed = new Int32Array(need); failRun = 0; }
+  if (++failRun === 0x7fffffff) { failed.fill(0); failRun = 1; }
   for (let i = 0; i < units.length; i++) {
     const u = units[i];
     if (how === DIRECT ? u.d[0] !== ch : !u.f.includes(ch)) continue;
@@ -208,17 +225,22 @@ async function build() {
     ),
   ]);
   const pop = new Map(pops.map((r) => [r.id, r.n]));
-  const songs = rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    t: field(r.title),
-    a: (r.artist || '').split('_').filter(Boolean).map((name) => {
-      const fd = field(name);
-      artistNames(fd);
-      return fd;
-    }),
-    pop: pop.get(r.id) || 0,
-  }));
+  const songs = [];
+  let sliceStart = Date.now();
+  for (const r of rows) {
+    if (Date.now() - sliceStart >= SLICE_MS) { await yieldNow(); sliceStart = Date.now(); }
+    songs.push({
+      id: r.id,
+      title: r.title,
+      t: field(r.title),
+      a: (r.artist || '').split('_').filter(Boolean).map((name) => {
+        const fd = field(name);
+        artistNames(fd);
+        return fd;
+      }),
+      pop: pop.get(r.id) || 0,
+    });
+  }
   fieldCache.clear(); // the songs hold what they use; the next build starts fresh
   return { songs, builtAt: Date.now() };
 }
@@ -240,8 +262,15 @@ async function getIndex() {
 
 // ── Search ─────────────────────────────────────────────────────────────────
 
+/** The query's words; the 100-char cap holds after normalizing (㎉ → kcal). */
+function queryWords(q) {
+  return normalize(String(q || '').slice(0, 100)).slice(0, 100).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/** Words to match: each once, at most MAX_TERMS ("Love Love Love" is one). */
+const MAX_TERMS = 10;
 function queryTerms(q) {
-  return normalize(String(q || '').slice(0, 100)).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return [...new Set(queryWords(q))].slice(0, MAX_TERMS);
 }
 
 /**
@@ -291,10 +320,13 @@ async function search(q, limit = 50) {
   const terms = queryTerms(q);
   if (!terms.length) return { ids: [], total: 0 };
   const { songs } = await getIndex();
-  const whole = terms.join('');
+  const whole = queryWords(q).join(''); // as typed, for the exact-title / artist-name checks
   const memos = terms.map(() => new Map());
   const hits = [];
-  for (const song of songs) {
+  let sliceStart = Date.now();
+  for (let s = 0; s < songs.length; s++) {
+    if ((s & 63) === 0 && Date.now() - sliceStart >= SLICE_MS) { await yieldNow(); sliceStart = Date.now(); }
+    const song = songs[s];
     let typo = 0, how = DIRECT, allTitle = true, firstPos = -1;
     let ok = true;
     for (let n = 0; n < terms.length; n++) {

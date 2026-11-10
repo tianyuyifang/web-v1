@@ -19,11 +19,12 @@ const { T2S, S2T } = require('../utils/t2s');
  * reading before a rare reading, then title start / title / artist, then
  * songs put in playlists more often first.
  *
- * Imports and renames run in other processes, so the index is rebuilt in the
- * background when it is older than REFRESH_MS; until then the old one serves.
+ * Imports and renames run in other processes, so once the index is older than
+ * REFRESH_MS a search checks in the background whether the library changed
+ * (rebuilding if so); until then the old one serves.
  */
 
-const REFRESH_MS = 5 * 60 * 1000;
+const REFRESH_MS = 30 * 1000;
 // Building and scanning hand the event loop back every SLICE_MS, so other
 // requests aren't held up behind a search.
 const SLICE_MS = 5;
@@ -54,6 +55,19 @@ function normalize(s) {
  * traditional forms, so 谁 keeps 誰's shei); f = every first letter it can
  * start with.
  */
+// Polyphones read more than one way in everyday words. The pinyin library has
+// no word context and lists them in dictionary order (行 hang before xing,
+// 还 huan before hai), so these readings all count as usual; the first is
+// the one spelled out for typo matching.
+const COMMON_READINGS = new Map(
+  ('行xing,hang 还hai,huan 长chang,zhang 着zhe,zhao,zhuo 了le,liao 重zhong,chong 都dou,du 差cha,chai '
+  + '朝chao,zhao 乐le,yue 地di,de 得de,dei 的de,di 觉jue,jiao 便bian,pian 弹tan,dan 调diao,tiao '
+  + '传chuan,zhuan 降jiang,xiang 藏cang,zang 薄bo,bao 落luo,la 血xue,xie 给gei,ji 没mei,mo 和he,huo '
+  + '大da,dai 角jiao,jue 参can,shen 数shu 转zhuan 省sheng,xing 盛sheng,cheng 说shuo 奇qi,ji 系xi,ji '
+  + '露lu,lou 模mo,mu 似si,shi 校xiao,jiao 单dan,shan 仔zai,zi 扎zha,za 曾ceng,zeng 称cheng,chen 壳ke,qiao')
+    .split(' ').map((e) => [e[0], e.slice(1).split(',')])
+);
+
 const unitCache = new Map();
 function unit(d) {
   let u = unitCache.get(d);
@@ -61,10 +75,11 @@ function unit(d) {
   let usual = null, all = null;
   if (HAN.test(d)) {
     const readings = (c) => (pinyinFn(c, { style: 0, heteronym: true })[0] || []).filter((x) => /^[a-z]+$/.test(x));
-    const raw = [...readings(d), ...(S2T.get(d) || []).flatMap(readings)];
+    const common = COMMON_READINGS.get(d);
+    const raw = [...(common || []), ...readings(d), ...(S2T.get(d) || []).flatMap(readings)];
     const spell = (x) => (x.includes('v') ? [x, x.replace(/v/g, 'u')] : [x]);
     if (raw.length) {
-      usual = spell(raw[0]);
+      usual = (common || [raw[0]]).flatMap(spell);
       all = [...new Set(raw.flatMap(spell))];
     }
   }

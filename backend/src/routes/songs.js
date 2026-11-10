@@ -17,6 +17,19 @@ router.get('/search', async (req, res, next) => {
   }
 });
 
+// GET /api/songs?q=&strict=1 — what 添加片段 called before /search. Kept only so
+// pages opened before a deploy keep working until they reload; remove after
+// a release (no other caller: nginx logs show only those pages).
+router.get('/', async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '');
+    const result = await songService.searchRanked(q, 50, req.user?.role, req.user?.id);
+    res.json({ songs: result.songs, nextCursor: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/songs/:id — song detail with clips
 router.get('/:id', async (req, res, next) => {
   try {

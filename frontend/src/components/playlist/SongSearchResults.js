@@ -13,6 +13,7 @@ export default function SongSearchResults({ query }) {
   const { t } = useLanguage();
   const [songs, setSongs] = useState([]);
   const [total, setTotal] = useState(0);
+  const [next, setNext] = useState(0); // where the next page starts (from the server)
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const seqRef = useRef(0);
@@ -32,9 +33,10 @@ export default function SongSearchResults({ query }) {
         if (seq !== seqRef.current) return; // a newer query is on its way
         setSongs(res.data.songs || []);
         setTotal(res.data.total || 0);
+        setNext(res.data.nextOffset || 0);
       })
       .catch(() => {
-        if (seq === seqRef.current) { setSongs([]); setTotal(0); }
+        if (seq === seqRef.current) { setSongs([]); setTotal(0); setNext(0); }
       })
       .finally(() => {
         if (seq === seqRef.current) setLoading(false);
@@ -45,14 +47,14 @@ export default function SongSearchResults({ query }) {
   const loadMore = () => {
     const seq = seqRef.current;
     setLoadingMore(true);
-    api.get("/songs/search", { params: { q: query, mine: 1, offset: songs.length } })
+    api.get("/songs/search", { params: { q: query, mine: 1, offset: next } })
       .then((res) => {
         if (seq !== seqRef.current) return;
+        // The library may have changed between pages: never show a song twice
         const have = new Set(songs.map((s) => s.id));
-        const fresh = (res.data.songs || []).filter((s) => !have.has(s.id));
-        setSongs([...songs, ...fresh]);
-        // Nothing new (the library changed meanwhile): stop offering more
-        setTotal(fresh.length ? res.data.total || 0 : songs.length);
+        setSongs([...songs, ...(res.data.songs || []).filter((s) => !have.has(s.id))]);
+        setTotal(res.data.total || 0);
+        setNext(res.data.nextOffset || total);
       })
       .catch(() => {})
       .finally(() => {
@@ -96,13 +98,13 @@ export default function SongSearchResults({ query }) {
           </div>
         ))}
       </div>
-      {songs.length < total && (
+      {next < total && (
         <button
           onClick={loadMore}
           disabled={loadingMore}
           className="mt-3 w-full rounded-lg border border-border bg-surface py-2 text-sm text-muted hover:text-theme disabled:opacity-60"
         >
-          {loadingMore ? t("searching") : t("songSearchMore").replace("{n}", total - songs.length)}
+          {loadingMore ? t("searching") : t("songSearchMore").replace("{n}", Math.max(total - songs.length, 1))}
         </button>
       )}
     </div>

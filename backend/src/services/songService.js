@@ -9,7 +9,7 @@ const songSearch = require('./songSearchService');
  */
 async function searchRanked(query, limit, userRole, userId, mine = false, offset = 0) {
   const { ids, total } = await songSearch.search(query, limit, offset);
-  if (!ids.length) return { songs: [], total };
+  if (!ids.length) return { songs: [], total, nextOffset: offset };
 
   const rows = await prisma.song.findMany({
     where: { id: { in: ids } },
@@ -44,7 +44,9 @@ async function searchRanked(query, limit, userRole, userId, mine = false, offset
     if (mine) song.myPlaylists = playlistsBySong.get(id) || [];
     return song;
   });
-  return { songs, total };
+  // Songs deleted since the index was built are dropped (and not counted);
+  // the next page starts after every id this one covered.
+  return { songs, total: total - (ids.length - songs.length), nextOffset: offset + ids.length };
 }
 
 async function getSongById(songId, userRole) {

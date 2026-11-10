@@ -1,6 +1,7 @@
 const prisma = require('../db/client');
 const { NotFoundError } = require('../utils/errors');
 const { searchSongs } = require('./searchService');
+const songSearch = require('./songSearchService');
 
 async function getSongs(query, cursor, limit, strict = false, userRole) {
   const songs = await searchSongs(query, cursor, limit, strict);
@@ -14,6 +15,47 @@ async function getSongs(query, cursor, limit, strict = false, userRole) {
     songs: results.map((s) => formatSong(s, { includeLyrics: false, userRole })),
     nextCursor,
   };
+}
+
+/**
+ * Ranked search (添加歌曲, the 歌曲 tab). With `mine`, each song also lists
+ * which of the caller's own playlists hold a clip of it.
+ */
+async function searchRanked(query, limit, userRole, userId, mine = false) {
+  const { ids, total } = await songSearch.search(query, limit);
+  if (!ids.length) return { songs: [], total };
+
+  const [rows, inMine] = await Promise.all([
+    prisma.song.findMany({
+      where: { id: { in: ids } },
+      include: { clips: { orderBy: { start: 'asc' } } },
+    }),
+    mine && userId
+      ? prisma.$queryRawUnsafe(
+        `SELECT DISTINCT c.song_id, p.id, p.name
+           FROM playlists p
+           JOIN playlist_clips pc ON pc.playlist_id = p.id
+           JOIN clips c ON c.id = pc.clip_id
+          WHERE p.user_id = $1::uuid AND c.song_id = ANY($2::uuid[])`,
+        userId, ids
+      )
+      : [],
+  ]);
+
+  const playlistsBySong = new Map();
+  for (const r of inMine) {
+    if (!playlistsBySong.has(r.song_id)) playlistsBySong.set(r.song_id, []);
+    playlistsBySong.get(r.song_id).push({ id: r.id, name: r.name });
+  }
+  for (const list of playlistsBySong.values()) list.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+
+  const byId = new Map(rows.map((s) => [s.id, s]));
+  const songs = ids.filter((id) => byId.has(id)).map((id) => {
+    const song = formatSong(byId.get(id), { includeLyrics: false, userRole });
+    if (mine) song.myPlaylists = playlistsBySong.get(id) || [];
+    return song;
+  });
+  return { songs, total };
 }
 
 async function getSongById(songId, userRole) {
@@ -86,4 +128,4 @@ function extractFirstLines(lyrics, count = 2) {
   return result.length > 0 ? result.join(' / ') : null;
 }
 
-module.exports = { getSongs, getSongById, getSongClips };
+module.exports = { getSongs, searchRanked, getSongById, getSongClips };

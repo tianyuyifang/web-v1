@@ -12,9 +12,18 @@ import sys
 import io
 import json
 import html
+import signal
 
 # Force UTF-8 output on Windows
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+# The importer kills this script on timeout (SIGTERM) and a closed ssh session
+# sends SIGHUP. By default Python then dies on the spot, `finally:
+# driver.quit()` never runs and headless Chrome is left behind (2026-11-10:
+# five of them on the VM since September, ~1 GB of swap). Exit normally instead.
+for _sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+    if _sig is not None:
+        signal.signal(_sig, lambda signum, frame: sys.exit(128 + signum))
 from opencc import OpenCC
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service

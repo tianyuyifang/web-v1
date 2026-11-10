@@ -10,18 +10,22 @@ import BatchShareModal from "@/components/playlist/BatchShareModal";
 import SongSearchResults from "@/components/playlist/SongSearchResults";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { getPlaylistView, setPlaylistView } from "@/lib/utils";
+import useDebouncedValue from "@/hooks/useDebouncedValue";
 
 export default function PlaylistsPage() {
   const router = useRouter();
   const { t } = useLanguage();
   const [playlists, setPlaylists] = useState([]);
-  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("grid");
   const [showBatchShare, setShowBatchShare] = useState(false);
-  // 歌单 searches playlists as before; 歌曲 searches the song library.
+  // 歌单 searches playlists as before; 歌曲 searches the song library. Each
+  // keeps its own text; a search runs 300 ms after typing stops.
   const [searchMode, setSearchMode] = useState("playlists");
-  const [songQuery, setSongQuery] = useState("");
+  const [playlistText, setPlaylistText] = useState("");
+  const [songText, setSongText] = useState("");
+  const query = useDebouncedValue(playlistText, 300);
+  const songQuery = useDebouncedValue(songText, 300);
   const songMode = searchMode === "songs";
 
   useEffect(() => { setView(getPlaylistView()); }, []);
@@ -117,13 +121,14 @@ export default function PlaylistsPage() {
 
       <HighlightedUpdateBanner />
 
-      <div className="mb-6 flex items-start gap-3">
+      {/* Phone: 歌单 | 歌曲 gets its own full-width row so the search box keeps the whole width */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start">
         <div className="flex h-[38px] shrink-0 items-center gap-0.5 rounded-lg border border-border bg-surface px-1">
           {[["playlists", t("searchModePlaylists")], ["songs", t("searchModeSongs")]].map(([mode, label]) => (
             <button
               key={mode}
               onClick={() => setSearchMode(mode)}
-              className={`rounded-md px-2.5 py-1 text-sm transition-colors ${
+              className={`flex-1 rounded-md px-2.5 py-1 text-sm transition-colors sm:flex-none ${
                 searchMode === mode ? "bg-primary text-white shadow-sm" : "text-muted hover:text-theme"
               }`}
             >
@@ -131,42 +136,42 @@ export default function PlaylistsPage() {
             </button>
           ))}
         </div>
-        <div className="min-w-0 flex-1">
-          {/* Keyed so each mode keeps its own text (SearchBar is uncontrolled) */}
-          <SearchBar
-            key={searchMode}
-            value={songMode ? songQuery : query}
-            onChange={songMode ? setSongQuery : setQuery}
-            placeholder={t(songMode ? "searchAllSongs" : "searchPlaylists")}
-          />
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <SearchBar
+              value={songMode ? songText : playlistText}
+              onChange={songMode ? setSongText : setPlaylistText}
+              placeholder={t(songMode ? "searchAllSongs" : "searchPlaylists")}
+            />
+          </div>
+          {/* View toggle — h matches SearchBar input: text-sm(20px) + py-2(16px) + border(2px) = 38px */}
+          {!songMode && (
+          <div className="flex h-[38px] items-center gap-0.5 rounded-lg border border-border bg-surface px-1">
+            <button
+              onClick={() => toggleView("grid")}
+              className={`rounded-md px-2 py-1.5 transition-colors ${
+                !isList ? "bg-primary text-white shadow-sm" : "text-muted hover:text-theme"
+              }`}
+              title="Grid"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3ZM9 2.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3ZM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3ZM9 10.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3Z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => toggleView("list")}
+              className={`rounded-md px-2 py-1.5 transition-colors ${
+                isList ? "bg-primary text-white shadow-sm" : "text-muted hover:text-theme"
+              }`}
+              title="List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path fillRule="evenodd" d="M2 4a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 4Zm0 4a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 8Zm0 4a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 12Z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+          )}
         </div>
-        {/* View toggle — h matches SearchBar input: text-sm(20px) + py-2(16px) + border(2px) = 38px */}
-        {!songMode && (
-        <div className="flex h-[38px] items-center gap-0.5 rounded-lg border border-border bg-surface px-1">
-          <button
-            onClick={() => toggleView("grid")}
-            className={`rounded-md px-2 py-1.5 transition-colors ${
-              !isList ? "bg-primary text-white shadow-sm" : "text-muted hover:text-theme"
-            }`}
-            title="Grid"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-              <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3ZM9 2.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3ZM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3ZM9 10.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3Z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => toggleView("list")}
-            className={`rounded-md px-2 py-1.5 transition-colors ${
-              isList ? "bg-primary text-white shadow-sm" : "text-muted hover:text-theme"
-            }`}
-            title="List"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-              <path fillRule="evenodd" d="M2 4a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 4Zm0 4a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 8Zm0 4a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 12Z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-        )}
       </div>
 
       {songMode ? (

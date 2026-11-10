@@ -16,7 +16,7 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onBulkI
   const [clipSong, setClipSong] = useState(initialSong || null);
 
   // --- Search ---
-  const { query, setQuery, results, isSearching } = useSearch({
+  const { query, setQuery, results, isSearching, failed } = useSearch({
     endpoint: "/songs/search",
   });
 
@@ -103,7 +103,7 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onBulkI
 
                     {!isSearching && results.length === 0 && query && (
                       <p className="py-4 text-center text-sm text-muted">
-                        {t("noSongsFound")}
+                        {t(failed ? "songSearchFailed" : "noSongsFound")}
                       </p>
                     )}
 

@@ -16,11 +16,13 @@ export default function SongSearchResults({ query }) {
   const [next, setNext] = useState(0); // where the next page starts (from the server)
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [failed, setFailed] = useState(false); // the last request got no answer: say so, "no songs" would be a lie
   const seqRef = useRef(0);
 
   useEffect(() => {
     const seq = ++seqRef.current;
     setLoadingMore(false);
+    setFailed(false);
     if (!query.trim()) {
       setSongs([]);
       setTotal(0);
@@ -36,7 +38,7 @@ export default function SongSearchResults({ query }) {
         setNext(res.data.nextOffset || 0);
       })
       .catch(() => {
-        if (seq === seqRef.current) { setSongs([]); setTotal(0); setNext(0); }
+        if (seq === seqRef.current) { setSongs([]); setTotal(0); setNext(0); setFailed(true); }
       })
       .finally(() => {
         if (seq === seqRef.current) setLoading(false);
@@ -47,6 +49,7 @@ export default function SongSearchResults({ query }) {
   const loadMore = () => {
     const seq = seqRef.current;
     setLoadingMore(true);
+    setFailed(false);
     api.get("/songs/search", { params: { q: query, mine: 1, offset: next } })
       .then((res) => {
         if (seq !== seqRef.current) return;
@@ -56,7 +59,9 @@ export default function SongSearchResults({ query }) {
         setTotal(res.data.total || 0);
         setNext(res.data.nextOffset || total);
       })
-      .catch(() => {})
+      .catch(() => {
+        if (seq === seqRef.current) setFailed(true); // the button stays: clicking again retries
+      })
       .finally(() => {
         if (seq === seqRef.current) setLoadingMore(false);
       });
@@ -64,6 +69,7 @@ export default function SongSearchResults({ query }) {
 
   if (!query.trim()) return null;
   if (loading) return <p className="py-4 text-center text-sm text-muted">{t("searching")}</p>;
+  if (failed && !songs.length) return <p className="py-4 text-center text-sm text-muted">{t("songSearchFailed")}</p>;
   if (!songs.length) return <p className="py-4 text-center text-sm text-muted">{t("noSongsFound")}</p>;
 
   return (
@@ -107,6 +113,7 @@ export default function SongSearchResults({ query }) {
           {loadingMore ? t("searching") : t("songSearchMore").replace("{n}", Math.max(total - songs.length, 1))}
         </button>
       )}
+      {failed && <p className="mt-2 text-center text-xs text-muted">{t("songSearchFailed")}</p>}
     </div>
   );
 }

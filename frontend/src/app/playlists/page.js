@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import { playlistsAPI } from "@/lib/api";
 import PlaylistCard from "@/components/playlist/PlaylistCard";
@@ -11,6 +11,35 @@ import SongSearchResults from "@/components/playlist/SongSearchResults";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { getPlaylistView, setPlaylistView } from "@/lib/utils";
 import useDebouncedValue from "@/hooks/useDebouncedValue";
+
+const gridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
+const listClass = "rounded-xl border border-border bg-surface";
+
+// Memoized: the page re-renders on every key typed into the search box, the
+// cards only when the list itself (or grid/list view) changes.
+const PlaylistSection = memo(function PlaylistSection({ title, items, isList }) {
+  if (items.length === 0) return null;
+  return (
+    <section>
+      <h2 className="mb-4 text-lg font-semibold" style={{ color: "var(--text)" }}>
+        {title} <span className="text-sm font-normal text-muted">({items.length})</span>
+      </h2>
+      {isList ? (
+        <div className={listClass}>
+          {items.map((playlist, i) => (
+            <PlaylistCard key={playlist.id} playlist={playlist} listView number={i + 1} />
+          ))}
+        </div>
+      ) : (
+        <div className={gridClass}>
+          {items.map((playlist, i) => (
+            <PlaylistCard key={playlist.id} playlist={playlist} number={i + 1} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+});
 
 export default function PlaylistsPage() {
   const router = useRouter();
@@ -65,33 +94,6 @@ export default function PlaylistsPage() {
   );
 
   const isList = view === "list";
-
-  const gridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
-  const listClass = "rounded-xl border border-border bg-surface";
-
-  function renderSection(title, items) {
-    if (items.length === 0) return null;
-    return (
-      <section>
-        <h2 className="mb-4 text-lg font-semibold" style={{ color: "var(--text)" }}>
-          {title} <span className="text-sm font-normal text-muted">({items.length})</span>
-        </h2>
-        {isList ? (
-          <div className={listClass}>
-            {items.map((playlist, i) => (
-              <PlaylistCard key={playlist.id} playlist={playlist} listView number={i + 1} />
-            ))}
-          </div>
-        ) : (
-          <div className={gridClass}>
-            {items.map((playlist, i) => (
-              <PlaylistCard key={playlist.id} playlist={playlist} number={i + 1} />
-            ))}
-          </div>
-        )}
-      </section>
-    );
-  }
 
   return (
     <div className="pt-4">
@@ -201,9 +203,9 @@ export default function PlaylistsPage() {
         </div>
       ) : (
         <div className="space-y-10">
-          {renderSection(t("myPlaylists"), myPlaylists)}
-          {renderSection(t("sharedPlaylists"), sharedPlaylists)}
-          {renderSection(t("publicPlaylists"), publicPlaylists)}
+          <PlaylistSection title={t("myPlaylists")} items={myPlaylists} isList={isList} />
+          <PlaylistSection title={t("sharedPlaylists")} items={sharedPlaylists} isList={isList} />
+          <PlaylistSection title={t("publicPlaylists")} items={publicPlaylists} isList={isList} />
         </div>
       )}
       {showBatchShare && (

@@ -99,6 +99,13 @@ export default {
   noPlaylistsMatch: "没有匹配的歌单",
   noPlaylistsYet: "还没有歌单",
   createToStart: "创建一个开始使用吧。",
+  searchModePlaylists: "歌单",
+  searchModeSongs: "歌曲",
+  searchAllSongs: "搜索歌名、歌手、拼音...",
+  songSearchCount: "找到 {n} 首",
+  songSearchCountCapped: "找到 {n} 首，显示前 {shown} 首",
+  songInMyPlaylists: "在：",
+  songNotInMyPlaylists: "不在你的歌单里",
 
   // New Playlist
   newPlaylistTitle: "新建歌单",

@@ -7,6 +7,7 @@ import PlaylistCard from "@/components/playlist/PlaylistCard";
 import SearchBar from "@/components/library/SearchBar";
 import HighlightedUpdateBanner from "@/components/playlist/HighlightedUpdateBanner";
 import BatchShareModal from "@/components/playlist/BatchShareModal";
+import SongSearchResults from "@/components/playlist/SongSearchResults";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { getPlaylistView, setPlaylistView } from "@/lib/utils";
 
@@ -18,6 +19,10 @@ export default function PlaylistsPage() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("grid");
   const [showBatchShare, setShowBatchShare] = useState(false);
+  // 歌单 searches playlists as before; 歌曲 searches the song library.
+  const [searchMode, setSearchMode] = useState("playlists");
+  const [songQuery, setSongQuery] = useState("");
+  const songMode = searchMode === "songs";
 
   useEffect(() => { setView(getPlaylistView()); }, []);
 
@@ -113,14 +118,30 @@ export default function PlaylistsPage() {
       <HighlightedUpdateBanner />
 
       <div className="mb-6 flex items-start gap-3">
-        <div className="flex-1">
+        <div className="flex h-[38px] shrink-0 items-center gap-0.5 rounded-lg border border-border bg-surface px-1">
+          {[["playlists", t("searchModePlaylists")], ["songs", t("searchModeSongs")]].map(([mode, label]) => (
+            <button
+              key={mode}
+              onClick={() => setSearchMode(mode)}
+              className={`rounded-md px-2.5 py-1 text-sm transition-colors ${
+                searchMode === mode ? "bg-primary text-white shadow-sm" : "text-muted hover:text-theme"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="min-w-0 flex-1">
+          {/* Keyed so each mode keeps its own text (SearchBar is uncontrolled) */}
           <SearchBar
-            value={query}
-            onChange={setQuery}
-            placeholder={t("searchPlaylists")}
+            key={searchMode}
+            value={songMode ? songQuery : query}
+            onChange={songMode ? setSongQuery : setQuery}
+            placeholder={t(songMode ? "searchAllSongs" : "searchPlaylists")}
           />
         </div>
         {/* View toggle — h matches SearchBar input: text-sm(20px) + py-2(16px) + border(2px) = 38px */}
+        {!songMode && (
         <div className="flex h-[38px] items-center gap-0.5 rounded-lg border border-border bg-surface px-1">
           <button
             onClick={() => toggleView("grid")}
@@ -145,9 +166,12 @@ export default function PlaylistsPage() {
             </svg>
           </button>
         </div>
+        )}
       </div>
 
-      {loading ? (
+      {songMode ? (
+        <SongSearchResults query={songQuery} />
+      ) : loading ? (
         isList ? (
           <div className="space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (

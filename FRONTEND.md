@@ -113,8 +113,6 @@ frontend/src/
 │   │   ├── new/page.js                # Tabbed: Create form | Import JSON
 │   │   └── [id]/
 │   │       └── page.js                # Single playlist — player grid + clip sidebar
-│   └── library/
-│       └── page.js                    # Browse songs, create clips
 ├── components/
 │   ├── admin/
 │   │   └── UserTable.js               # Approve/revoke/delete users
@@ -124,8 +122,7 @@ frontend/src/
 │   ├── layout/
 │   │   └── Navbar.js                  # Calls authStore.init() on mount; shows Admin link for admins
 │   ├── library/
-│   │   ├── SongTable.js               # Virtualized song list
-│   │   ├── SearchBar.js               # Pinyin/Chinese/fuzzy input
+│   │   ├── SearchBar.js               # Search box on /playlists (controlled; the page debounces)
 │   │   └── ClipCreator.js             # Create clips from a song
 │   ├── player/
 │   │   ├── PlayerBox.js               # Single clip player card
@@ -143,13 +140,15 @@ frontend/src/
 │       ├── PlaylistHeader.js          # Name, description, controls
 │       ├── ClipSidebar.js             # Narrow clip list panel
 │       ├── AddClipModal.js            # Search songs → add clip to playlist
+│       ├── SongSearchResults.js       # 歌曲 tab on /playlists: songs + which of my playlists hold each
 │       ├── SharePlaylistModal.js      # Manage shares + copy permissions
 │       └── ImportPlaylistModal.js     # (legacy modal, superseded by /playlists/new Import tab)
 ├── hooks/
 │   ├── useAuth.js                     # Thin wrapper over authStore
 │   ├── useAudioPlayer.js
 │   ├── useLikes.js
-│   └── useSearch.js
+│   ├── useSearch.js                   # Debounced search against one endpoint (AddClipModal)
+│   └── useDebouncedValue.js           # A value once it has stopped changing (typing → when to search)
 ├── lib/
 │   ├── api.js                         # Axios instance + interceptors + all API methods
 │   ├── auth.js                        # getToken / setToken / clearToken (localStorage + cookie)
@@ -186,6 +185,7 @@ frontend/src/
 - Combined playlist hub: search bar + playlist grid + "+ New Playlist" button
 - Shows all playlists the user can see (own + shared + public), searchable by name/pinyin
 - Fetches `GET /api/playlists?q=...`
+- 「歌单 | 歌曲」 toggle: in 歌曲 mode the same box searches songs (`GET /api/songs/search?q=...&mine=1`); each song lists which of the user's own playlists hold it, linking to them. View only. 50 per page, "显示更多" loads the next 50. Each mode keeps its own text.
 
 ### `/playlists/new`
 - Two tabs:
@@ -198,11 +198,6 @@ frontend/src/
 - Edit mode: drag-and-drop reorder, add/remove clips, per-clip customization controls
 - Read-only view for shared/public users (play, view, like, copy if permitted)
 - Fetches `GET /api/playlists/:id`
-
-### `/library`
-- Virtualized song list with pinyin/Chinese search
-- Create clips from any song; add clips to playlists
-- Cursor-based pagination via `GET /api/songs`
 
 ### `/admin`
 - ADMIN role only (redirects others to `/playlists`)
@@ -243,7 +238,7 @@ const { user, isAuthenticated, isPending, isMember, isAdmin, loading, login, log
 ```js
 // middleware.js
 // Public paths: /login, /register, /pending
-// Protected matcher: /dashboard, /playlists/:path*, /library/:path*, /admin/:path*
+// Protected matcher: /dashboard, /playlists/:path*, /admin/:path*, … (see middleware.js)
 // Checks for music_app_token cookie (set by setToken on login)
 // Redirects to /login if no token found
 ```
@@ -296,13 +291,12 @@ Pitch shifting via Web Audio API + soundtouchjs. Only one PlayerBox plays at a t
 
 ## Search
 
-Query type detection is server-side. Frontend sends raw input:
-- ASCII no spaces → pinyin initials (`zjl`)
-- ASCII with spaces → full pinyin (`zhou jie lun`)
-- CJK characters → Chinese fuzzy (`月亮`)
+All matching is server-side; the frontend sends what the user typed, 300 ms after they stop typing.
 
 Search contexts:
-1. **Library** — `GET /api/songs?q=...`
-2. **Playlists page** — `GET /api/playlists?q=...`
-3. **Within playlist** — client-side filter on loaded clips
-4. **AddClipModal** — `GET /api/songs?q=...`
+1. **Playlists page, 歌单 mode** — `GET /api/playlists?q=...` (query type detected on the server: `zjl` → pinyin initials, `zhou jie lun` → full pinyin, `月亮` → Chinese fuzzy)
+2. **Playlists page, 歌曲 mode** — `GET /api/songs/search?q=...&mine=1`, 50 per page (`offset`)
+3. **AddClipModal** — `GET /api/songs/search?q=...`, first 50 only
+4. **Within playlist** — client-side filter on loaded clips
+
+Song search (2 and 3) is one ranked in-memory search — Chinese, pinyin, initials, traditional/simplified, typos; see BACKEND.md.

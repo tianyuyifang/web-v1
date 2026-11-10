@@ -57,13 +57,14 @@ backend/
 │   │
 │   ├── services/
 │   │   ├── authService.js         # Password hashing, JWT sign/verify
-│   │   ├── songService.js         # Song queries, pinyin search, pagination
+│   │   ├── songService.js         # Search results page (songs + clips), song detail
+│   │   ├── songSearchService.js   # In-memory ranked song search
 │   │   ├── clipService.js         # Clip creation, auto-clipping, LRC slicing
 │   │   ├── playlistService.js     # Playlist CRUD, clip management, reorder
 │   │   ├── shareService.js        # Playlist sharing & copy permissions
 │   │   ├── likeService.js         # Like toggle & queries
 │   │   ├── streamService.js       # File path resolution, range header parsing
-│   │   └── searchService.js       # Query type detection, unified search logic
+│   │   └── searchService.js       # Playlist search, clips-in-playlist search (pg_trgm)
 │   │
 │   ├── validators/
 │   │   ├── auth.js                # Register/login schemas
@@ -224,21 +225,28 @@ req.playlistAccess = {
 
 | Method | Path       | Auth | Description                                   |
 | ------ | ---------- | ---- | --------------------------------------------- |
-| GET    | `/`        | Yes  | Search/browse songs with cursor pagination    |
+| GET    | `/search`  | Yes  | Ranked song search (添加歌曲 modal, 歌曲 tab on `/playlists`) |
+| GET    | `/`        | Yes  | Old search URL, answered by the same search. Kept one release for pages opened before the deploy; then delete |
 | GET    | `/:id`     | Yes  | Song detail with all its clips                |
+| GET    | `/:id/clips` | Yes | All clips of a song the caller may see       |
 
-**GET `/api/songs`** query params:
+**GET `/api/songs/search`** query params:
 
 | Param    | Type   | Description                                      |
 | -------- | ------ | ------------------------------------------------ |
-| `q`      | string | Search query (Chinese, full pinyin, or initials)  |
-| `cursor` | string | Cursor for pagination (song ID)                   |
-| `limit`  | number | Page size (default 50, max 100)                   |
+| `q`      | string | What the user typed                               |
+| `limit`  | number | Page size (default 50, 1–100)                     |
+| `offset` | number | Where the page starts (default 0); send back the previous `nextOffset` |
+| `mine`   | `1`    | Add `myPlaylists` to each song: the caller's own playlists that hold it |
 
-**Search flow** (in `searchService.js`):
-1. Detect query type: pinyin initials / full pinyin / Chinese characters
-2. Search `songs` table + `song_artists` table using appropriate columns and indexes
-3. Return songs with their clips (LEFT JOIN)
+**Search flow** (in `songSearchService.js`):
+1. The whole library is held in memory: title and artists of every song, Chinese characters with their pinyin readings. Every 30 s a fingerprint computed in Postgres is compared; the index is rebuilt only when the library changed.
+2. The query is normalized (case, full/half width, quotes, traditional → simplified via `utils/t2s.js`) and split into at most 10 words; every word must match the title or an artist.
+3. Chinese characters match anywhere; English and pinyin (full, initials, or mixed) match from the start of a word / character. Typos are allowed: 1 for words of 4+ letters, 2 for 8+.
+4. Ranking: no typo first; exact title, then an artist's full name; the text itself before pinyin; title start before elsewhere in the title before artist; then songs used in more playlists; then shorter titles.
+5. `songService.searchRanked` loads that page of songs with their clips (and, with `mine=1`, the caller's playlists).
+
+The scan gives the event loop back every 5 ms, so a search never holds up other requests.
 
 **Response:**
 ```json
@@ -254,12 +262,16 @@ req.playlistAccess = {
       "clips": [
         { "id": "uuid", "start": 0, "length": 25 },
         { "id": "uuid", "start": 25, "length": 25 }
-      ]
+      ],
+      "myPlaylists": [{ "id": "uuid", "name": "必唱" }]
     }
   ],
-  "nextCursor": "uuid-of-last-song"
+  "total": 137,
+  "nextOffset": 50
 }
 ```
+
+`myPlaylists` is present only with `mine=1`. There are more results while `nextOffset < total`.
 
 ---
 
@@ -472,8 +484,16 @@ verifyToken(token)               // Decode and verify
 ### `songService.js`
 
 ```js
-searchSongs(query, cursor, limit)    // Delegates to searchService for query detection
-getSongById(songId)                   // Song with clips
+searchRanked(query, limit, userRole, userId, mine, offset)  // A page of songSearchService results, with clips
+getSongById(songId, userRole)          // Song with clips
+getSongClips(songId, userId, userRole) // Clips of a song the caller may see
+```
+
+### `songSearchService.js`
+
+```js
+search(query, limit, offset)          // → { ids, total }: ranked song ids from the in-memory index
+rebuild()                             // Force a re-read of the library (tests, scripts)
 ```
 
 ### `clipService.js`
@@ -514,12 +534,11 @@ removeCopyPermission(playlistId, userId)             // Revoke copy
 
 ```js
 detectQueryType(query)   // Returns 'pinyin_initials' | 'full_pinyin' | 'chinese'
-searchSongs(query, cursor, limit)    // Multi-strategy search across songs + song_artists
 searchPlaylists(query, userId)       // Search playlists with access filtering
 searchClipsInPlaylist(playlistId, query)  // Filter clips by song title/artist
 ```
 
-**Query type detection logic:**
+**Query type detection logic** (playlist and clip search only — song search is `songSearchService.js`):
 ```
 ASCII lowercase, no spaces, short  → pinyin initials  (LIKE 'abc%')
 ASCII with spaces                  → full pinyin       (ILIKE '%zhou jie%' + trigram)

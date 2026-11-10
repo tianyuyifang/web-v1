@@ -47,8 +47,9 @@ Music clip playlist web app — Next.js frontend, Express.js backend, PostgreSQL
 - `services/authService.js` — register (username+password → PENDING), login (by username), getMe; role in JWT
 - `services/adminService.js` — listUsers, listPending, approveUser, demoteUser, deleteUser
 - `services/streamService.js` — MP3 file path resolution, HTTP Range header parsing
-- `services/searchService.js` — query type detection (pinyin initials/full pinyin/Chinese), raw SQL for pg_trgm
-- `services/songService.js` — song listing with cursor pagination
+- `services/searchService.js` — playlist search + clips-within-a-playlist search: query type detection (pinyin initials/full pinyin/Chinese), raw SQL for pg_trgm
+- `services/songSearchService.js` — song search: whole library held in memory, ranked (Chinese / pinyin / initials / traditional↔simplified / typos); see Notes
+- `services/songService.js` — `searchRanked` (a page of search results with clips, optionally the caller's own playlists per song), song detail, song clips
 - `services/clipService.js` — create clip, auto-clip, LRC slicing
 - `services/playlistService.js` — CRUD, clip management, reorder, copy
 - `services/shareService.js` — playlist share access + copy permissions
@@ -56,7 +57,7 @@ Music clip playlist web app — Next.js frontend, Express.js backend, PostgreSQL
 - `routes/auth.js` — register, login, me
 - `routes/admin.js` — list/approve/demote/delete users (ADMIN only)
 - `routes/stream.js` — byte-range MP3 streaming (206 partial content)
-- `routes/songs.js` — search/browse with cursor pagination
+- `routes/songs.js` — `GET /songs/search` (ranked, `offset` paging), song detail, song clips
 - `routes/clips.js` — create, auto-clip
 - `routes/playlists.js` — full CRUD + clip mgmt + shares + copy permissions + copy
 - `routes/likes.js` — toggle, list (compound keys: "playlistId:clipId")
@@ -68,16 +69,15 @@ Music clip playlist web app — Next.js frontend, Express.js backend, PostgreSQL
 - **Token management:** localStorage + cookie sync; post-login uses `window.location.href` so middleware sees cookie
 - **Auth state:** Zustand `authStore` (shared across all components, single `me()` call on boot via Navbar)
 - **API client** (`lib/api.js`): Axios with JWT interceptors, 401 redirect (skips auth routes)
-- **Playlists** (`/playlists`): combined page — search all playlists + "+ New Playlist" button
+- **Playlists** (`/playlists`): combined page — search all playlists + "+ New Playlist" button; 「歌单 | 歌曲」 toggle switches the box to song search, where each song lists which of your own playlists hold it (view only)
 - **Dashboard** (`/dashboard`): redirects to `/playlists`
 - **New Playlist** (`/playlists/new`): tabbed — Create form + Import JSON tab
-- **Library** (`/library`): song search with cursor pagination, virtual scrolling, clip creation
 - **Playlist detail** (`/playlists/[id]`): player, clips sidebar, drag-and-drop reorder, sharing
 - **Admin** (`/admin`): user management — approve/revoke/delete (ADMIN role only; Admin link in navbar)
 - **Pending** (`/pending`): shown to PENDING users after login
-- **Components:** PlayerBox, ProgressBar, VolumeControl, SpeedControl, PitchControl, LyricsBox, LikeButton, ColorTag, ClipComment, PlaylistGrid, PlaylistCard, PlaylistHeader, ClipSidebar, AddClipModal, SharePlaylistModal, ImportPlaylistModal, UserTable, SearchBar, SongTable, ClipCreator
+- **Components:** PlayerBox, ProgressBar, VolumeControl, SpeedControl, PitchControl, LyricsBox, LikeButton, ColorTag, ClipComment, PlaylistGrid, PlaylistCard, PlaylistHeader, ClipSidebar, AddClipModal, SharePlaylistModal, ImportPlaylistModal, UserTable, SearchBar, SongSearchResults, ClipCreator
 - **State:** `authStore` (user, login, logout, init), `playerStore` (active player, likes cache)
-- **Hooks:** `useAuth` (thin wrapper over authStore), `useAudioPlayer`, `useLikes`, `useSearch`
+- **Hooks:** `useAuth` (thin wrapper over authStore), `useAudioPlayer`, `useLikes`, `useSearch`, `useDebouncedValue`
 - **Theme:** Dark theme (background `#2a2a34`, surface `#353542`)
 
 #### Frontend-Backend Integration Notes
@@ -85,7 +85,7 @@ Music clip playlist web app — Next.js frontend, Express.js backend, PostgreSQL
 - Error message: `err.response.data.error.message` (matches backend `{ error: { message } }` format)
 - Login uses `window.location.href` (not `router.push`) so Next.js middleware sees the cookie on redirect
 - Auth state is a Zustand store — `init()` called once in Navbar on mount; all components share state
-- Playlist list response: `res.data.playlists`; songs list: `res.data.songs` with `nextCursor`
+- Playlist list response: `res.data.playlists`; song search: `res.data.songs` with `total` and `nextOffset` (pass it back as `offset` for the next page)
 - Cookie key: `music_app_token` (7-day expiry, SameSite=Lax)
 
 ### Scripts
@@ -120,3 +120,5 @@ Music clip playlist web app — Next.js frontend, Express.js backend, PostgreSQL
 - PENDING users: login is REFUSED at the backend (401 `ACCOUNT_DISABLED`, no token issued); the login screen shows a "会员已到期，请联系管理员续费" panel. This covers both never-approved signups and admin-revoked (未续费) accounts. `requireApproved` reads the current role from the DB (not the JWT), so an already-issued token stops working within the 30s session-cache TTL after a revoke; `demoteUser`/`approveUser` invalidate that cache so it takes effect on the next request. Approving restores the role and login works again — data is never touched.
 - Admin accounts: seeded via `node scripts/seed-admins.js` — reads `ADMIN_1/2_USERNAME/PASSWORD` from `.env`
 - No email field on users; no password reset flow
+- Song search (`songSearchService.js`) keeps the library in backend memory (~20 MB for ~27k songs). Imports/renames run in other processes, so every 30 s it compares a fingerprint computed in Postgres and rebuilds only if the library changed — a new song is searchable within 30 s, no restart. Traditional→simplified table is `utils/t2s.js` (from OpenCC, built in — nothing to install)
+- `GET /api/songs?q=` (the pre-2026-11 search URL) is answered by the new search for one release, only so pages opened before that deploy keep searching; delete it once nginx logs show no more `GET /api/songs?` requests

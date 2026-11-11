@@ -54,8 +54,12 @@ router.get('/latest', noEtag, async (req, res, next) => {
 
 // GET /api/gep-reports/:id — one report with its songs in the order seen
 router.get('/:id', noEtag, async (req, res, next) => {
+  // The connection closing before the answer is sent means the page gave up
+  // (nginx times out at 60 s); stop looking songs up for it.
+  let gone = false;
+  res.on('close', () => { if (!res.writableFinished) gone = true; });
   try {
-    res.json(await reports.getReport(req.user.id, req.params.id));
+    res.json(await reports.getReport(req.user.id, req.params.id, () => gone));
   } catch (err) {
     next(err);
   }

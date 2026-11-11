@@ -378,14 +378,40 @@ const lookupCache = new Map();
 const LOOKUP_TTL_MS = 10 * 60 * 1000;
 const MAX_LOOKUPS_PER_READ = 200;
 
+// 2026-11-11: one user re-opening a report of 200+ missing songs while the
+// earlier reads were still running stacked 7-8 of these scans in Postgres at
+// once and saturated the box for everyone. So: a title being looked up is
+// shared by everyone asking for it meanwhile, and the scans run one at a time
+// whoever asks (a single read already looks its titles up one by one).
+const lookupsInFlight = new Map();
+let scanLane = Promise.resolve();
+
+function oneScanAtATime(fn) {
+  const run = scanLane.then(fn, fn);
+  scanLane = run.catch(() => {}); // one failed scan must not block the ones queued after it
+  return run;
+}
+
 async function lookup(title, singer) {
   const t = String(title || '').trim();
   if (!t) return { found: false, options: [], pick: null };
   const cacheKey = `${t}\u0001${String(singer || '').trim()}`;
   const hit = lookupCache.get(cacheKey);
   if (hit && Date.now() - hit.at < LOOKUP_TTL_MS) return hit.value;
+  const pending = lookupsInFlight.get(cacheKey);
+  if (pending) return pending;
+  const p = lookUpNow(t, singer, cacheKey);
+  lookupsInFlight.set(cacheKey, p);
+  try {
+    return await p;
+  } finally {
+    lookupsInFlight.delete(cacheKey);
+  }
+}
+
+async function lookUpNow(t, singer, cacheKey) {
   const { fetchCandidateSongs } = require('./captureService');
-  const { candidates } = matchTitle(t, await fetchCandidateSongs(t));
+  const { candidates } = matchTitle(t, await oneScanAtATime(() => fetchCandidateSongs(t)));
   const credited = candidates.filter((c) => artistMatches(singer, c.artist));
   const ordered = [...credited, ...candidates.filter((c) => !credited.includes(c))].slice(0, MAX_OPTIONS);
   const options = ordered.map((c) => ({ songId: c.songId, title: c.title, artist: c.artist }));
@@ -445,7 +471,10 @@ async function listReports(userId) {
   return { reports: out };
 }
 
-async function getReport(userId, reportId) {
+// `isGone`: true once nobody is waiting for this read any more (the page
+// timed out or closed) -- the titles not yet looked up are then left alone;
+// the ones done stay cached for the next read.
+async function getReport(userId, reportId, isGone = () => false) {
   const report = await ownReport(userId, reportId);
   let items = await prisma.gepReportItem.findMany({ where: { reportId: report.id }, orderBy: [{ seenAt: 'asc' }, { id: 'asc' }] });
   items = await settleUnknown(report, items);
@@ -457,7 +486,7 @@ async function getReport(userId, reportId) {
     const v = itemView(item);
     if (item.status === 'missing') {
       // Bounded per read; past it a song is looked up when the user renames it.
-      v.lookup = looked++ < MAX_LOOKUPS_PER_READ
+      v.lookup = looked++ < MAX_LOOKUPS_PER_READ && !isGone()
         ? await lookup(item.title || item.rawText, report.singer)
         : { found: false, options: [], pick: null, skipped: true };
     }

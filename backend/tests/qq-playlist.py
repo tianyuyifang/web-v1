@@ -71,6 +71,9 @@ if sys.platform == "win32":
             _k32.AssignProcessToJobObject(_job, _k32.GetCurrentProcess())
     except Exception:
         pass  # the scrape still works; only the clean-up on a kill is lost
+import os
+import shutil
+import tempfile
 from opencc import OpenCC
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -78,9 +81,53 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 
-def setup_driver():
+def _linux_processes():
+    """pid -> (parent pid, command line) for every process we can read."""
+    procs = {}
+    for name in os.listdir("/proc"):
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"/proc/{name}/stat", "rb") as f:
+                stat = f.read().decode("utf-8", "replace")
+            ppid = int(stat[stat.rindex(")") + 2:].split()[1])
+            with open(f"/proc/{name}/cmdline", "rb") as f:
+                cmd = f.read().replace(b"\0", b" ").decode("utf-8", "replace")
+            procs[int(name)] = (ppid, cmd)
+        except (OSError, ValueError, IndexError):
+            continue
+    return procs
+
+
+def _kill_browser(driver_pid, profile_dir):
+    """End chromedriver's Chrome however this run ends: everything below
+    chromedriver, plus anything naming this run's own profile directory (the
+    crash handler is re-parented away from chromedriver at once)."""
+    if not sys.platform.startswith("linux"):
+        return  # Windows: the job object above takes them all down
+    procs = _linux_processes()
+    doomed = {pid for pid, (_, cmd) in procs.items() if profile_dir and profile_dir in cmd}
+    if driver_pid:
+        frontier = [driver_pid]
+        while frontier:
+            parent = frontier.pop()
+            for pid, (ppid, _) in procs.items():
+                if ppid == parent and pid not in doomed:
+                    doomed.add(pid)
+                    frontier.append(pid)
+    doomed.discard(os.getpid())
+    for pid in doomed:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
+def setup_driver(profile_dir):
     chrome_options = Options()
     chrome_options.add_argument("--headless")
+    # This run's own profile: removed afterwards, and how its processes are found.
+    chrome_options.add_argument(f"--user-data-dir={profile_dir}")
     chrome_options.add_argument("--disable-web-security")
     chrome_options.add_argument("--disable-features=IsolateOrigins,site-per-process")
     chrome_options.add_argument(
@@ -103,8 +150,10 @@ def to_simplified(text):
 
 
 def scrape_playlist(playlist_id):
-    driver = setup_driver()
+    profile_dir = tempfile.mkdtemp(prefix="qq-playlist-chrome-")
+    driver = None
     try:
+        driver = setup_driver(profile_dir)
         url = f"https://y.qq.com/musicmac/v6/playlist/detail.html?id={playlist_id}"
         driver.get(url)
         driver.implicitly_wait(10)
@@ -126,7 +175,31 @@ def scrape_playlist(playlist_id):
 
         return songs
     finally:
-        driver.quit()
+        # The importer's kill must not land in the middle of the clean-up.
+        for _sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+            if _sig is not None:
+                signal.signal(_sig, signal.SIG_IGN)
+        driver_pid = None
+        if driver is not None:
+            try:
+                driver_pid = driver.service.process.pid
+            except Exception:
+                pass
+        # Chrome first: quit() can wait on a chromedriver that is still busy
+        # with a page, which is how Chrome was left behind. A page that never
+        # finished loading, then the importer's kill at 180 s: quit() hung,
+        # chromedriver and its Chrome were orphaned (2 of 9 imports on
+        # 2026-11-11; reproduced on the VM with a never-ending local page).
+        # With Chrome gone, quit() answers at once and stops chromedriver.
+        # This also covers a Chrome started by a webdriver.Chrome() that
+        # never returned.
+        _kill_browser(driver_pid, profile_dir)
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        shutil.rmtree(profile_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

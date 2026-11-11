@@ -69,7 +69,7 @@ Music clip playlist web app — Next.js frontend, Express.js backend, PostgreSQL
 - **Token management:** localStorage + cookie sync; post-login uses `window.location.href` so middleware sees cookie
 - **Auth state:** Zustand `authStore` (shared across all components, single `me()` call on boot via Navbar)
 - **API client** (`lib/api.js`): Axios with JWT interceptors, 401 redirect (skips auth routes)
-- **Playlists** (`/playlists`): combined page — search all playlists + "+ New Playlist" button; 「歌单 | 歌曲」 toggle switches the box to song search, where each song lists which of your own playlists hold it (view only)
+- **Playlists** (`/playlists`): combined page — search all playlists + "+ New Playlist" button; 「歌单 | 歌曲」 toggle switches the box to song search, which lists only songs your own playlists hold, each with those playlists (view only); none of yours → 「你的歌单里没有这首歌」, none in the library → 「没有找到歌曲」
 - **Dashboard** (`/dashboard`): redirects to `/playlists`
 - **New Playlist** (`/playlists/new`): tabbed — Create form + Import JSON tab
 - **Playlist detail** (`/playlists/[id]`): player, clips sidebar, drag-and-drop reorder, sharing

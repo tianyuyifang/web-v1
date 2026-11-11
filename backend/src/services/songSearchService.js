@@ -367,9 +367,9 @@ function matchTerm(song, term, memo) {
  * A query with no letters or digits (★, ？, #): titles that contain it, the
  * title that is exactly it first. A few songs are named only with symbols.
  */
-async function symbolSearch(q, limit, offset) {
+async function symbolSearch(q, limit, offset, keep) {
   const sym = normalize(String(q || '').slice(0, 100)).replace(/\s+/g, '');
-  if (!sym) return { ids: [], total: 0 };
+  if (!sym) return page([], limit, offset, keep);
   const { songs } = await getIndex();
   const hits = [];
   let sliceStart = Date.now();
@@ -380,7 +380,20 @@ async function symbolSearch(q, limit, offset) {
   }
   hits.sort((x, y) => y.exact - x.exact || y.song.pop - x.song.pop || x.song.title.length - y.song.title.length
     || (x.song.id < y.song.id ? -1 : x.song.id > y.song.id ? 1 : 0));
-  return { ids: hits.slice(offset, offset + limit).map((h) => h.song.id), total: hits.length };
+  return page(hits, limit, offset, keep);
+}
+
+/**
+ * One page of ranked hits. With `keep` -- given every matching song id, it
+ * answers (async) the Set of those to keep -- only those songs, paged and
+ * counted among themselves, plus `libraryTotal`: how many the whole library
+ * matched, so "none of yours" can be told from "none at all".
+ */
+async function page(hits, limit, offset, keep) {
+  if (!keep) return { ids: hits.slice(offset, offset + limit).map((h) => h.song.id), total: hits.length };
+  const keepIds = await keep(hits.map((h) => h.song.id));
+  const kept = hits.filter((h) => keepIds.has(h.song.id));
+  return { ids: kept.slice(offset, offset + limit).map((h) => h.song.id), total: kept.length, libraryTotal: hits.length };
 }
 
 /**
@@ -388,11 +401,11 @@ async function symbolSearch(q, limit, offset) {
  * Sort key: typo, exact title (as typed or in pinyin), an artist's full name
  * (as typed, pinyin or initials), how (direct / usual / rare reading), tier
  * (2 title start, 3 title, 4 artist), times in playlists (desc), title
- * length, title, id (so pages don't shift between requests).
+ * length, title, id (so pages don't shift between requests). `keep`: see page().
  */
-async function search(q, limit = 50, offset = 0) {
+async function search(q, limit = 50, offset = 0, keep = null) {
   const terms = queryTerms(q);
-  if (!terms.length) return symbolSearch(q, limit, offset);
+  if (!terms.length) return symbolSearch(q, limit, offset, keep);
   const { songs } = await getIndex();
   const whole = queryWords(q).join(''); // as typed, for the exact-title / artist-name checks
   const memos = terms.map(() => new Map());
@@ -421,7 +434,7 @@ async function search(q, limit = 50, offset = 0) {
     || y.song.pop - x.song.pop || x.song.title.length - y.song.title.length
     || (x.song.title < y.song.title ? -1 : x.song.title > y.song.title ? 1 : 0)
     || (x.song.id < y.song.id ? -1 : x.song.id > y.song.id ? 1 : 0));
-  return { ids: hits.slice(offset, offset + limit).map((h) => h.song.id), total: hits.length };
+  return page(hits, limit, offset, keep);
 }
 
 module.exports = { search, rebuild, normalize, queryTerms };

@@ -241,6 +241,7 @@ export default {
   addClipToPlaylist: "添加片段到歌单",
   searchSongs: "搜索歌曲...",
   noSongsFound: "没有找到歌曲。",
+  noSongsInMyPlaylists: "你的歌单里没有这首歌。",
   songSearchFailed: "搜索没连上，请稍后再试。",
   importClips: "导入片段",
   importByQQ: "从QQ音乐导入",

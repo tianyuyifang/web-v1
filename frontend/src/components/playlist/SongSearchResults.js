@@ -6,14 +6,15 @@ import api from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
 /**
- * The playlists page's 歌曲 search: every song in the library, each with the
- * caller's own playlists that hold a clip of it. Look only -- no adding here.
+ * The playlists page's 歌曲 search: only songs the caller's own playlists hold
+ * a clip of, each with those playlists. Look only -- no adding here.
  */
 export default function SongSearchResults({ query }) {
   const { t } = useLanguage();
   const [songs, setSongs] = useState([]);
   const [total, setTotal] = useState(0);
   const [next, setNext] = useState(0); // where the next page starts (from the server)
+  const [inLibrary, setInLibrary] = useState(0); // matches in the whole library, yours or not
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [failed, setFailed] = useState(false); // the last request got no answer: say so, "no songs" would be a lie
@@ -36,9 +37,10 @@ export default function SongSearchResults({ query }) {
         setSongs(res.data.songs || []);
         setTotal(res.data.total || 0);
         setNext(res.data.nextOffset || 0);
+        setInLibrary(res.data.libraryTotal || 0);
       })
       .catch(() => {
-        if (seq === seqRef.current) { setSongs([]); setTotal(0); setNext(0); setFailed(true); }
+        if (seq === seqRef.current) { setSongs([]); setTotal(0); setNext(0); setInLibrary(0); setFailed(true); }
       })
       .finally(() => {
         if (seq === seqRef.current) setLoading(false);
@@ -70,7 +72,10 @@ export default function SongSearchResults({ query }) {
   if (!query.trim()) return null;
   if (loading) return <p className="py-4 text-center text-sm text-muted">{t("searching")}</p>;
   if (failed && !songs.length) return <p className="py-4 text-center text-sm text-muted">{t("songSearchFailed")}</p>;
-  if (!songs.length) return <p className="py-4 text-center text-sm text-muted">{t("noSongsFound")}</p>;
+  if (!songs.length) {
+    // The library has it, your playlists don't: say that, not "no such song".
+    return <p className="py-4 text-center text-sm text-muted">{t(inLibrary > 0 ? "noSongsInMyPlaylists" : "noSongsFound")}</p>;
+  }
 
   return (
     <div>

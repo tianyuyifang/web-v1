@@ -2,7 +2,8 @@ const router = require('express').Router();
 const songService = require('../services/songService');
 
 // GET /api/songs/search?q=&mine=1&offset= — ranked search (添加歌曲, the 歌曲 tab).
-// mine=1 adds which of the caller's own playlists hold each song; offset pages on.
+// mine=1: only songs in the caller's own playlists, each listing which ones;
+// offset pages on.
 // Must stay above /:id, which would take "search" for a song id.
 router.get('/search', async (req, res, next) => {
   try {

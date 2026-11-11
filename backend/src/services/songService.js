@@ -2,14 +2,77 @@ const prisma = require('../db/client');
 const { NotFoundError } = require('../utils/errors');
 const songSearch = require('./songSearchService');
 
+// Up to this many matches, look those songs up; past it, read the user's
+// whole set. Measured on production (2026-11-11): looking up 50 songs takes
+// ~6 ms (~65 ms if they are the most-used ones), 200 popular ones ~185 ms;
+// the whole set takes ~150-250 ms for the three largest users (~21k songs,
+// 30-43k playlist entries) and ~10 ms or less for everyone else.
+const LOOKUP_MATCHES_MAX = 100;
+
+// Whole-set reads that took longer than this put their user in the slow lane:
+// from then on that user's whole-set reads run one at a time (with every other
+// slow user's), so several large users searching at once queue among
+// themselves instead of filling the 2-core database together and slowing
+// everyone else. A read under it takes the user back out. Kept in memory
+// only; after a restart each user's first read decides.
+const SLOW_READ_MS = 50;
+const slowReaders = new Set();
+let slowLane = Promise.resolve();
+
+function inSlowLane(fn) {
+  const run = slowLane.then(fn, fn);
+  slowLane = run.catch(() => {}); // one failed read must not block the ones queued after it
+  return run;
+}
+
+async function readWholeSet(userId) {
+  const started = Date.now();
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT DISTINCT c.song_id
+       FROM playlist_clips pc
+       JOIN playlists p ON p.id = pc.playlist_id
+       JOIN clips c ON c.id = pc.clip_id
+      WHERE p.user_id = $1::uuid`,
+    userId
+  );
+  if (Date.now() - started > SLOW_READ_MS) slowReaders.add(userId);
+  else slowReaders.delete(userId);
+  return rows;
+}
+
+/** Which of `songIds` (one search's matches) the user's own playlists hold. */
+async function heldByOwnPlaylists(userId, songIds) {
+  if (!songIds.length) return new Set();
+  let rows;
+  if (songIds.length <= LOOKUP_MATCHES_MAX) {
+    rows = await prisma.$queryRawUnsafe(
+      `SELECT DISTINCT c.song_id
+         FROM clips c
+         JOIN playlist_clips pc ON pc.clip_id = c.id
+         JOIN playlists p ON p.id = pc.playlist_id
+        WHERE p.user_id = $1::uuid AND c.song_id = ANY($2::uuid[])`,
+      userId, songIds
+    );
+  } else if (slowReaders.has(userId)) {
+    rows = await inSlowLane(() => readWholeSet(userId));
+  } else {
+    rows = await readWholeSet(userId);
+  }
+  return new Set(rows.map((r) => r.song_id));
+}
+
 /**
  * Ranked search (添加歌曲, the 歌曲 tab), `limit` songs from `offset`. With
- * `mine`, each song also lists which of the caller's own playlists hold a
- * clip of it.
+ * `mine` (the 歌曲 tab), only songs that one of the caller's own playlists
+ * holds a clip of, each listing those playlists; `libraryTotal` says how many
+ * the whole library matched, so "not in your playlists" can be told from
+ * "no such song".
  */
 async function searchRanked(query, limit, userRole, userId, mine = false, offset = 0) {
-  const { ids, total } = await songSearch.search(query, limit, offset);
-  if (!ids.length) return { songs: [], total, nextOffset: offset };
+  const keep = mine && userId ? (songIds) => heldByOwnPlaylists(userId, songIds) : null;
+  const { ids, total, libraryTotal } = await songSearch.search(query, limit, offset, keep);
+  const counts = keep ? { libraryTotal } : {};
+  if (!ids.length) return { songs: [], total, nextOffset: offset, ...counts };
 
   const rows = await prisma.song.findMany({
     where: { id: { in: ids } },
@@ -50,7 +113,7 @@ async function searchRanked(query, limit, userRole, userId, mine = false, offset
   });
   // Songs deleted since the index was built are dropped (and not counted);
   // the next page starts after every id this one covered.
-  return { songs, total: total - (ids.length - songs.length), nextOffset: offset + ids.length };
+  return { songs, total: total - (ids.length - songs.length), nextOffset: offset + ids.length, ...counts };
 }
 
 async function getSongById(songId, userRole) {

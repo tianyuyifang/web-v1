@@ -450,14 +450,19 @@ export default function GepSingerPanel() {
       {error && <p className="mb-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-300">{error}</p>}
 
       <div className="grid gap-4 sm:grid-cols-[minmax(10rem,16rem)_1fr]">
-        <div>
+        {/* On a wide screen the singer list stays in view under the navbar
+            while a long song list scrolls the page. The 5rem offset clears the
+            navbar where it wraps to two lines (73px at 780-819px wide); the height
+            leaves room for the page's bottom padding, or at the very bottom
+            the list would be pushed up under the navbar. */}
+        <div className="sm:sticky sm:top-20 sm:self-start">
           {loading && <p className="py-6 text-center text-sm text-muted">读取中…</p>}
           {!loading && singers.length === 0 && (
             <p className="py-6 text-center text-sm text-muted">
               {reviewOnly ? "没有待处理的歌。" : submitted ? "没有匹配的歌手。" : "还没有记录。"}
             </p>
           )}
-          <ul className="max-h-[32rem] space-y-1 overflow-y-auto pr-1">
+          <ul className="max-h-[32rem] space-y-1 overflow-y-auto pr-1 sm:max-h-[calc(100vh-9rem)]">
             {singers.map((s) => (
               <li key={s.singer}>
                 <button

@@ -436,6 +436,101 @@ async function fetchCandidateSongs(rawText) {
   );
 }
 
+/*
+ * fetchCandidateSongs without scanning the songs table each time, for 歌P战报
+ * (2026-11-11: a report of 200+ missing songs ran 200 full scans, ~0.3 s each
+ * on production). Same answers: every song's comparison key -- the
+ * `stripped` expression above, worked out by Postgres itself so it is exactly
+ * the SQL's -- is kept in memory; a lookup picks the songs whose key could
+ * satisfy the WHERE (never fewer than the SQL would), and the original WHERE,
+ * ORDER BY and LIMIT then run on just those. A pattern holding a LIKE
+ * wildcard (% _ \) takes the original query. The capture path keeps using
+ * fetchCandidateSongs itself; the two queries must stay in step.
+ */
+const KEYS_CHECK_MS = 30 * 1000;
+// Changes whenever a song is added, removed or renamed (as in songSearchService).
+const KEYS_FINGERPRINT_SQL = `SELECT md5(string_agg(id::text || '|' || title || '|' || coalesce(artist, ''), ',' ORDER BY id)) AS fp
+  FROM songs`;
+const LIKE_WILDCARD = /[%_\\]/;
+let titleKeys = null; // { rows: [{ id, key, wild }], fp, checkedAt }
+let titleKeysLoading = null;
+
+async function loadTitleKeys() {
+  const [{ fp }] = await prisma.$queryRawUnsafe(KEYS_FINGERPRINT_SQL);
+  if (titleKeys && titleKeys.fp === fp) return { ...titleKeys, checkedAt: Date.now() };
+  const col = `lower(translate(regexp_replace(title, '[[:space:]《》]', '', 'g'), $1, $2))`;
+  const rows = await prisma.$queryRawUnsafe(`SELECT id, ${col} AS key FROM songs`, FOLD_FROM, FOLD_TO);
+  return {
+    rows: rows.map((r) => ({ id: r.id, key: r.key || '', wild: LIKE_WILDCARD.test(r.key || '') })),
+    fp,
+    checkedAt: Date.now(),
+  };
+}
+
+// At most KEYS_CHECK_MS old: a song imported or renamed since is found
+// within that.
+async function currentTitleKeys() {
+  if (titleKeys && Date.now() - titleKeys.checkedAt < KEYS_CHECK_MS) return titleKeys;
+  if (!titleKeysLoading) {
+    titleKeysLoading = loadTitleKeys()
+      .then((k) => { titleKeys = k; return k; })
+      .finally(() => { titleKeysLoading = null; });
+  }
+  return titleKeysLoading;
+}
+
+async function fetchCandidateSongsFast(rawText) {
+  const n = normTitleFolded(rawText);
+  if (!n) return [];
+  const col = `lower(translate(regexp_replace(title, '[[:space:]《》]', '', 'g'), $1, $2))`;
+
+  const ell = splitEllipsis(rawText);
+  if (ell) {
+    const pre = normTitleFolded(ell.prefix);
+    const suf = normTitleFolded(ell.suffix);
+    const usePre = pre.length >= MIN_ELLIPSIS_SIDE;
+    const useSuf = suf.length >= MIN_ELLIPSIS_SIDE;
+    if (usePre || useSuf) {
+      if ((usePre && LIKE_WILDCARD.test(pre)) || (useSuf && LIKE_WILDCARD.test(suf))) return fetchCandidateSongs(rawText);
+      const { rows } = await currentTitleKeys();
+      const ids = rows
+        .filter((r) => (!usePre || r.key.startsWith(pre)) && (!useSuf || r.key.endsWith(suf)))
+        .map((r) => r.id);
+      if (!ids.length) return [];
+      const params = [FOLD_FROM, FOLD_TO];
+      const conds = [];
+      if (usePre) { params.push(pre); conds.push(`${col} LIKE $${params.length} || '%'`); }
+      if (useSuf) { params.push(suf); conds.push(`${col} LIKE '%' || $${params.length}`); }
+      params.push(ids);
+      return prisma.$queryRawUnsafe(
+        `SELECT id, title, artist FROM songs
+          WHERE id = ANY($${params.length}::uuid[]) AND ${conds.join(' AND ')}
+          ORDER BY length(${col}), ${col}, id
+          LIMIT ${MAX_CANDIDATE_SCAN}`,
+        ...params
+      );
+    }
+  }
+
+  if (LIKE_WILDCARD.test(n)) return fetchCandidateSongs(rawText);
+  const { rows } = await currentTitleKeys();
+  // A key holding a wildcard is a pattern in `$3 LIKE key || '%'`: let the SQL judge it.
+  const ids = rows.filter((r) => r.key.startsWith(n) || r.wild || n.startsWith(r.key)).map((r) => r.id);
+  if (!ids.length) return [];
+  return prisma.$queryRawUnsafe(
+    `SELECT id, title, artist FROM songs
+      WHERE id = ANY($4::uuid[])
+        AND (${col} LIKE $3 || '%'
+         OR $3 LIKE ${col} || '%')
+      ORDER BY (${col} = $3) DESC,
+               abs(length(${col}) - length($3)),
+               ${col},
+               id
+      LIMIT ${MAX_CANDIDATE_SCAN}`,
+    FOLD_FROM, FOLD_TO, n, ids
+  );
+}
+
 /** Which clips of these songs are actually in the playlist. */
 async function clipsInPlaylist(playlistId, songIds) {
   if (!songIds.length) return [];
@@ -1620,7 +1715,7 @@ module.exports = {
   connect, setTarget, getConnection,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
   // 歌P战报 looks a corrected title up the same way a capture is.
-  fetchCandidateSongs,
+  fetchCandidateSongs, fetchCandidateSongsFast,
   // The route drops "aimed at nothing" before the service sees it, and that
   // drop needs saying out loud just as much as the ones in here.
   logNoTarget,

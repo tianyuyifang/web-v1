@@ -410,8 +410,8 @@ async function lookup(title, singer) {
 }
 
 async function lookUpNow(t, singer, cacheKey) {
-  const { fetchCandidateSongs } = require('./captureService');
-  const { candidates } = matchTitle(t, await oneScanAtATime(() => fetchCandidateSongs(t)));
+  const { fetchCandidateSongsFast } = require('./captureService');
+  const { candidates } = matchTitle(t, await oneScanAtATime(() => fetchCandidateSongsFast(t)));
   const credited = candidates.filter((c) => artistMatches(singer, c.artist));
   const ordered = [...credited, ...candidates.filter((c) => !credited.includes(c))].slice(0, MAX_OPTIONS);
   const options = ordered.map((c) => ({ songId: c.songId, title: c.title, artist: c.artist }));

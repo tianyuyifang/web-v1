@@ -13,7 +13,8 @@ function formatSummary(template, summary, name) {
     .replace("{added}", summary.added)
     .replace("{merged}", summary.merged)
     .replace("{markedDifferent}", summary.markedDifferent)
-    .replace("{markedDeleted}", summary.markedDeleted);
+    .replace("{markedDeleted}", summary.markedDeleted)
+    .replace("{markedExtra}", summary.markedExtra ?? 0);
 }
 
 export default function MergePage() {

@@ -43,6 +43,7 @@ const mergeOptionsSchema = z.object({
   colorTag: ABC.optional(),
   sectionLabel: AB.optional(),
   clipCut: AB.optional(),
+  sameTitle: AB.optional(),
   order: AB.optional(),
   annotateDifferent: z.boolean().optional(),
 }).optional();

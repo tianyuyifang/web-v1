@@ -9,6 +9,7 @@ export const DEFAULT_MERGE_OPTIONS = {
   colorTag: "combine",
   sectionLabel: "B",
   clipCut: "A",
+  sameTitle: "A",
   order: "B",
   annotateDifferent: true,
 };
@@ -21,6 +22,7 @@ const FIELDS = [
   { key: "colorTag", combine: true },
   { key: "sectionLabel", combine: false },
   { key: "clipCut", combine: false },
+  { key: "sameTitle", combine: false },
   { key: "order", combine: false },
 ];
 

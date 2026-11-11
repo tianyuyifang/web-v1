@@ -10,9 +10,11 @@ function check(name, cond) {
   else { failed++; console.log(`  FAIL: ${name}`); }
 }
 
-// Build a playlistClip row like prisma returns (clip nests id + songId).
-function pc({ clipId, songId, speed = 1, pitch = 0, colorTag = null, comment = null, sectionLabel = null }) {
-  return { clipId, speed, pitch, colorTag, comment, sectionLabel, clip: { id: clipId, songId } };
+// Build a playlistClip row like prisma returns (clip nests id + songId + song.title).
+function pc({ clipId, songId, title, speed = 1, pitch = 0, colorTag = null, comment = null, sectionLabel = null }) {
+  const clip = { id: clipId, songId };
+  if (title !== undefined) clip.song = { title };
+  return { clipId, speed, pitch, colorTag, comment, sectionLabel, clip };
 }
 
 console.log('Test: pick()');
@@ -32,8 +34,9 @@ console.log('Test: normalizeOptions() fills defaults');
   const n = normalizeOptions({ speed: 'A' });
   check('override kept', n.speed === 'A');
   check('missing filled', n.pitch === DEFAULT_MERGE_OPTIONS.pitch);
-  check('all keys present', ['speed','pitch','comment','colorTag','sectionLabel','clipCut','order','annotateDifferent'].every(k => k in n));
+  check('all keys present', ['speed','pitch','comment','colorTag','sectionLabel','clipCut','sameTitle','order','annotateDifferent'].every(k => k in n));
   check('annotateDifferent default true', n.annotateDifferent === true);
+  check('sameTitle default A', n.sameTitle === 'A');
 }
 
 console.log('Test: Rule 4 (same clip.id) honors options');
@@ -175,7 +178,79 @@ console.log('Test: defaults reproduce legacy behavior across all rules');
   check('Rule1 added n1', !!byClip['n1']);
   check('Rule5 deleted x1 flagged', byClip['x1'].comment.includes('[此歌已删]'));
   check('Rule5 at bottom', omitted.rows[omitted.rows.length - 1].clipId === 'x1');
-  check('summary', JSON.stringify(omitted.summary) === JSON.stringify({ added: 1, merged: 1, markedDifferent: 1, markedDeleted: 1 }));
+  check('summary', JSON.stringify(omitted.summary) === JSON.stringify({ added: 1, merged: 1, markedDifferent: 1, markedDeleted: 1, markedExtra: 0 }));
+}
+
+console.log('Test: sameTitle (a song only A has vs a different song only B has, same title)');
+{
+  const seq = (r) => r.rows.map((x) => x.clipId).join(',');
+  const byClip = (r) => Object.fromEntries(r.rows.map((x) => [x.clipId, x]));
+  // A: 秘密 by one singer (x) + a shared song (k). B: k, 秘密 by another singer (y), a new song (n).
+  const a = [
+    pc({ clipId: 'x', songId: 's1', title: '秘密', speed: 1.1, pitch: 2, colorTag: '#E8655A', comment: 'A-note', sectionLabel: 'aSec' }),
+    pc({ clipId: 'k', songId: 'sK', title: 'K' }),
+  ];
+  const b = [
+    pc({ clipId: 'k', songId: 'sK', title: 'K' }),
+    pc({ clipId: 'y', songId: 's2', title: '秘密', speed: 0.9, pitch: -1, comment: 'B-note' }),
+    pc({ clipId: 'n', songId: 's3', title: 'N' }),
+  ];
+
+  // A (default), B-order: A's 秘密 takes B's slot, unchanged; B's goes last, flagged
+  const dA = buildMergeRows(a, b);
+  check('A/B-order seq', seq(dA) === 'k,x,n,y');
+  const x = byClip(dA).x;
+  check('A kept with its own settings', x.speed === 1.1 && x.pitch === 2 && x.colorTag === '#E8655A' && x.comment === 'A-note' && x.sectionLabel === 'aSec');
+  check('B one flagged extra', byClip(dA).y.comment === 'B-note\n[此歌多余]' && byClip(dA).y.speed === 0.9);
+  check('A summary', JSON.stringify(dA.summary) === JSON.stringify({ added: 1, merged: 1, markedDifferent: 0, markedDeleted: 0, markedExtra: 1 }));
+
+  // A, A-order: A's 秘密 stays where it is in A
+  check('A/A-order seq', seq(buildMergeRows(a, b, { order: 'A' })) === 'x,k,n,y');
+
+  // B: B's 秘密 is added as before; A's goes last as [此歌多余] (not [此歌已删])
+  const dB = buildMergeRows(a, b, { sameTitle: 'B' });
+  check('B/B-order seq', seq(dB) === 'k,y,n,x');
+  check('B one kept unchanged', byClip(dB).y.comment === 'B-note' && byClip(dB).y.speed === 0.9);
+  check('A one flagged extra, not deleted', byClip(dB).x.comment === 'A-note\n[此歌多余]');
+  check('B summary', JSON.stringify(dB.summary) === JSON.stringify({ added: 2, merged: 1, markedDifferent: 0, markedDeleted: 0, markedExtra: 1 }));
+  check('B/A-order seq', seq(buildMergeRows(a, b, { sameTitle: 'B', order: 'A' })) === 'k,y,n,x');
+
+  // the [此歌多余] note does not depend on annotateDifferent
+  check('extra note with annotations off', byClip(buildMergeRows(a, b, { annotateDifferent: false })).y.comment.includes('[此歌多余]'));
+}
+{
+  const seq = (r) => r.rows.map((x) => x.clipId).join(',');
+  // several clips and several songs under one title: the whole title moves together
+  const a = [
+    pc({ clipId: 'x1', songId: 's1', title: 'T' }),
+    pc({ clipId: 'm', songId: 'sM', title: 'M' }),
+    pc({ clipId: 'x2', songId: 's1', title: 'T' }),
+    pc({ clipId: 'z', songId: 's5', title: 'T' }),
+  ];
+  const b = [
+    pc({ clipId: 'y1', songId: 's2', title: 'T' }),
+    pc({ clipId: 'm', songId: 'sM', title: 'M' }),
+    pc({ clipId: 'y2', songId: 's2', title: 'T' }),
+  ];
+  check('group A/B-order', seq(buildMergeRows(a, b)) === 'x1,x2,z,m,y1,y2');
+  check('group A/A-order', seq(buildMergeRows(a, b, { order: 'A' })) === 'x1,m,x2,z,y1,y2');
+  check('group B', seq(buildMergeRows(a, b, { sameTitle: 'B' })) === 'y1,m,y2,x1,x2,z');
+}
+{
+  const seq = (r) => r.rows.map((x) => x.clipId).join(',');
+  // the same song on both sides is not a clash: B's other 秘密 is simply new
+  const a = [pc({ clipId: 'x', songId: 's1', title: '秘密' })];
+  const b = [pc({ clipId: 'x', songId: 's1', title: '秘密' }), pc({ clipId: 'y', songId: 's2', title: '秘密' })];
+  const r = buildMergeRows(a, b);
+  check('shared song: no clash', seq(r) === 'x,y' && r.summary.markedExtra === 0 && r.summary.added === 1);
+
+  // same song, different clips: still the clipCut rule
+  const r2 = buildMergeRows([pc({ clipId: 'cA', songId: 's1', title: 'T' })], [pc({ clipId: 'cB', songId: 's1', title: 'T' })]);
+  check('same song other clip: clipCut rule', seq(r2) === 'cA' && r2.rows[0].comment === '[B 中的片段不同]' && r2.summary.markedExtra === 0);
+
+  // titles must be exactly the same
+  const r3 = buildMergeRows([pc({ clipId: 'x', songId: 's1', title: '秘密' })], [pc({ clipId: 'y', songId: 's2', title: '秘密 (Live)' })]);
+  check('different title: old rules', seq(r3) === 'y,x' && r3.rows[1].comment === '[此歌已删]' && r3.summary.markedExtra === 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

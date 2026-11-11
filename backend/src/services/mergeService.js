@@ -6,6 +6,7 @@ const ANNOTATION_DIFFERENT_CLIP = '[B 中的片段不同]';
 const ANNOTATION_MULTIPLE_DIFFERENT_CLIPS = '[B 中存在多个不同片段]';
 const ANNOTATION_DELETED = '[此歌已删]';
 const ANNOTATION_CLIP_FROM_B = '[已采用 B 的片段]';
+const ANNOTATION_EXTRA = '[此歌多余]';
 
 const DEFAULT_MERGE_OPTIONS = Object.freeze({
   speed: 'B',
@@ -14,6 +15,9 @@ const DEFAULT_MERGE_OPTIONS = Object.freeze({
   colorTag: 'combine',
   sectionLabel: 'B',
   clipCut: 'A',
+  // A song only A has and a different song only B has, with exactly the same
+  // title: keep this side's, move the other side's to the bottom as [此歌多余].
+  sameTitle: 'A',
   order: 'B',
   // When true (default), differing clips between A and B get an annotation
   // note appended to their comment. Set false to suppress those notes.
@@ -74,16 +78,42 @@ function unionColorTags(a, b) {
  * Compute merge result rows.
  *
  * aClips, bClips: arrays of playlistClip rows from prisma.playlistClip.findMany,
- *   each including clip.{id, songId} (the `clip` field already nests these).
+ *   each including clip.{id, songId, song.title} (the `clip` field already nests these).
  *   Sorted by position asc.
  *
  * Returns: { rows, summary } where
  *   rows is an array of { clipId, speed, pitch, colorTag, comment, sectionLabel },
  *     ready to be written as playlistClip rows in order.
- *   summary is { added, merged, markedDifferent, markedDeleted } for the API response.
+ *   summary is { added, merged, markedDifferent, markedDeleted, markedExtra } for the API response.
  */
 function buildMergeRows(aClips, bClips, options) {
   const opts = normalizeOptions(options);
+
+  // Same-title clash: a title under which A has a song B lacks AND B has a
+  // song A lacks. Only these follow opts.sameTitle; every other case keeps the
+  // rules below. Rows without a title never clash.
+  const titleOf = (pc) => pc.clip.song?.title;
+  const aSongIds = new Set(aClips.map((pc) => pc.clip.songId));
+  const bSongIds = new Set(bClips.map((pc) => pc.clip.songId));
+  const aOnlyTitles = new Set(
+    aClips.filter((pc) => !bSongIds.has(pc.clip.songId)).map(titleOf).filter((t) => t != null)
+  );
+  const clashTitles = new Set(
+    bClips.filter((pc) => !aSongIds.has(pc.clip.songId) && aOnlyTitles.has(titleOf(pc))).map(titleOf)
+  );
+  const inClash = (pc, otherSongIds) => !otherSongIds.has(pc.clip.songId) && clashTitles.has(titleOf(pc));
+  // The side not chosen: kept, but at the very bottom (in either order) and flagged.
+  const extras = [];
+  const asExtra = (pc) => ({
+    clipId: pc.clipId,
+    speed: pc.speed,
+    pitch: pc.pitch,
+    colorTag: pc.colorTag,
+    comment: appendAnnotation(pc.comment, ANNOTATION_EXTRA),
+    sectionLabel: pc.sectionLabel,
+  });
+  const placedTitles = new Set(); // sameTitle 'A': titles whose A clips are already emitted
+
   // Index A by songId -> ordered list of A clips for that song
   const aBySongId = new Map();
   for (const pc of aClips) {
@@ -113,6 +143,31 @@ function buildMergeRows(aClips, bClips, options) {
     const sid = bPc.clip.songId;
     const aMatches = aBySongId.get(sid) || [];
     const aByExactClip = aByClipId.get(bPc.clipId);
+
+    // Same-title clash, A chosen: A's clips of this title take the place of
+    // B's first one, as they are in A; B's go to the bottom.
+    if (opts.sameTitle === 'A' && inClash(bPc, aSongIds)) {
+      const title = titleOf(bPc);
+      if (!placedTitles.has(title)) {
+        placedTitles.add(title);
+        for (const aPc of aClips) {
+          if (!inClash(aPc, bSongIds) || titleOf(aPc) !== title) continue;
+          rows.push({
+            clipId: aPc.clipId,
+            speed: aPc.speed,
+            pitch: aPc.pitch,
+            colorTag: aPc.colorTag,
+            comment: aPc.comment,
+            sectionLabel: aPc.sectionLabel,
+            __src: 'A',
+            __aClipId: aPc.clipId,
+          });
+          consumedA.add(aPc.clipId);
+        }
+      }
+      extras.push(asExtra(bPc));
+      continue;
+    }
 
     // Rule 1: no A clip of this song at all
     if (aMatches.length === 0) {
@@ -211,6 +266,10 @@ function buildMergeRows(aClips, bClips, options) {
   // Rule 5: A clips not consumed -> append at bottom in A's original order
   for (const aPc of aClips) {
     if (consumedA.has(aPc.clipId)) continue;
+    if (inClash(aPc, bSongIds)) {
+      extras.push(asExtra(aPc)); // same-title clash, B chosen: B's took its place
+      continue;
+    }
     rows.push({
       clipId: aPc.clipId,
       speed: aPc.speed,
@@ -251,8 +310,8 @@ function buildMergeRows(aClips, bClips, options) {
   }
 
   return {
-    rows: ordered.map(stripProvenance),
-    summary: { added, merged, markedDifferent, markedDeleted },
+    rows: [...ordered.map(stripProvenance), ...extras],
+    summary: { added, merged, markedDifferent, markedDeleted, markedExtra: extras.length },
   };
 }
 
@@ -289,12 +348,12 @@ async function mergePlaylists(callerId, aId, bId, options) {
     prisma.playlistClip.findMany({
       where: { playlistId: aId },
       orderBy: { position: 'asc' },
-      include: { clip: { select: { id: true, songId: true } } },
+      include: { clip: { select: { id: true, songId: true, song: { select: { title: true } } } } },
     }),
     prisma.playlistClip.findMany({
       where: { playlistId: bId },
       orderBy: { position: 'asc' },
-      include: { clip: { select: { id: true, songId: true } } },
+      include: { clip: { select: { id: true, songId: true, song: { select: { title: true } } } } },
     }),
   ]);
 

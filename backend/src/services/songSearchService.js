@@ -25,10 +25,16 @@ const { T2S, S2T, FOLD } = require('../utils/t2s');
  * (rebuilding if so); until then the old one serves. Nothing checks while
  * nobody searches, so past STALE_MS the search waits for the check instead of
  * answering from a library that may be hours old.
+ *
+ * 2026-11-16: 30 s / 5 min -> 5 min / 10 min. The library changes only when a
+ * script adds or renames songs (about one day in four; the site never does),
+ * so a new or renamed song is searchable within 10 minutes. A deleted song
+ * leaves the results at once (searchRanked re-reads the rows), but until the
+ * next check it still counts in `total` / `libraryTotal`.
  */
 
-const REFRESH_MS = 30 * 1000;
-const STALE_MS = 5 * 60 * 1000;
+const REFRESH_MS = 5 * 60 * 1000;
+const STALE_MS = 10 * 60 * 1000;
 // Building and scanning hand the event loop back every SLICE_MS, so other
 // requests aren't held up behind a search.
 const SLICE_MS = 5;

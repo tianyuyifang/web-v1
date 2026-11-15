@@ -215,9 +215,9 @@ async function aliasOnSite(singerRaw, titleRaw) {
   const siteTitles = await siteTitlesFor(singerRaw, titleRaw);
   if (!siteTitles.length) return { hasAlias: false, found: false, siteTitles };
   // Late: captureService requires this module.
-  const { fetchCandidateSongs } = require('./captureService');
+  const { fetchCandidateSongsFast } = require('./captureService');
   const pool = [];
-  for (const st of siteTitles) pool.push(...await fetchCandidateSongs(st));
+  for (const st of siteTitles) pool.push(...await fetchCandidateSongsFast(st));
   const found = matchSiteTitles({ singer: singerRaw, gameTitle: titleRaw, siteTitles, songs: pool }).length > 0;
   return { hasAlias: true, found, siteTitles };
 }
@@ -233,9 +233,9 @@ const siteExactCache = new Map(); // title -> { exact, at }
 async function siteHasExact(title) {
   const hit = siteExactCache.get(title);
   if (hit && Date.now() - hit.at < SITE_EXACT_TTL_MS) return hit.exact;
-  const { fetchCandidateSongs } = require('./captureService');
+  const { fetchCandidateSongsFast } = require('./captureService');
   const text = `《${title}》`;
-  const exact = matchTitle(text, await fetchCandidateSongs(text)).candidates.some((c) => c.kind === 'exact');
+  const exact = matchTitle(text, await fetchCandidateSongsFast(text)).candidates.some((c) => c.kind === 'exact');
   if (siteExactCache.size >= 5000) siteExactCache.clear();
   siteExactCache.set(title, { exact, at: Date.now() });
   return exact;

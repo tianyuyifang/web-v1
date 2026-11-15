@@ -444,10 +444,20 @@ async function fetchCandidateSongs(rawText) {
  * the SQL's -- is kept in memory; a lookup picks the songs whose key could
  * satisfy the WHERE (never fewer than the SQL would), and the original WHERE,
  * ORDER BY and LIMIT then run on just those. A pattern holding a LIKE
- * wildcard (% _ \) takes the original query. The capture path keeps using
- * fetchCandidateSongs itself; the two queries must stay in step.
+ * wildcard (% _ \) takes the original query. The two queries must stay in
+ * step.
+ *
+ * 2026-11-16: 歌P capture (ingestText) and the 歌手库 checks use it too -- each
+ * 歌P title was a 0.28 s full scan, ~625 of them in a 20-minute evening peak.
+ * Verified identical to fetchCandidateSongs on every title ever captured
+ * (capture_events, platform_tag_events, 网站歌名, 歌手库 titles).
  */
-const KEYS_CHECK_MS = 30 * 1000;
+// How stale the keys may get. The catalogue changes only when a script adds
+// or renames songs (scan-songs-for-databasing, rename-songs) -- about one day
+// in four, never from the site itself -- so 10 minutes, not 30 s: a new song
+// is matched within 10 minutes of its import. A removed song needs no check
+// (the SQL below only returns rows that still exist).
+const KEYS_CHECK_MS = 10 * 60 * 1000;
 // Changes whenever a song is added, removed or renamed (as in songSearchService).
 const KEYS_FINGERPRINT_SQL = `SELECT md5(string_agg(id::text || '|' || title || '|' || coalesce(artist, ''), ',' ORDER BY id)) AS fp
   FROM songs`;
@@ -709,7 +719,7 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
     return { outcome: 'duplicate', eventId: existing.id, rawText: text };
   }
 
-  const songs = await fetchCandidateSongs(text);
+  const songs = await fetchCandidateSongsFast(text);
   const { outcome: matchOutcome, candidates } = matchTitle(text, songs);
 
   // Annotate each candidate with the clips this playlist actually holds.
@@ -743,7 +753,7 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
     siteTitlesSeen = siteTitles;
     if (siteTitles.length) {
       const pool = [];
-      for (const st of siteTitles) pool.push(...await fetchCandidateSongs(st));
+      for (const st of siteTitles) pool.push(...await fetchCandidateSongsFast(st));
       const viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs: pool });
       aliasOnSite = viaAlias.length > 0;
       const aliasClips = await clipsInPlaylist(playlistId, viaAlias.map((c) => c.songId));

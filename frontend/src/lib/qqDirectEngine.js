@@ -507,6 +507,9 @@ function measure(mid, o, s, serverData, serverMs, mode, reprobe = false) {
   const base = {
     mode,
     reprobe,
+    // Which song: lets the server count, per song, whether QQ served it
+    // (services/trackPlayLog). Rides on the report already being sent.
+    mid,
     tier: o.tier,
     vocals: o.vocalsOnly,
     serverMs: serverData?.cached ? null : Math.round(serverMs),
@@ -621,7 +624,9 @@ function unreachable(code) {
  */
 function browserMode(mid, o, s, askServer, ctx) {
   const key = cacheKey(mid, o);
-  const base = { mode: "browser", tier: o.tier, vocals: o.vocalsOnly };
+  // `mid`: which song, so the server can count per song whether QQ served it
+  // (services/trackPlayLog). Rides on the report already being sent.
+  const base = { mode: "browser", mid, tier: o.tier, vocals: o.vocalsOnly };
   if (ctx.prime) base.prime = ctx.prime;
   const gestureBlocked = APPLE_WEBKIT && !ctx.elementHasPlayed;
 

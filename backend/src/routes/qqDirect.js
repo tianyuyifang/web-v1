@@ -11,6 +11,7 @@ const settings = require('../services/settingsService');
 const { getFreshCredential, renewAfterRejection } = require('../services/musicCredentialAccess');
 const stats = require('../services/qqDirectStats');
 const meter = require('../services/outboundMeter');
+const trackPlays = require('../services/trackPlayLog');
 const prisma = require('../db/client');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
 
@@ -110,6 +111,9 @@ router.post('/report', limiter(30), async (req, res, next) => {
   });
   const extra = Math.max(0, Math.min(5, Math.floor(Number(req.body && req.body.calls) || 0)));
   meter.recordUserIp('qq', calls + extra);
+  // Which songs played and which QQ refused, for 「检查唱卡歌曲」. In memory,
+  // never throws; the answer below does not depend on it.
+  trackPlays.fromBrowser(req.body && req.body.samples, req.user.id);
   return res.json({ ok: true });
 });
 

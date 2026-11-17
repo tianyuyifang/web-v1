@@ -91,6 +91,7 @@ model User {
   approvedMappings SongMapping[] @relation("MappingApprover")
   songPrefs        SongPref[]
   gepReports       GepReport[]
+  trackPlays       TrackPlay[]
 
   @@map("users")
   /// 好友标记分享: 我分享出去的 / 分享给我的。
@@ -668,6 +669,41 @@ model SongPref {
   /// primary key serves it directly and no second index is needed.
   @@id([userId, source, externalId])
   @@map("song_prefs")
+}
+
+/// Whether a 唱卡 recording actually played, per singer per day — the evidence
+/// 「检查唱卡歌曲」 reads to find songs a platform has stopped serving.
+///
+/// Written only by services/trackPlayLog.js, which adds up outcomes in memory
+/// and writes them in one statement every few minutes, through raw SQL (so a
+/// deploy works before `prisma generate` has run). Nothing on the site reads
+/// it: it changes no answer and no page.
+///
+/// ok      the platform gave an address (browser or server)
+/// refused it gave none — QQ's per-file 104003 / unavailable, NetEase's
+///         unavailable / needs-login. Whether that was the song or the
+///         account is decided later, by the check: the same singer playing
+///         other songs that day means it was the song.
+/// failed  an address was given and the audio element could not play it
+///
+/// Kept 30 days.
+model TrackPlay {
+  source        SongSource
+  externalId    String     @map("external_id")
+  userId        String     @map("user_id") @db.Uuid
+  day           DateTime   @db.Date
+  ok            Int        @default(0)
+  refused       Int        @default(0)
+  failed        Int        @default(0)
+  lastOkAt      DateTime?  @map("last_ok_at") @db.Timestamptz
+  lastRefusedAt DateTime?  @map("last_refused_at") @db.Timestamptz
+  lastReason    String?    @map("last_reason")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([source, externalId, userId, day])
+  @@index([day])
+  @@map("track_plays")
 }
 
 /// 好友标记分享: A 分享给 B = B 可读 A 的标记歌曲(song_prefs 里有

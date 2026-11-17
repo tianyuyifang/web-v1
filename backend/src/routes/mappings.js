@@ -9,6 +9,7 @@ const netease = require('../services/sources/neteaseLogin');
 const { getFreshCredential, renewAfterRejection } = require('../services/musicCredentialAccess');
 const credentials = require('../services/musicCredentialService');
 const urlCache = require('../services/playbackUrlCache');
+const trackPlays = require('../services/trackPlayLog');
 
 /**
  * Which quality tiers a caller may ask for.
@@ -807,6 +808,8 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
         // the platform answers the same code for one withheld file.
         await credentials.recordCheck(userId, 'qq', { ok: false, error: 'musickey expired' })
           .catch(() => { /* bookkeeping only */ });
+        // Song or account? 「检查唱卡歌曲」 decides from the singer's other plays.
+        trackPlays.note({ userId, source: 'QQ', externalId, outcome: 'refused', reason: 'credential-expired' });
         return res.status(400).json({
           error: {
             message: 'QQ 音乐连接已失效，请到账号页重新扫码连接',
@@ -829,6 +832,11 @@ async function resolvePreview(userId, source, externalId, res, opts = {}) {
       // that hits it: fellBack is relative to what was asked.
       urlCache.set(userId, 'QQ', variantKey, result);
     }
+    // Evidence for 「检查唱卡歌曲」: in memory, never throws, changes nothing here.
+    trackPlays.note({
+      userId, source: 'QQ', externalId,
+      outcome: result?.url ? 'ok' : 'refused', reason: result?.reason || null,
+    });
     return res.json({
       kind: 'external',
       url: result?.url || null,
@@ -917,6 +925,12 @@ async function resolveNeteasePreview(userId, externalId, res, opts = {}) {
   if (result?.url) {
     urlCache.set(userId, 'NETEASE', externalId, result, ttl);
   }
+  // Evidence for 「检查唱卡歌曲」: in memory, never throws, changes nothing here.
+  // A dead cookie returned above and is the account, not the song.
+  trackPlays.note({
+    userId, source: 'NETEASE', externalId,
+    outcome: result?.url ? 'ok' : 'refused', reason: result?.reason || null,
+  });
   return res.json({
     kind: 'external', url: result.url, reason: result.reason,
     // As in the QQ branch: present only on a forced re-resolve.

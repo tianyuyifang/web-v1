@@ -23,6 +23,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import api, { mappingAPI, playlistsAPI } from "@/lib/api";
+import { copySongLines } from "@/lib/utils";
 
 const errorOf = (err, fallback) => err?.response?.data?.error?.message || fallback;
 
@@ -285,6 +286,8 @@ export default function GepSingerPanel() {
   // 重新解析: running, and what the last run cleared.
   const [reresolving, setReresolving] = useState(false);
   const [reresolved, setReresolved] = useState(null);
+  // 复制待处理: "" idle, "busy", "failed", or the count copied (shown 2 s).
+  const [copiedReview, setCopiedReview] = useState("");
   const [singers, setSingers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -408,6 +411,19 @@ export default function GepSingerPanel() {
     }
   };
 
+  // Every 待处理 title with its singer, in the 未配置 tab's "序号 歌名 歌手"
+  // lines (the same copySongLines), whatever the search box holds.
+  const copyReview = async () => {
+    setCopiedReview("busy");
+    let n = -1;
+    try {
+      const res = await mappingAPI.gepReviewSongs();
+      n = await copySongLines((res.data.songs || []).map((s) => ({ title: s.title, artist: s.singer })));
+    } catch { /* n stays -1 */ }
+    setCopiedReview(n < 0 ? "failed" : String(n));
+    setTimeout(() => setCopiedReview(""), 2000);
+  };
+
   const shown = reviewOnly ? songs.filter((s) => s.needsReviewAt) : songs;
 
   return (
@@ -451,6 +467,16 @@ export default function GepSingerPanel() {
           title="上传新歌后点：标成待处理时网站上还没有同名歌、现在有了的，自动去掉"
           className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-fg disabled:opacity-40"
         >{reresolving ? "重新解析中…" : "重新解析"}</button>
+        <button
+          type="button"
+          onClick={copyReview}
+          disabled={copiedReview === "busy"}
+          title="把全部待处理的歌按「序号 歌名 歌手」复制到剪贴板（不受搜索影响）"
+          className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-fg disabled:opacity-40"
+        >{copiedReview === "busy" ? "复制中…"
+          : copiedReview === "failed" ? "复制失败"
+          : copiedReview ? `已复制 ${copiedReview} 首`
+          : "复制待处理"}</button>
       </div>
 
       {reresolved && (

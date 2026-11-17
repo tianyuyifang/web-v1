@@ -665,6 +665,8 @@ export const mappingAPI = {
   removeGepAlias: (id) => api.delete(`/mappings/gep-singers/aliases/${id}`),
   // 重新解析: clear the 待处理 an upload has answered.
   reresolveGep: () => api.post("/mappings/gep-singers/reresolve"),
+  // 复制待处理: every 待处理 title with its singer, whatever the page searches.
+  gepReviewSongs: () => api.get("/mappings/gep-singers/review-songs"),
 };
 
 /**

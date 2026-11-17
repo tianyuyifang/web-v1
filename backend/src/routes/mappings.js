@@ -327,6 +327,18 @@ router.get('/gep-singers/songs', requireMappingEditor, async (req, res, next) =>
 });
 
 /**
+ * GET /api/mappings/gep-singers/review-songs — 复制待处理: every 待处理 title
+ * with its singer, not limited by any search. Read-only.
+ */
+router.get('/gep-singers/review-songs', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await gepSingers.listReviewSongs());
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/mappings/gep-singers/compare?singer=&playlistId= — 对比歌单: this
  * singer's titles that the playlist (own or shared with you) does not have.
  * Read-only.

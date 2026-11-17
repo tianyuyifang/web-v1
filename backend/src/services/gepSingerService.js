@@ -331,6 +331,28 @@ async function listSingers({ query, reviewOnly = false } = {}) {
   return { singers };
 }
 
+/**
+ * 复制待处理: every 待处理 title with its 歌P singer, in the page's order
+ * (singers by pinyin, then each singer's titles by pinyin). All of them,
+ * whatever the page is searching for. Read-only.
+ */
+async function listReviewSongs() {
+  const rows = await prisma.gepSingerSong.findMany({
+    where: { needsReviewAt: { not: null } },
+    select: { singer: true, title: true },
+  });
+  const bySinger = new Map();
+  for (const r of rows) {
+    if (!bySinger.has(r.singer)) bySinger.set(r.singer, []);
+    bySinger.get(r.singer).push(r.title);
+  }
+  const songs = [];
+  for (const singer of sortByPinyin([...bySinger.keys()], (s) => s)) {
+    for (const title of sortByPinyin(bySinger.get(singer), (t) => t)) songs.push({ singer, title });
+  }
+  return { songs };
+}
+
 /** One singer's songs, each with its site titles. */
 async function listSongs(singerRaw) {
   const singer = cleanSinger(singerRaw);
@@ -555,6 +577,6 @@ async function runReresolve() {
 module.exports = {
   note, siteTitlesFor, matchSiteTitles, creditsSinger, cleanTitle, cleanSinger,
   aliasAutoOk, noteReview, aliasOnSite, reviewAgainstSite,
-  listSingers, listSongs, addSong, deleteSong, addAlias, deleteAlias, clearReview,
+  listSingers, listSongs, listReviewSongs, addSong, deleteSong, addAlias, deleteAlias, clearReview,
   comparePlaylist, reresolveReview,
 };

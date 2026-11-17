@@ -746,8 +746,12 @@ async function rematchPass(userId, ref) {
     const singer = Array.isArray(row.candidates) && row.candidates[0] && typeof row.candidates[0].singer === 'string'
       ? row.candidates[0].singer : null;
     let updated;
+    // Declared out here: the auto-retry below reads it after the try. Inside,
+    // that read threw "decided is not defined" whenever a rematched like
+    // needed a retry, leaving it unretried and the rest of the pass unread.
+    let decided;
     try {
-      const decided = await decide({
+      decided = await decide({
         userId, platform, text: row.rawText, songs: hit.songs, liked: hit.liked, singer, session,
       });
       updated = await prisma.platformTagEvent.update({

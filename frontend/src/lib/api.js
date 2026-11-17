@@ -663,6 +663,8 @@ export const mappingAPI = {
   removeGepSong: (id) => api.delete(`/mappings/gep-singers/songs/${id}`),
   addGepAlias: (songId, siteTitle) => api.post(`/mappings/gep-singers/songs/${songId}/aliases`, { siteTitle }),
   removeGepAlias: (id) => api.delete(`/mappings/gep-singers/aliases/${id}`),
+  // 重新解析: clear the 待处理 an upload has answered.
+  reresolveGep: () => api.post("/mappings/gep-singers/reresolve"),
 };
 
 /**

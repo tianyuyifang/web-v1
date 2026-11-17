@@ -1141,6 +1141,12 @@ model GepSingerSong {
   /// editor can fix by adding one. Null: nothing to do. Cleared by adding a
   /// 网站歌名 or by 已处理; set again by the next such capture.
   needsReviewAt DateTime? @map("needs_review_at") @db.Timestamptz
+  /// 待处理 since (2026-11-17): when the current 待处理 began -- needsReviewAt
+  /// moves on with every capture, this does not. 重新解析 clears a title when
+  /// the catalogue now holds a song of that exact name that was uploaded
+  /// after this (the title was flagged because the site had none). Written
+  /// by raw SQL in gepSingerService.noteReview, so it needs no client regen.
+  reviewSince   DateTime? @map("review_since") @db.Timestamptz
   /// 最近出现 (2026-11-08): the last time play showed this pair, kept to the
   /// day (written at most once per pair per Beijing day). Null: not seen in
   /// play since it was added -- including every pair from before this column.

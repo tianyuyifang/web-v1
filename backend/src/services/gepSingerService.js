@@ -182,19 +182,31 @@ function noteReview(singerRaw, titleRaw, { evenWithAlias = false, seenAliases = 
   // (evenWithAlias): those are wrong, and are what 待处理 is for. Even then
   // only over the ones it read (seenAliases): a 网站歌名 added since may well
   // be the right one.
-  const mark = () => prisma.gepSingerSong.updateMany({
-    where: evenWithAlias
-      ? { singer, title, aliases: { every: { siteTitle: { in: seenAliases.map(String) } } } }
-      : { singer, title, aliases: { none: {} } },
-    data: { needsReviewAt: now },
-  });
+  //
+  // review_since keeps when this 待处理 began (重新解析 compares uploads with
+  // it); needs_review_at moves on with every mark, as before. Raw SQL so the
+  // column needs no regenerated Prisma client. The alias conditions are the
+  // former Prisma filters: `every siteTitle in seen` = no alias outside seen,
+  // `none` = no alias at all.
+  const aliasCond = evenWithAlias
+    ? 'NOT EXISTS (SELECT 1 FROM gep_song_aliases a WHERE a.singer_song_id = s.id AND NOT (a.site_title = ANY($4::text[])))'
+    : 'NOT EXISTS (SELECT 1 FROM gep_song_aliases a WHERE a.singer_song_id = s.id)';
+  const mark = () => prisma.$executeRawUnsafe(
+    `UPDATE gep_singer_songs s
+        SET review_since = CASE WHEN s.needs_review_at IS NULL THEN $3::timestamptz
+                                ELSE COALESCE(s.review_since, s.needs_review_at) END,
+            needs_review_at = $3::timestamptz
+      WHERE s.singer = $1 AND s.title = $2 AND ${aliasCond}`,
+    singer, title, now.toISOString(), ...(evenWithAlias ? [seenAliases.map(String)] : [])
+  );
   try {
     (async () => {
-      const { count } = await mark();
+      const count = await mark();
       if (count) return;
       // No row to mark (or it has a 网站歌名): make one only if none exists.
       try {
-        await prisma.gepSingerSong.create({ data: { singer, title, source: 'game', needsReviewAt: now } });
+        const row = await prisma.gepSingerSong.create({ data: { singer, title, source: 'game', needsReviewAt: now } });
+        await prisma.$executeRawUnsafe('UPDATE gep_singer_songs SET review_since = needs_review_at WHERE id = $1::uuid', row.id);
       } catch (err) {
         // There is a row -- with a 网站歌名, or made by note() just now.
         if (err.code !== 'P2002') throw err;
@@ -463,9 +475,63 @@ async function comparePlaylist(singerRaw, playlistIdRaw, userId) {
   return { singer, playlist, total: songs.length, missing };
 }
 
+/**
+ * 重新解析: after songs were uploaded, clear the 待处理 they answer.
+ *
+ * A title is cleared when the catalogue now holds a song of exactly its name
+ * -- exactly as 歌P's own auto-like means it (matchTitle 'exact': 《》, spaces,
+ * case and a "- Live" tail do not count; width and bracket text do) -- and
+ * every such song was uploaded after this 待处理 began (review_since). One
+ * that was already there means the title was flagged for another reason (the
+ * playlist holds only a near-named version), which an upload does not fix.
+ * Nothing else is touched: no 网站歌名, no capture, no report.
+ *
+ * The catalogue is read now (not at the next hourly check) and the 6-hour
+ * same-name answers are dropped, so a song uploaded a minute ago counts and
+ * QQ打标 does not mark it again from a stale "none". One title at a time; one
+ * run at a time -- a second click while it runs gets the same answer.
+ */
+let reresolving = null;
+function reresolveReview() {
+  if (!reresolving) reresolving = runReresolve().finally(() => { reresolving = null; });
+  return reresolving;
+}
+
+async function runReresolve() {
+  // Late: captureService requires this module.
+  const { fetchCandidateSongsFast, refreshCatalogue } = require('./captureService');
+  await refreshCatalogue();
+  siteExactCache.clear();
+
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT id, singer, title, needs_review_at, COALESCE(review_since, needs_review_at) AS since
+       FROM gep_singer_songs WHERE needs_review_at IS NOT NULL ORDER BY singer, title`
+  );
+  const cleared = [];
+  for (const r of rows) {
+    const text = `《${r.title}》`;
+    const exact = matchTitle(text, await fetchCandidateSongsFast(text)).candidates.filter((c) => c.kind === 'exact');
+    if (!exact.length) continue;
+    const [age] = await prisma.$queryRawUnsafe(
+      `SELECT count(*)::int AS n, count(*) FILTER (WHERE created_at <= $2)::int AS before
+         FROM songs WHERE id = ANY($1::uuid[])`,
+      exact.map((c) => String(c.songId)), r.since
+    );
+    if (!age.n || age.before > 0) continue;
+    // Only if it was not marked again meanwhile: a newer mark is the newer answer.
+    const n = await prisma.$executeRawUnsafe(
+      'UPDATE gep_singer_songs SET needs_review_at = NULL WHERE id = $1::uuid AND needs_review_at = $2',
+      r.id, r.needs_review_at
+    );
+    if (n) cleared.push({ singer: r.singer, title: r.title });
+  }
+  const remaining = await prisma.gepSingerSong.count({ where: { needsReviewAt: { not: null } } });
+  return { checked: rows.length, cleared, remaining };
+}
+
 module.exports = {
   note, siteTitlesFor, matchSiteTitles, creditsSinger, cleanTitle, cleanSinger,
   aliasAutoOk, noteReview, aliasOnSite, reviewAgainstSite,
   listSingers, listSongs, addSong, deleteSong, addAlias, deleteAlias, clearReview,
-  comparePlaylist,
+  comparePlaylist, reresolveReview,
 };

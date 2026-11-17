@@ -282,6 +282,9 @@ export default function GepSingerPanel() {
   const [submitted, setSubmitted] = useState("");
   // 只看待处理: singers with something to do, and only those songs.
   const [reviewOnly, setReviewOnly] = useState(false);
+  // 重新解析: running, and what the last run cleared.
+  const [reresolving, setReresolving] = useState(false);
+  const [reresolved, setReresolved] = useState(null);
   const [singers, setSingers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -387,6 +390,24 @@ export default function GepSingerPanel() {
     }
   };
 
+  // After an upload: the server clears the 待处理 the new songs answer; the
+  // lists are then read again rather than patched here.
+  const reresolve = async () => {
+    setReresolving(true);
+    setError("");
+    setReresolved(null);
+    try {
+      const res = await mappingAPI.reresolveGep();
+      setReresolved(res.data);
+      loadSingers(submitted, reviewOnly);
+      if (selected) open(selected, { quiet: true });
+    } catch (err) {
+      setError(errorOf(err, "重新解析失败"));
+    } finally {
+      setReresolving(false);
+    }
+  };
+
   const shown = reviewOnly ? songs.filter((s) => s.needsReviewAt) : songs;
 
   return (
@@ -397,6 +418,7 @@ export default function GepSingerPanel() {
         以后这首歌在歌单 / QQ 歌单里对不上时会按网站歌名去找：找到唯一一首、且是这位歌手的，自动打标；否则放进「待确认」由用户自己点。
         「待处理」= 歌P 里抓到这首歌时对不上：歌单页是歌单里没有完全一致的歌名，QQ打标是网站上没有同名的歌。
         加上网站上找得到的网站歌名就不再标；加了但网站上找不到的，仍会再标。
+        上传新歌后点「重新解析」：标成待处理时网站上还没有同名歌、现在有了的，自动去掉。
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -422,7 +444,22 @@ export default function GepSingerPanel() {
           <input type="checkbox" checked={reviewOnly} onChange={(e) => setReviewOnly(e.target.checked)} />
           只看待处理
         </label>
+        <button
+          type="button"
+          onClick={reresolve}
+          disabled={reresolving}
+          title="上传新歌后点：标成待处理时网站上还没有同名歌、现在有了的，自动去掉"
+          className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-fg disabled:opacity-40"
+        >{reresolving ? "重新解析中…" : "重新解析"}</button>
       </div>
+
+      {reresolved && (
+        <p className="mb-3 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-muted">
+          重新解析：去掉 {reresolved.cleared.length} 首
+          {reresolved.cleared.length > 0 && `（${reresolved.cleared.slice(0, 30).map((c) => `${c.singer}《${c.title}》`).join("、")}${reresolved.cleared.length > 30 ? " 等" : ""}）`}
+          ，还剩 {reresolved.remaining} 首待处理。
+        </p>
+      )}
 
       <form onSubmit={addSong} className="mb-4 flex flex-wrap gap-2 rounded-lg border border-border bg-surface p-3">
         <span className="w-full text-xs text-muted">手动添加一首</span>

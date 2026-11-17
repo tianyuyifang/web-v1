@@ -1792,6 +1792,8 @@ module.exports = {
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
   // 歌P战报 looks a corrected title up the same way a capture is.
   fetchCandidateSongs, fetchCandidateSongsFast, fetchSongsBySiteTitle,
+  // 歌P 审核「重新解析」: read the catalogue now rather than at the next hourly check.
+  refreshCatalogue: refreshTitleKeys,
   // The route drops "aimed at nothing" before the service sees it, and that
   // drop needs saying out loud just as much as the ones in here.
   logNoTarget,

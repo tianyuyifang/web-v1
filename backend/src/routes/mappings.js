@@ -386,6 +386,18 @@ router.post('/gep-singers/songs/:id/reviewed', requireMappingEditor, async (req,
   }
 });
 
+/**
+ * POST /api/mappings/gep-singers/reresolve — 重新解析: after an upload, clear
+ * the 待处理 whose song the catalogue now holds (see gepSingerService).
+ */
+router.post('/gep-singers/reresolve', requireMappingEditor, async (req, res, next) => {
+  try {
+    res.json(await gepSingers.reresolveReview());
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** DELETE /api/mappings/gep-singers/aliases/:id */
 router.delete('/gep-singers/aliases/:id', requireMappingEditor, async (req, res, next) => {
   try {

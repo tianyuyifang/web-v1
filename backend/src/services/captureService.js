@@ -452,18 +452,22 @@ async function fetchCandidateSongs(rawText) {
  * Verified identical to fetchCandidateSongs on every title ever captured
  * (capture_events, platform_tag_events, 网站歌名, 歌手库 titles).
  */
-// How stale the keys may get. The catalogue changes only when a script adds
-// or renames songs (scan-songs-for-databasing, rename-songs) -- about one day
-// in four, never from the site itself -- so 10 minutes, not 30 s: a new song
-// is matched within 10 minutes of its import. A removed song needs no check
-// (the SQL below only returns rows that still exist).
-const KEYS_CHECK_MS = 10 * 60 * 1000;
+// How often a timer checks, in the background, whether the catalogue changed.
+// It changes only when a script adds or renames songs (scan-songs-for-
+// databasing, rename-songs) -- every few days, never from the site itself --
+// so a new song is matched within an hour of its import. A lookup never waits
+// for the check (2026-11-17: before, the first lookup after 10 quiet minutes
+// waited for this md5 over the whole catalogue, 3.3 s on average in
+// production). A removed song needs no check (the SQL below only returns rows
+// that still exist).
+const KEYS_CHECK_MS = 60 * 60 * 1000;
 // Changes whenever a song is added, removed or renamed (as in songSearchService).
 const KEYS_FINGERPRINT_SQL = `SELECT md5(string_agg(id::text || '|' || title || '|' || coalesce(artist, ''), ',' ORDER BY id)) AS fp
   FROM songs`;
 const LIKE_WILDCARD = /[%_\\]/;
 let titleKeys = null; // { rows: [{ id, key, wild }], fp, checkedAt }
 let titleKeysLoading = null;
+let titleKeysTimer = null;
 
 async function loadTitleKeys() {
   const [{ fp }] = await prisma.$queryRawUnsafe(KEYS_FINGERPRINT_SQL);
@@ -477,16 +481,29 @@ async function loadTitleKeys() {
   };
 }
 
-// At most KEYS_CHECK_MS old: a song imported or renamed since is found
-// within that.
-async function currentTitleKeys() {
-  if (titleKeys && Date.now() - titleKeys.checkedAt < KEYS_CHECK_MS) return titleKeys;
+function refreshTitleKeys() {
   if (!titleKeysLoading) {
     titleKeysLoading = loadTitleKeys()
-      .then((k) => { titleKeys = k; return k; })
+      .then((k) => { titleKeys = k; startTitleKeysTimer(); return k; })
       .finally(() => { titleKeysLoading = null; });
   }
   return titleKeysLoading;
+}
+
+/** The hourly check, from the first load on. unref: it never keeps a script alive. */
+function startTitleKeysTimer() {
+  if (titleKeysTimer) return;
+  titleKeysTimer = setInterval(() => {
+    refreshTitleKeys().catch((err) => console.warn('[fast-lookup] hourly catalogue check failed:', err.message));
+  }, KEYS_CHECK_MS);
+  if (titleKeysTimer.unref) titleKeysTimer.unref();
+}
+
+// Loaded on the first lookup, which waits for it; after that a lookup is
+// answered at once from what is in memory, at most KEYS_CHECK_MS old.
+async function currentTitleKeys() {
+  if (titleKeys) return titleKeys;
+  return refreshTitleKeys();
 }
 
 async function fetchCandidateSongsFast(rawText) {

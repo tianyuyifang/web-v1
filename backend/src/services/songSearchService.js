@@ -20,21 +20,24 @@ const { T2S, S2T, FOLD } = require('../utils/t2s');
  * reading before a rare reading, then title start / title / artist, then
  * songs put in playlists more often first.
  *
- * Imports and renames run in other processes, so once the index is older than
- * REFRESH_MS a search checks in the background whether the library changed
- * (rebuilding if so); until then the old one serves. Nothing checks while
- * nobody searches, so past STALE_MS the search waits for the check instead of
- * answering from a library that may be hours old.
+ * Imports and renames run in other processes, so a timer checks every
+ * REFRESH_MS, in the background, whether the library changed (rebuilding if
+ * so). A search never waits for that check: it is answered from the index in
+ * memory, whatever its age. The index is built when the backend starts, and
+ * the timer starts with it.
  *
- * 2026-11-16: 30 s / 5 min -> 5 min / 10 min. The library changes only when a
- * script adds or renames songs (about one day in four; the site never does),
- * so a new or renamed song is searchable within 10 minutes. A deleted song
- * leaves the results at once (searchRanked re-reads the rows), but until the
- * next check it still counts in `total` / `libraryTotal`.
+ * 2026-11-17: hourly, on a timer. Before, a search that came after 10 quiet
+ * minutes waited for the check -- an md5 over the whole library that measured
+ * 3.3 s on average in production -- so the first searches after every lull
+ * took 3-6 s (77 of 1157 searches over 1 s on 11/16-17). The library changes
+ * only when a script adds or renames songs (every few days; the site never
+ * does), so a new or renamed song is searchable within an hour. A deleted
+ * song leaves the results at once (searchRanked re-reads the rows), but until
+ * the next check it still counts in `total` / `libraryTotal`.
  */
 
-const REFRESH_MS = 5 * 60 * 1000;
-const STALE_MS = 10 * 60 * 1000;
+const REFRESH_MS = 60 * 60 * 1000;
+let refreshTimer = null;
 // Building and scanning hand the event loop back every SLICE_MS, so other
 // requests aren't held up behind a search.
 const SLICE_MS = 5;
@@ -305,18 +308,24 @@ async function build() {
 function rebuild() {
   if (!building) {
     building = build()
-      .then((idx) => { index = idx; return idx; })
+      .then((idx) => { index = idx; startRefreshTimer(); return idx; })
       .catch((err) => { console.error('[song-search] refreshing the index failed:', err.message); throw err; })
       .finally(() => { building = null; });
   }
   return building;
 }
 
+/** The hourly check, from the first index on. unref: it never keeps a script alive. */
+function startRefreshTimer() {
+  if (refreshTimer) return;
+  refreshTimer = setInterval(() => { rebuild().catch(() => {}); }, REFRESH_MS); // logged in rebuild
+  if (refreshTimer.unref) refreshTimer.unref();
+}
+
 async function getIndex() {
+  // Only the very first search (no index yet, e.g. the startup build failed)
+  // waits; every other one is answered at once.
   if (!index) return rebuild();
-  const age = Date.now() - index.builtAt;
-  if (age > STALE_MS) return rebuild().catch(() => index); // the old one only if the check itself fails
-  if (age > REFRESH_MS) rebuild().catch(() => {}); // serve the old one meanwhile
   return index;
 }
 

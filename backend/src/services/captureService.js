@@ -474,27 +474,34 @@ async function loadTitleKeys() {
   if (titleKeys && titleKeys.fp === fp) return { ...titleKeys, checkedAt: Date.now() };
   const col = `lower(translate(regexp_replace(title, '[[:space:]《》]', '', 'g'), $1, $2))`;
   const rows = await prisma.$queryRawUnsafe(`SELECT id, title, ${col} AS key FROM songs`, FOLD_FROM, FOLD_TO);
-  const byName = new Map(); // siteNameKey -> [id], for 网站歌名 lookups
+  // Built in slices, handing the event loop back every KEYS_SLICE_MS: the
+  // old index keeps answering meanwhile (titleKeys is swapped only when this
+  // returns), and ~27k rows in one go held other requests ~130 ms on the VM.
+  const byName = new Map(); // siteNameKey -> [id]
+  const keyed = [];
+  let sliceStart = Date.now();
   for (const r of rows) {
+    if (Date.now() - sliceStart >= KEYS_SLICE_MS) {
+      await new Promise((ok) => setImmediate(ok));
+      sliceStart = Date.now();
+    }
+    keyed.push({ id: r.id, key: r.key || '', wild: LIKE_WILDCARD.test(r.key || '') });
     const k = siteNameKey(r.title);
     if (!k) continue;
     if (!byName.has(k)) byName.set(k, []);
     byName.get(k).push(r.id);
   }
-  return {
-    rows: rows.map((r) => ({ id: r.id, key: r.key || '', wild: LIKE_WILDCARD.test(r.key || '') })),
-    byName,
-    fp,
-    checkedAt: Date.now(),
-  };
+  return { rows: keyed, byName, fp, checkedAt: Date.now() };
 }
+const KEYS_SLICE_MS = 5;
 
 /**
  * A title as captureMatchService's normTitleStrict has it: what an 'exact'
  * match requires to be equal (NFC, 《》 and a "- Live" tail gone, every kind
  * of whitespace gone, case folded; brackets kept). Copied rather than
  * imported: captureMatchService is not to be changed, and it does not export
- * this. Kept in step by a test over the whole catalogue.
+ * this. Kept in step by tests/same-name-key-test.js (compares the two
+ * function bodies, then looks every library name up as the game shows it).
  */
 function siteNameKey(s) {
   return String(s == null ? '' : s)
@@ -507,20 +514,23 @@ function siteNameKey(s) {
 }
 
 /**
- * Songs for a 网站歌名 (歌手库): the usual candidates, plus every song whose
- * name is the 网站歌名 exactly (siteNameKey).
+ * The usual candidates for a title, plus every song whose name is that title
+ * exactly (siteNameKey) -- for every lookup that asks "is there a song of
+ * exactly this name": 歌P step 1 and the 网站歌名 (歌手库) step, 歌P战报,
+ * siteHasExact and 重新解析.
  *
- * The usual prefilter was built for game titles. It compares from the start
- * after brackets are dropped from the searched name but not from the
- * catalogue's, and its SQL keeps a no-break space and NFD accents that the
- * matcher treats as equal -- so a 网站歌名 written as the site writes it,
- * "【插曲】意难平", "(V)ision", "马拉桑 (干净版) cruiser广告歌曲", never reached
- * the matcher (15 of 519 on 2026-11-17). Only adds songs; matchSiteTitles
- * still decides, by the same rule as before. Game titles do not come here.
+ * The prefilter compares from the start after brackets are dropped from the
+ * searched name but not from the catalogue's, keeps only its 30 shortest
+ * hits, and its SQL keeps a no-break space and NFD accents that the matcher
+ * treats as equal. So a song named "【插曲】意难平", "(V)ision", "马拉桑 (干净版)
+ * cruiser广告歌曲", "你（正式版）" or "Chéri" never reached the matcher, even
+ * for a title written exactly like it (29 of 24513 names on 2026-11-17; and
+ * 15 of 519 网站歌名). Only adds songs, and only songs of exactly that name;
+ * the matcher decides by the same rule as before.
  */
-async function fetchSongsBySiteTitle(siteTitle) {
-  const base = await fetchCandidateSongsFast(siteTitle);
-  const k = siteNameKey(siteTitle);
+async function fetchCandidatesWithSameName(title) {
+  const base = await fetchCandidateSongsFast(title);
+  const k = siteNameKey(title);
   if (!k) return base;
   const { byName } = await currentTitleKeys();
   const have = new Set(base.map((r) => String(r.id)));
@@ -785,7 +795,7 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
     return { outcome: 'duplicate', eventId: existing.id, rawText: text };
   }
 
-  const songs = await fetchCandidateSongsFast(text);
+  const songs = await fetchCandidatesWithSameName(text);
   const { outcome: matchOutcome, candidates } = matchTitle(text, songs);
 
   // Annotate each candidate with the clips this playlist actually holds.
@@ -819,7 +829,7 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
     siteTitlesSeen = siteTitles;
     if (siteTitles.length) {
       const pool = [];
-      for (const st of siteTitles) pool.push(...await fetchSongsBySiteTitle(st));
+      for (const st of siteTitles) pool.push(...await fetchCandidatesWithSameName(st));
       const viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs: pool });
       aliasOnSite = viaAlias.length > 0;
       const aliasClips = await clipsInPlaylist(playlistId, viaAlias.map((c) => c.songId));
@@ -1791,7 +1801,7 @@ module.exports = {
   connect, setTarget, getConnection,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
   // 歌P战报 looks a corrected title up the same way a capture is.
-  fetchCandidateSongs, fetchCandidateSongsFast, fetchSongsBySiteTitle,
+  fetchCandidateSongs, fetchCandidateSongsFast, fetchCandidatesWithSameName,
   // 歌P 审核「重新解析」: read the catalogue now rather than at the next hourly check.
   refreshCatalogue: refreshTitleKeys,
   // Which catalogue the index holds (null before the first load), so answers

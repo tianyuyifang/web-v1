@@ -227,9 +227,9 @@ async function aliasOnSite(singerRaw, titleRaw) {
   const siteTitles = await siteTitlesFor(singerRaw, titleRaw);
   if (!siteTitles.length) return { hasAlias: false, found: false, siteTitles };
   // Late: captureService requires this module.
-  const { fetchSongsBySiteTitle } = require('./captureService');
+  const { fetchCandidatesWithSameName } = require('./captureService');
   const pool = [];
-  for (const st of siteTitles) pool.push(...await fetchSongsBySiteTitle(st));
+  for (const st of siteTitles) pool.push(...await fetchCandidatesWithSameName(st));
   const found = matchSiteTitles({ singer: singerRaw, gameTitle: titleRaw, siteTitles, songs: pool }).length > 0;
   return { hasAlias: true, found, siteTitles };
 }
@@ -243,16 +243,19 @@ async function aliasOnSite(singerRaw, titleRaw) {
 const SITE_EXACT_TTL_MS = 6 * 60 * 60 * 1000;
 const siteExactCache = new Map(); // title -> { exact, at, fp }
 async function siteHasExact(title) {
-  const { fetchCandidateSongsFast, catalogueFingerprint } = require('./captureService');
+  const { fetchCandidatesWithSameName, catalogueFingerprint } = require('./captureService');
   // Only for the catalogue it was worked out on (2026-11-17): an upload
   // changes the fingerprint at the hourly check, and a "no such song" from
   // before it must not keep marking the title 待处理 for up to 6 more hours.
+  // Read before the lookup: an index swapped in while it awaits must not
+  // label an answer worked out on the old one.
+  const fp = catalogueFingerprint();
   const hit = siteExactCache.get(title);
-  if (hit && hit.fp === catalogueFingerprint() && Date.now() - hit.at < SITE_EXACT_TTL_MS) return hit.exact;
+  if (hit && hit.fp === fp && Date.now() - hit.at < SITE_EXACT_TTL_MS) return hit.exact;
   const text = `《${title}》`;
-  const exact = matchTitle(text, await fetchCandidateSongsFast(text)).candidates.some((c) => c.kind === 'exact');
+  const exact = matchTitle(text, await fetchCandidatesWithSameName(text)).candidates.some((c) => c.kind === 'exact');
   if (siteExactCache.size >= 5000) siteExactCache.clear();
-  siteExactCache.set(title, { exact, at: Date.now(), fp: catalogueFingerprint() });
+  siteExactCache.set(title, { exact, at: Date.now(), fp });
   return exact;
 }
 
@@ -513,7 +516,7 @@ function reresolveReview() {
 
 async function runReresolve() {
   // Late: captureService requires this module.
-  const { fetchCandidateSongsFast, refreshCatalogue } = require('./captureService');
+  const { fetchCandidatesWithSameName, refreshCatalogue } = require('./captureService');
   await refreshCatalogue();
   siteExactCache.clear();
 
@@ -524,7 +527,7 @@ async function runReresolve() {
   const cleared = [];
   for (const r of rows) {
     const text = `《${r.title}》`;
-    const exact = matchTitle(text, await fetchCandidateSongsFast(text)).candidates.filter((c) => c.kind === 'exact');
+    const exact = matchTitle(text, await fetchCandidatesWithSameName(text)).candidates.filter((c) => c.kind === 'exact');
     if (!exact.length) continue;
     // "Already there when flagged" counts only songs uploaded SEEN_LAG_MS
     // before the flag: the 歌P index sees an upload at its next hourly check,

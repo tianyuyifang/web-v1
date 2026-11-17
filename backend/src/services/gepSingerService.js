@@ -241,15 +241,18 @@ async function aliasOnSite(singerRaw, titleRaw) {
  * mark's judgement, it never causes a wrong like.
  */
 const SITE_EXACT_TTL_MS = 6 * 60 * 60 * 1000;
-const siteExactCache = new Map(); // title -> { exact, at }
+const siteExactCache = new Map(); // title -> { exact, at, fp }
 async function siteHasExact(title) {
+  const { fetchCandidateSongsFast, catalogueFingerprint } = require('./captureService');
+  // Only for the catalogue it was worked out on (2026-11-17): an upload
+  // changes the fingerprint at the hourly check, and a "no such song" from
+  // before it must not keep marking the title 待处理 for up to 6 more hours.
   const hit = siteExactCache.get(title);
-  if (hit && Date.now() - hit.at < SITE_EXACT_TTL_MS) return hit.exact;
-  const { fetchCandidateSongsFast } = require('./captureService');
+  if (hit && hit.fp === catalogueFingerprint() && Date.now() - hit.at < SITE_EXACT_TTL_MS) return hit.exact;
   const text = `《${title}》`;
   const exact = matchTitle(text, await fetchCandidateSongsFast(text)).candidates.some((c) => c.kind === 'exact');
   if (siteExactCache.size >= 5000) siteExactCache.clear();
-  siteExactCache.set(title, { exact, at: Date.now() });
+  siteExactCache.set(title, { exact, at: Date.now(), fp: catalogueFingerprint() });
   return exact;
 }
 
@@ -481,7 +484,8 @@ async function comparePlaylist(singerRaw, playlistIdRaw, userId) {
  * A title is cleared when the catalogue now holds a song of exactly its name
  * -- exactly as 歌P's own auto-like means it (matchTitle 'exact': 《》, spaces,
  * case and a "- Live" tail do not count; width and bracket text do) -- and
- * every such song was uploaded after this 待处理 began (review_since). One
+ * every such song was uploaded after this 待处理 began (review_since, less
+ * the hour the 歌P index may take to see an upload -- SEEN_LAG_MS). One
  * that was already there means the title was flagged for another reason (the
  * playlist holds only a near-named version), which an upload does not fix.
  * Nothing else is touched: no 网站歌名, no capture, no report.
@@ -491,9 +495,19 @@ async function comparePlaylist(singerRaw, playlistIdRaw, userId) {
  * QQ打标 does not mark it again from a stale "none". One title at a time; one
  * run at a time -- a second click while it runs gets the same answer.
  */
+// The hourly catalogue check (captureService KEYS_CHECK_MS) plus a margin.
+const SEEN_LAG_MS = 65 * 60 * 1000;
 let reresolving = null;
+// A click within this long of the last run gets that run's answer: each run
+// re-reads the catalogue (an md5 over every song) and walks every 待处理.
+const RERESOLVE_COOLDOWN_MS = 30 * 1000;
+let lastReresolve = null; // { at, result }
 function reresolveReview() {
-  if (!reresolving) reresolving = runReresolve().finally(() => { reresolving = null; });
+  if (reresolving) return reresolving;
+  if (lastReresolve && Date.now() - lastReresolve.at < RERESOLVE_COOLDOWN_MS) return Promise.resolve(lastReresolve.result);
+  reresolving = runReresolve()
+    .then((result) => { lastReresolve = { at: Date.now(), result }; return result; })
+    .finally(() => { reresolving = null; });
   return reresolving;
 }
 
@@ -512,10 +526,16 @@ async function runReresolve() {
     const text = `《${r.title}》`;
     const exact = matchTitle(text, await fetchCandidateSongsFast(text)).candidates.filter((c) => c.kind === 'exact');
     if (!exact.length) continue;
+    // "Already there when flagged" counts only songs uploaded SEEN_LAG_MS
+    // before the flag: the 歌P index sees an upload at its next hourly check,
+    // so a title flagged in that hour was flagged because the song could not
+    // yet be seen -- the case 重新解析 is for. (A title flagged then for the
+    // other reason, a near-named version in the playlist, and cleared here by
+    // this, is flagged again by its next capture.)
     const [age] = await prisma.$queryRawUnsafe(
       `SELECT count(*)::int AS n, count(*) FILTER (WHERE created_at <= $2)::int AS before
          FROM songs WHERE id = ANY($1::uuid[])`,
-      exact.map((c) => String(c.songId)), r.since
+      exact.map((c) => String(c.songId)), new Date(new Date(r.since).getTime() - SEEN_LAG_MS)
     );
     if (!age.n || age.before > 0) continue;
     // Only if it was not marked again meanwhile: a newer mark is the newer answer.

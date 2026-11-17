@@ -1794,6 +1794,9 @@ module.exports = {
   fetchCandidateSongs, fetchCandidateSongsFast, fetchSongsBySiteTitle,
   // 歌P 审核「重新解析」: read the catalogue now rather than at the next hourly check.
   refreshCatalogue: refreshTitleKeys,
+  // Which catalogue the index holds (null before the first load), so answers
+  // cached elsewhere can be dropped when it changes (gepSingerService.siteHasExact).
+  catalogueFingerprint: () => (titleKeys ? titleKeys.fp : null),
   // The route drops "aimed at nothing" before the service sees it, and that
   // drop needs saying out loud just as much as the ones in here.
   logNoTarget,

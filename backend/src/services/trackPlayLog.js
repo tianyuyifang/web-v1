@@ -86,14 +86,22 @@ function fromBrowser(samples, userId) {
     if (!Array.isArray(samples)) return;
     for (const s of samples.slice(0, 20)) {
       if (!s || typeof s !== 'object' || typeof s.mid !== 'string') continue;
+      // Browser mode only. In shadow (测速) mode the server's URL is what
+      // plays and resolvePreview has already counted it; the browser's probe
+      // beside it would count the same play twice, and its own possibly stale
+      // key can be refused while the song plays fine.
+      if (s.mode !== 'browser') continue;
       const base = { userId, source: 'QQ', externalId: s.mid };
       if (s.playFailed === true) {
         // Only the player's own error: "notallowed" is Apple's autoplay rule
         // and "timeout" can be the network.
         if (s.failKind === 'error') note({ ...base, outcome: 'failed' });
-      } else if (s.directReason === 'ok') {
+      } else if (s.winner === 'direct') {
+        // What finally happened, not QQ's first answer: a key that had just
+        // died is renewed and QQ asked again, but directReason keeps the first
+        // "credential-expired" -- with winner "direct", that song played.
         note({ ...base, outcome: 'ok' });
-      } else if (s.directReason === 'credential-expired' || s.directReason === 'unavailable') {
+      } else if (s.winner === 'none' && (s.directReason === 'credential-expired' || s.directReason === 'unavailable')) {
         note({ ...base, outcome: 'refused', reason: s.directReason });
       }
     }
@@ -132,13 +140,18 @@ async function flush() {
       col((r) => (r.lastRefusedAt ? r.lastRefusedAt.toISOString() : null)),
       col((r) => r.lastReason)
     );
+  } catch (err) {
+    console.warn(`[trackPlayLog] ${rows.length} rows dropped: ${String(err && err.message).slice(0, 200)}`);
+  }
+  // Pruning has its own catch: a failed delete is not a failed write.
+  try {
     const today = dayOf(new Date());
     if (prunedOn !== today) {
       prunedOn = today;
       await prisma.$executeRawUnsafe(`DELETE FROM track_plays WHERE day < current_date - ${KEEP_DAYS}`);
     }
   } catch (err) {
-    console.warn(`[trackPlayLog] ${rows.length} rows dropped: ${String(err && err.message).slice(0, 200)}`);
+    console.warn(`[trackPlayLog] pruning rows older than ${KEEP_DAYS} days failed: ${String(err && err.message).slice(0, 200)}`);
   } finally {
     flushing = false;
     if (pending.size) schedule();

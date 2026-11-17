@@ -473,12 +473,61 @@ async function loadTitleKeys() {
   const [{ fp }] = await prisma.$queryRawUnsafe(KEYS_FINGERPRINT_SQL);
   if (titleKeys && titleKeys.fp === fp) return { ...titleKeys, checkedAt: Date.now() };
   const col = `lower(translate(regexp_replace(title, '[[:space:]《》]', '', 'g'), $1, $2))`;
-  const rows = await prisma.$queryRawUnsafe(`SELECT id, ${col} AS key FROM songs`, FOLD_FROM, FOLD_TO);
+  const rows = await prisma.$queryRawUnsafe(`SELECT id, title, ${col} AS key FROM songs`, FOLD_FROM, FOLD_TO);
+  const byName = new Map(); // siteNameKey -> [id], for 网站歌名 lookups
+  for (const r of rows) {
+    const k = siteNameKey(r.title);
+    if (!k) continue;
+    if (!byName.has(k)) byName.set(k, []);
+    byName.get(k).push(r.id);
+  }
   return {
     rows: rows.map((r) => ({ id: r.id, key: r.key || '', wild: LIKE_WILDCARD.test(r.key || '') })),
+    byName,
     fp,
     checkedAt: Date.now(),
   };
+}
+
+/**
+ * A title as captureMatchService's normTitleStrict has it: what an 'exact'
+ * match requires to be equal (NFC, 《》 and a "- Live" tail gone, every kind
+ * of whitespace gone, case folded; brackets kept). Copied rather than
+ * imported: captureMatchService is not to be changed, and it does not export
+ * this. Kept in step by a test over the whole catalogue.
+ */
+function siteNameKey(s) {
+  return String(s == null ? '' : s)
+    .normalize('NFC')
+    .trim()
+    .replace(/[《》]/g, '')
+    .replace(/\s*[-–—]\s*(live|remix|inst|伴奏|翻唱|演唱会版?|现场版?|重制版?).*$/i, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+/**
+ * Songs for a 网站歌名 (歌手库): the usual candidates, plus every song whose
+ * name is the 网站歌名 exactly (siteNameKey).
+ *
+ * The usual prefilter was built for game titles. It compares from the start
+ * after brackets are dropped from the searched name but not from the
+ * catalogue's, and its SQL keeps a no-break space and NFD accents that the
+ * matcher treats as equal -- so a 网站歌名 written as the site writes it,
+ * "【插曲】意难平", "(V)ision", "马拉桑 (干净版) cruiser广告歌曲", never reached
+ * the matcher (15 of 519 on 2026-11-17). Only adds songs; matchSiteTitles
+ * still decides, by the same rule as before. Game titles do not come here.
+ */
+async function fetchSongsBySiteTitle(siteTitle) {
+  const base = await fetchCandidateSongsFast(siteTitle);
+  const k = siteNameKey(siteTitle);
+  if (!k) return base;
+  const { byName } = await currentTitleKeys();
+  const have = new Set(base.map((r) => String(r.id)));
+  const extra = (byName.get(k) || []).filter((id) => !have.has(String(id)));
+  if (!extra.length) return base;
+  const more = await prisma.$queryRawUnsafe('SELECT id, title, artist FROM songs WHERE id = ANY($1::uuid[])', extra);
+  return [...base, ...more];
 }
 
 function refreshTitleKeys() {
@@ -770,7 +819,7 @@ async function ingestText({ session, rawText, side, row, singer = null }) {
     siteTitlesSeen = siteTitles;
     if (siteTitles.length) {
       const pool = [];
-      for (const st of siteTitles) pool.push(...await fetchCandidateSongsFast(st));
+      for (const st of siteTitles) pool.push(...await fetchSongsBySiteTitle(st));
       const viaAlias = gepSingers.matchSiteTitles({ singer, gameTitle: text, siteTitles, songs: pool });
       aliasOnSite = viaAlias.length > 0;
       const aliasClips = await clipsInPlaylist(playlistId, viaAlias.map((c) => c.songId));
@@ -1742,7 +1791,7 @@ module.exports = {
   connect, setTarget, getConnection,
   ingestText, touchSession, approveEvent, ignoreEvent, getReport, getStatus,
   // 歌P战报 looks a corrected title up the same way a capture is.
-  fetchCandidateSongs, fetchCandidateSongsFast,
+  fetchCandidateSongs, fetchCandidateSongsFast, fetchSongsBySiteTitle,
   // The route drops "aimed at nothing" before the service sees it, and that
   // drop needs saying out loud just as much as the ones in here.
   logNoTarget,

@@ -215,9 +215,9 @@ async function aliasOnSite(singerRaw, titleRaw) {
   const siteTitles = await siteTitlesFor(singerRaw, titleRaw);
   if (!siteTitles.length) return { hasAlias: false, found: false, siteTitles };
   // Late: captureService requires this module.
-  const { fetchCandidateSongsFast } = require('./captureService');
+  const { fetchSongsBySiteTitle } = require('./captureService');
   const pool = [];
-  for (const st of siteTitles) pool.push(...await fetchCandidateSongsFast(st));
+  for (const st of siteTitles) pool.push(...await fetchSongsBySiteTitle(st));
   const found = matchSiteTitles({ singer: singerRaw, gameTitle: titleRaw, siteTitles, songs: pool }).length > 0;
   return { hasAlias: true, found, siteTitles };
 }

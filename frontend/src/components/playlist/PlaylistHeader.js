@@ -62,7 +62,10 @@ export default function PlaylistHeader({
   const actionDefs = [
     { id: "return", label: t("return"), onClick: onReturn,
       className: NEUTRAL, style: { color: "var(--text)" } },
-    playlist.isOwner && {
+    // Owner, or someone the owner shared the playlist with: they tag in it
+    // clip by clip, so clearing every tag at once is theirs too. Not copy-only
+    // visitors, viewers of a public playlist, or an admin looking in.
+    (playlist.isOwner || playlist.isShared) && {
       id: "unlikeAll", label: t("unlikeAll"),
       phone: t("unlikeAllPhone"),
       onClick: onUnlikeAll,
@@ -117,7 +120,9 @@ export default function PlaylistHeader({
     : playlist.isOwner
       // 复制 drops to the menu here too — same reasoning as desktop.
       ? ["return", "unlikeAll", "edit"]
-      : ["return", "copy", "compare"];
+      // unlikeAll only exists for someone it was shared with; for any other
+      // visitor it is not in byId and drops out, leaving the row as it was.
+      : ["return", "unlikeAll", "copy", "compare"];
 
   const byId = Object.fromEntries(actionDefs.map((a) => [a.id, a]));
   const phoneActions = PHONE_ORDER

@@ -74,6 +74,8 @@ if sys.platform == "win32":
 import os
 import shutil
 import tempfile
+import time
+from datetime import datetime, timezone
 from opencc import OpenCC
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -149,16 +151,122 @@ def to_simplified(text):
     return converter.convert(text)
 
 
+# How long to wait for the song list once the page has loaded. It used to be a
+# 10 s implicit wait, and on the VM QQ's list often came in after it: 44% of
+# QQ imports on 2026-11-18..22 came back as "0 songs" (each after 12-14 s) and
+# users had to retry several times. Delaying only QQ's data request by 13 s
+# reproduces exactly that (0 songs in 16 s; 118 with this wait). The list is taken the
+# moment it shows up, so a fast import is not slowed down.
+LIST_WAIT_S = 45
+# QQ's playlist data has come back, yet no list this long after it, and the
+# page's 「歌曲(N)」 tab shows no songs: the playlist really is empty or the id
+# is wrong. Unchanged from before: 0 songs.
+EMPTY_GRACE_S = 15
+TIMEOUT_MESSAGE = "导入超时，请重试"
+# Has the page's request for the playlist data (c.y.qq.com) come back with a 200?
+# A failed request is listed too, with status 0: that is not "empty", it waits
+# out LIST_WAIT_S. (A wrong id also gets a 200, with no songs in it.) Only the
+# XHR counts: the page's stats beacons carry the same URL in their query string.
+DATA_DONE_JS = (
+    "return performance.getEntriesByType('resource').some(function (e) {"
+    " return e.initiatorType === 'xmlhttprequest'"
+    " && e.name.indexOf('fcg_v8_playlist_cp') >= 0 && e.responseStatus === 200; });"
+)
+# The song count on the page's 「歌曲(118)」 tab, or null when there is no such
+# tab (a wrong id has none).
+SONG_COUNT_JS = (
+    "var tabs = document.querySelectorAll('.mod_tab__item');"
+    " for (var i = 0; i < tabs.length; i++) {"
+    "  var m = tabs[i].textContent.match(/^\\s*歌曲\\s*\\((\\d+)\\)\\s*$/);"
+    "  if (m) return parseInt(m[1], 10); }"
+    " return null;"
+)
+# Every row has its title element (rows are drawn whole, this is a safety net).
+ROWS_READY_JS = (
+    "var r = document.querySelectorAll('.songlist__item');"
+    " for (var i = 0; i < r.length; i++) if (!r[i].querySelector('.mod_songname__name')) return false;"
+    " return true;"
+)
+# One line per run: how long each step took, so a slow import says where it was slow.
+TIMING_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "qq-playlist.log")
+TIMING_LOG_MAX_BYTES = 5 * 1024 * 1024  # then it is moved to qq-playlist.log.1
+
+
+class ListTimeout(Exception):
+    pass
+
+
+def _log_timing(timing):
+    try:
+        os.makedirs(os.path.dirname(TIMING_LOG), exist_ok=True)
+        if os.path.exists(TIMING_LOG) and os.path.getsize(TIMING_LOG) > TIMING_LOG_MAX_BYTES:
+            os.replace(TIMING_LOG, TIMING_LOG + ".1")
+        with open(TIMING_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(timing, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _js(driver, script, default=None):
+    try:
+        return driver.execute_script(script)
+    except Exception:
+        return default
+
+
+def _wait_for_list(driver, timing, t0):
+    """The song items, [] for an empty playlist; raises on timeout."""
+    loaded = time.monotonic()
+    deadline = loaded + LIST_WAIT_S
+    data_at = None
+    while True:
+        items = driver.find_elements(By.CSS_SELECTOR, ".songlist__item")
+        now = time.monotonic()
+        if items:
+            timing["list"] = round(now - t0, 2)
+            return items
+        if data_at is None and _js(driver, DATA_DONE_JS, False):
+            data_at = now
+            timing["data"] = round(now - t0, 2)
+            # Late data still gets its full grace before anything is decided.
+            deadline = max(deadline, data_at + EMPTY_GRACE_S)
+        if data_at is not None and now - data_at >= EMPTY_GRACE_S:
+            count = _js(driver, SONG_COUNT_JS)
+            if not count:
+                timing["outcome"] = "empty"
+                timing["count"] = count
+                return []
+            # QQ says it has songs, they are just not drawn yet: keep waiting.
+            timing["count"] = count
+        if now >= deadline:
+            timing["outcome"] = "timeout"
+            raise ListTimeout(TIMEOUT_MESSAGE)
+        time.sleep(0.2)
+
+
+def _wait_rows_ready(driver, timeout_s=5):
+    end = time.monotonic() + timeout_s
+    while time.monotonic() < end and not _js(driver, ROWS_READY_JS, True):
+        time.sleep(0.2)
+
+
 def scrape_playlist(playlist_id):
     profile_dir = tempfile.mkdtemp(prefix="qq-playlist-chrome-")
     driver = None
+    t0 = time.monotonic()
+    timing = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "id": playlist_id}
     try:
         driver = setup_driver(profile_dir)
+        timing["chrome"] = round(time.monotonic() - t0, 2)
         url = f"https://y.qq.com/musicmac/v6/playlist/detail.html?id={playlist_id}"
         driver.get(url)
-        driver.implicitly_wait(10)
+        timing["loaded"] = round(time.monotonic() - t0, 2)
 
-        items = driver.find_elements(By.CSS_SELECTOR, ".songlist__item")
+        items = _wait_for_list(driver, timing, t0)
+        # No implicit wait for the rows' parts: a row without singers used to
+        # cost the whole implicit wait (10 s) for an empty find_elements.
+        # Rows are drawn whole; _wait_rows_ready covers the moment just after.
+        _wait_rows_ready(driver)
         songs = []
         for item in items:
             title = html.unescape(
@@ -173,7 +281,18 @@ def scrape_playlist(playlist_id):
                 "artist": to_simplified(artist),
             })
 
+        timing["items"] = len(songs)
+        timing["parsed"] = round(time.monotonic() - t0, 2)
+        timing.setdefault("outcome", "ok")
         return songs
+    except Exception as e:
+        timing.setdefault("outcome", "error")
+        timing.setdefault("error", str(e)[:200])
+        raise
+    except BaseException:
+        # SIGTERM/SIGHUP from the importer's 180 s kill (sys.exit in the handler).
+        timing.setdefault("outcome", "killed")
+        raise
     finally:
         # The importer's kill must not land in the middle of the clean-up.
         for _sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
@@ -200,6 +319,8 @@ def scrape_playlist(playlist_id):
             except Exception:
                 pass
         shutil.rmtree(profile_dir, ignore_errors=True)
+        timing["total"] = round(time.monotonic() - t0, 2)
+        _log_timing(timing)
 
 
 if __name__ == "__main__":
@@ -211,6 +332,11 @@ if __name__ == "__main__":
     try:
         songs = scrape_playlist(playlist_id)
         print(json.dumps(songs, ensure_ascii=False))
+    except ListTimeout as e:
+        # Exit 0 on purpose: the importer (import-playlist-by-qq.js) reads our
+        # JSON only on a clean exit and passes its "error" to the user as is.
+        # On exit 1 it shows "QQ Music scraper failed: Command failed: python ..."
+        print(json.dumps({"error": str(e)}, ensure_ascii=False))
     except Exception as e:
         print(json.dumps({"error": str(e)}, ensure_ascii=False))
         sys.exit(1)

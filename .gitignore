@@ -39,3 +39,6 @@ qq_cookie.txt
 qq_cookie_raw.tsv
 chorus-results.json
 need-chorus.json
+
+# Runtime logs written by backend scripts (e.g. tests/qq-playlist.py timings)
+backend/logs/

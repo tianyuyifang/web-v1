@@ -30,7 +30,7 @@ function fetchQQPlaylist(playlistId) {
     console.log('Running Python scraper...\n');
 
     execFile('python', ['-u', scriptPath, playlistId], {
-      timeout: 60000,
+      timeout: 180000, // same as the importer: the scraper may wait 45 s for the list
       maxBuffer: 10 * 1024 * 1024,
       encoding: 'utf8',
       env: { ...process.env, PYTHONIOENCODING: 'utf-8' },

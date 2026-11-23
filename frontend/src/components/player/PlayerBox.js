@@ -99,7 +99,7 @@ export default memo(function PlayerBox({
     playFromStart,
     setVolume,
     setSpeed,
-    currentTime,
+    timeSource,
     duration,
     isPlaying,
     volume,
@@ -294,7 +294,7 @@ export default memo(function PlayerBox({
             <LyricsBox
               clipId={clipId}
               clipVersion={clip.version}
-              currentTime={currentTime}
+              timeSource={timeSource}
               clipStart={0}
             />
           </div>
@@ -456,13 +456,13 @@ export default memo(function PlayerBox({
         <LyricsBox
           clipId={clipId}
           clipVersion={clip.version}
-          currentTime={currentTime}
+          timeSource={timeSource}
           clipStart={0}
         />
 
         {/* Progress bar */}
         <ProgressBar
-          currentTime={currentTime}
+          timeSource={timeSource}
           duration={duration}
           onSeek={seek}
         />

@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useEffect, useRef, useState, memo } from "react";
+import { useMemo, useEffect, useRef, useState, useReducer, memo } from "react";
 import { parseLRC, getActiveLyricIndex } from "@/lib/lrc";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { fetchLyrics, getCachedLyrics } from "@/lib/lyricsCache";
 import usePlayerStore from "@/store/playerStore";
 
-export default memo(function LyricsBox({ clipId, clipVersion, currentTime, clipStart }) {
+export default memo(function LyricsBox({ clipId, clipVersion, timeSource, clipStart }) {
   const { t } = useLanguage();
   const containerRef = useRef(null);
   const innerRef = useRef(null);
@@ -45,8 +45,21 @@ export default memo(function LyricsBox({ clipId, clipVersion, currentTime, clipS
   const parsed = useMemo(() => parseLRC(lyrics), [lyrics]);
 
   const isStatic = parsed.length > 0 && parsed[0].time === -1;
-  const absoluteTime = clipStart + currentTime;
-  const activeIndex = isStatic ? -1 : getActiveLyricIndex(parsed, absoluteTime);
+  // The position is read from timeSource (see useAudioPlayer), which changes
+  // every frame while the clip plays. This box re-renders only when the sung
+  // line changes, not on every frame.
+  const activeIndex = isStatic ? -1 : getActiveLyricIndex(parsed, clipStart + timeSource.get());
+  const [, rerender] = useReducer((n) => n + 1, 0);
+  const shownIndexRef = useRef(activeIndex);
+  shownIndexRef.current = activeIndex;
+  useEffect(() => {
+    if (isStatic) return undefined;
+    const check = () => {
+      if (getActiveLyricIndex(parsed, clipStart + timeSource.get()) !== shownIndexRef.current) rerender();
+    };
+    check();
+    return timeSource.subscribe(check);
+  }, [timeSource, parsed, isStatic, clipStart]);
 
   // CSS transform-based scrolling for timestamped lyrics
   useEffect(() => {

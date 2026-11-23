@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import usePlayerStore from "@/store/playerStore";
 import { getAudioBuffer, hasCachedBuffer, getNormGain, getSharedContext } from "@/lib/audioCache";
 
@@ -13,6 +13,10 @@ import { getAudioBuffer, hasCachedBuffer, getNormGain, getSharedContext } from "
  * - speed (tempo): 0.5-2.0, independent of pitch
  * - Both can be changed in real-time during playback
  */
+
+// How often the playing position is re-read from the audio clock (one screen
+// frame at 60 Hz, as often as the animation-frame loop this replaced).
+const TICK_MS = 16;
 
 export default function useAudioPlayer({
   playerId,
@@ -48,7 +52,38 @@ export default function useAudioPlayer({
   const isPlayingRef = useRef(false);
   const wasPlayingBeforeHideRef = useRef(false);
 
-  const [currentTime, setCurrentTime] = useState(0);
+  // Playback position. Not React state: it changes ~60 times a second while a
+  // clip plays, and a state update re-rendered the card each time — on a large
+  // playlist the browser then re-did layout, hover hit-testing and paint for
+  // the whole page every frame (~13 ms a frame with 419 cards), starving the
+  // audio callback that runs on the same thread. The progress bar and the
+  // lyrics subscribe to timeSource instead and touch only their own elements.
+  //   get()      position in the clip, seconds
+  //   getRate()  clip seconds per real second while it is advancing, else 0
+  //   subscribe  called whenever either changes, and on every tick of the
+  //              clock while playing (so a listener can tell a stalled clock)
+  const timeRef = useRef(0);
+  const rateRef = useRef(0);
+  const timeListenersRef = useRef(null);
+  if (!timeListenersRef.current) timeListenersRef.current = new Set();
+  const setPosition = useCallback((time, rate, isTick = false) => {
+    if (!isTick && timeRef.current === time && rateRef.current === rate) return;
+    timeRef.current = time;
+    rateRef.current = rate;
+    // A listener only draws; it must never stop the player's own bookkeeping.
+    timeListenersRef.current.forEach((listener) => {
+      try { listener(); } catch (err) { console.error("time listener failed:", err); }
+    });
+  }, []);
+  const setCurrentTime = useCallback((time) => setPosition(time, rateRef.current), [setPosition]);
+  const timeSource = useMemo(() => ({
+    get: () => timeRef.current,
+    getRate: () => rateRef.current,
+    subscribe: (listener) => {
+      timeListenersRef.current.add(listener);
+      return () => { timeListenersRef.current.delete(listener); };
+    },
+  }), []);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [volume, setVolumeState] = useState(1);
@@ -93,9 +128,11 @@ export default function useAudioPlayer({
   const stopShifter = useCallback(() => {
     playEpochRef.current += 1;
     if (timerRef.current) {
-      cancelAnimationFrame(timerRef.current);
+      clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    // No longer advancing: the position stays where the last tick left it.
+    setPosition(timeRef.current, 0);
     if (shifterRef.current) {
       try {
         shifterRef.current.disconnect();
@@ -104,18 +141,22 @@ export default function useAudioPlayer({
       }
       shifterRef.current = null;
     }
-  }, []);
+  }, [setPosition]);
 
-  // Time tracking loop
+  // Time tracking loop. A timer, not requestAnimationFrame: nothing on the page
+  // is redrawn by a tick any more (the bar animates by itself, the lyrics
+  // change a few times a clip), and a pending animation-frame callback makes
+  // the browser run a full frame for the whole page every time.
   const startTimeTracking = useCallback((ctx, startOffset, tempoRate) => {
     startTimeRef.current = ctx.currentTime;
     offsetRef.current = startOffset;
+    setPosition(startOffset, tempoRate);
 
     const tick = () => {
       if (!shifterRef.current) return;
       const elapsed = (ctx.currentTime - startTimeRef.current) * tempoRate;
       const time = Math.min(offsetRef.current + elapsed, clipLength);
-      setCurrentTime(time);
+      setPosition(time, rateRef.current, true);
 
       if (time >= clipLength) {
         stopShifter();
@@ -126,10 +167,10 @@ export default function useAudioPlayer({
         return;
       }
 
-      timerRef.current = requestAnimationFrame(tick);
+      timerRef.current = setTimeout(tick, TICK_MS);
     };
-    timerRef.current = requestAnimationFrame(tick);
-  }, [clipLength, stopShifter]);
+    timerRef.current = setTimeout(tick, TICK_MS);
+  }, [clipLength, stopShifter, setCurrentTime, setPosition]);
 
   // Reset when another player becomes active
   useEffect(() => {
@@ -141,7 +182,7 @@ export default function useAudioPlayer({
       offsetRef.current = 0;
       setCurrentTime(0);
     }
-  }, [activePlayerId, playerId, isPlaying, stopShifter]);
+  }, [activePlayerId, playerId, isPlaying, stopShifter, setCurrentTime]);
 
   // Another player started a play while this one is still loading its clip:
   // cancel ours. Otherwise the slow load finishes later, starts playing and
@@ -171,7 +212,7 @@ export default function useAudioPlayer({
     bufferRef.current = null;
     normGainRef.current = 1;
     gainRef.current = null;
-  }), [stopShifter]);
+  }), [stopShifter, setCurrentTime]);
 
   // Cleanup on unmount (don't close shared AudioContext)
   useEffect(() => {
@@ -318,6 +359,7 @@ export default function useAudioPlayer({
     clipLength,
     playerId,
     setActivePlayer,
+    setCurrentTime,
   ]);
 
   const pause = useCallback(() => {
@@ -343,7 +385,7 @@ export default function useAudioPlayer({
         play();
       }
     },
-    [clipLength, isPlaying, play]
+    [clipLength, isPlaying, play, setCurrentTime]
   );
 
   const setVolume = useCallback((v) => {
@@ -366,7 +408,7 @@ export default function useAudioPlayer({
     offsetRef.current = 0;
     setCurrentTime(0);
     play();
-  }, [play]);
+  }, [play, setCurrentTime]);
 
   return {
     play,
@@ -375,7 +417,7 @@ export default function useAudioPlayer({
     playFromStart,
     setVolume,
     setSpeed,
-    currentTime,
+    timeSource,
     duration: clipLength,
     isPlaying,
     isLoaded,

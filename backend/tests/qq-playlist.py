@@ -145,10 +145,17 @@ def setup_driver(profile_dir):
     return driver
 
 
+_converter = None
+
+
 def to_simplified(text):
     """Convert Traditional Chinese to Simplified Chinese."""
-    converter = OpenCC('t2s')
-    return converter.convert(text)
+    # One converter for the whole run: building one per call cost ~1 s per
+    # 118 songs on the dev PC, several on the VM. Same table, same output.
+    global _converter
+    if _converter is None:
+        _converter = OpenCC('t2s')
+    return _converter.convert(text)
 
 
 # How long to wait for the song list once the page has loaded. It used to be a
@@ -163,10 +170,17 @@ LIST_WAIT_S = 45
 # is wrong. Unchanged from before: 0 songs.
 EMPTY_GRACE_S = 15
 TIMEOUT_MESSAGE = "导入超时，请重试"
+# QQ's playlist data not back this long after the page loaded: this page is
+# stuck, not slow. In 21 good imports on 2026-11-23 it came within ~1 s of the
+# load; in the 3 timeouts it never came in 45 s, and the user's own retry a
+# minute later worked every time. So: drop this browser, start a fresh one and
+# try once more (what the user's retry did), before telling them to retry.
+NO_DATA_RETRY_S = 15
 # Has the page's request for the playlist data (c.y.qq.com) come back with a 200?
-# A failed request is listed too, with status 0: that is not "empty", it waits
-# out LIST_WAIT_S. (A wrong id also gets a 200, with no songs in it.) Only the
-# XHR counts: the page's stats beacons carry the same URL in their query string.
+# A failed request is listed too, with status 0: that is not "empty" -- it
+# counts as no data (fresh browser after NO_DATA_RETRY_S, then the timeout).
+# A wrong id also gets a 200, with no songs in it. Only the XHR counts: the
+# page's stats beacons carry the same URL in their query string.
 DATA_DONE_JS = (
     "return performance.getEntriesByType('resource').some(function (e) {"
     " return e.initiatorType === 'xmlhttprequest'"
@@ -187,6 +201,16 @@ ROWS_READY_JS = (
     " for (var i = 0; i < r.length; i++) if (!r[i].querySelector('.mod_songname__name')) return false;"
     " return true;"
 )
+# Every row's title and singer titles in one call: the same elements and the
+# same `title` values as the per-row lookups that took 1000+ WebDriver round
+# trips for a 457-song list (25 s on the VM). null marks a row with no title
+# element, which failed the import before and still does.
+ROWS_JS = (
+    "return Array.prototype.map.call(document.querySelectorAll('.songlist__item'), function (r) {"
+    " var t = r.querySelector('.mod_songname__name');"
+    " return [t ? t.title : null,"
+    "  Array.prototype.map.call(r.querySelectorAll('.singer_name'), function (s) { return s.title; })]; });"
+)
 # One line per run: how long each step took, so a slow import says where it was slow.
 TIMING_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "qq-playlist.log")
 TIMING_LOG_MAX_BYTES = 5 * 1024 * 1024  # then it is moved to qq-playlist.log.1
@@ -194,6 +218,10 @@ TIMING_LOG_MAX_BYTES = 5 * 1024 * 1024  # then it is moved to qq-playlist.log.1
 
 class ListTimeout(Exception):
     pass
+
+
+class NoData(Exception):
+    """QQ's data never came for this page: worth one fresh browser."""
 
 
 def _log_timing(timing):
@@ -214,8 +242,10 @@ def _js(driver, script, default=None):
         return default
 
 
-def _wait_for_list(driver, timing, t0):
-    """The song items, [] for an empty playlist; raises on timeout."""
+def _wait_for_list(driver, timing, t0, give_up_without_data):
+    """The song items, [] for an empty playlist; raises on timeout, or NoData
+    when give_up_without_data and QQ's data is not back NO_DATA_RETRY_S after
+    the load."""
     loaded = time.monotonic()
     deadline = loaded + LIST_WAIT_S
     data_at = None
@@ -225,11 +255,15 @@ def _wait_for_list(driver, timing, t0):
         if items:
             timing["list"] = round(now - t0, 2)
             return items
-        if data_at is None and _js(driver, DATA_DONE_JS, False):
+        # The 「歌曲(N)」 tab is drawn from that data too: either one will do.
+        if data_at is None and (_js(driver, DATA_DONE_JS, False)
+                                or _js(driver, SONG_COUNT_JS) is not None):
             data_at = now
             timing["data"] = round(now - t0, 2)
             # Late data still gets its full grace before anything is decided.
             deadline = max(deadline, data_at + EMPTY_GRACE_S)
+        if data_at is None and give_up_without_data and now - loaded >= NO_DATA_RETRY_S:
+            raise NoData()
         if data_at is not None and now - data_at >= EMPTY_GRACE_S:
             count = _js(driver, SONG_COUNT_JS)
             if not count:
@@ -250,11 +284,18 @@ def _wait_rows_ready(driver, timeout_s=5):
         time.sleep(0.2)
 
 
-def scrape_playlist(playlist_id):
+def _read_rows(driver):
+    """[(title, [singer titles])] for every row, in page order."""
+    rows = driver.execute_script(ROWS_JS) or []
+    for title, _ in rows:
+        if title is None:
+            raise RuntimeError("song title not found in a playlist row")
+    return rows
+
+
+def _scrape_once(playlist_id, timing, t0, give_up_without_data):
     profile_dir = tempfile.mkdtemp(prefix="qq-playlist-chrome-")
     driver = None
-    t0 = time.monotonic()
-    timing = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "id": playlist_id}
     try:
         driver = setup_driver(profile_dir)
         timing["chrome"] = round(time.monotonic() - t0, 2)
@@ -262,27 +303,45 @@ def scrape_playlist(playlist_id):
         driver.get(url)
         timing["loaded"] = round(time.monotonic() - t0, 2)
 
-        items = _wait_for_list(driver, timing, t0)
-        # No implicit wait for the rows' parts: a row without singers used to
-        # cost the whole implicit wait (10 s) for an empty find_elements.
+        items = _wait_for_list(driver, timing, t0, give_up_without_data)
+        if not items:
+            return []
         # Rows are drawn whole; _wait_rows_ready covers the moment just after.
         _wait_rows_ready(driver)
+        rows = _read_rows(driver)
+        if len(rows) < len(items):
+            # Fewer rows than were just on the page (redrawn in between?):
+            # never pass that off as the playlist -- that was the silent 0.
+            timing["outcome"] = "timeout"
+            timing["rows_short"] = [len(items), len(rows)]
+            raise ListTimeout(TIMEOUT_MESSAGE)
         songs = []
-        for item in items:
-            title = html.unescape(
-                item.find_element(By.CSS_SELECTOR, ".mod_songname__name").get_attribute("title")
-            )
-            singer_elements = item.find_elements(By.CSS_SELECTOR, ".singer_name")
-            artist = "_".join(
-                html.unescape(elem.get_attribute("title")) for elem in singer_elements
-            )
+        for title, singers in rows:
+            artist = "_".join(html.unescape(s) for s in singers)
             songs.append({
-                "title": to_simplified(title),
+                "title": to_simplified(html.unescape(title)),
                 "artist": to_simplified(artist),
             })
-
-        timing["items"] = len(songs)
         timing["parsed"] = round(time.monotonic() - t0, 2)
+        return songs
+    finally:
+        _close_browser(driver, profile_dir)
+
+
+def scrape_playlist(playlist_id):
+    t0 = time.monotonic()
+    timing = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "id": playlist_id}
+    try:
+        try:
+            songs = _scrape_once(playlist_id, timing, t0, give_up_without_data=True)
+        except NoData:
+            # Stuck page: one fresh browser, as the user's retry would.
+            timing["retry"] = {"chrome": timing.pop("chrome", None),
+                               "loaded": timing.pop("loaded", None),
+                               "gave_up": round(time.monotonic() - t0, 2)}
+            songs = _scrape_once(playlist_id, timing, t0, give_up_without_data=False)
+        timing["items"] = len(songs)
+        timing.setdefault("parsed", round(time.monotonic() - t0, 2))
         timing.setdefault("outcome", "ok")
         return songs
     except Exception as e:
@@ -294,10 +353,20 @@ def scrape_playlist(playlist_id):
         timing.setdefault("outcome", "killed")
         raise
     finally:
-        # The importer's kill must not land in the middle of the clean-up.
-        for _sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
-            if _sig is not None:
-                signal.signal(_sig, signal.SIG_IGN)
+        timing["total"] = round(time.monotonic() - t0, 2)
+        _log_timing(timing)
+
+
+def _close_browser(driver, profile_dir):
+    # The importer's kill must not land in the middle of the clean-up: it is
+    # held until the clean-up is done, then obeyed (a retry after this must
+    # not outlive the importer's 180 s kill).
+    pending = []
+    saved = {}
+    for _sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+        if _sig is not None:
+            saved[_sig] = signal.signal(_sig, lambda signum, frame: pending.append(signum))
+    try:
         driver_pid = None
         if driver is not None:
             try:
@@ -319,8 +388,11 @@ def scrape_playlist(playlist_id):
             except Exception:
                 pass
         shutil.rmtree(profile_dir, ignore_errors=True)
-        timing["total"] = round(time.monotonic() - t0, 2)
-        _log_timing(timing)
+    finally:
+        for _sig, handler in saved.items():
+            signal.signal(_sig, handler)
+        if pending:
+            sys.exit(128 + pending[0])
 
 
 if __name__ == "__main__":

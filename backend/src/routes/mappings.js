@@ -27,7 +27,48 @@ const unconfigured = require('../services/unconfiguredService');
 const artists = require('../services/dashedArtistService');
 const gepSingers = require('../services/gepSingerService');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
-const { requireMappingEditor, markMappingEditor } = require('../middleware/auth');
+const { requireMappingEditor, markMappingEditor, isMappingEditor } = require('../middleware/auth');
+const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
+const settingsService = require('../services/settingsService');
+
+/**
+ * The listener routes (candidates, preview, lyrics, passage report) are for
+ * the 唱卡 page, which needs the capture add-on, and for the review page,
+ * which needs an editor. Until 2026-11-26 they asked for neither: any member
+ * could read a pool track's lyrics with one mapping id.
+ *
+ * The answer is remembered for a short while per user — these are called for
+ * every song of a game, and the add-on does not change mid-song.
+ */
+const LISTENER_TTL_MS = 30 * 1000;
+const listenerCache = new Map();
+async function requireListener(req, res, next) {
+  try {
+    const now = Date.now();
+    const cached = listenerCache.get(req.user.id);
+    let allowed = cached && cached.until > now ? cached.allowed : null;
+    if (allowed === null) {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { role: true, entitlements: true, tier: true },
+      });
+      allowed = Boolean(user) && (
+        hasAddOn(user, ADD_ONS.CAPTURE, await settingsService.getTiers())
+        || await isMappingEditor(req.user)
+      );
+      if (listenerCache.size > 5000) listenerCache.clear();
+      listenerCache.set(req.user.id, { allowed, until: now + LISTENER_TTL_MS });
+    }
+    if (!allowed) {
+      return res.status(403).json({
+        error: { code: 'ADD_ON_REQUIRED', message: 'Auto-tagging is a paid add-on for members' },
+      });
+    }
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
 
 /**
  * Song mappings: review, and the reading a listener does.
@@ -551,7 +592,7 @@ router.post('/passages/confirm', requireMappingEditor, async (req, res, next) =>
  * It can only increment a counter or file an empty pending row; it can never
  * change a status or an answer, so the write it allows is harmless.
  */
-router.post('/passages/report', async (req, res, next) => {
+router.post('/passages/report', requireListener, async (req, res, next) => {
   try {
     const { source, externalId, gameLyric, kind } = req.body || {};
     if (source !== 'QQ' && source !== 'NETEASE' && source !== 'LOCAL') {
@@ -657,7 +698,7 @@ router.get('/:id', requireMappingEditor, async (req, res, next) => {
  * decision has no use for them. The rows arrive in the same order either
  * way, since the sort happens before this.
  */
-router.get('/:id/candidates', listenLimiter, markMappingEditor, async (req, res, next) => {
+router.get('/:id/candidates', listenLimiter, requireListener, markMappingEditor, async (req, res, next) => {
   try {
     const all = await svc.candidatesFor(mappingId(req));
     if (req.mappingEditor) return res.json({ candidates: all });
@@ -994,7 +1035,7 @@ router.get('/track/:trackId/preview', listenLimiter, requireMappingEditor, async
  * arrives from the browser, and resolving whatever id it names would turn this
  * into an open proxy for the reviewer's own platform credential.
  */
-router.get('/:id/preview', listenLimiter, async (req, res, next) => {
+router.get('/:id/preview', listenLimiter, requireListener, async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
     const { source, externalId } = await resolveOverride(req, mapping);
@@ -1120,7 +1161,7 @@ router.get('/track/:trackId/lyrics', listenLimiter, requireMappingEditor, async 
  * Checked against the imported pool rather than trusted, exactly as preview
  * does: the pair arrives from the browser.
  */
-router.get('/:id/lyrics', listenLimiter, async (req, res, next) => {
+router.get('/:id/lyrics', listenLimiter, requireListener, async (req, res, next) => {
   try {
     const mapping = await svc.get(mappingId(req));
     const { source, externalId } = await resolveOverride(req, mapping);

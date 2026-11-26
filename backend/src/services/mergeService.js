@@ -1,5 +1,6 @@
 const prisma = require('../db/client');
-const { NotFoundError, ForbiddenError } = require('../utils/errors');
+const { NotFoundError, ForbiddenError, AppError } = require('../utils/errors');
+const { MAX_PLAYLIST_CLIPS, PLAYLIST_FULL_MESSAGE } = require('../config/limits');
 const { toPinyin, toPinyinInitials, toPinyinAll } = require('../utils/pinyin');
 
 const ANNOTATION_DIFFERENT_CLIP = '[B 中的片段不同]';
@@ -322,7 +323,7 @@ function buildMergeRows(aClips, bClips, options) {
  * Returns: { id, name, summary }.
  * Throws: ForbiddenError (caller does not own A), NotFoundError (B not viewable).
  */
-async function mergePlaylists(callerId, aId, bId, options) {
+async function mergePlaylists(callerId, aId, bId, options, callerRole) {
   const [aPl, bPl] = await Promise.all([
     prisma.playlist.findUnique({ where: { id: aId } }),
     prisma.playlist.findUnique({
@@ -358,6 +359,14 @@ async function mergePlaylists(callerId, aId, bId, options) {
   ]);
 
   const { rows, summary } = buildMergeRows(aClips, bClips, options);
+
+  // The same size limit as every other way of filling a playlist: over it,
+  // nothing could be added to the result afterwards anyway.
+  if (callerRole !== 'ADMIN' && rows.length > MAX_PLAYLIST_CLIPS) {
+    const err = new AppError(`合并后有 ${rows.length} 首，${PLAYLIST_FULL_MESSAGE}`, 400);
+    err.code = 'PLAYLIST_FULL';
+    throw err;
+  }
 
   const newName = `更新版 ${aPl.name}`;
   const newPlaylist = await prisma.playlist.create({

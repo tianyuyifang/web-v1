@@ -1,5 +1,20 @@
 const prisma = require('../db/client');
-const { NotFoundError, ForbiddenError } = require('../utils/errors');
+const { NotFoundError, ForbiddenError, AppError } = require('../utils/errors');
+const { MAX_PLAYLIST_CLIPS, PLAYLIST_FULL_MESSAGE } = require('../config/limits');
+const { canUseClip } = require('./clipAccess');
+
+/**
+ * The row an add or a swap answers with, without what the page does not use:
+ * the clip's lyrics (the page reads lyrics through the counted lyrics routes)
+ * and its file name on the server.
+ */
+function withoutClipInternals(row) {
+  if (row && row.clip) {
+    delete row.clip.lyrics;
+    delete row.clip.filePath;
+  }
+  return row;
+}
 const { toPinyin, toPinyinInitials, toPinyinAll } = require('../utils/pinyin');
 const { searchPlaylists, searchClipsInPlaylist } = require('./searchService');
 
@@ -168,10 +183,21 @@ async function deletePlaylist(playlistId) {
 // Clip management
 // ---------------------------------------------------------------------------
 
-async function addClipToPlaylist(playlistId, clipId) {
+async function addClipToPlaylist(playlistId, clipId, userRole, userId) {
   // Verify clip exists
   const clip = await prisma.clip.findUnique({ where: { id: clipId } });
   if (!clip) throw new NotFoundError('Clip');
+  // Someone else's private clip cannot be taken by guessing its id. (Called
+  // without a user by nothing but older code paths; then the check is skipped.)
+  if (userId && !(await canUseClip(clip, { id: userId, role: userRole }))) throw new NotFoundError('Clip');
+
+  // Admins are not capped, as with every other limit.
+  const held = userRole === 'ADMIN' ? 0 : await prisma.playlistClip.count({ where: { playlistId } });
+  if (held >= MAX_PLAYLIST_CLIPS) {
+    const err = new AppError(PLAYLIST_FULL_MESSAGE, 400);
+    err.code = 'PLAYLIST_FULL';
+    throw err;
+  }
 
   // Get max position
   const maxPos = await prisma.playlistClip.aggregate({
@@ -180,18 +206,18 @@ async function addClipToPlaylist(playlistId, clipId) {
   });
   const position = (maxPos._max.position ?? -1) + 1;
 
-  return prisma.playlistClip.create({
+  return withoutClipInternals(await prisma.playlistClip.create({
     data: { playlistId, clipId, position },
     include: {
       clip: {
         include: {
           song: {
-            select: { id: true, title: true, artist: true, duration: true, filePath: true },
+            select: { id: true, title: true, artist: true, duration: true },
           },
         },
       },
     },
-  });
+  }));
 }
 
 async function removeClipFromPlaylist(playlistId, clipId, userId) {
@@ -355,10 +381,16 @@ async function getPlaylistLyrics(playlistId) {
   return rows.map((r) => r.clip);
 }
 
-async function swapClip(playlistId, oldClipId, newClipId) {
+async function swapClip(playlistId, oldClipId, newClipId, user) {
   // Verify new clip exists
   const newClip = await prisma.clip.findUnique({ where: { id: newClipId } });
   if (!newClip) throw new NotFoundError('Clip');
+  // A swap is to another clip of the same song (切换片段). Until 2026-11-26 it
+  // took any clip id and answered with that clip's song and its whole lyrics:
+  // one playlist entry swapped in a loop read out any song's lyrics, uncounted.
+  const oldClip = await prisma.clip.findUnique({ where: { id: oldClipId }, select: { songId: true } });
+  if (!oldClip || oldClip.songId !== newClip.songId) throw new NotFoundError('Clip');
+  if (user && !(await canUseClip(newClip, user))) throw new NotFoundError('Clip');
 
   // Get existing playlist clip to preserve customizations
   const existing = await prisma.playlistClip.findUnique({
@@ -387,7 +419,9 @@ async function swapClip(playlistId, oldClipId, newClipId) {
         clip: {
           include: {
             song: {
-              select: { id: true, title: true, artist: true, duration: true, filePath: true, lyrics: true,
+              // No lyrics: the page asks for a song's lyrics where it shows
+              // them (the counted song-detail route), as for every other card.
+              select: { id: true, title: true, artist: true, duration: true,
                 titlePinyin: true, titlePinyinInitials: true, titlePinyinConcat: true, artistPinyinConcat: true },
             },
           },
@@ -396,7 +430,7 @@ async function swapClip(playlistId, oldClipId, newClipId) {
     }),
   ]);
 
-  return created;
+  return withoutClipInternals(created);
 }
 
 async function batchRemoveClips(playlistId, clipIds, userId) {

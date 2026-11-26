@@ -19,6 +19,12 @@ export default function ImportReport({ result, onBack }) {
 
   return (
     <div className="space-y-4">
+      {/* The playlist filled up part-way: the rest of the list was left out. */}
+      {result.capped && (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-400">
+          {t("importCapped")}
+        </div>
+      )}
       {/* Summary */}
       <div className="rounded-lg border border-border bg-background px-4 py-3">
         <div className="flex flex-wrap gap-4 text-sm">

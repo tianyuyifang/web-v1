@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { adminAPI } from "@/lib/api";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { alertText, worstLevel, LEVEL_RANK, LEVEL_STYLE } from "@/lib/rateAlerts";
 
 // The tier chip keys the member filter offers. Every member has a tier now
 // (promo-on signups and approvals both land on one, so there is no 无档位 to
@@ -28,13 +29,14 @@ function timeAgo(iso) {
   return `${Math.round(months / 12)} 年前`;
 }
 
-export default function UserTable({ users, onRefresh, onUserUpdated, controls = false }) {
+export default function UserTable({ users, onRefresh, onUserUpdated, controls = false, alerts = {}, alertLabels = {}, onAlertsChanged }) {
   const { t } = useLanguage();
   const router = useRouter();
   const [loading, setLoading] = useState({});
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [revokeTarget, setRevokeTarget] = useState(null);
+  const [banTarget, setBanTarget] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
   const [resetResult, setResetResult] = useState(null); // { username, tempPassword }
   const [copied, setCopied] = useState(false);
@@ -189,14 +191,38 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
     return true;
   }
 
+  // Accounts that went over a usage limit and have not been looked at yet
+  // come first, the most serious at the top, whatever the sort or filter.
+  const alertRank = (u) => LEVEL_RANK[worstLevel(alerts[u.id])] || 0;
+  const flaggedFirst = (list) => {
+    const flagged = list.filter((u) => alertRank(u) > 0).sort((a, b) => alertRank(b) - alertRank(a));
+    return flagged.length ? [...flagged, ...list.filter((u) => alertRank(u) === 0)] : list;
+  };
+
   const displayUsers = (() => {
-    if (!controls) return users;
-    const filtered = users.filter(passesFilters);
+    if (!controls) return flaggedFirst(users);
+    const flagged = users.filter((u) => alertRank(u) > 0);
+    const filtered = users.filter((u) => alertRank(u) === 0).filter(passesFilters);
     const accessor = SORT_ACCESSORS[sortKey];
     const sorted = [...filtered].sort((a, b) => accessor(a) - accessor(b));
     if (sortDir === "desc") sorted.reverse();
-    return sorted;
+    return flaggedFirst([...flagged, ...sorted]);
   })();
+
+  // 知道了 changes no user: only the alerts are asked for again, so the table
+  // keeps its search, filters, sort and open editor.
+  async function acknowledge(user) {
+    setLoading((prev) => ({ ...prev, [user.id]: true }));
+    setError("");
+    try {
+      await adminAPI.ackRateAlerts(user.id);
+      if (onAlertsChanged) await onAlertsChanged();
+    } catch (err) {
+      setError(err.response?.data?.error?.message || t("actionFailed"));
+    } finally {
+      setLoading((prev) => ({ ...prev, [user.id]: false }));
+    }
+  }
 
   // No users at all in this group — nothing to filter/sort.
   if (users.length === 0) {
@@ -318,7 +344,18 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
             <Fragment key={user.id}>
             <tr className="border-b border-border/50 last:border-0">
               <td className="py-3 pr-4 font-medium" style={{ color: "var(--text)" }}>
-                {user.username}
+                <span className={LEVEL_STYLE[worstLevel(alerts[user.id])]?.name || ""}>{user.username}</span>
+                {/* What this account went over, one tag per kind of request. */}
+                {(alerts[user.id] || []).map((a) => (
+                  <div key={a.id} className="mt-1">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${LEVEL_STYLE[a.level]?.tag || ""}`}
+                      title={`${new Date(a.firstAt).toLocaleString()} 起，最近一次 ${new Date(a.lastAt).toLocaleString()}`}
+                    >
+                      {alertText(a, alertLabels)}
+                    </span>
+                  </div>
+                ))}
               </td>
               <td className="py-3 pr-4">
                 <span
@@ -347,6 +384,18 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
                 {user.role === "PENDING" && user.demotedAt ? (
                   <span className="ml-1 inline-flex rounded-full bg-orange-500/15 px-2 py-0.5 text-xs font-medium text-orange-400">
                     曾是会员
+                  </span>
+                ) : null}
+                {/* Whitelisted for the usage limits. */}
+                {user.rateExempt && user.role !== "ADMIN" ? (
+                  <span className="ml-1 inline-flex rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-400">
+                    不限量
+                  </span>
+                ) : null}
+                {/* Banned: an activation code will not bring this one back. */}
+                {user.bannedAt ? (
+                  <span className="ml-1 inline-flex rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400">
+                    已封禁
                   </span>
                 ) : null}
               </td>
@@ -399,7 +448,31 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
                     a glance. The rest live in the edit panel, where a click is
                     a deliberate step rather than something to hit by mistake
                     while scanning a list. */}
-                {user.role !== "ADMIN" && user.role !== "MEMBER" && (
+                {/* An open usage alert puts its two answers on the row: this is
+                    the account the admin came here for. */}
+                {(alerts[user.id] || []).length > 0 && (
+                  <>
+                    {/* Not for a single brush with the first line: that is most
+                        likely a heavy user, and banning stays in the editor. */}
+                    {user.role !== "ADMIN" && !user.bannedAt && worstLevel(alerts[user.id]) !== "first" && (
+                      <button
+                        onClick={() => setBanTarget(user)}
+                        disabled={loading[user.id]}
+                        className="rounded-md border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        封禁
+                      </button>
+                    )}
+                    <button
+                      onClick={() => acknowledge(user)}
+                      disabled={loading[user.id]}
+                      className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover hover:text-theme disabled:opacity-50"
+                    >
+                      知道了
+                    </button>
+                  </>
+                )}
+                {user.role !== "ADMIN" && user.role !== "MEMBER" && !user.bannedAt && (
                   <button
                     onClick={() => perform(user.id, () => adminAPI.approveUser(user.id))}
                     disabled={loading[user.id]}
@@ -507,6 +580,19 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
                       />
                       加订
                     </label>
+                    {/* One click, like the tier: not part of the billing save. */}
+                    {user.role !== "ADMIN" && (
+                      <label className="flex items-center gap-1.5 text-xs text-muted" title="不受用量限制，也不会被自动撤销；超过上限时这里仍会显示提醒">
+                        <input
+                          type="checkbox"
+                          checked={!!user.rateExempt}
+                          disabled={loading[user.id]}
+                          onChange={(e) => performInPlace(user.id, () => adminAPI.setRateExempt(user.id, e.target.checked))}
+                          className="h-3.5 w-3.5 rounded border-border accent-primary"
+                        />
+                        不限量（白名单）
+                      </label>
+                    )}
                     <button
                       onClick={() => saveBilling(user)}
                       disabled={loading[user.id]}
@@ -537,6 +623,23 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
                         >
                           {t("resetPassword")}
                         </button>
+                        {user.bannedAt ? (
+                          <button
+                            onClick={() => perform(user.id, () => adminAPI.unbanUser(user.id))}
+                            disabled={loading[user.id]}
+                            className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover hover:text-theme disabled:opacity-50"
+                          >
+                            解封
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setBanTarget(user)}
+                            disabled={loading[user.id]}
+                            className="rounded-md border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                          >
+                            封禁
+                          </button>
+                        )}
                         <button
                           onClick={() => setDeleteTarget(user)}
                           disabled={loading[user.id]}
@@ -555,6 +658,21 @@ export default function UserTable({ users, onRefresh, onUserUpdated, controls = 
         </tbody>
       </table>
       </div>
+
+      {banTarget && (
+        <ConfirmDialog
+          title="封禁账号"
+          message={`封禁「${banTarget.username}」？该账号将无法登录，使用激活码也不能恢复，只有解封后才可以。数据不会被删除。`}
+          confirmLabel="封禁"
+          cancelLabel={t("cancel")}
+          danger
+          onConfirm={() => {
+            perform(banTarget.id, () => adminAPI.banUser(banTarget.id));
+            setBanTarget(null);
+          }}
+          onCancel={() => setBanTarget(null)}
+        />
+      )}
 
       {deleteTarget && (
         <ConfirmDialog

@@ -1,6 +1,7 @@
 "use client";
 
 import { getClipStreamUrl } from "@/lib/api";
+import { notifyRateLimited } from "@/lib/rateNotice";
 import { getClipBytes, putClipBytes, deleteClipBytes } from "@/lib/clipDB";
 
 /**
@@ -133,7 +134,14 @@ export async function getAudioBuffer(clipId, version) {
     const url = getClipStreamUrl(clipId, version);
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} fetching clip ${clipId}`);
+      const err = new Error(`HTTP ${response.status} fetching clip ${clipId}`);
+      if (response.status === 429) {
+        // Refused for now, not broken: it must not use up this clip's retries,
+        // or it would stay unplayable in this tab after the limit has passed.
+        notifyRateLimited();
+        err.rateLimited = true;
+      }
+      throw err;
     }
     arrayBuffer = await response.arrayBuffer();
 
@@ -154,8 +162,9 @@ export async function getAudioBuffer(clipId, version) {
   cache.set(cacheKey, { buffer: null, normGain: 1, promise });
 
   // If the promise fails, clean up so the next call can retry (up to MAX_RETRIES)
-  promise.catch(() => {
+  promise.catch((err) => {
     cache.delete(cacheKey);
+    if (err && err.rateLimited) return;
     retryCounts.set(cacheKey, (retryCounts.get(cacheKey) || 0) + 1);
     // Prevent memory leak: if the map grows too large, clear all entries
     // (resets retry counts, allowing fresh attempts for previously failed clips)

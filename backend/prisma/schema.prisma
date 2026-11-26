@@ -58,6 +58,14 @@ model User {
   // and a member who stopped paying both end up PENDING but need different
   // wording, and the role alone cannot tell them apart.
   previousRole    Role?      @map("previous_role")
+  // Set when an admin bans the account. A banned account is PENDING like any
+  // revoked one, but an activation code cannot bring it back: only an admin
+  // lifting the ban can. Null for everyone else.
+  bannedAt        DateTime?  @map("banned_at") @db.Timestamptz
+  // Whitelisted for the usage limits (services/rateGuard.js) by an admin:
+  // counted like anyone, and going over a line still shows on the admin page,
+  // but nothing is refused and the account is never revoked automatically.
+  rateExempt      Boolean    @default(false) @map("rate_exempt")
   // Paid add-ons this user holds, e.g. ["capture"]. Since membership tiers
   // arrived this is a per-user OVERRIDE, not the primary source: a non-empty
   // list wins, an empty list defers to the tier's add-ons. Guests get every
@@ -1175,4 +1183,41 @@ model GepSongAlias {
 
   @@unique([singerSongId, siteTitle])
   @@map("gep_song_aliases")
+}
+
+/// One row per (user, kind of request, Beijing day) on which that user went
+/// over a usage limit (see services/rateGuard.js). Written only when a limit
+/// is actually hit, so the table stays tiny; it is what the admin page shows.
+///
+/// level: first  — went over the first line once (most likely a heavy user)
+///        repeat — kept coming back to the line (3+ times a day, a day line,
+///                 or two days running)
+///        revoke — reached the second line (the first line x the factor)
+model RateAlert {
+  id          String    @id @default(uuid()) @db.Uuid
+  /// Not a relation: the row should outlive a deleted account.
+  userId      String    @map("user_id") @db.Uuid
+  username    String
+  category    String
+  /// Beijing calendar day, YYYY-MM-DD.
+  day         String
+  level       String
+  /// Which line the count below is measured against: "ten" or "day".
+  window      String
+  count       Int
+  limitValue  Int       @map("limit_value")
+  /// How many separate times the 10-minute line was hit that day.
+  episodes    Int       @default(0)
+  autoRevoked Boolean   @default(false) @map("auto_revoked")
+  /// The account was whitelisted: it went over, and was not refused.
+  exempt      Boolean   @default(false)
+  firstAt     DateTime  @default(now()) @map("first_at") @db.Timestamptz
+  lastAt      DateTime  @default(now()) @map("last_at") @db.Timestamptz
+  /// Null until an admin clicks 知道了; cleared again if the row gets worse.
+  ackedAt     DateTime? @map("acked_at") @db.Timestamptz
+
+  @@unique([userId, category, day])
+  @@index([ackedAt])
+  @@index([firstAt])
+  @@map("rate_alerts")
 }

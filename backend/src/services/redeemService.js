@@ -156,15 +156,19 @@ async function redeem(username, code) {
   // Same opaque message for "no such user" and "bad code" would be friendlier
   // to privacy, but the two need different fixes and neither is a secret here
   // (an admin gives out both). Be specific so a mistyped username is obvious.
-  if (!user) {
+  // An admin's name answers exactly as a name nobody has: this route needs no
+  // login, and it used to tell anyone who asked which accounts are admins.
+  if (!user || user.role === 'ADMIN') {
     const err = new NotFoundError('User');
     err.code = 'NO_USER';
     err.message = '找不到该用户名';
     throw err;
   }
-  if (user.role === 'ADMIN') {
-    const err = new ForbiddenError('管理员账号无需激活');
-    err.code = 'ADMIN_ACCOUNT';
+  // Banned by an admin: a code does not bring the account back. Only lifting
+  // the ban does.
+  if (user.bannedAt) {
+    const err = new ForbiddenError('该账号已被封禁');
+    err.code = 'ACCOUNT_BANNED';
     throw err;
   }
   // Codes are for lapsed/PENDING accounts only. A still-active MEMBER redeeming
@@ -202,6 +206,14 @@ async function redeem(username, code) {
     if (c.used_at) {
       const err = new ValidationError({ code: ['该激活码已被使用'] });
       err.code = 'CODE_USED';
+      throw err;
+    }
+
+    // Banned between the check above and here: still no.
+    const current = await tx.user.findUnique({ where: { id: user.id }, select: { bannedAt: true } });
+    if (current && current.bannedAt) {
+      const err = new ForbiddenError('该账号已被封禁');
+      err.code = 'ACCOUNT_BANNED';
       throw err;
     }
 

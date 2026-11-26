@@ -8,6 +8,9 @@ const qqDirectStats = require('../services/qqDirectStats');
 const apkLikes = require('../services/apkLikeService');
 const validate = require('../middleware/validate');
 const { updateBillingSchema } = require('../validators/billing');
+const prisma = require('../db/client');
+const rateGuard = require('../services/rateGuard');
+const { ValidationError } = require('../utils/errors');
 
 // All routes here already have authMiddleware + requireRole('ADMIN') applied in server.js
 
@@ -45,6 +48,36 @@ router.patch('/users/:id/approve', async (req, res, next) => {
 router.patch('/users/:id/demote', async (req, res, next) => {
   try {
     const user = await adminService.demoteUser(req.params.id);
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/users/:id/ban — revoke, and stop a code bringing it back
+router.patch('/users/:id/ban', async (req, res, next) => {
+  try {
+    const user = await adminService.banUser(req.params.id);
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/users/:id/unban — lift the ban (the account stays revoked)
+router.patch('/users/:id/unban', async (req, res, next) => {
+  try {
+    const user = await adminService.unbanUser(req.params.id);
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/users/:id/rate-exempt — body { exempt } : the usage-limit whitelist
+router.patch('/users/:id/rate-exempt', async (req, res, next) => {
+  try {
+    const user = await adminService.setRateExempt(req.params.id, (req.body || {}).exempt === true);
     res.json({ user });
   } catch (err) {
     next(err);
@@ -375,6 +408,78 @@ router.post('/activation-codes/:id/void', async (req, res, next) => {
   try {
     const code = await redeemService.voidCode(req.params.id);
     res.json({ code });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- Usage limits (services/rateGuard.js) ---
+
+const ALERT_FIELDS = {
+  id: true, userId: true, username: true, category: true, day: true, level: true,
+  window: true, count: true, limitValue: true, episodes: true, autoRevoked: true, exempt: true,
+  firstAt: true, lastAt: true, ackedAt: true,
+};
+
+// GET /api/admin/rate-alerts/count — how many alerts need looking at. Only the
+// serious ones (repeat / revoke): a heavy user touching a line once is listed
+// on the admin page but must not light the navbar.
+router.get('/rate-alerts/count', async (req, res, next) => {
+  try {
+    // Accounts, not rows: one script trips several kinds of request at once.
+    const rows = await prisma.rateAlert.findMany({
+      where: { ackedAt: null, level: { in: ['repeat', 'revoke'] } },
+      distinct: ['userId'],
+      select: { userId: true },
+    });
+    res.json({ count: rows.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/rate-alerts — the open alerts, and the last 30 days of them
+router.get('/rate-alerts', async (req, res, next) => {
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const [open, recent] = await Promise.all([
+      prisma.rateAlert.findMany({ where: { ackedAt: null }, orderBy: { lastAt: 'desc' }, take: 500, select: ALERT_FIELDS }),
+      prisma.rateAlert.findMany({ where: { firstAt: { gte: since } }, orderBy: { firstAt: 'desc' }, take: 500, select: ALERT_FIELDS }),
+    ]);
+    res.json({ open, recent, labels: Object.fromEntries(Object.entries(rateGuard.CATEGORIES).map(([k, v]) => [k, v.label])) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/rate-alerts/ack — body { userId } : 知道了 for that user's open alerts
+router.post('/rate-alerts/ack', async (req, res, next) => {
+  try {
+    const userId = String((req.body || {}).userId || '');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) throw new ValidationError({ userId: ['userId is required'] });
+    const result = await prisma.rateAlert.updateMany({
+      where: { userId, ackedAt: null },
+      data: { ackedAt: new Date() },
+    });
+    res.json({ acked: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/rate-limits — the limits in force
+router.get('/rate-limits', async (req, res, next) => {
+  try {
+    res.json({ ...(await rateGuard.getConfig()), defaults: rateGuard.DEFAULTS, categories: rateGuard.CATEGORIES });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/rate-limits — body { limits?, revokeFactor?, autoRevoke? }
+router.put('/rate-limits', async (req, res, next) => {
+  try {
+    res.json(await rateGuard.setConfig(req.body || {}));
   } catch (err) {
     next(err);
   }

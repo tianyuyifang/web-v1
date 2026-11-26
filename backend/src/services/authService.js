@@ -115,6 +115,12 @@ async function login({ username, password }) {
   // the right screen instead of navigating in — but the token was real and
   // anything holding it was let straight through. No token is issued now; the
   // account and its data are untouched, and approveUser restores access.
+  if (user.bannedAt) {
+    // Banned by an admin: say so, rather than inviting them to renew.
+    const err = new UnauthorizedError('该账号已被封禁');
+    err.code = 'ACCOUNT_BANNED';
+    throw err;
+  }
   if (user.role === 'PENDING') {
     const wasMember = Boolean(user.previousRole);
     const err = new UnauthorizedError(

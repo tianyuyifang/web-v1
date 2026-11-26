@@ -19,6 +19,26 @@ async function canToggleLike(userId, playlistId) {
 }
 
 /**
+ * Whether the user may open this playlist — the same rule as the playlist
+ * page itself (middleware/playlistAccess): owner, shared with, allowed to
+ * copy, public, or an admin.
+ */
+async function canViewPlaylist(userId, userRole, playlistId) {
+  const playlist = await prisma.playlist.findUnique({
+    where: { id: playlistId },
+    select: {
+      userId: true,
+      isPublic: true,
+      shares: { where: { userId }, select: { id: true }, take: 1 },
+      copyPermissions: { where: { userId }, select: { id: true }, take: 1 },
+    },
+  });
+  if (!playlist) return false;
+  return playlist.userId === userId || playlist.isPublic || userRole === 'ADMIN'
+    || playlist.shares.length > 0 || playlist.copyPermissions.length > 0;
+}
+
+/**
  * Note that a song was tagged, for the admin usage view.
  *
  * Only the act of tagging. Untagging writes nothing and cancels nothing: a
@@ -167,4 +187,4 @@ async function unlikeAllInPlaylist(userId, playlistId) {
   return { removed: result.count };
 }
 
-module.exports = { toggleLike, ensureLiked, getPlaylistLikes, getUserLikes, unlikeAllInPlaylist };
+module.exports = { toggleLike, ensureLiked, getPlaylistLikes, getUserLikes, unlikeAllInPlaylist, canViewPlaylist };

@@ -12,6 +12,7 @@ const { authMiddleware, requireApproved, requireActiveSession } = require('../mi
 const captureAuth = require('../middleware/captureAuth');
 const { ADD_ONS, hasAddOn } = require('../utils/entitlements');
 const settingsService = require('../services/settingsService');
+const rateGuard = require('../services/rateGuard');
 const apkChannel = require('../services/apkChannel');
 const apkLikes = require('../services/apkLikeService');
 const gepSingers = require('../services/gepSingerService');
@@ -590,7 +591,7 @@ const libraryQuery = z.object({
 // database and never calls a platform, so the cost of browsing is one indexed
 // query per keystroke against rows we already hold. Adding a limiter here
 // would only punish someone typing quickly.
-router.get('/library', ...web, requireCaptureAddOn, async (req, res, next) => {
+router.get('/library', ...web, requireCaptureAddOn, rateGuard.guard('librarySearch'), async (req, res, next) => {
   try {
     const parsed = libraryQuery.safeParse(req.query);
     // A cursor that is not a uuid reaches Postgres as a malformed uuid and

@@ -4,10 +4,17 @@ const { requireRole } = require('../middleware/auth');
 const { createClipSchema, autoClipSchema } = require('../validators/clips');
 const clipService = require('../services/clipService');
 const prisma = require('../db/client');
+const { ForbiddenError } = require('../utils/errors');
+const { guard, consume, limitedError } = require('../services/rateGuard');
+const { canUseClip } = require('../services/clipAccess');
 
 // POST /api/clips — create a clip from a song
 router.post('/', validate(createClipSchema), async (req, res, next) => {
   try {
+    // Each new clip is 20 s of a song's lyrics in the answer and one ffmpeg
+    // run on the server; uncounted, a loop over start times read out a whole
+    // song's lyrics that way.
+    if (consume(req.user, 'clipCreate', null)) return next(limitedError());
     const clip = await clipService.createClip({
       ...req.validated,
       userId: req.user.id,
@@ -22,6 +29,9 @@ router.post('/', validate(createClipSchema), async (req, res, next) => {
 // POST /api/clips/auto — auto-clip entire song at intervals
 router.post('/auto', validate(autoClipSchema), async (req, res, next) => {
   try {
+    // Runs ffmpeg once per 20 s of the song and makes every clip global.
+    // req.user.role is the database's (requireApproved), not the token's.
+    if (req.user.role !== 'ADMIN') return next(new ForbiddenError('Insufficient permissions'));
     const clips = await clipService.autoClipSong(req.validated);
     res.status(201).json({ clips });
   } catch (err) {
@@ -30,15 +40,17 @@ router.post('/auto', validate(autoClipSchema), async (req, res, next) => {
 });
 
 // GET /api/clips/:id/lyrics — fetch lyrics for a single clip on demand
-router.get('/:id/lyrics', async (req, res, next) => {
+router.get('/:id/lyrics', guard('clip', (req) => req.params.id), async (req, res, next) => {
   try {
     const clip = await prisma.clip.findUnique({
       where: { id: req.params.id },
-      select: { id: true, lyrics: true, version: true },
+      select: { id: true, lyrics: true, version: true, isGlobal: true, userId: true },
     });
     if (!clip) return res.status(404).json({ error: { message: 'Clip not found' } });
-    // Lyrics are immutable for a given (clipId, version) — aggressive cache
-    res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+    if (!(await canUseClip(clip, req.user))) return next(new ForbiddenError());
+    // Lyrics are immutable for a given (clipId, version) — aggressive cache.
+    // private: the answer was authorised for this user.
+    res.setHeader('Cache-Control', 'private, max-age=2592000, immutable');
     res.json({ id: clip.id, lyrics: clip.lyrics, version: clip.version });
   } catch (err) {
     next(err);

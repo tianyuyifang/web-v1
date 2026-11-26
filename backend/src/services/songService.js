@@ -78,7 +78,7 @@ async function searchRanked(query, limit, userRole, userId, mine = false, offset
     where: { id: { in: ids } },
     // Only what formatSong sends: not 50 songs' lyrics and their clips' lyrics
     select: {
-      id: true, title: true, artist: true, duration: true, filePath: true, starts: true,
+      id: true, title: true, artist: true, duration: true, starts: true,
       clips: { orderBy: { start: 'asc' }, select: { id: true, start: true, length: true, isGlobal: true } },
     },
   });
@@ -138,7 +138,6 @@ function formatSong(song, { includeLyrics = true, userRole } = {}) {
     title: song.title,
     artist: song.artist,
     duration: song.duration,
-    filePath: song.filePath,
     ...(includeLyrics ? { lyrics: song.lyrics } : {}),
     starts: song.starts,
     clips,

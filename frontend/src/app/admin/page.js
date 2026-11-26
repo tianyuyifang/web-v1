@@ -18,6 +18,8 @@ import QqDirectPanel from "@/components/admin/QqDirectPanel";
 import ApkLikesPanel from "@/components/admin/ApkLikesPanel";
 import SignupPromoPanel from "@/components/admin/SignupPromoPanel";
 import ActivationCodesPanel from "@/components/admin/ActivationCodesPanel";
+import RateLimitsPanel from "@/components/admin/RateLimitsPanel";
+import { groupByUser } from "@/lib/rateAlerts";
 import UpdatesPanel from "@/components/admin/UpdatesPanel";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 
@@ -100,13 +102,31 @@ export default function AdminPage() {
   // 复制待回复反馈里的歌到剪贴板（已回复=已做完，不复制）。序号从 1、空歌手不写。
   const [fbCopied, setFbCopied] = useState(false);
 
+  // Accounts over a usage limit that nobody has looked at yet, by user id.
+  const [alerts, setAlerts] = useState({});
+  const [alertLabels, setAlertLabels] = useState({});
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const res = await adminAPI.rateAlerts();
+      setAlerts(groupByUser(res.data.open));
+      setAlertLabels(res.data.labels || {});
+      // The navbar's number is the same rows: have it ask again.
+      window.dispatchEvent(new Event("qni:rate-alerts-changed"));
+    } catch {
+      // The member list is the page; it must not fail because this did.
+    }
+  }, []);
+
   const fetchUsers = useCallback(async () => {
     setFetching(true);
     setError("");
     try {
+      // The alerts with the list, not after it: arriving later they would
+      // re-order the rows under the pointer.
       const [usersRes, feedbackRes] = await Promise.all([
         adminAPI.listUsers(),
         feedbackAPI.list(),
+        fetchAlerts(),
       ]);
       setUsers(usersRes.data.users);
       setFeedback(feedbackRes.data.feedback);
@@ -115,7 +135,7 @@ export default function AdminPage() {
     } finally {
       setFetching(false);
     }
-  }, []);
+  }, [fetchAlerts]);
 
   const handleDeleteFeedback = useCallback(async (id) => {
     try {
@@ -172,10 +192,13 @@ export default function AdminPage() {
   // their own (which also read confusingly as a second "已过期" beside 待审核).
   const members = users.filter((u) => u.role === "MEMBER");
   const admins = users.filter((u) => u.role === "ADMIN");
+  // How many accounts in a tab have a serious usage alert open — the same
+  // ones the navbar counts, so the tab to open is the one with the number.
+  const flaggedIn = (list) => list.filter((u) => (alerts[u.id] || []).some((a) => a.level !== "first")).length;
 
   const tabs = [
-    { key: "members", label: t("members"), dot: "bg-green-400", count: members.length },
-    { key: "pending", label: t("pendingApproval"), dot: "bg-yellow-400", count: pending.length },
+    { key: "members", label: t("members"), dot: "bg-green-400", count: members.length, flagged: flaggedIn(members) },
+    { key: "pending", label: t("pendingApproval"), dot: "bg-yellow-400", count: pending.length, flagged: flaggedIn(pending) },
     { key: "admins", label: t("admins"), dot: "bg-purple-400", count: admins.length },
     { key: "feedback", label: t("feedbackAdmin"), dot: "bg-blue-400", count: feedback.filter((f) => !f.reply).length },
     { key: "updates", label: t("updatesAdminSection"), dot: "bg-pink-400", count: null },
@@ -186,6 +209,7 @@ export default function AdminPage() {
     { key: "captureClient", label: "App版本", dot: "bg-lime-400", count: null },
     { key: "tiers", label: "档位设置", dot: "bg-indigo-400", count: null },
     { key: "codes", label: "激活码", dot: "bg-orange-400", count: null },
+    { key: "limits", label: "用量限制", dot: "bg-red-400", count: null },
     { key: "tools", label: "管理员工具", dot: "bg-teal-400", count: null },
   ];
 
@@ -237,6 +261,11 @@ export default function AdminPage() {
               {tab.count !== null && (
                 <span className="text-xs text-muted">({tab.count})</span>
               )}
+              {tab.flagged > 0 && (
+                <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                  {tab.flagged}
+                </span>
+              )}
             </button>
           );
         })}
@@ -250,7 +279,7 @@ export default function AdminPage() {
             {t("pendingApproval")}
             <span className="ml-1 text-sm font-normal text-muted">({pending.length})</span>
           </h2>
-          <UserTable users={pending} onRefresh={fetchUsers} />
+          <UserTable users={pending} onRefresh={fetchUsers} onUserUpdated={patchUser} alerts={alerts} alertLabels={alertLabels} onAlertsChanged={fetchAlerts} />
         </section>
       )}
 
@@ -261,7 +290,7 @@ export default function AdminPage() {
             {t("members")}
             <span className="ml-1 text-sm font-normal text-muted">({members.length})</span>
           </h2>
-          <UserTable users={members} onRefresh={fetchUsers} onUserUpdated={patchUser} controls />
+          <UserTable users={members} onRefresh={fetchUsers} onUserUpdated={patchUser} controls alerts={alerts} alertLabels={alertLabels} onAlertsChanged={fetchAlerts} />
         </section>
       )}
 
@@ -394,6 +423,8 @@ export default function AdminPage() {
         </div>
       )}
       {activeTab === "codes" && <ActivationCodesPanel />}
+
+      {activeTab === "limits" && <RateLimitsPanel />}
 
       {activeTab === "tools" && (
         <div className="space-y-6">

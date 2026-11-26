@@ -1,5 +1,6 @@
 import axios from "axios";
 import { getToken, setToken, clearToken, getTokenPayload } from "./auth";
+import { notifyRateLimited } from "./rateNotice";
 
 const api = axios.create({
   baseURL: "/api",
@@ -96,6 +97,12 @@ api.interceptors.response.use(
         window.location.href = `/login?reason=${reason}`;
       }
       return Promise.reject(error);
+    }
+
+    // Asked for far more than anyone uses: that kind of request is refused
+    // for a while. Say so once, wherever it happened.
+    if (error.response?.status === 429 && error.response?.data?.error?.code === "RATE_LIMITED") {
+      notifyRateLimited();
     }
 
     // Expired or invalid token — clear and redirect to login
@@ -415,6 +422,16 @@ export const adminAPI = {
   listPending: () => api.get("/admin/users/pending"),
   approveUser: (id) => api.patch(`/admin/users/${id}/approve`),
   demoteUser: (id) => api.patch(`/admin/users/${id}/demote`),
+  banUser: (id) => api.patch(`/admin/users/${id}/ban`),
+  unbanUser: (id) => api.patch(`/admin/users/${id}/unban`),
+  // The usage-limit whitelist: counted and still flagged, never refused.
+  setRateExempt: (id, exempt) => api.patch(`/admin/users/${id}/rate-exempt`, { exempt }),
+  // Usage limits: who went over, and the numbers themselves.
+  rateAlertCount: () => api.get("/admin/rate-alerts/count"),
+  rateAlerts: () => api.get("/admin/rate-alerts"),
+  ackRateAlerts: (userId) => api.post("/admin/rate-alerts/ack", { userId }),
+  getRateLimits: () => api.get("/admin/rate-limits"),
+  setRateLimits: (data) => api.put("/admin/rate-limits", data),
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
   listUserPlaylists: (id) => api.get(`/admin/users/${id}/playlists`),
   getBandwidth: (days = 30) => api.get(`/admin/bandwidth?days=${days}`),

@@ -32,7 +32,7 @@ async function listUsers() {
       id: true, username: true, role: true, createdAt: true,
       expiresAt: true, monthlyFee: true, paymentStatus: true, billingNotes: true,
       deviceLimit: true, demotedAt: true, previousRole: true, entitlements: true,
-      tier: true,
+      tier: true, bannedAt: true, rateExempt: true,
       _count: { select: { playlists: true, sharedPlaylists: true } },
     },
     orderBy: { createdAt: 'desc' },
@@ -121,6 +121,7 @@ async function approveUser(id) {
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw new NotFoundError('User');
   if (user.role === 'ADMIN') throw new ForbiddenError('Cannot change admin role');
+  if (user.bannedAt) throw new ForbiddenError('该账号已被封禁，请先解封');
 
   // Clearing demotedAt and previousRole matters: this account is current
   // again, so a later demotion should read as new rather than as the old one
@@ -182,6 +183,68 @@ async function demoteUser(id) {
 }
 
 /**
+ * Bans an account: revoked like demoteUser, and marked so that an activation
+ * code cannot bring it back (redeemService) and approving it is refused until
+ * the ban is lifted. For accounts an admin has decided are abusing the site —
+ * an ordinary lapsed member is demoted, not banned.
+ * @param {string} id - User UUID
+ */
+async function banUser(id) {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new NotFoundError('User');
+  if (user.role === 'ADMIN') throw new ForbiddenError('Cannot change admin role');
+
+  // One write: revoked (as demoteUser does it) and banned together, so it can
+  // never end up revoked but not banned.
+  const now = new Date();
+  const updated = await prisma.user.update({
+    where: { id },
+    data: {
+      role: 'PENDING',
+      demotedAt: user.role === 'PENDING' ? user.demotedAt : now,
+      previousRole: user.role === 'PENDING' ? user.previousRole : user.role,
+      bannedAt: now,
+    },
+    select: { id: true, username: true, role: true, bannedAt: true },
+  });
+  invalidateSessionCache(id);
+  return updated;
+}
+
+/**
+ * Lifts a ban. The account stays revoked (PENDING): it can be approved, or
+ * renewed with a code, like any other lapsed account.
+ * @param {string} id - User UUID
+ */
+async function unbanUser(id) {
+  const user = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+  if (!user) throw new NotFoundError('User');
+  return prisma.user.update({
+    where: { id },
+    data: { bannedAt: null },
+    select: { id: true, username: true, role: true, bannedAt: true },
+  });
+}
+
+/**
+ * Puts an account on, or takes it off, the usage-limit whitelist. Takes effect
+ * on its next request.
+ * @param {string} id - User UUID
+ * @param {boolean} exempt
+ */
+async function setRateExempt(id, exempt) {
+  const user = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+  if (!user) throw new NotFoundError('User');
+  const updated = await prisma.user.update({
+    where: { id },
+    data: { rateExempt: exempt === true },
+    select: { id: true, username: true, role: true, rateExempt: true },
+  });
+  require('./rateGuard').markExempt(id, updated.rateExempt);
+  return updated;
+}
+
+/**
  * Deletes a user and all their associated data (cascaded by Prisma).
  * Admins cannot be deleted via this endpoint.
  * @param {string} id - User UUID
@@ -195,6 +258,9 @@ async function deleteUser(id, requesterId) {
   if (user.role === 'ADMIN') throw new ForbiddenError('Cannot delete an admin account');
 
   await prisma.user.delete({ where: { id } });
+  // Its usage alerts stay as history (they are not tied to the row), but an
+  // open one would keep the navbar's number lit with no row left to dismiss.
+  await prisma.rateAlert.updateMany({ where: { userId: id, ackedAt: null }, data: { ackedAt: new Date() } });
 }
 
 /**
@@ -631,4 +697,4 @@ async function resetPassword(id) {
 async function getTierConfig() { return getTiers(); }
 async function setTierConfig(patch) { return setTiers(patch); }
 
-module.exports = { listUsers, listPending, approveUser, demoteUser, deleteUser, getBandwidthStats, getLiveUsage, getLiveMarks, getTaggingUsage, getPlatformTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword, setUserTier, getTierConfig, setTierConfig };
+module.exports = { listUsers, listPending, approveUser, demoteUser, banUser, unbanUser, setRateExempt, deleteUser, getBandwidthStats, getLiveUsage, getLiveMarks, getTaggingUsage, getPlatformTaggingUsage, listUserPlaylists, updateBilling, extendOneMonth, resetPassword, generateTempPassword, setUserTier, getTierConfig, setTierConfig };

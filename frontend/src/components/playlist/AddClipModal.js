@@ -14,6 +14,7 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onBulkI
   const showImportTab = !onClipSelected;
   const [tab, setTab] = useState("search"); // "search" | "import"
   const [clipSong, setClipSong] = useState(initialSong || null);
+  const [addError, setAddError] = useState("");
 
   // --- Search ---
   const { query, setQuery, results, isSearching, failed } = useSearch({
@@ -26,10 +27,13 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onBulkI
       return;
     }
     try {
+      setAddError("");
       const res = await playlistsAPI.addClip(playlistId, { clipId });
       onClipAdded(res.data);
-    } catch {
-      // silent
+    } catch (err) {
+      // Silent as before, except the one refusal the user can do something
+      // about: the playlist is full.
+      if (err.response?.data?.error?.code === "PLAYLIST_FULL") setAddError(t("playlistFull"));
     }
   };
 
@@ -48,6 +52,12 @@ export default function AddClipModal({ playlistId, onClose, onClipAdded, onBulkI
               ✕
             </button>
           </div>
+
+          {addError && (
+            <div className="mb-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-400" role="alert">
+              {addError}
+            </div>
+          )}
 
           {/* Tab switcher */}
           {showImportTab && (

@@ -49,6 +49,7 @@ export default function PlaylistPage() {
 
   const [playlist, setPlaylist] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [limited, setLimited] = useState(false); // opening it was refused (rate limit)
   const [editMode, setEditMode] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [selectedClips, setSelectedClips] = useState(new Set());
@@ -117,6 +118,9 @@ export default function PlaylistPage() {
       .catch((err) => {
         const status = err.response?.status;
         if (status === 404 || status === 403) router.push("/playlists");
+        // Refused for now (far over normal use): say so on the page itself —
+        // the line at the bottom fades, and an empty page explains nothing.
+        if (status === 429) setLimited(true);
       })
       .finally(() => setLoading(false));
   }, [id, router, setLikedClips]);
@@ -308,6 +312,9 @@ export default function PlaylistPage() {
     );
   }
 
+  if (!playlist && limited) {
+    return <p className="py-16 text-center text-sm text-muted">{t("rateLimited")}</p>;
+  }
   if (!playlist) return null;
 
   return (

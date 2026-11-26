@@ -74,4 +74,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { importByFile };
+module.exports = { importByFile, parseXlsx };

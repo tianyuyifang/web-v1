@@ -15,6 +15,29 @@ const playlistService = require('../services/playlistService');
 const shareService = require('../services/shareService');
 const mergeService = require('../services/mergeService');
 const { ForbiddenError } = require('../utils/errors');
+const { guard, consume, limitedError } = require('../services/rateGuard');
+const { MAX_PLAYLIST_CLIPS, MAX_IMPORT_ROWS } = require('../config/limits');
+
+/**
+ * One outside comparison per account at a time. Each one starts a scraper (a
+ * browser, for QQ) on the server; nothing limited how many a member could set
+ * going at once.
+ */
+const comparing = new Set();
+function oneComparison(req, res, next) {
+  const userId = req.user.id;
+  if (comparing.has(userId)) {
+    return res.status(429).json({ error: { message: '上一个对比还没结束，请稍等', code: 'COMPARE_BUSY' } });
+  }
+  comparing.add(userId);
+  // Released by the handler when the fetch has ended — a client that hangs up
+  // does not stop the scraper, and must not be able to start another meanwhile.
+  req.endComparison = () => comparing.delete(userId);
+  next();
+}
+
+// Opening a playlist and reading its lyrics are one "open" of that playlist.
+const countOpen = guard('playlistOpen', (req) => req.params.id);
 
 // ========================= Playlist CRUD =========================
 
@@ -251,6 +274,8 @@ router.get('/diff', async (req, res, next) => {
     if (a === b) {
       return res.status(400).json({ error: { message: 'Cannot diff a playlist against itself' } });
     }
+    // Both playlists' contents are in the answer: each counts as opened.
+    if (consume(req.user, 'playlistOpen', a) || consume(req.user, 'playlistOpen', b)) return next(limitedError());
 
     const userId = req.user.id;
     const [aPl, bPl] = await Promise.all([
@@ -333,7 +358,7 @@ router.get('/diff', async (req, res, next) => {
 router.post('/merge', validate(mergePlaylistSchema), async (req, res, next) => {
   try {
     const { aId, bId, options } = req.validated;
-    const result = await mergeService.mergePlaylists(req.user.id, aId, bId, options);
+    const result = await mergeService.mergePlaylists(req.user.id, aId, bId, options, req.user.role);
     res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -343,7 +368,7 @@ router.post('/merge', validate(mergePlaylistSchema), async (req, res, next) => {
 // ========================= Playlist Detail =========================
 
 // GET /api/playlists/:id — playlist with clips
-router.get('/:id', playlistAccess, requireView, async (req, res, next) => {
+router.get('/:id', playlistAccess, requireView, countOpen, async (req, res, next) => {
   try {
     const playlist = await playlistService.getPlaylistById(
       req.params.id,
@@ -382,7 +407,7 @@ router.get('/:id', playlistAccess, requireView, async (req, res, next) => {
 // change for a given version — cached like the per-clip endpoint, which the
 // page no longer calls once per card. private: the response is authorised
 // per user.
-router.get('/:id/lyrics', playlistAccess, requireView, async (req, res, next) => {
+router.get('/:id/lyrics', playlistAccess, requireView, countOpen, async (req, res, next) => {
   try {
     const lyrics = await playlistService.getPlaylistLyrics(req.params.id);
     res.setHeader('Cache-Control', 'private, max-age=2592000, immutable');
@@ -417,7 +442,7 @@ router.delete('/:id', playlistAccess, requireOwner, async (req, res, next) => {
 // POST /api/playlists/:id/clips — add clip to playlist
 router.post('/:id/clips', playlistAccess, requireOwner, validate(addClipSchema), async (req, res, next) => {
   try {
-    const pc = await playlistService.addClipToPlaylist(req.params.id, req.validated.clipId);
+    const pc = await playlistService.addClipToPlaylist(req.params.id, req.validated.clipId, req.user.role, req.user.id);
     res.status(201).json(pc);
   } catch (err) {
     next(err);
@@ -508,7 +533,7 @@ router.put('/:id/clips/:clipId/swap', playlistAccess, requireOwner, async (req, 
     if (!newClipId) {
       return res.status(400).json({ error: { message: 'newClipId is required' } });
     }
-    const result = await playlistService.swapClip(req.params.id, req.params.clipId, newClipId);
+    const result = await playlistService.swapClip(req.params.id, req.params.clipId, newClipId, req.user);
     res.json(result);
   } catch (err) {
     next(err);
@@ -613,10 +638,23 @@ router.post('/:id/import/by-file', playlistAccess, requireOwner, async (req, res
         return res.status(400).json({ error: { message: 'No file uploaded' } });
       }
       try {
-        const { importByFile } = require('../../scripts/import-playlist-by-file');
+        const { importByFile, parseXlsx } = require('../../scripts/import-playlist-by-file');
+        const { addSongsToPlaylist } = require('../../scripts/lib/add-songs');
         // Capture the buffer now — req.file may not survive the async job.
         const buffer = req.file.buffer;
-        startImportJobRoute(req, res, (playlistId, onProgress) => importByFile(buffer, playlistId, onProgress));
+        // Read once, here, to know how long it is. A file that cannot be read
+        // goes on as it always has (the job reports the failure).
+        let entries = null;
+        try { entries = parseXlsx(buffer); } catch { entries = null; }
+        if (entries && entries.length > MAX_IMPORT_ROWS) {
+          return res.status(400).json({ error: { message: `表格最多 ${MAX_IMPORT_ROWS} 行` } });
+        }
+        // Counted only now: an upload with no file, or one too long, was never
+        // an import.
+        if (consume(req.user, 'fileImport', null)) return next(limitedError());
+        startImportJobRoute(req, res, (playlistId, onProgress) => (entries
+          ? addSongsToPlaylist(entries, playlistId, onProgress)
+          : importByFile(buffer, playlistId, onProgress)));
       } catch (e) {
         next(e);
       }
@@ -688,7 +726,9 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
     let skipped = 0;
     const titleConflict = [];
 
+    let capped = false;
     for (const sc of sourceClips) {
+      if (req.user.role !== 'ADMIN' && existingSongs.length + added >= MAX_PLAYLIST_CLIPS) { capped = true; break; }
       const songTitle = sc.clip.song.title;
       const songArtist = sc.clip.song.artist;
       const existingArtist = existingTitleMap.get(songTitle);
@@ -713,7 +753,7 @@ router.post('/:id/import/by-internal', playlistAccess, requireOwner, async (req,
       added++;
     }
 
-    res.json({ added, skipped, notFound: [], titleConflict });
+    res.json({ added, skipped, notFound: [], titleConflict, ...(capped ? { capped: true } : {}) });
   } catch (err) {
     next(err);
   }
@@ -786,7 +826,7 @@ router.delete('/:id/copy-permissions/:userId', playlistAccess, requireOwner, asy
 // ========================= Compare =========================
 
 // POST /api/playlists/:id/compare/qq — compare with a QQ Music playlist
-router.post('/:id/compare/qq', playlistAccess, requireView, async (req, res, next) => {
+router.post('/:id/compare/qq', playlistAccess, requireView, oneComparison, async (req, res, next) => {
   try {
     const { fetchQQPlaylist } = require('../../scripts/import-playlist-by-qq');
     const { qqPlaylistId } = req.body;
@@ -798,11 +838,13 @@ router.post('/:id/compare/qq', playlistAccess, requireView, async (req, res, nex
     res.json(report);
   } catch (err) {
     next(err);
+  } finally {
+    req.endComparison();
   }
 });
 
 // POST /api/playlists/:id/compare/netease — compare with a NetEase playlist
-router.post('/:id/compare/netease', playlistAccess, requireView, async (req, res, next) => {
+router.post('/:id/compare/netease', playlistAccess, requireView, oneComparison, async (req, res, next) => {
   try {
     const { fetchNeteasePlaylist } = require('../../scripts/import-playlist-by-netease');
     const { neteasePlaylistId } = req.body;
@@ -814,11 +856,13 @@ router.post('/:id/compare/netease', playlistAccess, requireView, async (req, res
     res.json(report);
   } catch (err) {
     next(err);
+  } finally {
+    req.endComparison();
   }
 });
 
 // POST /api/playlists/:id/compare/kugou — compare with a KuGou playlist
-router.post('/:id/compare/kugou', playlistAccess, requireView, async (req, res, next) => {
+router.post('/:id/compare/kugou', playlistAccess, requireView, oneComparison, async (req, res, next) => {
   try {
     const { fetchKugouPlaylist } = require('../../scripts/import-playlist-by-kugou');
     const { kugouPlaylistId } = req.body;
@@ -830,6 +874,8 @@ router.post('/:id/compare/kugou', playlistAccess, requireView, async (req, res, 
     res.json(report);
   } catch (err) {
     next(err);
+  } finally {
+    req.endComparison();
   }
 });
 
@@ -845,6 +891,8 @@ router.post('/:id/compare/internal', playlistAccess, requireView, async (req, re
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetPlaylistId)) {
       return res.status(400).json({ error: { message: 'Invalid playlist ID format' } });
     }
+    // The other playlist's songs are in the answer: it counts as opened.
+    if (consume(req.user, 'playlistOpen', targetPlaylistId)) return next(limitedError());
     // Check target playlist exists and user has access
     const target = await prisma.playlist.findUnique({
       where: { id: targetPlaylistId },

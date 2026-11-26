@@ -70,6 +70,9 @@ async function search(userId, { query = '', cursor = null, take = PAGE_SIZE } = 
   // empty box should not pull the whole table over a phone connection.
   if (!q) return { rows: [], nextCursor: null };
 
+  // Only brackets (《》) leaves an empty key, and `contains: ''` matches
+  // every row: that branch is searched only when there is a key to search for.
+  const key = mappingTitleKey(q);
   const where = {
     approved: true,
     OR: [
@@ -78,7 +81,7 @@ async function search(userId, { query = '', cursor = null, take = PAGE_SIZE } = 
       // still covered by the insensitive match on the raw column.
       { rawTitle: { contains: q, mode: 'insensitive' } },
       { rawArtist: { contains: q, mode: 'insensitive' } },
-      { titleKey: { contains: mappingTitleKey(q) } },
+      ...(key ? [{ titleKey: { contains: key } }] : []),
       // Platform side. Display-only columns elsewhere, but here they are half
       // of what the singer might remember.
       { platformTitle: { contains: q, mode: 'insensitive' } },

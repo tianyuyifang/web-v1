@@ -1,6 +1,7 @@
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import ExpiredBanner from "@/components/layout/ExpiredBanner";
+import RateLimitNotice from "@/components/layout/RateLimitNotice";
 import ThemeProvider from "@/components/layout/ThemeProvider";
 import LanguageProvider from "@/components/layout/LanguageProvider";
 
@@ -18,6 +19,7 @@ export default function RootLayout({ children }) {
             <Navbar />
             <ExpiredBanner />
             <main className="mx-auto max-w-screen-2xl px-4 pb-6">{children}</main>
+            <RateLimitNotice />
           </ThemeProvider>
         </LanguageProvider>
       </body>

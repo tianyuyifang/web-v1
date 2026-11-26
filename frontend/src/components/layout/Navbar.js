@@ -8,7 +8,7 @@ import useAuthStore from "@/store/authStore";
 import { useLanguage } from "@/components/layout/LanguageProvider";
 import { useTheme } from "@/components/layout/ThemeProvider";
 import CaptureIndicator from "@/components/layout/CaptureIndicator";
-import { feedbackAPI } from "@/lib/api";
+import { feedbackAPI, adminAPI } from "@/lib/api";
 import { hasUnreadReply } from "@/lib/feedbackSeen";
 
 export default function Navbar() {
@@ -37,6 +37,24 @@ export default function Navbar() {
     return () => { alive = false; };
   }, [isAuthenticated, pathname]);
 
+  // Admins only: how many accounts have gone well over a usage limit and not
+  // been looked at yet. Asked on mount, on navigation and once a minute — a
+  // count of a handful of rows, and nobody but an admin's page asks.
+  const [alertCount, setAlertCount] = useState(0);
+  useEffect(() => {
+    if (!isAdmin) { setAlertCount(0); return; }
+    let alive = true;
+    const ask = () => adminAPI.rateAlertCount()
+      .then((res) => { if (alive) setAlertCount(res.data?.count || 0); })
+      .catch(() => {});
+    ask();
+    // Not from a tab nobody is looking at: it would ask all night, and every
+    // answer also keeps the login alive.
+    const timer = setInterval(() => { if (!document.hidden) ask(); }, 60 * 1000);
+    window.addEventListener("qni:rate-alerts-changed", ask);
+    return () => { alive = false; clearInterval(timer); window.removeEventListener("qni:rate-alerts-changed", ask); };
+  }, [isAdmin, pathname]);
+
   useEffect(() => {
     init();
   }, [init]);
@@ -46,7 +64,7 @@ export default function Navbar() {
     setMobileOpen(false);
   }, [pathname]);
 
-  const navLink = (href, label, dot = false) => {
+  const navLink = (href, label, dot = false, count = 0) => {
     const isActive = pathname?.startsWith(href);
     return (
       <Link
@@ -66,6 +84,14 @@ export default function Navbar() {
             aria-label="有新回复"
             className="absolute right-1 top-1 inline-block h-1.5 w-1.5 rounded-full bg-red-500"
           />
+        )}
+        {count > 0 && (
+          <span
+            aria-label={`${count} 个账号用量异常`}
+            className="ml-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white"
+          >
+            {count > 99 ? "99+" : count}
+          </span>
         )}
       </Link>
     );
@@ -112,7 +138,7 @@ export default function Navbar() {
                   rather than a permanent ad in the nav. */}
               {navLink("/updates", t("navUpdates"))}
               {navLink("/help", t("navHelp"), unread)}
-              {isAdmin && navLink("/admin", t("navAdmin"))}
+              {isAdmin && navLink("/admin", t("navAdmin"), false, alertCount)}
               {navLink("/account", t("navAccount"))}
             </div>
 
@@ -151,7 +177,7 @@ export default function Navbar() {
             {navLink("/tools", t("navTools"))}
             {navLink("/updates", t("navUpdates"))}
             {navLink("/help", t("navHelp"), unread)}
-            {isAdmin && navLink("/admin", t("navAdmin"))}
+            {isAdmin && navLink("/admin", t("navAdmin"), false, alertCount)}
             {navLink("/account", t("navAccount"))}
           </div>
         </div>

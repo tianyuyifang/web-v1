@@ -2,6 +2,7 @@ const router = require('express').Router();
 const fs = require('fs');
 const fsp = require('fs/promises');
 const { getSongFilePath, getClipFilePath, parseRangeHeader } = require('../services/streamService');
+const { guard } = require('../services/rateGuard');
 
 /**
  * Stream a file with byte-range support and caching.
@@ -62,7 +63,7 @@ async function streamFile(filePath, req, res, { isClip = false } = {}) {
 }
 
 // GET /api/stream/song/:songId — stream full song MP3
-router.get('/song/:songId', async (req, res, next) => {
+router.get('/song/:songId', guard('song', (req) => req.params.songId), async (req, res, next) => {
   try {
     const filePath = await getSongFilePath(req.params.songId);
     await streamFile(filePath, req, res);
@@ -72,7 +73,7 @@ router.get('/song/:songId', async (req, res, next) => {
 });
 
 // GET /api/stream/clip/:clipId — stream clip MP3
-router.get('/clip/:clipId', async (req, res, next) => {
+router.get('/clip/:clipId', guard('clip', (req) => req.params.clipId), async (req, res, next) => {
   try {
     const filePath = await getClipFilePath(req.params.clipId);
     await streamFile(filePath, req, res, { isClip: true });
@@ -82,7 +83,7 @@ router.get('/clip/:clipId', async (req, res, next) => {
 });
 
 // GET /api/stream/:songId — legacy song stream (backwards compat)
-router.get('/:songId', async (req, res, next) => {
+router.get('/:songId', guard('song', (req) => req.params.songId), async (req, res, next) => {
   try {
     const filePath = await getSongFilePath(req.params.songId);
     await streamFile(filePath, req, res);

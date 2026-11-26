@@ -18,6 +18,7 @@ const prisma = require('../../src/db/client');
 const { sliceLRC } = require('../../src/utils/lrc');
 const { clipAudioAsync } = require('../clip-audio');
 const { pickMostPopular } = require('./find-song');
+const { MAX_PLAYLIST_CLIPS } = require('../../src/config/limits');
 
 const CLIP_LENGTH = 20;
 
@@ -120,12 +121,22 @@ async function addSongsToPlaylist(songs, targetPlaylistId, onProgress) {
   });
   let position = (maxPos._max.position ?? -1) + 1;
 
+  // An admin's playlist is not capped, as with every other limit.
+  const owner = await prisma.playlist.findUnique({
+    where: { id: targetPlaylistId },
+    select: { user: { select: { role: true } } },
+  });
+  const cap = owner && owner.user && owner.user.role === 'ADMIN' ? Infinity : MAX_PLAYLIST_CLIPS;
+
   let added = 0;
   let skipped = 0;
+  let capped = false;
   const notFound = [];
   const titleConflict = [];
 
   for (let i = 0; i < songs.length; i++) {
+    // A playlist holds at most MAX_PLAYLIST_CLIPS; the rest of the list is left.
+    if (existingSongs.length + added >= cap) { capped = true; onProgress?.(total, total); break; }
     const src = songs[i];
     const song = await matchSong(src.title, src.artist, byTitle);
 
@@ -177,7 +188,7 @@ async function addSongsToPlaylist(songs, targetPlaylistId, onProgress) {
     onProgress?.(i + 1, total);
   }
 
-  return { added, skipped, notFound, titleConflict };
+  return { added, skipped, notFound, titleConflict, ...(capped ? { capped: true } : {}) };
 }
 
 module.exports = { addSongsToPlaylist, buildClipFilename, matchSong, pickStart };
